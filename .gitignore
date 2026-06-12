@@ -1,0 +1,58 @@
+# Secretos — NUNCA en el repo
+.env
+.env.local
+.env.*.local
+
+# Datos locales efímeros
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Pytest / cobertura
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# Alembic (solo excluir la BD SQLite si se usara localmente)
+*.db
+*.sqlite3
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
