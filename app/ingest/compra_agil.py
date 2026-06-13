@@ -25,7 +25,7 @@ def _ahora() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAgil, bool]:
+def upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAgil, bool]:
     """Upsert básico de Compra Ágil. Devuelve (objeto, es_nueva)."""
     existing = session.get(CompraAgil, item.codigo)
     es_nueva = existing is None
@@ -50,9 +50,9 @@ def _upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraA
     return ca, es_nueva
 
 
-def _upsert_ca_detalle(session: Session, det: CompraAgilDetalle) -> None:
+def upsert_ca_detalle(session: Session, det: CompraAgilDetalle) -> None:
     """Actualiza una CA con datos de detalle y reemplaza sus productos."""
-    ca, _ = _upsert_ca_basica(session, det)
+    ca, _ = upsert_ca_basica(session, det)
     ca.descripcion = det.descripcion
     ca.id_orden_compra = det.id_orden_compra
     ca.estado_convocatoria = det.estado_convocatoria
@@ -142,7 +142,7 @@ def sync_incremental(
                     descartadas += 1
                     continue
 
-                _, es_nueva = _upsert_ca_basica(session, ca)
+                _, es_nueva = upsert_ca_basica(session, ca)
                 if es_nueva:
                     nuevas += 1
                 else:
@@ -209,7 +209,7 @@ def fetch_detalle(
     """Descarga y persiste el detalle de una CA por código. Retorna True si OK."""
     try:
         det = v2_client.detalle_compra_agil(codigo)
-        _upsert_ca_detalle(session, det)
+        upsert_ca_detalle(session, det)
         session.commit()
         return True
     except Exception as exc:

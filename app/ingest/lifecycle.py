@@ -11,8 +11,8 @@ from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
 from app.core.settings import Settings
-from app.ingest.compra_agil import _upsert_ca_detalle
-from app.ingest.licitaciones import _upsert_basica
+from app.ingest.compra_agil import upsert_ca_detalle
+from app.ingest.licitaciones import upsert_detalle
 from app.models.enums import ESTADOS_TERMINALES, EstadoOportunidad
 from app.models.tables import CompraAgil, Licitacion
 
@@ -64,7 +64,7 @@ def refresh_estados(
             break
         try:
             det = v1_client.licitacion_detalle(lic.codigo)
-            _upsert_basica(session, det)
+            upsert_detalle(session, det, settings)
             session.commit()
             actualizadas_lic += 1
             budget_restante -= 1
@@ -92,7 +92,7 @@ def refresh_estados(
             break
         try:
             det_ca = v2_client.detalle_compra_agil(ca.codigo)
-            _upsert_ca_detalle(session, det_ca)
+            upsert_ca_detalle(session, det_ca)
             session.commit()
             actualizadas_ca += 1
             budget_restante -= 1

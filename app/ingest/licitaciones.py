@@ -29,7 +29,7 @@ def _fecha_a_dt(d: date | None) -> datetime | None:
     return datetime(d.year, d.month, d.day)
 
 
-def _upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion, bool]:
+def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion, bool]:
     """Upsert básico de una licitación. Devuelve (objeto, es_nueva)."""
     existing = session.get(Licitacion, item.codigo)
     es_nueva = existing is None
@@ -54,11 +54,11 @@ def _upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion
     return lic, es_nueva
 
 
-def _upsert_detalle(
+def upsert_detalle(
     session: Session, det: LicitacionDetalle, settings: Settings
 ) -> None:
     """Actualiza una licitación con datos de detalle e items."""
-    lic, _ = _upsert_basica(session, det)
+    lic, _ = upsert_basica(session, det)
     lic.descripcion = det.descripcion
     lic.moneda = det.moneda or None
     lic.monto_estimado = det.monto_estimado
@@ -132,7 +132,7 @@ def sync_activas(
     lote: list[LicitacionBasica] = []
 
     for item in items:
-        _, es_nueva = _upsert_basica(session, item)
+        _, es_nueva = upsert_basica(session, item)
         if es_nueva:
             nuevas += 1
         else:
@@ -198,7 +198,7 @@ def fetch_detalles_pendientes(
 
         try:
             det = v1_client.licitacion_detalle(lic.codigo)
-            _upsert_detalle(session, det, settings)
+            upsert_detalle(session, det, settings)
             session.commit()
             procesadas += 1
         except Exception as exc:
@@ -238,7 +238,7 @@ def sync_por_fecha(
     lote: list[LicitacionBasica] = []
 
     for item in items:
-        _, es_nueva = _upsert_basica(session, item)
+        _, es_nueva = upsert_basica(session, item)
         if es_nueva:
             nuevas += 1
         else:

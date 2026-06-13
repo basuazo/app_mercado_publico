@@ -91,6 +91,15 @@ La ventana 22:00–07:00 se valida en código con ZoneInfo, **no** se confía en
   Estados válidos: `{"publicada", "cerrada", "proveedor_seleccionado"}`. El resto se descarta sin guardar.
 - **Licitaciones**: pre-filtro barato por keywords en nombre antes de pedir detalle (configurable en `PREFILTER_KEYWORDS`).
 
+## Comportamiento ante MPRateLimitError (429)
+
+El spec original pedía "agenda reintento post-medianoche Chile". El comportamiento actual es:
+
+- **CA incremental**: 429 lanza `MPRateLimitError` → capturado en `sync_incremental` → progreso de páginas anteriores ya está en Postgres (commit por página) → cursor no avanza → el scheduler reintentará en el próximo ciclo (30 min). Si el presupuesto diario ya está agotado, `QuotaTracker` lanzará `QuotaExceededError` en el siguiente ciclo y se saltará hasta el día siguiente en America/Santiago.
+- No hay re-agenda explícita a las 00:01 Chile: el scheduler de 30 min es suficiente porque `QuotaTracker` bloquea los requests del mismo día; cuando el contador diario se resetea (nueva fecha en Santiago), el ciclo de las 00:30 ya funciona normalmente.
+
+Esta decisión simplifica el scheduler y es correcta porque la cuota se persiste en Postgres (no en RAM).
+
 ## Idempotencia
 
 Todos los jobs usan upsert (`session.get` + `session.add` si nuevo). Re-ejecutar un job nunca duplica ni corrompe datos. El cursor sólo avanza en éxito, por lo que un 429 o crash a mitad deja el progreso parcial y retoma desde el mismo cursor en el próximo ciclo.
