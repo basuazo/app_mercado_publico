@@ -90,7 +90,10 @@ def listar_perfiles(session: Session, owner_id: int) -> list[PerfilBusqueda]:
     """Devuelve todos los perfiles activos del usuario."""
     return list(
         session.execute(
-            select(PerfilBusqueda).where(PerfilBusqueda.owner_id == owner_id)
+            select(PerfilBusqueda).where(
+                PerfilBusqueda.owner_id == owner_id,
+                PerfilBusqueda.activo.is_(True),
+            )
         ).scalars()
     )
 

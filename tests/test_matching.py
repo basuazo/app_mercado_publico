@@ -255,6 +255,18 @@ class TestPerfilesCRUD:
         assert len(perfiles_u1) == 2
         assert all(p.owner_id == u1.id for p in perfiles_u1)
 
+    def test_listar_excluye_inactivos(self, session: Session):
+        u = self._user(session)
+        p_activo = crear_perfil(session, u.id, "Activo", keywords=["a"])
+        p_inactivo = crear_perfil(session, u.id, "Inactivo", keywords=["b"])
+        p_inactivo.activo = False
+        session.flush()
+        visibles = listar_perfiles(session, u.id)
+        assert len(visibles) == 1
+        assert visibles[0].id == p_activo.id
+        # obtener_perfil sí lo devuelve (no filtra por activo)
+        assert obtener_perfil(session, p_inactivo.id, u.id) is not None
+
     def test_eliminar_propio(self, session: Session):
         u = self._user(session)
         p = crear_perfil(session, u.id, "A eliminar", keywords=["x"])

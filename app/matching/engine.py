@@ -136,6 +136,9 @@ _FTS_CA_EXCLUDE = (
 # Queries de candidatos (requieren Postgres con tsv GENERATED)
 # ---------------------------------------------------------------------------
 
+# Protege RAM en Render (512 MB): suficiente para detectar matches relevantes.
+_MAX_CANDIDATOS = 500
+
 
 def _candidatos_licitaciones(
     session: Session,
@@ -155,6 +158,7 @@ def _candidatos_licitaciones(
         stmt = stmt.where(text(_FTS_LIC_INCLUDE).bindparams(q=q))
     if qx:
         stmt = stmt.where(text(_FTS_LIC_EXCLUDE).bindparams(qx=qx))
+    stmt = stmt.limit(_MAX_CANDIDATOS)
     return list(session.execute(stmt).scalars())
 
 
@@ -176,6 +180,7 @@ def _candidatos_ca(
         stmt = stmt.where(text(_FTS_CA_INCLUDE).bindparams(q=q))
     if qx:
         stmt = stmt.where(text(_FTS_CA_EXCLUDE).bindparams(qx=qx))
+    stmt = stmt.limit(_MAX_CANDIDATOS)
     return list(session.execute(stmt).scalars())
 
 
@@ -242,8 +247,10 @@ def _score_licitacion(
         campo_hit = "nombre"
     elif kw_hit_desc:
         campo_hit = "descripcion"
-    else:
+    elif kw_hit_prod:
         campo_hit = "producto"
+    else:
+        campo_hit = "desconocido"
 
     dias = 0.0
     if lic.fecha_cierre:
@@ -279,8 +286,10 @@ def _score_ca(
         campo_hit = "nombre"
     elif kw_hit_desc:
         campo_hit = "descripcion"
-    else:
+    elif kw_hit_prod:
         campo_hit = "producto"
+    else:
+        campo_hit = "desconocido"
 
     dias = 0.0
     if ca.fecha_cierre:
