@@ -7,7 +7,7 @@ antiguas, pero nunca toca filas vigentes ni matches con alertas pendientes.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
     No toca oportunidades vigentes ni aquellas con alertas pendientes.
     Devuelve dict con conteos de filas afectadas por tipo.
     """
-    corte = datetime.utcnow() - timedelta(days=dias)
+    corte = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=dias)
     estados_str = [e.value for e in ESTADOS_TERMINALES]
 
     # IDs de matches que tienen alertas pendientes → protegerlos
@@ -47,38 +47,51 @@ def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
     )
 
     # -- Licitaciones terminales antiguas --
-    licitaciones_a_purgar = select(Licitacion.codigo).where(
-        Licitacion.estado.in_(estados_str),
-        Licitacion.actualizado_en < corte,
-        Licitacion.codigo.not_in(codigos_licitacion_protegidos),
+    # Ejecutar UNA sola vez para evitar subquery duplicada en DELETE y UPDATE.
+    codigos_lic = list(
+        session.execute(
+            select(Licitacion.codigo).where(
+                Licitacion.estado.in_(estados_str),
+                Licitacion.actualizado_en < corte,
+                Licitacion.codigo.not_in(codigos_licitacion_protegidos),
+            )
+        ).scalars()
     )
 
-    # Borrar items
-    r = session.execute(
-        delete(LicitacionItem).where(LicitacionItem.licitacion_codigo.in_(licitaciones_a_purgar))
-    )
-    items_borrados: int = r.rowcount  # type: ignore[attr-defined]
-
-    # Limpiar raw_json
-    r = session.execute(
-        update(Licitacion).where(Licitacion.codigo.in_(licitaciones_a_purgar)).values(raw_json=None)
-    )
-    lic_purgadas: int = r.rowcount  # type: ignore[attr-defined]
+    if codigos_lic:
+        r = session.execute(
+            delete(LicitacionItem).where(LicitacionItem.licitacion_codigo.in_(codigos_lic))
+        )
+        items_borrados: int = r.rowcount  # type: ignore[attr-defined]
+        r = session.execute(
+            update(Licitacion).where(Licitacion.codigo.in_(codigos_lic)).values(raw_json=None)
+        )
+        lic_purgadas: int = r.rowcount  # type: ignore[attr-defined]
+    else:
+        items_borrados = 0
+        lic_purgadas = 0
 
     # -- Compras Ágiles terminales antiguas --
-    ca_a_purgar = select(CompraAgil.codigo).where(
-        CompraAgil.estado.in_(estados_str),
-        CompraAgil.actualizado_en < corte,
-        CompraAgil.codigo.not_in(codigos_ca_protegidos),
+    codigos_ca = list(
+        session.execute(
+            select(CompraAgil.codigo).where(
+                CompraAgil.estado.in_(estados_str),
+                CompraAgil.actualizado_en < corte,
+                CompraAgil.codigo.not_in(codigos_ca_protegidos),
+            )
+        ).scalars()
     )
 
-    r = session.execute(delete(CaProducto).where(CaProducto.ca_codigo.in_(ca_a_purgar)))
-    prods_borrados: int = r.rowcount  # type: ignore[attr-defined]
-
-    r = session.execute(
-        update(CompraAgil).where(CompraAgil.codigo.in_(ca_a_purgar)).values(raw_json=None)
-    )
-    ca_purgadas: int = r.rowcount  # type: ignore[attr-defined]
+    if codigos_ca:
+        r = session.execute(delete(CaProducto).where(CaProducto.ca_codigo.in_(codigos_ca)))
+        prods_borrados: int = r.rowcount  # type: ignore[attr-defined]
+        r = session.execute(
+            update(CompraAgil).where(CompraAgil.codigo.in_(codigos_ca)).values(raw_json=None)
+        )
+        ca_purgadas: int = r.rowcount  # type: ignore[attr-defined]
+    else:
+        prods_borrados = 0
+        ca_purgadas = 0
 
     _log.info(
         "purgar_terminales(dias=%d): licitaciones=%d items=%d ca=%d productos=%d",

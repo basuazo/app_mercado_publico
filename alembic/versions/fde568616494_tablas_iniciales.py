@@ -84,7 +84,13 @@ def upgrade() -> None:
     op.create_index("ix_licitaciones_estado", "licitaciones", ["estado"])
     op.create_index("ix_licitaciones_fecha_cierre", "licitaciones", ["fecha_cierre"])
 
-    # Columna tsvector generada + índice GIN para FTS
+    # Columna tsvector generada + indice GIN para FTS
+    # TODO(F4): el tsv de la tabla padre no incluye nombres de licitacion_items/ca_productos
+    # porque las columnas GENERATED no pueden leer tablas hijas. En F4 (matching engine)
+    # la query FTS debe combinar: licitaciones.tsv @@ query OR EXISTS (
+    #   SELECT 1 FROM licitacion_items WHERE licitacion_codigo = l.codigo
+    #   AND to_tsvector('spanish', inmutable_unaccent(nombre)) @@ query
+    # ). Ver matching/engine.py para la implementacion.
     op.execute("""
         ALTER TABLE licitaciones
         ADD COLUMN tsv tsvector
@@ -141,6 +147,8 @@ def upgrade() -> None:
         "ix_compras_agiles_fecha_ultimo_cambio", "compras_agiles", ["fecha_ultimo_cambio"]
     )
 
+    # TODO(F4): idem para compras_agiles — los nombres de ca_productos no se indexan aqui.
+    # La query de matching debe hacer OR EXISTS sobre ca_productos.
     op.execute("""
         ALTER TABLE compras_agiles
         ADD COLUMN tsv tsvector

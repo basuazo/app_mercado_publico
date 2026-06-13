@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -204,8 +204,8 @@ def test_upsert_no_duplica(sqlite_session):
         descripcion="",
         estado="publicada",
         detalle_obtenido=False,
-        creado_en=datetime.utcnow(),
-        actualizado_en=datetime.utcnow(),
+        creado_en=datetime.now(UTC).replace(tzinfo=None),
+        actualizado_en=datetime.now(UTC).replace(tzinfo=None),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["codigo"],
@@ -233,7 +233,7 @@ def test_unique_match(sqlite_session):
         password_hash="hash",
         rol="usuario",
         activo=True,
-        creado_en=datetime.utcnow(),
+        creado_en=datetime.now(UTC).replace(tzinfo=None),
     )
     sqlite_session.add(usuario)
     sqlite_session.flush()
@@ -257,7 +257,7 @@ def test_unique_match(sqlite_session):
         codigo_oportunidad="LIC-001",
         score=75.0,
         razones={},
-        fecha_match=datetime.utcnow(),
+        fecha_match=datetime.now(UTC).replace(tzinfo=None),
     )
     sqlite_session.add(m1)
     sqlite_session.flush()
@@ -268,7 +268,7 @@ def test_unique_match(sqlite_session):
         codigo_oportunidad="LIC-001",
         score=80.0,
         razones={},
-        fecha_match=datetime.utcnow(),
+        fecha_match=datetime.now(UTC).replace(tzinfo=None),
     )
     sqlite_session.add(m2)
     with pytest.raises(IntegrityError):
@@ -293,18 +293,23 @@ def test_seed_admin_idempotente(sqlite_session):
 
 
 def test_retencion_purga_terminales(sqlite_session):
-    """purgar_terminales limpia raw_json de oportunidades terminales antiguas."""
+    """purgar_terminales limpia raw_json y productos de CAs terminales antiguas."""
+    from sqlalchemy import select
+
     from app.models.tables import CaProducto, CompraAgil
 
-    # CA terminal antigua — debe ser purgada
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+
+    # CA terminal antigua con raw_json — debe ser purgada
     antigua = CompraAgil(
         codigo="CA-VIEJA",
         nombre="CA Vieja",
         descripcion="",
         estado="adjudicada",
         total_ofertas=0,
-        creado_en=datetime.utcnow() - timedelta(days=200),
-        actualizado_en=datetime.utcnow() - timedelta(days=100),
+        raw_json={"test": "data"},
+        creado_en=ahora - timedelta(days=200),
+        actualizado_en=ahora - timedelta(days=100),
     )
     # CA publicada vigente — NO debe ser purgada
     vigente = CompraAgil(
@@ -313,8 +318,9 @@ def test_retencion_purga_terminales(sqlite_session):
         descripcion="",
         estado="publicada",
         total_ofertas=0,
-        creado_en=datetime.utcnow(),
-        actualizado_en=datetime.utcnow(),
+        raw_json={"keep": "me"},
+        creado_en=ahora,
+        actualizado_en=ahora,
     )
     sqlite_session.add_all([antigua, vigente])
     sqlite_session.flush()
@@ -334,33 +340,144 @@ def test_retencion_purga_terminales(sqlite_session):
     assert resultado["ca_purgadas"] == 1
     assert resultado["productos_borrados"] == 1
 
-    # La CA vigente no fue purgada
-    from sqlalchemy import select
+    # raw_json de la CA vieja debe ser NULL tras el purgado
+    sqlite_session.expire_all()
+    ca_vieja = sqlite_session.execute(
+        select(CompraAgil).where(CompraAgil.codigo == "CA-VIEJA")
+    ).scalar_one()
+    assert ca_vieja.raw_json is None
 
+    # La CA vigente conserva raw_json
     ca_vigente = sqlite_session.execute(
         select(CompraAgil).where(CompraAgil.codigo == "CA-VIGENTE")
     ).scalar_one()
-    assert ca_vigente is not None
+    assert ca_vigente.raw_json is not None
 
 
 def test_retencion_respeta_vigentes(sqlite_session):
     """purgar_terminales no toca oportunidades publicadas."""
     from app.models.tables import Licitacion
 
+    ahora = datetime.now(UTC).replace(tzinfo=None)
     publicada = Licitacion(
         codigo="LIC-VIGENTE",
         nombre="Licitacion Vigente",
         descripcion="",
         estado="publicada",
         detalle_obtenido=True,
-        creado_en=datetime.utcnow() - timedelta(days=200),
-        actualizado_en=datetime.utcnow() - timedelta(days=200),
+        creado_en=ahora - timedelta(days=200),
+        actualizado_en=ahora - timedelta(days=200),
     )
     sqlite_session.add(publicada)
     sqlite_session.flush()
 
     resultado = purgar_terminales(sqlite_session, dias=90)
     assert resultado["licitaciones_purgadas"] == 0
+
+
+def test_retencion_respeta_alertas_pendientes(sqlite_session):
+    """purgar_terminales NO purga una CA terminal con alerta pendiente."""
+    from sqlalchemy import select
+
+    from app.models.tables import (
+        Alerta,
+        CaProducto,
+        CompraAgil,
+        OportunidadMatch,
+        PerfilBusqueda,
+        Usuario,
+    )
+
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+
+    # Usuario y perfil mínimos para el match
+    usuario = Usuario(
+        email="prot@test.com",
+        password_hash="hash",
+        rol="usuario",
+        activo=True,
+        creado_en=ahora,
+    )
+    sqlite_session.add(usuario)
+    sqlite_session.flush()
+
+    perfil = PerfilBusqueda(
+        owner_id=usuario.id,
+        nombre="Perfil protegido",
+        keywords=[],
+        keywords_excluir=[],
+        regiones=[],
+        fuentes=["compras_agiles"],
+        frecuencia_alerta="digest",
+        activo=True,
+    )
+    sqlite_session.add(perfil)
+    sqlite_session.flush()
+
+    # CA terminal antigua — normalmente se purgaría
+    ca = CompraAgil(
+        codigo="CA-PROTEGIDA",
+        nombre="CA Protegida",
+        descripcion="",
+        estado="adjudicada",
+        total_ofertas=0,
+        raw_json={"proteger": True},
+        creado_en=ahora - timedelta(days=200),
+        actualizado_en=ahora - timedelta(days=100),
+    )
+    sqlite_session.add(ca)
+    sqlite_session.flush()
+
+    prod = CaProducto(
+        ca_codigo="CA-PROTEGIDA",
+        codigo_producto="PROD-PROT",
+        nombre="Producto protegido",
+        descripcion="",
+        unidad="UN",
+    )
+    sqlite_session.add(prod)
+    sqlite_session.flush()
+
+    # Match + alerta pendiente → debe protegerla
+    match = OportunidadMatch(
+        perfil_id=perfil.id,
+        fuente="compras_agiles",
+        codigo_oportunidad="CA-PROTEGIDA",
+        score=80.0,
+        razones={},
+        fecha_match=ahora,
+    )
+    sqlite_session.add(match)
+    sqlite_session.flush()
+
+    alerta = Alerta(
+        match_id=match.id,
+        tipo="nueva_oportunidad",
+        canal="email",
+        estado="pendiente",
+    )
+    sqlite_session.add(alerta)
+    sqlite_session.flush()
+
+    resultado = purgar_terminales(sqlite_session, dias=90)
+
+    # No debe haber purgado nada
+    assert resultado["ca_purgadas"] == 0
+    assert resultado["productos_borrados"] == 0
+
+    # raw_json y producto intactos
+    sqlite_session.expire_all()
+    ca_prot = sqlite_session.execute(
+        select(CompraAgil).where(CompraAgil.codigo == "CA-PROTEGIDA")
+    ).scalar_one()
+    assert ca_prot.raw_json is not None
+
+    n_prods = (
+        sqlite_session.execute(select(CaProducto).where(CaProducto.ca_codigo == "CA-PROTEGIDA"))
+        .scalars()
+        .all()
+    )
+    assert len(n_prods) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -379,8 +496,8 @@ def test_fts_encuentra_sin_tilde(pg_session):
         descripcion="Suministro de materiales eléctricos industriales",
         estado="publicada",
         detalle_obtenido=False,
-        creado_en=datetime.utcnow(),
-        actualizado_en=datetime.utcnow(),
+        creado_en=datetime.now(UTC).replace(tzinfo=None),
+        actualizado_en=datetime.now(UTC).replace(tzinfo=None),
     )
     pg_session.add(lic)
     pg_session.flush()
@@ -406,8 +523,8 @@ def test_fts_compra_agil(pg_session):
         descripcion="Compra de sillas ergonómicas para oficina",
         estado="publicada",
         total_ofertas=0,
-        creado_en=datetime.utcnow(),
-        actualizado_en=datetime.utcnow(),
+        creado_en=datetime.now(UTC).replace(tzinfo=None),
+        actualizado_en=datetime.now(UTC).replace(tzinfo=None),
     )
     pg_session.add(ca)
     pg_session.flush()
