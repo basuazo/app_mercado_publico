@@ -35,8 +35,9 @@ class _SecretFilter(logging.Filter):
 
 def setup_logging(level: int = logging.INFO) -> None:
     """Configura el logger raíz con formato estructurado y filtro de secretos."""
+    secret_filter = _SecretFilter()
     handler = logging.StreamHandler()
-    handler.addFilter(_SecretFilter())
+    handler.addFilter(secret_filter)
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
@@ -45,6 +46,12 @@ def setup_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
+    # Añadir el filtro también al logger raíz para capturar registros de librerías terceras
+    # (ej. httpx que loguea URLs completas con query params, incluyendo el ticket)
+    for f in list(root.filters):
+        if isinstance(f, _SecretFilter):
+            root.removeFilter(f)
+    root.addFilter(secret_filter)
     root.setLevel(level)
 
 
