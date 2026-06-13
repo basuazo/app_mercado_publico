@@ -219,12 +219,30 @@ class MercadoPublicoV2Client:
 
     def iterar_compra_agil(
         self,
-        **kwargs: object,
+        cambio_desde: datetime | None = None,
+        ttl_cambio_ms: int | None = None,
+        publicado_desde: datetime | None = None,
+        publicado_hasta: datetime | None = None,
+        estados: list[str] | None = None,
+        regiones: list[int] | None = None,
+        q: str | None = None,
+        tamano_pagina: int = 50,
+        ordenar_por: str | None = None,
     ) -> Iterator[CompraAgilBasica]:
         pagina = 1
         while True:
-            kwargs["numero_pagina"] = pagina
-            resp = self.listar_compra_agil(**kwargs)  # type: ignore[arg-type]
+            resp = self.listar_compra_agil(
+                cambio_desde=cambio_desde,
+                ttl_cambio_ms=ttl_cambio_ms,
+                publicado_desde=publicado_desde,
+                publicado_hasta=publicado_hasta,
+                estados=estados,
+                regiones=regiones,
+                q=q,
+                tamano_pagina=tamano_pagina,
+                numero_pagina=pagina,
+                ordenar_por=ordenar_por,
+            )
             yield from resp.items
             if pagina >= resp.paginacion.total_paginas:
                 break

@@ -163,10 +163,9 @@ class QuotaTracker:
             conn.execute(text(upsert), {"fecha": today, "n": n})
 
     def check_budget(self, n: int = 1) -> None:
-        if self.remaining() < n:
-            raise QuotaExceededError(
-                f"Presupuesto diario agotado (quedan {self.remaining()} requests)"
-            )
+        rem = self.remaining()
+        if rem < n:
+            raise QuotaExceededError(f"Presupuesto diario agotado (quedan {rem} requests)")
 
 
 # ---------------------------------------------------------------------------
@@ -188,8 +187,8 @@ class BaseClient:
         self._ticket = ticket
         self._rate_limiter = rate_limiter
         self._quota = quota
-        self._headers = default_headers or {}
         self._timeout = timeout
+        self._http = httpx.Client(headers=default_headers or {}, timeout=timeout)
 
     def _handle_response(self, response: httpx.Response) -> dict[str, object]:
         if response.status_code == 401:
@@ -222,11 +221,9 @@ class BaseClient:
             ):
                 with attempt:
                     _log.debug("HTTP %s %s", method, url)
-                    response = httpx.request(
+                    response = self._http.request(
                         method,
                         url,
-                        headers=self._headers,
-                        timeout=self._timeout,
                         **kwargs,  # type: ignore[arg-type]
                     )
                     data = self._handle_response(response)
