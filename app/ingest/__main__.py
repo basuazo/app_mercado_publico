@@ -5,6 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 
+from collections.abc import Callable
+from typing import Any
+
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
@@ -14,13 +17,14 @@ from app.ingest.orchestrator import (
     run_catalogos,
     run_detalles,
     run_lifecycle,
+    run_match,
     run_retencion,
     run_scheduler,
     run_sync_activas,
     run_sync_ca,
 )
 
-_JOBS = ("activas", "ca", "detalles", "lifecycle", "catalogos", "retencion")
+_JOBS = ("activas", "ca", "detalles", "lifecycle", "catalogos", "retencion", "match")
 
 
 def _make_engine(settings: Settings) -> Engine:
@@ -37,13 +41,14 @@ def cmd_run_once(job: str) -> None:
     settings = get_settings()
     engine = _make_engine(settings)
 
-    dispatch = {
+    dispatch: dict[str, Callable[[], Any]] = {
         "activas": lambda: run_sync_activas(settings, engine),
         "ca": lambda: run_sync_ca(settings, engine),
         "detalles": lambda: run_detalles(settings, engine),
         "lifecycle": lambda: run_lifecycle(settings, engine),
         "catalogos": lambda: run_catalogos(settings, engine),
         "retencion": lambda: run_retencion(engine),
+        "match": lambda: run_match(settings, engine),
     }
 
     if job not in dispatch:

@@ -25,9 +25,15 @@ from app.core.logging import get_logger
 from app.core.retencion import purgar_terminales
 from app.core.settings import Settings
 from app.ingest.catalogos import refresh_organismos
-from app.ingest.compra_agil import sync_incremental
-from app.ingest.licitaciones import fetch_detalles_pendientes, sync_activas, sync_por_fecha
+from app.ingest.compra_agil import sync_incremental, upsert_ca_detalle
+from app.ingest.licitaciones import (
+    fetch_detalles_pendientes,
+    sync_activas,
+    sync_por_fecha,
+    upsert_detalle,
+)
 from app.ingest.lifecycle import refresh_estados
+from app.models.tables import CompraAgil, Licitacion
 
 _log = get_logger(__name__)
 _TZ_CHILE = ZoneInfo("America/Santiago")
@@ -111,6 +117,52 @@ def run_retencion(engine: Engine) -> dict[str, int]:
         return purgar_terminales(session)
 
 
+def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Ejecuta match_todos y luego fetcha detalles de matches sin raw_json.
+
+    El engine de matching NO llama clientes HTTP. Este runner toma la lista
+    sin_detalle_* del resultado y fetcha los detalles respetando el presupuesto.
+    """
+    from dataclasses import asdict
+
+    from app.matching.engine import match_todos
+
+    with Session(engine) as session:
+        result = match_todos(session)
+
+    sin_lic: list[str] = result.get("sin_detalle_licitaciones", [])
+    sin_ca: list[str] = result.get("sin_detalle_ca", [])
+
+    if sin_lic or sin_ca:
+        v1, v2 = _make_clients(settings, engine)
+
+        for codigo in sin_lic:
+            try:
+                with Session(engine) as session:
+                    det = v1.licitacion_detalle(codigo)
+                    upsert_detalle(session, det, settings)
+                    lic = session.get(Licitacion, codigo)
+                    if lic:
+                        lic.raw_json = asdict(det)
+                    session.commit()
+            except Exception:
+                _log.error("run_match: error fetching detalle licitacion %s", codigo, exc_info=True)
+
+        for codigo in sin_ca:
+            try:
+                with Session(engine) as session:
+                    det_ca = v2.detalle_compra_agil(codigo)
+                    upsert_ca_detalle(session, det_ca)
+                    ca = session.get(CompraAgil, codigo)
+                    if ca:
+                        ca.raw_json = asdict(det_ca)
+                    session.commit()
+            except Exception:
+                _log.error("run_match: error fetching detalle CA %s", codigo, exc_info=True)
+
+    return result
+
+
 def run_backfill_fecha(settings: Settings, engine: Engine, fecha: date) -> dict[str, int]:
     """Backfill de una fecha concreta. Solo llamar dentro de ventana nocturna."""
     v1, _ = _make_clients(settings, engine)
@@ -191,20 +243,24 @@ def build_scheduler(
     """Construye el scheduler. Separado de start() para facilitar tests."""
     sched = BlockingScheduler(timezone="America/Santiago")
 
-    # Cada 30 min: CA incremental
+    # Cada 30 min: CA incremental + match
     sched.add_job(
-        lambda: _run_with_lock("ca_incremental", lambda: run_sync_ca(settings, engine), engine),
+        lambda: (
+            _run_with_lock("ca_incremental", lambda: run_sync_ca(settings, engine), engine),
+            _run_with_lock("match_post_ca", lambda: run_match(settings, engine), engine),
+        ),
         "interval",
         minutes=30,
         id="ca_incremental",
     )
 
-    # 3 veces/día: licitaciones activas + detalles pendientes
+    # 3 veces/día: licitaciones activas + detalles pendientes + match
     for hora in (8, 13, 18):
         sched.add_job(
             lambda h=hora: (
                 _run_with_lock("sync_activas", lambda: run_sync_activas(settings, engine), engine),
                 _run_with_lock("detalles", lambda: run_detalles(settings, engine), engine),
+                _run_with_lock("match_post_activas", lambda: run_match(settings, engine), engine),
             ),
             "cron",
             hour=hora,
