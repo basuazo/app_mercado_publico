@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><title>Resumen Mercado Público</title></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:16px">
+<h2 style="color:#003366">Resumen Mercado Público — {{ items | length }} oportunidad{% if items | length != 1 %}es{% endif %}</h2>
+{% for ctx in items %}
+<hr>
+<h3>{{ ctx.nombre }}</h3>
+<p style="color:#555;font-size:0.9em">Perfil: {{ ctx.perfil_nombre }} | Tipo: {{ ctx.tipo_alerta }}</p>
+<table style="border-collapse:collapse;width:100%">
+  {% if ctx.organismo %}
+  <tr><td style="padding:3px;color:#555">Organismo</td><td style="padding:3px">{{ ctx.organismo }}</td></tr>
+  {% endif %}
+  {% if ctx.region %}
+  <tr><td style="padding:3px;color:#555">Región</td><td style="padding:3px">{{ ctx.region }}</td></tr>
+  {% endif %}
+  <tr><td style="padding:3px;color:#555">Monto</td><td style="padding:3px">{{ ctx.monto }}</td></tr>
+  <tr><td style="padding:3px;color:#555">Cierre</td><td style="padding:3px">{{ ctx.fecha_cierre }}</td></tr>
+  <tr><td style="padding:3px;color:#555">Score</td><td style="padding:3px">{{ "%.1f"|format(ctx.score) }} / 100</td></tr>
+</table>
+<p><a href="{{ ctx.url }}" style="color:#0066cc">Ver ficha</a></p>
+{% endfor %}
+<hr>
+<small style="color:#888">Fuente: Dirección ChileCompra</small>
+</body>
+</html>

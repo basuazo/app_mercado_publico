@@ -163,6 +163,40 @@ def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
     return result
 
 
+def run_alerts(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Detecta eventos y envía alertas inmediatas pendientes."""
+    from app.alerts.detector import (
+        detectar_cambio_estado,
+        detectar_nuevo_match,
+        detectar_recordatorios,
+    )
+    from app.alerts.email import enviar_pendientes_inmediatas
+
+    with Session(engine) as session:
+        n1 = detectar_nuevo_match(session)
+        n2 = detectar_cambio_estado(session)
+        n3 = detectar_recordatorios(session)
+        session.commit()
+
+    with Session(engine) as session:
+        result = enviar_pendientes_inmediatas(session, settings)
+
+    return {
+        "detectados_nuevo": n1,
+        "detectados_cambio": n2,
+        "detectados_recordatorio": n3,
+        **result,
+    }
+
+
+def run_digest(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Envía el digest agrupado por usuario para alertas en modo 'digest'."""
+    from app.alerts.email import enviar_digest
+
+    with Session(engine) as session:
+        return enviar_digest(session, settings)
+
+
 def run_backfill_fecha(settings: Settings, engine: Engine, fecha: date) -> dict[str, int]:
     """Backfill de una fecha concreta. Solo llamar dentro de ventana nocturna."""
     v1, _ = _make_clients(settings, engine)
@@ -243,24 +277,26 @@ def build_scheduler(
     """Construye el scheduler. Separado de start() para facilitar tests."""
     sched = BlockingScheduler(timezone="America/Santiago")
 
-    # Cada 30 min: CA incremental + match
+    # Cada 30 min: CA incremental + match + alertas inmediatas
     sched.add_job(
         lambda: (
             _run_with_lock("ca_incremental", lambda: run_sync_ca(settings, engine), engine),
             _run_with_lock("match_post_ca", lambda: run_match(settings, engine), engine),
+            _run_with_lock("alerts_post_ca", lambda: run_alerts(settings, engine), engine),
         ),
         "interval",
         minutes=30,
         id="ca_incremental",
     )
 
-    # 3 veces/día: licitaciones activas + detalles pendientes + match
+    # 3 veces/día: licitaciones activas + detalles pendientes + match + alertas
     for hora in (8, 13, 18):
         sched.add_job(
             lambda h=hora: (
                 _run_with_lock("sync_activas", lambda: run_sync_activas(settings, engine), engine),
                 _run_with_lock("detalles", lambda: run_detalles(settings, engine), engine),
                 _run_with_lock("match_post_activas", lambda: run_match(settings, engine), engine),
+                _run_with_lock("alerts_post_activas", lambda: run_alerts(settings, engine), engine),
             ),
             "cron",
             hour=hora,
@@ -277,6 +313,16 @@ def build_scheduler(
         minute=30,
         timezone="America/Santiago",
         id="nocturno",
+    )
+
+    # Diario: digest agrupado por usuario
+    sched.add_job(
+        lambda: _run_with_lock("digest", lambda: run_digest(settings, engine), engine),
+        "cron",
+        hour=settings.digest_hour,
+        minute=5,
+        timezone="America/Santiago",
+        id="digest",
     )
 
     # Diario: purga de retención (03:00)

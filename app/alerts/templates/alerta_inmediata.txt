@@ -1,0 +1,19 @@
+Alerta Mercado Público — {{ tipo_alerta }}
+
+Perfil: {{ perfil_nombre }}
+
+{{ nombre }}
+{% if organismo %}Organismo : {{ organismo }}
+{% endif %}{% if region %}Región    : {{ region }}
+{% endif %}Monto     : {{ monto }}
+Cierre    : {{ fecha_cierre }}
+Estado    : {{ estado }}
+Score     : {{ "%.1f"|format(score) }} / 100
+
+Razones del match:
+{% for k, v in razones.items() %}- {{ k }}: {{ v }}
+{% endfor %}
+Ver ficha: {{ url }}
+
+---
+Fuente: Dirección ChileCompra

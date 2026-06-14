@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-
 from collections.abc import Callable
 from typing import Any
 
@@ -14,8 +13,10 @@ from sqlalchemy.engine import Engine
 from app.core.logging import setup_logging
 from app.core.settings import Settings, get_settings
 from app.ingest.orchestrator import (
+    run_alerts,
     run_catalogos,
     run_detalles,
+    run_digest,
     run_lifecycle,
     run_match,
     run_retencion,
@@ -24,7 +25,7 @@ from app.ingest.orchestrator import (
     run_sync_ca,
 )
 
-_JOBS = ("activas", "ca", "detalles", "lifecycle", "catalogos", "retencion", "match")
+_JOBS = ("activas", "ca", "detalles", "lifecycle", "catalogos", "retencion", "match", "alerts", "digest")
 
 
 def _make_engine(settings: Settings) -> Engine:
@@ -49,6 +50,8 @@ def cmd_run_once(job: str) -> None:
         "catalogos": lambda: run_catalogos(settings, engine),
         "retencion": lambda: run_retencion(engine),
         "match": lambda: run_match(settings, engine),
+        "alerts": lambda: run_alerts(settings, engine),
+        "digest": lambda: run_digest(settings, engine),
     }
 
     if job not in dispatch:

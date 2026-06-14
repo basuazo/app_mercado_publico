@@ -1,0 +1,17 @@
+Resumen Mercado Público — {{ items | length }} oportunidad{% if items | length != 1 %}es{% endif %}
+
+{% for ctx in items %}
+─────────────────────────────────────────
+Perfil  : {{ ctx.perfil_nombre }}
+Tipo    : {{ ctx.tipo_alerta }}
+{{ ctx.nombre }}
+{% if ctx.organismo %}Organismo: {{ ctx.organismo }}
+{% endif %}{% if ctx.region %}Región   : {{ ctx.region }}
+{% endif %}Monto    : {{ ctx.monto }}
+Cierre   : {{ ctx.fecha_cierre }}
+Score    : {{ "%.1f"|format(ctx.score) }} / 100
+Ver      : {{ ctx.url }}
+{% endfor %}
+
+---
+Fuente: Dirección ChileCompra

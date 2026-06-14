@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="", description="Contraseña SMTP")
     smtp_from: str = Field(default="", description="Dirección remitente")
 
+    # --- Alertas email ---
+    digest_hour: int = Field(default=8, description="Hora Chile para envío del digest diario (0–23)")
+
     # --- Admin inicial (solo para seed; no usar en runtime) ---
     admin_email: str = Field(default="", description="Email del administrador inicial")
     admin_password: str = Field(
@@ -38,6 +41,12 @@ class Settings(BaseSettings):
     tasa_utm: float = Field(default=65000.0, description="Valor de la UTM en CLP")
     tasa_usd: float = Field(default=950.0, description="Tipo de cambio USD a CLP")
     tasa_eur: float = Field(default=1030.0, description="Tipo de cambio EUR a CLP")
+
+    # --- Pre-filtro de ingesta (opcional) ---
+    prefilter_keywords: list[str] = Field(
+        default_factory=list,
+        description='Keywords amplias para pre-filtrar licitaciones antes de pedir detalle. JSON: \'["word1","word2"]\'',
+    )
 
 
 def get_settings() -> "Settings":
