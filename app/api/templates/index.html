@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Oportunidades</h2>
+
+<form class="row g-2 mb-4" method="get" action="/">
+  <div class="col-md-3">
+    <select name="fuente" class="form-select">
+      <option value="">Todas las fuentes</option>
+      <option value="licitaciones" {% if fuente == 'licitaciones' %}selected{% endif %}>Licitaciones</option>
+      <option value="compras_agiles" {% if fuente == 'compras_agiles' %}selected{% endif %}>Compra Ágil</option>
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select name="perfil_id" class="form-select">
+      <option value="">Todos los perfiles</option>
+      {% for p in perfiles %}
+      <option value="{{ p.id }}" {% if perfil_id == p.id %}selected{% endif %}>{{ p.nombre }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <input type="text" name="texto" class="form-control" placeholder="Buscar en nombre..." value="{{ texto }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+  </div>
+</form>
+
+{% if items %}
+<p class="text-muted small">{{ total }} resultado(s) — página {{ pagina }}/{{ total_paginas }}</p>
+<div class="list-group">
+  {% for item in items %}
+  <a href="/oportunidad/{{ item.match.fuente }}/{{ item.match.codigo_oportunidad }}"
+     class="list-group-item list-group-item-action">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <strong>{{ item.nombre }}</strong>
+        <span class="badge bg-secondary ms-2">{{ item.match.fuente }}</span>
+        {% if item.match.score >= 80 %}
+          <span class="badge bg-success ms-1">{{ item.match.score }}</span>
+        {% elif item.match.score >= 50 %}
+          <span class="badge bg-warning text-dark ms-1">{{ item.match.score }}</span>
+        {% else %}
+          <span class="badge bg-secondary ms-1">{{ item.match.score }}</span>
+        {% endif %}
+      </div>
+      <small class="text-muted">
+        {% if item.dias_al_cierre is not none %}
+          {{ item.dias_al_cierre | round(0) | int }}d
+        {% endif %}
+      </small>
+    </div>
+    <small class="text-muted">
+      {{ item.organismo }}
+      {% if item.monto %} — ${{ '{:,.0f}'.format(item.monto) }}{% endif %}
+      {% if item.estado %} — {{ item.estado }}{% endif %}
+    </small>
+  </a>
+  {% endfor %}
+</div>
+
+<nav class="mt-3">
+  <ul class="pagination pagination-sm">
+    {% if pagina > 1 %}
+    <li class="page-item">
+      <a class="page-link" href="?pagina={{ pagina - 1 }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Anterior</a>
+    </li>
+    {% endif %}
+    {% if pagina < total_paginas %}
+    <li class="page-item">
+      <a class="page-link" href="?pagina={{ pagina + 1 }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Siguiente</a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% else %}
+<div class="alert alert-info">No hay oportunidades que coincidan con tus perfiles.</div>
+{% endif %}
+{% endblock %}

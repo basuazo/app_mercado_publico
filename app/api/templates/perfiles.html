@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Perfiles — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Mis perfiles de búsqueda</h2>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<!-- Formulario nuevo perfil -->
+<div class="card mb-4">
+  <div class="card-header">Nuevo perfil</div>
+  <div class="card-body">
+    <form method="post" action="/perfiles/nuevo">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Nombre</label>
+          <input type="text" name="nombre" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Keywords (separadas por coma)</label>
+          <input type="text" name="keywords" class="form-control" placeholder="software, desarrollo, tecnología">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Excluir (separadas por coma)</label>
+          <input type="text" name="excluir" class="form-control" placeholder="limpieza, aseo">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Fuentes</label>
+          <div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" name="fuentes" value="licitaciones" id="f_lic" checked>
+              <label class="form-check-label" for="f_lic">Licitaciones</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" name="fuentes" value="compras_agiles" id="f_ca" checked>
+              <label class="form-check-label" for="f_ca">Compra Ágil</label>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Frecuencia de alerta</label>
+          <select name="frecuencia_alerta" class="form-select">
+            {% for f in frecuencias %}
+            <option value="{{ f.value }}">{{ f.value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-primary">Crear perfil</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Lista de perfiles -->
+{% if perfiles %}
+<div class="list-group">
+  {% for p in perfiles %}
+  <div class="list-group-item">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <strong>{{ p.nombre }}</strong>
+        <span class="badge bg-secondary ms-2">{{ p.frecuencia_alerta }}</span>
+      </div>
+      <div class="d-flex gap-2">
+        <form method="post" action="/perfiles/{{ p.id }}/eliminar"
+              onsubmit="return confirm('¿Eliminar perfil {{ p.nombre }}?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm btn-outline-danger">Eliminar</button>
+        </form>
+      </div>
+    </div>
+    <small class="text-muted">
+      Keywords: {{ p.keywords | join(', ') or '(ninguna)' }}
+      {% if p.excluir %} | Excluir: {{ p.excluir | join(', ') }}{% endif %}
+      | Fuentes: {{ p.fuentes | join(', ') }}
+    </small>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">Aún no tienes perfiles. Crea uno para recibir alertas.</div>
+{% endif %}
+{% endblock %}

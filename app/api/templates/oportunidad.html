@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ oportunidad.nombre }} — MP Oportunidades{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/">Dashboard</a></li>
+    <li class="breadcrumb-item active">Detalle</li>
+  </ol>
+</nav>
+
+<h2 class="mb-1">{{ oportunidad.nombre }}</h2>
+<p class="text-muted mb-3">{{ fuente }} — {{ oportunidad.codigo }}</p>
+
+<div class="row mb-4">
+  <div class="col-md-6">
+    <ul class="list-unstyled">
+      <li><strong>Estado:</strong> {{ oportunidad.estado }}</li>
+      {% if oportunidad.fecha_cierre %}
+      <li><strong>Cierre:</strong> {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</li>
+      {% endif %}
+      {% if fuente == 'licitaciones' and oportunidad.monto_clp %}
+      <li><strong>Monto:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_clp) }}</li>
+      <li><strong>Organismo:</strong> {{ oportunidad.codigo_organismo }}</li>
+      {% endif %}
+      {% if fuente == 'compras_agiles' %}
+      {% if oportunidad.monto_disponible_clp %}
+      <li><strong>Monto disponible:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_disponible_clp) }}</li>
+      {% endif %}
+      <li><strong>Organismo:</strong> {{ oportunidad.organismo_nombre }}</li>
+      <li><strong>Región:</strong> {{ oportunidad.region }}</li>
+      {% endif %}
+    </ul>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-primary">
+      <div class="card-body">
+        <h5 class="card-title">Score de coincidencia</h5>
+        <p class="display-4 mb-0">{{ match.score }}</p>
+        {% if match.razones %}
+        <ul class="small mt-2">
+          {% for r in match.razones %}
+          <li>{{ r }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if oportunidad.descripcion %}
+<h5>Descripción</h5>
+<p>{{ oportunidad.descripcion }}</p>
+{% endif %}
+
+<a href="{{ url_ficha }}" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+  Ver en Mercado Público ↗
+</a>
+<a href="/" class="btn btn-outline-secondary ms-2">Volver</a>
+{% endblock %}

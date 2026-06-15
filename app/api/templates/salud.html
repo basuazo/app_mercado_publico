@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Salud del sistema — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Estado del sistema</h2>
+
+<!-- Cuota API -->
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-1 text-muted">Requests API hoy</h6>
+        <p class="display-6">{{ salud.cuota_api.usadas_hoy }} / {{ salud.cuota_api.presupuesto }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-1 text-muted">Correos hoy</h6>
+        <p class="display-6">{{ salud.correos.enviados_hoy }} / {{ salud.correos.limite_diario }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-1 text-muted">Base de datos</h6>
+        {% if salud.base_datos.tamano_bytes %}
+        <p class="display-6">{{ salud.base_datos.porcentaje }}%</p>
+        <small class="text-muted">{{ (salud.base_datos.tamano_bytes / 1024 / 1024) | round(1) }} MB</small>
+        {% else %}
+        <p class="display-6">—</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Lock activo -->
+<div class="mb-3">
+  <strong>Advisory lock:</strong>
+  {% if salud.lock_activo %}
+  <span class="badge bg-success">Ingesta en curso</span>
+  {% else %}
+  <span class="badge bg-secondary">Sin ingesta activa</span>
+  {% endif %}
+</div>
+
+<!-- SyncState -->
+<h5>Estado de sincronización</h5>
+<table class="table table-sm table-bordered">
+  <thead class="table-dark">
+    <tr><th>Fuente</th><th>Última ejecución</th><th>Último OK</th><th>Requests hoy</th><th>Cursor</th></tr>
+  </thead>
+  <tbody>
+    {% for s in salud.sync_state %}
+    <tr>
+      <td>{{ s.fuente }}</td>
+      <td>{{ s.ultima_ejecucion or '—' }}</td>
+      <td>{{ s.ultimo_ok or '—' }}</td>
+      <td>{{ s.requests_usadas_hoy }}</td>
+      <td><small>{{ s.cursor or '—' }}</small></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Errores recientes -->
+{% if salud.errores_recientes %}
+<h5>Errores recientes</h5>
+<ul class="list-group">
+  {% for e in salud.errores_recientes %}
+  <li class="list-group-item list-group-item-danger">
+    <strong>{{ e.fuente }}</strong>: {{ e.nota }}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

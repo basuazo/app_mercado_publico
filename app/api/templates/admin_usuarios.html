@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Administrar usuarios — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Usuarios</h2>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<!-- Nuevo usuario -->
+<div class="card mb-4">
+  <div class="card-header">Crear usuario</div>
+  <div class="card-body">
+    <form method="post" action="/admin/usuarios/nuevo">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Contraseña</label>
+          <input type="password" name="password" class="form-control" required minlength="8">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Rol</label>
+          <select name="rol" class="form-select">
+            <option value="usuario">Usuario</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button type="submit" class="btn btn-primary w-100">Crear</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Lista de usuarios -->
+<table class="table table-bordered">
+  <thead class="table-dark">
+    <tr>
+      <th>ID</th><th>Email</th><th>Rol</th><th>Activo</th><th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in usuarios %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.email }}</td>
+      <td><span class="badge {% if u.rol == 'admin' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ u.rol }}</span></td>
+      <td>{% if u.activo %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}</td>
+      <td>
+        {% if u.activo and u.id != current_user.id %}
+        <form method="post" action="/admin/usuarios/{{ u.id }}/desactivar"
+              onsubmit="return confirm('¿Desactivar a {{ u.email }}?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm btn-outline-danger">Desactivar</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
