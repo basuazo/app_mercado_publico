@@ -32,6 +32,7 @@ from app.models.tables import (
     OportunidadMatch,
     PerfilBusqueda,
     SyncState,
+    Usuario,
 )
 
 _log = get_logger(__name__)
@@ -218,9 +219,12 @@ def _load_alertas_pendientes(session: Session, frecuencia: FrecuenciaAlerta) -> 
             select(Alerta)
             .join(OportunidadMatch, Alerta.match_id == OportunidadMatch.id)
             .join(PerfilBusqueda, OportunidadMatch.perfil_id == PerfilBusqueda.id)
+            .join(Usuario, PerfilBusqueda.owner_id == Usuario.id)
             .where(
                 Alerta.estado == "pendiente",
                 PerfilBusqueda.frecuencia_alerta == frecuencia.value,
+                PerfilBusqueda.activo.is_(True),
+                Usuario.activo.is_(True),
             )
             .options(
                 selectinload(Alerta.match)

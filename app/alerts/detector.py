@@ -56,6 +56,7 @@ def detectar_nuevo_match(session: Session) -> int:
         .where(
             Alerta.match_id == OportunidadMatch.id,
             Alerta.tipo == "nuevo_match",
+            Alerta.estado.in_(["pendiente", "enviada"]),
         )
         .exists()
     )

@@ -364,6 +364,21 @@ class TestEnviarInmediatas:
         assert alerta_db is not None
         assert alerta_db.estado == "enviada"
 
+    def test_usuario_inactivo_no_recibe_inmediata(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u, FrecuenciaAlerta.INMEDIATA)
+        _lic(session)
+        m = _match(session, p, "LIC-001")
+        session.add(Alerta(match_id=m.id, tipo="nuevo_match", estado="pendiente"))
+        u.activo = False  # desactivar usuario
+        session.commit()
+
+        enviados_a: list[str] = []
+        monkeypatch.setattr("app.alerts.email._smtp_send", lambda s, to, *a: enviados_a.append(to))
+        result = enviar_pendientes_inmediatas(session, _fake_settings())
+        assert result["enviados"] == 0
+        assert enviados_a == []
+
     def test_digest_no_se_envia_en_inmediatas(self, session: Session, monkeypatch):
         u = _user(session)
         p = _perfil(session, u, FrecuenciaAlerta.DIGEST)  # digest, no inmediata
@@ -489,6 +504,18 @@ class TestEnviarDigest:
         s = session.get(SyncState, "alerts_email")
         assert s is not None
         assert s.notas is not None
+
+    def test_usuario_inactivo_no_recibe_digest(self, session: Session, monkeypatch):
+        ua, ub = self._setup_digest(session)
+        ua.activo = False  # desactivar usuario A
+        session.commit()
+
+        enviados: list[str] = []
+        monkeypatch.setattr("app.alerts.email._smtp_send", lambda s, to, *a: enviados.append(to))
+        result = enviar_digest(session, _fake_settings())
+
+        assert result["digests_enviados"] == 1  # solo usuario B
+        assert enviados == ["user_b@test.com"]
 
     def test_alertas_pendientes_tras_digest_se_marcan_enviadas(self, session: Session, monkeypatch):
         ua, _ = self._setup_digest(session)
