@@ -11,9 +11,12 @@ class Settings(BaseSettings):
 
     # --- Secretos obligatorios ---
     mp_ticket: str = Field(..., description="Ticket de acceso a la API de Mercado Público")
-    database_url: str = Field(..., description="URL de conexión a Postgres (Neon); sslmode=require")
+    database_url: str = Field(..., description="URL de conexión a Postgres (Neon) branch dev; sslmode=require")
     secret_key: str = Field(..., description="Clave para firmar cookies de sesión")
     jobs_token: str = Field(..., description="Token para proteger POST /api/jobs/run")
+
+    # --- Branch production de Neon (solo referencia; la usa Render) ---
+    database_url_prod: str = Field(default="", description="URL Neon branch production — solo para referencia, no se usa en runtime")
 
     # --- Rate limit y presupuestos ---
     rate_limit_rps: float = Field(default=1.0, description="Solicitudes por segundo hacia la API")

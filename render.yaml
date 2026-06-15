@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: mp-oportunidades
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ".[dev]"
+    startCommand: alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/salud/ping
+    envVars:
+      # Secretos — sync: false para que Render no los toque automáticamente
+      - key: MP_TICKET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: JOBS_TOKEN
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # SMTP (Brevo u otro proveedor gratuito)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Tasas de cambio (opcionales; se puede hardcodear el default en Settings)
+      - key: TASA_UF
+        value: "37000"
+      - key: TASA_UTM
+        value: "65000"
+      - key: TASA_USD
+        value: "950"
+      - key: TASA_EUR
+        value: "1030"
+      # Hora digest en America/Santiago (0-23)
+      - key: DIGEST_HOUR
+        value: "8"

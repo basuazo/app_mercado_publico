@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -91,7 +91,7 @@ def _lic(
     estado: str = "publicada",
     dias: float = 5.0,
 ) -> Licitacion:
-    l = Licitacion(
+    lic = Licitacion(
         codigo=codigo,
         nombre=f"Licitación {codigo}",
         descripcion="",
@@ -100,9 +100,9 @@ def _lic(
         monto_clp=200_000.0,
         codigo_organismo="ORG-1",
     )
-    session.add(l)
+    session.add(lic)
     session.flush()
-    return l
+    return lic
 
 
 def _ca(
@@ -244,7 +244,7 @@ class TestDetectarCambioEstado:
         u = _user(session)
         p = _perfil(session, u)
         _lic(session, "LIC-ADJ", estado="adjudicada")
-        m = _match(session, p, "LIC-ADJ")
+        _match(session, p, "LIC-ADJ")
         detectar_cambio_estado(session)
         creados2 = detectar_cambio_estado(session)
         assert creados2 == 0

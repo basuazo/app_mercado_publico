@@ -1,10 +1,16 @@
-"""Fábrica de la aplicación FastAPI."""
+"""Fábrica de la aplicación FastAPI con lifespan (scheduler + seed)."""
 
 from __future__ import annotations
 
+import time
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from app.api.deps import LoginRequired
 from app.api.routes import api as api_router
@@ -13,8 +19,74 @@ from app.api.routes import pages as pages_router
 from app.core.settings import Settings
 
 
+def make_engine(settings: Settings) -> Engine:
+    """Crea el engine con parámetros apropiados para Neon (Postgres en producción)."""
+    from typing import Any
+
+    url = settings.database_url
+    is_postgres = url.startswith("postgresql") or url.startswith("postgres")
+
+    kwargs: dict[str, Any] = {"pool_pre_ping": True}
+    if is_postgres:
+        kwargs["pool_size"] = 5
+        kwargs["max_overflow"] = 0
+        kwargs["pool_recycle"] = 300
+
+    return create_engine(url, **kwargs)
+
+
+def _wait_for_db(engine: Engine, intentos: int = 5, pausa: float = 2.0) -> None:
+    """Reintenta conexión al arrancar (Neon puede estar suspendida tras idle)."""
+    for i in range(intentos):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return
+        except Exception:
+            if i == intentos - 1:
+                raise
+            time.sleep(pausa * (i + 1))
+
+
 def create_app(settings: Settings, engine: Engine) -> FastAPI:
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    from app.ingest.orchestrator import build_scheduler
+    from app.models.seeds import seed_admin
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        # Esperar que Neon esté disponible
+        _wait_for_db(engine)
+
+        # Seed idempotente del admin (no falla si ya existe)
+        if settings.admin_email and settings.admin_password:
+            with Session(engine) as session:
+                seed_admin(session, settings.admin_email, settings.admin_password)
+                session.commit()
+
+        # Arrancar scheduler en background (APScheduler BackgroundScheduler)
+        sched = build_scheduler(settings, engine)
+        # build_scheduler devuelve BlockingScheduler; usar BackgroundScheduler en lugar
+        from apscheduler.schedulers.background import BackgroundScheduler as _BG
+
+        bg_sched = _BG(timezone="America/Santiago")
+        # Copiar jobs del scheduler configurado al background scheduler
+        for job in sched.get_jobs():
+            bg_sched.add_job(
+                job.func,
+                trigger=job.trigger,
+                id=job.id,
+                name=job.name,
+                replace_existing=True,
+            )
+        bg_sched.start()
+        app.state.scheduler = bg_sched
+
+        yield
+
+        # Apagado limpio en SIGTERM (Render reinicia en deploys)
+        bg_sched.shutdown(wait=False)
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     # Guardar estado compartido en app.state
     app.state.settings = settings

@@ -481,3 +481,39 @@ def test_logout_csrf_invalido(client, usuario, settings):
     assert r.status_code == 303
     assert "error=" in r.headers["location"]
     assert COOKIE_NAME in client.cookies  # cookie sigue presente
+
+
+# ---------------------------------------------------------------------------
+# Lifespan: scheduler se apaga; ping sin auth
+# ---------------------------------------------------------------------------
+
+
+def test_lifespan_scheduler_arranca_y_apaga(engine, settings):
+    """El lifespan arranca el BackgroundScheduler y lo apaga al salir."""
+    from fastapi.testclient import TestClient
+
+    from app.api.main import create_app
+
+    application = create_app(settings, engine)
+    with TestClient(application) as tc:
+        # Scheduler debe estar activo dentro del contexto
+        assert application.state.scheduler.running
+        r = tc.get("/api/salud/ping")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+    # Fuera del contexto el scheduler debe haberse detenido
+    assert not application.state.scheduler.running
+
+
+def test_ping_sin_auth_ni_datos(engine, settings):
+    """/api/salud/ping responde 200 sin autenticación y sin datos en la BD."""
+    from fastapi.testclient import TestClient
+
+    from app.api.main import create_app
+
+    application = create_app(settings, engine)
+    with TestClient(application) as tc:
+        r = tc.get("/api/salud/ping")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
