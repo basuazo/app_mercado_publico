@@ -189,24 +189,53 @@ Al terminar: ruff, mypy, pytest; commit.
 
 ### Prompt F6.5 — Despliegue en Render + Neon
 
+**Prerequisito (hacer manualmente en Neon antes de correr este prompt):**
+- Crear proyecto en neon.tech → automáticamente crea la branch `production` (producción).
+- Desde el dashboard, crear una branch adicional llamada `dev` a partir de `production` (auto-delete: Never).
+- Copiar los dos `DATABASE_URL` (uno por branch) con `?sslmode=require` al final.
+- Ambas URLs van en `.env` local:
+  ```
+  DATABASE_URL=postgresql://...@.../neondb?sslmode=require        # branch dev — desarrollo local y pytest
+  DATABASE_URL_PROD=postgresql://...@.../neondb?sslmode=require   # branch production — solo referencia; la usa Render
+  ```
+- En Render, la variable `DATABASE_URL` apuntará a la branch `production`.
+
 ```
 Prepara el despliegue 100 % gratuito según CLAUDE.md (sección "Despliegue").
+El proyecto ya tiene dos branches en Neon: `production` (prod) y `dev` (local/tests).
+La variable DATABASE_URL en el entorno local apunta a la branch `dev`.
+En Render, DATABASE_URL apuntará a la branch `main`.
 
 1. render.yaml: web service free, runtime python, startCommand "alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT", healthCheckPath /api/salud/ping, y la lista de env vars requeridas (sync: false para secretos).
-2. Conexión Neon: engine con sslmode=require, pool_pre_ping=True, pool_size≤5, max_overflow=0, pool_recycle=300; reintento de conexión al arrancar (Neon puede estar suspendida).
-3. Arranque de la app: migraciones ya corren en startCommand; seed de admin idempotente; APScheduler arranca con la app PERO cada ciclo toma pg_advisory_lock — verifica que esto ya funciona (F3) y agrégalo si falta.
-4. Lifespan de FastAPI: apagado limpio del scheduler en SIGTERM (Render reinicia servicios en deploys).
-5. docs/despliegue.md paso a paso:
-   a. Neon: crear proyecto, ramas main (prod) y dev, obtener DATABASE_URL.
-   b. Render: crear web service desde el repo, setear env vars (MP_TICKET, DATABASE_URL, SECRET_KEY, JOBS_TOKEN, ADMIN_*, SMTP_*, tasas), deploy.
+
+2. Separación dev/prod — ajusta en tres lugares:
+   a. app/core/settings.py: asegura que DATABASE_URL se lee desde env var (ya debería estarlo). Sin hardcodeo.
+   b. alembic/env.py: usa settings.database_url (no valor fijo). Confirma que sqlalchemy.url no está hardcodeado.
+   c. pytest: los tests usan DATABASE_URL del entorno (.env / .env.test apuntando a branch dev). Añade fixture `db_url` que lee settings.database_url y falla explícitamente si apunta a la branch `main` (verificar que el hostname no contiene "-main-" o la lógica que Neon use en el hostname de cada branch).
+
+3. Flujo de migraciones documentado en docs/despliegue.md:
+   - Desarrollo: `alembic upgrade head` corre contra branch `dev` (DATABASE_URL local).
+   - Deploy: Render corre `alembic upgrade head` automáticamente contra branch `main` (DATABASE_URL de Render).
+   - Nunca correr alembic manualmente contra `main` desde local.
+
+4. Conexión Neon: engine con sslmode=require, pool_pre_ping=True, pool_size≤5, max_overflow=0, pool_recycle=300; reintento de conexión al arrancar (Neon puede estar suspendida tras idle).
+
+5. Arranque de la app: migraciones ya corren en startCommand; seed de admin idempotente (no falla si el admin ya existe); APScheduler arranca con la app PERO cada ciclo toma pg_advisory_lock — verifica que esto ya funciona (F3) y agrégalo si falta.
+
+6. Lifespan de FastAPI: apagado limpio del scheduler en SIGTERM (Render reinicia servicios en deploys).
+
+7. docs/despliegue.md paso a paso:
+   a. Neon: ya tienes el proyecto con branches main y dev. Confirmar que DATABASE_URL local = dev.
+   b. Render: crear web service desde el repo, setear env vars (MP_TICKET, DATABASE_URL=branch-main, SECRET_KEY, JOBS_TOKEN, ADMIN_EMAIL, ADMIN_PASSWORD, SMTP_*, tasas de cambio), deploy.
    c. Pinger: configurar cron-job.org o UptimeRobot → GET /api/salud/ping cada 10 min (mantiene el servicio despierto y el scheduler vivo).
    d. Respaldo de jobs: cron-job.org → POST /api/jobs/run?job=ca cada 1 h con header X-Jobs-Token (por si el scheduler interno falló).
    e. Verificación post-deploy: login admin, correr job manual, revisar /salud, confirmar que tras 2 h el servicio no se durmió.
    f. Advertencia TZ: los crons externos corren en UTC; la ventana nocturna la valida la app en America/Santiago, no el cron.
-6. Smoke test de despliegue documentado (checklist manual).
-7. Tests locales: lifespan apaga el scheduler; /api/salud/ping responde sin auth y sin datos.
 
-Al terminar: ruff, mypy, pytest; commit. Yo ejecuto el deploy real siguiendo docs/despliegue.md.
+8. Smoke test de despliegue documentado (checklist manual).
+9. Tests locales: lifespan apaga el scheduler; /api/salud/ping responde sin auth y sin datos.
+
+Al terminar: ruff, mypy, pytest (contra branch dev); commit. Yo ejecuto el deploy real siguiendo docs/despliegue.md.
 ```
 
 ### Prompt F7 — Endurecimiento y entrega
@@ -394,4 +423,321 @@ passlib[bcrypt] + cookies firmadas, pytest + respx, ruff + mypy + pre-commit.
   scripts/smoke_test.py y solo las ejecuta el humano.
 - Commits en español con prefijo de fase: "F3: ingesta incremental de Compra Ágil".
 - No agregar dependencias fuera del stack sin proponer y justificar primero.
+```
+
+---
+
+## PARTE 4 — Correcciones post-auditoría
+
+### F6-fix — 4 bugs encontrados en auditoría
+
+**Contexto:** Auditoría de F6 (auth + API + dashboard). 160 tests pasando antes de aplicar estas correcciones.
+
+**Bugs encontrados:**
+
+1. **CRÍTICO** `app/api/routes/api.py` — `api_actualizar_perfil` (l.176–185) y `api_eliminar_perfil` (l.199): ninguno llama `session.commit()` después de `actualizar_perfil()` / `eliminar_perfil()`. El contexto `with Session(engine) as session` hace rollback implícito al cerrar → los cambios se pierden silenciosamente. Solo `api_crear_perfil` (l.161) tiene commit.
+
+2. **MENOR** `app/api/routes/auth.py` l.97 — `logout()` llama `validate_csrf_token(...)` pero ignora el valor retornado; no lanza excepción si el token es inválido. El logout se completa con cualquier token (o sin él).
+
+3. **POTENCIAL** `app/api/routes/api.py` l.57–59 — `/api/salud` usa `assert` para verificar que la respuesta no contiene secretos. Los `assert` son eliminados con `python -O` (Render puede usar esta flag). Reemplazar con `if / raise`.
+
+4. **MEDIO** `app/api/routes/api.py` l.207–237 — `/api/jobs/run` ignora el parámetro `job=` (siempre ejecuta ciclo completo) y usa `threading.Thread` en vez de FastAPI `BackgroundTasks`. El parámetro `job=` ya está mencionado en el prompt F6.5 (ítem d: `?job=ca` para respaldo de scheduler), por lo que debe implementarse.
+
+---
+
+**Prompt F6-fix para Claude Code:**
+
+```
+Aplica las siguientes correcciones en `app/api/routes/api.py` y `app/api/routes/auth.py`. No toques ningún otro archivo. Al terminar: ruff, mypy, pytest; commit "F6-fix: session.commit en PUT/DELETE, CSRF logout, assert→raise, BackgroundTasks".
+
+### 1. `app/api/routes/api.py` — session.commit en actualizar y eliminar
+
+En `api_actualizar_perfil`, añade `session.commit()` justo antes del `return`:
+
+```python
+    actualizar_perfil(
+        session,
+        perfil_id=perfil_id,
+        owner_id=user.id,
+        nombre=body.nombre,
+        keywords=body.keywords,
+        keywords_excluir=body.keywords_excluir,
+        fuentes=body.fuentes,
+        frecuencia_alerta=FrecuenciaAlerta(body.frecuencia_alerta),
+    )
+    session.commit()           # ← añadir
+    return {"id": perfil_id, "nombre": body.nombre}
+```
+
+En `api_eliminar_perfil`, añade `session.commit()` tras `eliminar_perfil(...)`:
+
+```python
+    eliminar_perfil(session, perfil_id, user.id)
+    session.commit()           # ← añadir
+```
+
+Añade tests que verifiquen que PUT y DELETE persisten (leer de nuevo con GET tras la operación confirma el cambio).
+
+### 2. `app/api/routes/api.py` — assert → raise en /api/salud
+
+Reemplaza las líneas con `assert` (que se eliminan con `python -O`) por:
+
+```python
+    data = get_salud_data(session, settings)
+    # Nunca devolver secretos
+    datos_str = str(data)
+    for secreto in ("mp_ticket", "secret_key", "jobs_token"):
+        if secreto in datos_str:
+            raise RuntimeError(f"get_salud_data filtró el campo '{secreto}'")
+    return data
+```
+
+### 3. `app/api/routes/api.py` — /api/jobs/run con job= y BackgroundTasks
+
+Reemplaza toda la función `jobs_run` por esta implementación que:
+- Acepta `job: str = "all"` como query param.
+- Usa `BackgroundTasks` de FastAPI (no `threading.Thread`).
+- Soporta valores: `"ca"`, `"activas"`, `"detalles"`, `"lifecycle"`, `"match"`, `"alerts"`, `"digest"`, `"all"`.
+- Retorna `{"queued": true, "job": job}`.
+
+```python
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+
+@router.post("/jobs/run")
+async def jobs_run(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    job: str = "all",
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    settings = request.app.state.settings
+    token = request.headers.get("X-Jobs-Token", "")
+    if not secrets.compare_digest(token, settings.jobs_token):
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    from app.ingest.orchestrator import (
+        run_alerts,
+        run_detalles,
+        run_digest,
+        run_lifecycle,
+        run_match,
+        run_sync_activas,
+    )
+
+    engine = request.app.state.engine
+
+    _jobs: dict[str, Any] = {
+        "ca":        lambda: run_sync_activas(settings, engine),
+        "activas":   lambda: run_sync_activas(settings, engine),
+        "detalles":  lambda: run_detalles(settings, engine),
+        "lifecycle": lambda: run_lifecycle(settings, engine),
+        "match":     lambda: run_match(settings, engine),
+        "alerts":    lambda: run_alerts(settings, engine),
+        "digest":    lambda: run_digest(settings, engine),
+    }
+
+    def _full_cycle() -> None:
+        run_sync_activas(settings, engine)
+        run_detalles(settings, engine)
+        run_lifecycle(settings, engine)
+        run_match(settings, engine)
+        run_alerts(settings, engine)
+
+    if job == "all":
+        background_tasks.add_task(_full_cycle)
+    elif job in _jobs:
+        background_tasks.add_task(_jobs[job])
+    else:
+        raise HTTPException(status_code=400, detail=f"job desconocido: {job!r}")
+
+    return {"queued": True, "job": job}
+```
+
+Actualiza los tests existentes de `/api/jobs/run`:
+- `test_jobs_run_token_correcto`: verificar `r.json()["queued"] is True`.
+- Añadir `test_jobs_run_job_invalido`: `POST /api/jobs/run?job=xxx` con token válido → 400.
+- Añadir `test_jobs_run_job_ca`: `POST /api/jobs/run?job=ca` con token válido → 200, `queued=True`.
+
+### 4. `app/api/routes/auth.py` — CSRF en logout
+
+En `logout()`, verifica el resultado de `validate_csrf_token` y responde con error si es inválido:
+
+```python
+        if user is not None:
+            token = request.headers.get("X-CSRF-Token") or csrf_token
+            if not validate_csrf_token(settings.secret_key, user.id, token):
+                return RedirectResponse(url="/login?error=CSRF+inválido", status_code=303)
+```
+
+Añade test `test_logout_csrf_invalido`: POST /logout con cookie válida pero csrf_token="" → no elimina cookie, redirige a /login con error.
+```
+
+---
+
+## PARTE 4 — Correcciones post-auditoría
+
+### Fix F1 (ya aplicado — commit `b0e3177`)
+
+Las siguientes correcciones ya están en producción, no repetir:
+- `httpx.request()` global → `httpx.Client` persistente en `BaseClient.__init__`
+- `check_budget()` eliminó la segunda consulta redundante a Postgres
+- `iterar_compra_agil` tipado correctamente como `Generator[CompraAgilBasica, None, None]`
+
+---
+
+### Prompt correcciones F2 — sesión Claude Code
+
+**Contexto:** La auditoría de F2 (modelos + migración + FTS) identificó cuatro problemas.
+Aplica todos en una sola sesión y cierra con `ruff check . && mypy app/ && pytest`.
+Commit final: `"F2 fix: FTS productos, UTC aware, retención optimizada, tests"`.
+
+---
+
+**CORRECCIÓN 1 — ALTA: FTS no indexa nombres de productos/items**
+
+Problema: `licitaciones.tsv` y `compras_agiles.tsv` son columnas GENERATED que solo
+incluyen `nombre` y `descripcion` de la tabla padre. Los nombres de `licitacion_items`
+y `ca_productos` no están indexados. El matching engine de F4 necesita buscar por
+nombre de producto/ítem.
+
+Solución adoptada (documentar en migración + TODO en migration, implementar en F4):
+Los comentarios TODO ya existen en `alembic/versions/fde568616494_tablas_iniciales.py`
+(líneas ~88 y ~150). Verificar que el comentario sea exactamente:
+
+```sql
+-- TODO(F4): el tsv de la tabla padre no incluye nombres de licitacion_items/ca_productos
+-- porque las columnas GENERATED no pueden leer tablas hijas. En F4 (matching engine)
+-- la query FTS debe combinar: parent.tsv @@ query OR EXISTS (
+--   SELECT 1 FROM child_table WHERE fk = parent.codigo
+--   AND to_tsvector('spanish', inmutable_unaccent(nombre)) @@ query
+-- )
+```
+
+Agregar en `app/core/matching/` (aunque el módulo se crea en F4), un archivo
+`README.md` o comentario en `__init__.py` que documente la estrategia de búsqueda
+híbrida para no olvidarla al implementar F4.
+
+Adicionalmente, agregar un índice GIN en `licitacion_items.nombre` y
+`ca_productos.nombre` en una **nueva migración** (`F2b_indices_items`):
+
+```python
+# Nueva migración alembic: F2b — índices para búsqueda en items/productos
+op.execute("""
+    CREATE INDEX ix_licitacion_items_nombre_fts
+    ON licitacion_items
+    USING gin(to_tsvector('spanish', inmutable_unaccent(nombre)))
+""")
+op.execute("""
+    CREATE INDEX ix_ca_productos_nombre_fts
+    ON ca_productos
+    USING gin(to_tsvector('spanish', inmutable_unaccent(nombre)))
+""")
+```
+
+Downgrade de esa migración: `DROP INDEX IF EXISTS ix_licitacion_items_nombre_fts` y
+`DROP INDEX IF EXISTS ix_ca_productos_nombre_fts`.
+
+---
+
+**CORRECCIÓN 2 — MEDIA: `datetime.utcnow()` deprecated (Python 3.12 warning)**
+
+Archivos afectados: buscar con `grep -rn "utcnow" app/`.
+
+Reemplazar toda ocurrencia de:
+```python
+datetime.utcnow()
+```
+por:
+```python
+datetime.now(UTC)
+```
+con el import:
+```python
+from datetime import UTC, datetime
+```
+
+Si `UTC` no existe en la versión (Python < 3.11), usar `timezone.utc`:
+```python
+from datetime import datetime, timezone
+datetime.now(timezone.utc)
+```
+Como el proyecto requiere Python 3.11+, `UTC` es válido.
+
+Verificar que mypy no reporte errores de tipo en ninguna función que reciba el resultado
+(puede requerir `replace(tzinfo=None)` si alguna columna SQLAlchemy espera naive datetime
+— en ese caso documentar el motivo con un comentario `# naive UTC para compatibilidad SQLAlchemy`).
+
+---
+
+**CORRECCIÓN 3 — MEDIA: `purgar_terminales` ejecuta la misma subquery dos veces**
+
+Archivo: `app/core/retencion.py`
+
+Problema: la función construye la subquery de IDs terminales dos veces (una para
+licitaciones, otra para compras ágiles) repitiendo lógica idéntica. Además, la
+subquery que excluye alertas pendientes se repite.
+
+Solución: extraer la subquery como variable reutilizable o usar CTEs. Ejemplo
+mínimo:
+
+```python
+# Antes (simplificado):
+ids_lit = session.scalars(select(Licitacion.codigo).where(...)).all()
+ids_ca  = session.scalars(select(CompraAgil.codigo).where(...)).all()
+
+# Después: una sola consulta por tabla, sin repetir el filtro de alertas
+cutoff = datetime.now(UTC) - timedelta(days=dias)
+pendiente_lit = select(OportunidadMatch.codigo_oportunidad).join(Alerta).where(
+    Alerta.estado == "pendiente", OportunidadMatch.fuente == "licitaciones"
+)
+terminales_lit = (
+    select(Licitacion.codigo)
+    .where(Licitacion.estado.in_(ESTADOS_TERMINALES))
+    .where(Licitacion.actualizado_en < cutoff)
+    .where(Licitacion.codigo.not_in(pendiente_lit))
+)
+# Usar terminales_lit en el UPDATE y luego en el DELETE sin reconstruirla
+```
+
+El objetivo es que cada tabla tenga una sola CTE/subquery que se reutiliza en el
+UPDATE de raw_json y en el DELETE de items/productos.
+
+---
+
+**CORRECCIÓN 4 — BAJA: tests de retención incompletos**
+
+Archivo: `tests/test_models.py`
+
+Agregar al menos dos tests para `purgar_terminales`:
+
+1. **Test protección por alerta pendiente**: crear una licitación terminal antigua con
+   una `OportunidadMatch` asociada que tenga una `Alerta` en estado `"pendiente"`.
+   Verificar que `purgar_terminales()` NO elimina su `raw_json`.
+
+2. **Test purga efectiva**: crear una licitación terminal antigua SIN alertas pendientes.
+   Verificar que `purgar_terminales()` SÍ pone `raw_json = None` y elimina sus items.
+
+Usar SQLite en memoria (ya configurado en los otros tests) y `freezegun` para simular
+fechas pasadas si es necesario.
+
+---
+
+**CORRECCIÓN 5 — BAJA: mojibake en comentarios de `app/models/tables.py`**
+
+Buscar con `grep -n "\\\\x" app/models/tables.py` o revisar los comentarios que
+contienen caracteres como `\xc3\xb3`, `\xc3\xba`, etc.
+
+Reemplazar los comentarios afectados con texto UTF-8 legible. Solo son comentarios
+(no afectan runtime), pero ensucian el diff y la legibilidad del código.
+
+---
+
+**Cierre de sesión F2-fix:**
+
+```bash
+ruff check . --fix
+mypy app/
+pytest -v
+git add -A
+git commit -m "F2 fix: FTS items indexados, UTC aware, retención optimizada, tests retención"
 ```
