@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -53,10 +53,10 @@ async def salud(
 ) -> dict[str, Any]:
     settings = request.app.state.settings
     data = get_salud_data(session, settings)
-    # Nunca devolver secretos
-    assert "mp_ticket" not in str(data)
-    assert "secret_key" not in str(data)
-    assert "jobs_token" not in str(data)
+    datos_str = str(data)
+    for secreto in ("mp_ticket", "secret_key", "jobs_token"):
+        if secreto in datos_str:
+            raise RuntimeError(f"get_salud_data filtró el campo '{secreto}'")
     return data
 
 
@@ -183,6 +183,7 @@ async def api_actualizar_perfil(
         fuentes=body.fuentes,
         frecuencia_alerta=FrecuenciaAlerta(body.frecuencia_alerta),
     )
+    session.commit()
     return {"id": perfil_id, "nombre": body.nombre}
 
 
@@ -197,6 +198,7 @@ async def api_eliminar_perfil(
     if obtener_perfil(session, perfil_id, user.id) is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     eliminar_perfil(session, perfil_id, user.id)
+    session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -207,24 +209,35 @@ async def api_eliminar_perfil(
 @router.post("/jobs/run")
 async def jobs_run(
     request: Request,
+    background_tasks: BackgroundTasks,
+    job: str = "all",
     session: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, object]:
     settings = request.app.state.settings
     token = request.headers.get("X-Jobs-Token", "")
     if not secrets.compare_digest(token, settings.jobs_token):
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    import threading
-
     from app.ingest.orchestrator import (
         run_alerts,
         run_detalles,
+        run_digest,
         run_lifecycle,
         run_match,
         run_sync_activas,
     )
 
     engine = request.app.state.engine
+
+    _jobs: dict[str, Any] = {
+        "ca":        lambda: run_sync_activas(settings, engine),
+        "activas":   lambda: run_sync_activas(settings, engine),
+        "detalles":  lambda: run_detalles(settings, engine),
+        "lifecycle": lambda: run_lifecycle(settings, engine),
+        "match":     lambda: run_match(settings, engine),
+        "alerts":    lambda: run_alerts(settings, engine),
+        "digest":    lambda: run_digest(settings, engine),
+    }
 
     def _full_cycle() -> None:
         run_sync_activas(settings, engine)
@@ -233,5 +246,11 @@ async def jobs_run(
         run_match(settings, engine)
         run_alerts(settings, engine)
 
-    threading.Thread(target=_full_cycle, daemon=True).start()
-    return {"status": "iniciado"}
+    if job == "all":
+        background_tasks.add_task(_full_cycle)
+    elif job in _jobs:
+        background_tasks.add_task(_jobs[job])
+    else:
+        raise HTTPException(status_code=400, detail=f"job desconocido: {job!r}")
+
+    return {"queued": True, "job": job}

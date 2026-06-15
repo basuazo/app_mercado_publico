@@ -316,7 +316,24 @@ def test_ping_publico(client):
 def test_jobs_run_token_correcto(client):
     r = client.post("/api/jobs/run", headers={"X-Jobs-Token": "jobs-token-secreto"})
     assert r.status_code == 200
-    assert r.json()["status"] == "iniciado"
+    assert r.json()["queued"] is True
+    assert r.json()["job"] == "all"
+
+
+def test_jobs_run_job_invalido(client):
+    r = client.post(
+        "/api/jobs/run?job=xxx", headers={"X-Jobs-Token": "jobs-token-secreto"}
+    )
+    assert r.status_code == 400
+
+
+def test_jobs_run_job_ca(client):
+    r = client.post(
+        "/api/jobs/run?job=ca", headers={"X-Jobs-Token": "jobs-token-secreto"}
+    )
+    assert r.status_code == 200
+    assert r.json()["queued"] is True
+    assert r.json()["job"] == "ca"
 
 
 def test_jobs_run_token_incorrecto(client):
@@ -386,3 +403,81 @@ def test_api_perfil_ajeno_404(engine, client, settings):
         cookies=_cookie(settings, propio_id),
     )
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PUT y DELETE persisten (session.commit)
+# ---------------------------------------------------------------------------
+
+
+def test_api_perfil_put_persiste(engine, client, usuario, settings):
+    from app.auth.session import COOKIE_NAME
+
+    client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, usuario))
+    headers = _csrf_header(settings, usuario)
+
+    # Crear
+    r = client.post(
+        "/api/perfiles",
+        json={"nombre": "Original", "keywords": ["tecnología"]},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    perfil_id = r.json()["id"]
+
+    # Actualizar
+    r = client.put(
+        f"/api/perfiles/{perfil_id}",
+        json={"nombre": "Actualizado", "keywords": ["software"]},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["nombre"] == "Actualizado"
+
+    # Verificar que persiste en GET
+    r = client.get("/api/perfiles", headers=headers)
+    assert r.status_code == 200
+    nombres = [p["nombre"] for p in r.json()]
+    assert "Actualizado" in nombres
+    assert "Original" not in nombres
+
+
+def test_api_perfil_delete_persiste(engine, client, usuario, settings):
+    from app.auth.session import COOKIE_NAME
+
+    client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, usuario))
+    headers = _csrf_header(settings, usuario)
+
+    # Crear
+    r = client.post(
+        "/api/perfiles",
+        json={"nombre": "Para borrar", "keywords": ["aseo"]},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    perfil_id = r.json()["id"]
+
+    # Eliminar
+    r = client.delete(f"/api/perfiles/{perfil_id}", headers=headers)
+    assert r.status_code == 204
+
+    # Verificar que ya no aparece
+    r = client.get("/api/perfiles", headers=headers)
+    ids = [p["id"] for p in r.json()]
+    assert perfil_id not in ids
+
+
+# ---------------------------------------------------------------------------
+# Logout con CSRF inválido
+# ---------------------------------------------------------------------------
+
+
+def test_logout_csrf_invalido(client, usuario, settings):
+    from app.auth.session import COOKIE_NAME
+
+    client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, usuario))
+    r = client.post("/logout", data={"csrf_token": ""}, follow_redirects=False)
+    # Debe redirigir a /login con error, sin eliminar la cookie
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+    assert COOKIE_NAME in client.cookies  # cookie sigue presente
