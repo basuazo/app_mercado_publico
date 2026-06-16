@@ -235,7 +235,13 @@ def _run_with_lock(
             _log.error("job=%s: ERROR\n%s", job_name, traceback.format_exc())
             return None
         finally:
-            unlock_fn(conn, _LOCK_KEY)
+            try:
+                unlock_fn(conn, _LOCK_KEY)
+            except Exception as _exc:
+                # Neon puede terminar la conexión por idle_in_transaction_session_timeout.
+                # pg_advisory_lock se libera automáticamente al cerrar la sesión,
+                # así que este error es seguro de ignorar.
+                _log.warning("No se pudo liberar advisory lock explícitamente: %s", _exc)
 
 
 # ---------------------------------------------------------------------------

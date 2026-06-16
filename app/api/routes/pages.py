@@ -54,19 +54,20 @@ async def index(
     request: Request,
     fuente: str = "",
     texto: str = "",
-    perfil_id: int | None = None,
+    perfil_id: str = "",
     pagina: int = 1,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     limit = 20
     offset = (pagina - 1) * limit
+    perfil_id_int: int | None = int(perfil_id) if perfil_id.strip().isdigit() else None
     items, total = get_oportunidades_usuario(
         session,
         user.id,
         fuente=fuente or None,
         texto=texto or None,
-        perfil_id=perfil_id,
+        perfil_id=perfil_id_int,
         limit=limit,
         offset=offset,
     )
