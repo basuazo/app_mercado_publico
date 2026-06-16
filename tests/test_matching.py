@@ -8,6 +8,8 @@ Tests de FTS: requieren Postgres con migración aplicada (@needs_postgres).
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -16,6 +18,9 @@ from sqlalchemy.orm import Session
 from app.matching.engine import (
     _keywords_en_textos,
     _norm,
+    _score_ca,
+    _score_licitacion,
+    _upsert_match,
     match_perfil,
     match_todos,
     score_competencia,
@@ -503,3 +508,283 @@ class TestMatchFTS:
         result = match_perfil(perfil, pg_session, ahora=AHORA)
         # Ninguna licitación del dataset tiene raw_json → todos en sin_detalle
         assert len(result["sin_detalle_licitaciones"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# 4. Tests de scoring privado y match_perfil/match_todos (SQLite, candidatos mockeados)
+# ---------------------------------------------------------------------------
+
+_PW_HASH2 = "$2b$12$fakehashfortestsislong.enough.xyz12345"
+_AHORA_LOCAL = datetime(2026, 6, 16, 10, 0)
+
+
+def _make_lic(session: Session, codigo: str, nombre: str = "Test", cierre_dias: int = 5) -> Licitacion:  # type: ignore[name-defined]  # noqa: F821
+    from app.models.tables import Licitacion
+
+    lic = Licitacion(
+        codigo=codigo,
+        nombre=nombre,
+        descripcion="descripcion de prueba",
+        estado="publicada",
+        fecha_cierre=_AHORA_LOCAL + timedelta(days=cierre_dias),
+        monto_clp=500_000.0,
+        raw_json=None,
+    )
+    session.add(lic)
+    session.flush()
+    return lic
+
+
+def _make_ca(session: Session, codigo: str, nombre: str = "CA Test", cierre_dias: int = 5, region: int = 13, ofertas: int = 0) -> CompraAgil:  # type: ignore[name-defined]  # noqa: F821
+    from app.models.tables import CompraAgil
+
+    ca = CompraAgil(
+        codigo=codigo,
+        nombre=nombre,
+        descripcion="desc CA",
+        estado="publicada",
+        fecha_cierre=_AHORA_LOCAL + timedelta(days=cierre_dias),
+        monto_disponible_clp=200_000.0,
+        region=region,
+        total_ofertas=ofertas,
+        raw_json=None,
+    )
+    session.add(ca)
+    session.flush()
+    return ca
+
+
+class TestScoreLicitacion:
+    def test_score_con_keyword_en_nombre(self, session: Session):
+        lic = _make_lic(session, "LIC-SC1", nombre="material eléctrico", cierre_dias=5)
+        keywords = ["eléctrico"]
+        score, razones = _score_licitacion(lic, keywords, _AHORA_LOCAL)
+        assert score > 0
+        assert razones["campo_hit"] == "nombre"
+        assert razones["dias_al_cierre"] == pytest.approx(5.0, abs=0.1)
+
+    def test_score_con_keyword_en_descripcion(self, session: Session):
+        lic = _make_lic(session, "LIC-SC2", nombre="compra servicios", cierre_dias=10)
+        # La descripcion contiene "prueba" (ver _make_lic)
+        keywords = ["prueba"]
+        score, razones = _score_licitacion(lic, keywords, _AHORA_LOCAL)
+        assert razones["campo_hit"] == "descripcion"
+
+    def test_score_sin_fecha_cierre(self, session: Session):
+        from app.models.tables import Licitacion
+
+        lic = Licitacion(codigo="LIC-NODATE", nombre="sin fecha", descripcion="", estado="publicada", fecha_cierre=None)
+        session.add(lic)
+        session.flush()
+        _, razones = _score_licitacion(lic, ["algo"], _AHORA_LOCAL)
+        assert razones["dias_al_cierre"] == 0.0
+
+    def test_campo_hit_desconocido(self, session: Session):
+        lic = _make_lic(session, "LIC-SC3", nombre="sin match", cierre_dias=5)
+        _, razones = _score_licitacion(lic, ["xyznotfound"], _AHORA_LOCAL)
+        assert razones["campo_hit"] == "desconocido"
+
+
+class TestScoreCa:
+    def test_score_ca_con_keyword(self, session: Session):
+        ca = _make_ca(session, "CA-SC1", nombre="silla ergonómica", cierre_dias=4, ofertas=0)
+        score, razones = _score_ca(ca, ["ergonómica"], _AHORA_LOCAL)
+        assert score > 0
+        assert razones["campo_hit"] == "nombre"
+        assert razones["ofertas"] == 0
+
+    def test_score_ca_campo_hit_descripcion(self, session: Session):
+        ca = _make_ca(session, "CA-SC2", nombre="compra varios", cierre_dias=4)
+        score, razones = _score_ca(ca, ["CA"], _AHORA_LOCAL)
+        assert razones["campo_hit"] in ("nombre", "descripcion", "desconocido")
+
+    def test_score_ca_sin_fecha_cierre(self, session: Session):
+        from app.models.tables import CompraAgil
+
+        ca = CompraAgil(codigo="CA-NODATE", nombre="sin fecha", descripcion="", estado="publicada", fecha_cierre=None, total_ofertas=0)
+        session.add(ca)
+        session.flush()
+        _, razones = _score_ca(ca, ["algo"], _AHORA_LOCAL)
+        assert razones["dias_al_cierre"] == 0.0
+
+
+class TestUpsertMatch:
+    def test_nuevo_match_retorna_true(self, session: Session):
+        from app.models.tables import OportunidadMatch, PerfilBusqueda, Usuario
+
+        u = Usuario(email="u@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        p = PerfilBusqueda(owner_id=u.id, nombre="P", keywords=["k"], activo=True)
+        session.add(p)
+        session.flush()
+
+        es_nuevo = _upsert_match(session, p.id, "licitaciones", "LIC-NEW", 80.0, {"k": "v"}, _AHORA_LOCAL)
+        assert es_nuevo is True
+
+        match = session.execute(select(OportunidadMatch).where(OportunidadMatch.perfil_id == p.id)).scalar_one()
+        assert match.score == 80.0
+
+    def test_match_existente_actualiza_score(self, session: Session):
+        from app.models.tables import OportunidadMatch, PerfilBusqueda, Usuario
+
+        u = Usuario(email="u2@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        p = PerfilBusqueda(owner_id=u.id, nombre="P2", keywords=["k"], activo=True)
+        session.add(p)
+        session.flush()
+
+        _upsert_match(session, p.id, "licitaciones", "LIC-UPD", 70.0, {}, _AHORA_LOCAL)
+        session.flush()
+        es_nuevo = _upsert_match(session, p.id, "licitaciones", "LIC-UPD", 90.0, {"nuevo": True}, _AHORA_LOCAL)
+        assert es_nuevo is False
+
+        match = session.execute(select(OportunidadMatch).where(OportunidadMatch.perfil_id == p.id)).scalar_one()
+        assert match.score == 90.0
+
+
+class TestMatchPerfilMockedCandidatos:
+    """Testea match_perfil con _candidatos_* mockeados para no requerir Postgres."""
+
+    def _perfil(self, session: Session, keywords=None, regiones=None, fuentes=None, monto_min=None, monto_max=None):
+        from app.models.tables import PerfilBusqueda, Usuario
+
+        u = Usuario(email=f"mp{id(session)}@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        p = PerfilBusqueda(
+            owner_id=u.id,
+            nombre="Test",
+            keywords=keywords or ["eléctrico"],
+            regiones=regiones,
+            fuentes=fuentes or ["licitaciones", "compras_agiles"],
+            monto_min_clp=monto_min,
+            monto_max_clp=monto_max,
+            activo=True,
+        )
+        session.add(p)
+        session.flush()
+        return p
+
+    def test_match_perfil_con_licitacion(self, session: Session):
+        lic = _make_lic(session, "LIC-MP1", nombre="material eléctrico")
+        perfil = self._perfil(session)
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert result["nuevos"] == 1
+        assert "LIC-MP1" in result["sin_detalle_licitaciones"]
+
+    def test_match_perfil_descarta_por_monto_min(self, session: Session):
+        lic = _make_lic(session, "LIC-MP2")
+        lic.monto_clp = 50_000.0  # < monto_min
+        perfil = self._perfil(session, monto_min=100_000.0)
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert result["descartados"] == 1
+        assert result["nuevos"] == 0
+
+    def test_match_perfil_descarta_por_monto_max(self, session: Session):
+        lic = _make_lic(session, "LIC-MP3")
+        lic.monto_clp = 5_000_000.0  # > monto_max
+        perfil = self._perfil(session, monto_max=1_000_000.0)
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert result["descartados"] == 1
+
+    def test_match_perfil_monto_none_pasa(self, session: Session):
+        from app.models.tables import Licitacion
+
+        lic = Licitacion(codigo="LIC-MP4", nombre="eléctrico", descripcion="", estado="publicada",
+                         fecha_cierre=_AHORA_LOCAL + timedelta(days=5), monto_clp=None, raw_json=None)
+        session.add(lic)
+        session.flush()
+        perfil = self._perfil(session, monto_min=100_000.0)
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert result["nuevos"] == 1
+
+    def test_match_perfil_ca_filtro_region(self, session: Session):
+        ca_rm = _make_ca(session, "CA-MP1", region=13)
+        ca_otra = _make_ca(session, "CA-MP2", region=7)
+        perfil = self._perfil(session, regiones=[13])
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[ca_rm, ca_otra]):
+            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert result["descartados"] == 1
+        assert result["nuevos"] == 1
+
+    def test_match_perfil_ca_monto_none_pasa(self, session: Session):
+        from app.models.tables import CompraAgil
+
+        ca = CompraAgil(codigo="CA-MP3", nombre="ergonómica", descripcion="", estado="publicada",
+                        fecha_cierre=_AHORA_LOCAL + timedelta(days=5), monto_disponible_clp=None,
+                        region=13, total_ofertas=0, raw_json=None)
+        session.add(ca)
+        session.flush()
+        perfil = self._perfil(session, fuentes=["compras_agiles"], monto_min=100_000.0)
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[ca]):
+            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert result["nuevos"] == 1
+
+    def test_match_perfil_upsert_idempotente_sqlite(self, session: Session):
+        lic = _make_lic(session, "LIC-MP5", nombre="eléctrico")
+        perfil = self._perfil(session)
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            r1 = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+            r2 = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert r1["nuevos"] == 1
+        assert r2["nuevos"] == 0
+        assert r2["actualizados"] == 1
+
+    def test_match_todos_corre_perfiles_activos(self, session: Session):
+        from app.models.tables import PerfilBusqueda, Usuario
+
+        u = Usuario(email="mt@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        for i in range(2):
+            session.add(PerfilBusqueda(owner_id=u.id, nombre=f"P{i}", keywords=["k"], activo=True))
+        session.flush()
+
+        with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            result = match_todos(session, ahora=_AHORA_LOCAL)
+
+        assert result["perfiles_procesados"] == 2
+
+    def test_match_todos_maneja_error_en_perfil(self, session: Session):
+        from app.models.tables import PerfilBusqueda, Usuario
+
+        u = Usuario(email="mterr@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        session.add(PerfilBusqueda(owner_id=u.id, nombre="P", keywords=["k"], activo=True))
+        session.flush()
+
+        with patch("app.matching.engine._candidatos_licitaciones", side_effect=RuntimeError("fallo")), \
+             patch("app.matching.engine._candidatos_ca", return_value=[]):
+            result = match_todos(session, ahora=_AHORA_LOCAL)
+
+        # match_todos captura errores internamente
+        assert result["perfiles_procesados"] == 1

@@ -597,6 +597,125 @@ def test_v2_envelope_error_generico(settings_fake, mem_engine):
 
 
 @respx.mock
+# ---------------------------------------------------------------------------
+# Cobertura de ramas adicionales de mp_v1.py
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_v1_licitaciones_por_fecha_con_params(settings_fake, mem_engine):
+    """licitaciones_por_fecha pasa parámetros opcionales (estado, organismo, proveedor)."""
+    from datetime import date
+
+    respx.get(_V1_BASE + "licitaciones.json").mock(
+        return_value=httpx.Response(200, json={"Listado": []})
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    result = client.licitaciones_por_fecha(
+        date(2026, 6, 12),
+        estado="activas",
+        codigo_organismo="ORG-1",
+        codigo_proveedor="PROV-1",
+    )
+    assert result == []
+    # Verifica que los params opcionales se incluyeron en la request
+    req = respx.calls[0].request
+    assert "estado" in str(req.url)
+
+
+@respx.mock
+def test_v1_licitaciones_activas_listado_no_lista(settings_fake, mem_engine):
+    """Listado no lista en licitaciones_activas → []."""
+    respx.get(_V1_BASE + "licitaciones.json").mock(
+        return_value=httpx.Response(200, json={"Listado": "error_string"})
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    assert client.licitaciones_activas() == []
+
+
+@respx.mock
+def test_v1_ordenes_por_fecha_con_params(settings_fake, mem_engine):
+    """ordenes_por_fecha pasa parámetros opcionales."""
+    from datetime import date
+
+    respx.get(_V1_BASE + "ordenesdecompra.json").mock(
+        return_value=httpx.Response(200, json={"Listado": []})
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    result = client.ordenes_por_fecha(
+        date(2026, 6, 12),
+        estado="recepcionada",
+        codigo_organismo="ORG-2",
+        codigo_proveedor="PROV-2",
+    )
+    assert result == []
+
+
+@respx.mock
+def test_v1_ordenes_por_fecha_listado_no_lista(settings_fake, mem_engine):
+    """Listado no lista en ordenes_por_fecha → []."""
+    from datetime import date
+
+    respx.get(_V1_BASE + "ordenesdecompra.json").mock(
+        return_value=httpx.Response(200, json={"Listado": None})
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    assert client.ordenes_por_fecha(date(2026, 6, 12)) == []
+
+
+@respx.mock
+def test_v1_buscar_proveedor_listado_no_lista(settings_fake, mem_engine):
+    """Listado no lista en buscar_proveedor → []."""
+    respx.get(_V1_BASE + "Empresas/BuscarProveedor").mock(
+        return_value=httpx.Response(200, json={"Listado": "bad"})
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    assert client.buscar_proveedor("12.345.678-9") == []
+
+
+@respx.mock
+def test_v1_listar_compradores_listado_no_lista(settings_fake, mem_engine):
+    """Listado no lista en listar_compradores → []."""
+    respx.get(_V1_BASE + "Empresas/BuscarComprador").mock(
+        return_value=httpx.Response(200, json={"Listado": 42})
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    assert client.listar_compradores() == []
+
+
+@respx.mock
+def test_v1_licitacion_detalle_items_como_lista(settings_fake, mem_engine):
+    """_parse_licitacion_detalle con Items como lista (no dict)."""
+    respx.get(_V1_BASE + "licitaciones.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "Listado": [
+                    {
+                        "CodigoExterno": "LIC-LISTA",
+                        "Nombre": "Lic con Items lista",
+                        "CodigoEstado": 5,
+                        "FechaCierre": "30062026",
+                        "FechaPublicacion": "01062026",
+                        "Items": [
+                            {
+                                "CodigoProducto": "P1",
+                                "NombreProducto": "Producto Lista",
+                                "Cantidad": 3,
+                                "UnidadMedida": "UN",
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    detalle = client.licitacion_detalle("LIC-LISTA")
+    assert len(detalle.items) == 1
+    assert detalle.items[0].nombre == "Producto Lista"
+
+
 def test_ticket_nunca_en_logs(settings_fake, mem_engine, caplog, monkeypatch):
     """El ticket NO debe aparecer en ningún mensaje de log (incluyendo httpx)."""
 

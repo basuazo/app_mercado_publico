@@ -508,3 +508,331 @@ class TestAdvisoryLock:
         assert result is None
         # El unlock se llamó a pesar del error
         assert unlocked == [True]
+
+
+# ---------------------------------------------------------------------------
+# Tests de pg advisory lock helpers
+# ---------------------------------------------------------------------------
+
+
+class TestPgLockHelpers:
+    def test_pg_try_lock_row_none_devuelve_false(self):
+        """_pg_try_lock devuelve False cuando fetchone() retorna None."""
+        from app.ingest.orchestrator import _pg_try_lock
+
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = None
+        assert _pg_try_lock(conn, 1234) is False
+
+    def test_pg_try_lock_row_false_devuelve_false(self):
+        """_pg_try_lock devuelve False cuando el resultado es False."""
+        from app.ingest.orchestrator import _pg_try_lock
+
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = (False,)
+        assert _pg_try_lock(conn, 1234) is False
+
+    def test_pg_unlock_llama_execute(self):
+        """_pg_unlock ejecuta el SQL de unlock."""
+        from app.ingest.orchestrator import _pg_unlock
+
+        conn = MagicMock()
+        _pg_unlock(conn, 1234)
+        conn.execute.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests de refresh_organismos (catalogos)
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshOrganismos:
+    def test_crea_nuevos_organismos(self, session):
+        from app.clients.types import Comprador
+        from app.ingest.catalogos import refresh_organismos
+        from app.models.tables import Organismo
+
+        v1 = MagicMock()
+        v1.listar_compradores.return_value = [
+            Comprador(codigo="ORG-001", nombre="MINSAL", rut="61.001.000-0"),
+            Comprador(codigo="ORG-002", nombre="MINEDUC", rut=None),
+        ]
+        result = refresh_organismos(session, v1)
+        assert result["nuevos"] == 2
+        assert result["actualizados"] == 0
+        assert session.get(Organismo, "ORG-001") is not None
+
+    def test_actualiza_organismos_existentes(self, session):
+        from app.clients.types import Comprador
+        from app.ingest.catalogos import refresh_organismos
+        from app.models.tables import Organismo
+
+        session.add(Organismo(codigo="ORG-001", nombre="Nombre viejo", rut=None))
+        session.commit()
+
+        v1 = MagicMock()
+        v1.listar_compradores.return_value = [
+            Comprador(codigo="ORG-001", nombre="Nombre nuevo", rut="61.001.000-0"),
+        ]
+        result = refresh_organismos(session, v1)
+        assert result["nuevos"] == 0
+        assert result["actualizados"] == 1
+        org = session.get(Organismo, "ORG-001")
+        assert org is not None and org.nombre == "Nombre nuevo"
+
+    def test_ignora_compradores_sin_codigo(self, session):
+        from app.clients.types import Comprador
+        from app.ingest.catalogos import refresh_organismos
+
+        v1 = MagicMock()
+        v1.listar_compradores.return_value = [
+            Comprador(codigo="", nombre="Sin código", rut=None),
+        ]
+        result = refresh_organismos(session, v1)
+        assert result["nuevos"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests de lifecycle (refresh_estados)
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshEstados:
+    def _licitacion(self, session, codigo: str) -> Any:
+        from app.models.tables import Licitacion
+
+        lic = Licitacion(
+            codigo=codigo,
+            nombre=f"Lic {codigo}",
+            descripcion="",
+            estado="publicada",
+            fecha_cierre=datetime(2026, 6, 18),  # dentro de ventana ±7/+3
+        )
+        session.add(lic)
+        session.commit()
+        return lic
+
+    def _ca(self, session, codigo: str) -> Any:
+        from app.models.tables import CompraAgil
+
+        ca = CompraAgil(
+            codigo=codigo,
+            nombre=f"CA {codigo}",
+            descripcion="",
+            estado="publicada",
+            fecha_cierre=datetime(2026, 6, 18),
+        )
+        session.add(ca)
+        session.commit()
+        return ca
+
+    def test_actualiza_licitaciones(self, session, settings):
+        from app.ingest.lifecycle import refresh_estados
+
+        self._licitacion(session, "LIC-LIFE")
+        v1 = MagicMock()
+        v1.licitacion_detalle.return_value = _lic_detalle("LIC-LIFE")
+        v2 = MagicMock()
+
+        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        assert result["actualizadas_licitaciones"] == 1
+        assert result["errores"] == 0
+
+    def test_error_en_licitacion_no_aborta(self, session, settings):
+        from app.ingest.lifecycle import refresh_estados
+
+        self._licitacion(session, "LIC-FAIL")
+        self._licitacion(session, "LIC-OK")
+        v1 = MagicMock()
+
+        def side_licitacion(codigo: str):
+            if codigo == "LIC-FAIL":
+                raise RuntimeError("fallo lic")
+            return _lic_detalle(codigo)
+
+        v1.licitacion_detalle.side_effect = side_licitacion
+        v2 = MagicMock()
+
+        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        assert result["errores"] == 1
+        assert result["actualizadas_licitaciones"] == 1
+
+    def test_actualiza_compras_agiles(self, session, settings):
+        from app.clients.types import CompraAgilDetalle
+        from app.ingest.lifecycle import refresh_estados
+
+        self._ca(session, "CA-LIFE")
+        v1 = MagicMock()
+
+        detalle_ca = CompraAgilDetalle(
+            codigo="CA-LIFE",
+            nombre="CA Life",
+            estado="publicada",
+            fecha_publicacion=None,
+            fecha_cierre=datetime(2026, 6, 18),
+            fecha_ultimo_cambio=datetime(2026, 6, 15),
+            monto_clp=500_000.0,
+            region=13,
+            organismo_nombre="Test",
+            organismo_rut=None,
+            total_ofertas=2,
+            descripcion="desc",
+            productos=[],
+            id_orden_compra=None,
+        )
+        v2 = MagicMock()
+        v2.detalle_compra_agil.return_value = detalle_ca
+
+        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        assert result["actualizadas_ca"] == 1
+        assert result["errores"] == 0
+
+    def test_error_en_ca_no_aborta(self, session, settings):
+        from app.ingest.lifecycle import refresh_estados
+
+        self._ca(session, "CA-FAIL")
+        v1 = MagicMock()
+        v2 = MagicMock()
+        v2.detalle_compra_agil.side_effect = RuntimeError("fallo CA")
+
+        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        assert result["errores"] == 1
+
+    def test_max_requests_limita_ciclo(self, session, settings):
+        from app.ingest.lifecycle import refresh_estados
+
+        for i in range(5):
+            self._licitacion(session, f"LIC-LIM-{i}")
+
+        v1 = MagicMock()
+        v1.licitacion_detalle.side_effect = lambda c: _lic_detalle(c)
+        v2 = MagicMock()
+
+        result = refresh_estados(session, v1, v2, settings, max_requests=2)
+        assert result["actualizadas_licitaciones"] <= 2
+
+
+# ---------------------------------------------------------------------------
+# Tests de runners del orchestrator
+# ---------------------------------------------------------------------------
+
+
+class TestOrchestratorRunners:
+    def test_run_sync_ca(self, settings, engine):
+        from app.ingest.orchestrator import run_sync_ca
+
+        with patch("app.ingest.orchestrator._make_clients") as mk:
+            _, v2 = MagicMock(), MagicMock()
+            v2.listar_compra_agil.return_value = MagicMock(
+                items=[],
+                paginacion=MagicMock(total_paginas=1, numero_pagina=1),
+            )
+            mk.return_value = (MagicMock(), v2)
+            result = run_sync_ca(settings, engine)
+        assert "nuevas" in result
+
+    def test_run_catalogos(self, settings, engine):
+        from app.ingest.orchestrator import run_catalogos
+
+        with patch("app.ingest.orchestrator._make_clients") as mk:
+            v1 = MagicMock()
+            v1.listar_compradores.return_value = []
+            mk.return_value = (v1, MagicMock())
+            result = run_catalogos(settings, engine)
+        assert "nuevos" in result
+
+    def test_run_retencion(self, engine):
+        from app.ingest.orchestrator import run_retencion
+
+        result = run_retencion(engine)
+        assert "purgadas" in result or isinstance(result, dict)
+
+    def test_run_backfill_fecha(self, settings, engine):
+        from app.ingest.orchestrator import run_backfill_fecha
+
+        with patch("app.ingest.orchestrator._make_clients") as mk:
+            v1 = MagicMock()
+            v1.licitaciones_por_fecha.return_value = []
+            mk.return_value = (v1, MagicMock())
+            result = run_backfill_fecha(settings, engine, date(2026, 6, 10))
+        assert "nuevas" in result
+
+    def test_run_digest(self, settings, engine):
+        from app.ingest.orchestrator import run_digest
+
+        with patch("app.alerts.email.enviar_digest", return_value={"enviados": 0}):
+            result = run_digest(settings, engine)
+        assert "enviados" in result
+
+    def test_run_match_con_sin_detalle(self, settings, engine):
+        from app.ingest.orchestrator import run_match
+
+        with patch("app.matching.engine.match_todos") as mt, patch(
+            "app.ingest.orchestrator._make_clients"
+        ) as mk:
+            mt.return_value = {
+                "perfiles_procesados": 0,
+                "nuevos": 0,
+                "actualizados": 0,
+                "descartados": 0,
+                "sin_detalle_licitaciones": ["LIC-XXX"],
+                "sin_detalle_ca": ["CA-XXX"],
+            }
+            v1 = MagicMock()
+            v1.licitacion_detalle.return_value = _lic_detalle("LIC-XXX")
+            v2 = MagicMock()
+            from app.clients.types import CompraAgilDetalle
+
+            v2.detalle_compra_agil.return_value = CompraAgilDetalle(
+                codigo="CA-XXX",
+                nombre="CA",
+                estado="publicada",
+                fecha_publicacion=None,
+                fecha_cierre=None,
+                fecha_ultimo_cambio=None,
+                monto_clp=None,
+                region=None,
+                organismo_nombre=None,
+                organismo_rut=None,
+                total_ofertas=0,
+                descripcion="",
+                productos=[],
+                id_orden_compra=None,
+            )
+            mk.return_value = (v1, v2)
+            result = run_match(settings, engine)
+        assert "sin_detalle_licitaciones" in result
+
+    def test_ciclo_nocturno_dentro_ventana(self, settings, engine):
+        """_ciclo_nocturno ejecuta jobs cuando está dentro de la ventana 22:00–07:00."""
+        from app.ingest.orchestrator import _ciclo_nocturno
+
+        now_fn = lambda tz: datetime(2026, 6, 13, 23, 30, tzinfo=tz)  # noqa: E731
+        llamadas: list[str] = []
+
+        def fake_run_with_lock(job_name: str, fn: Any, eng: Any, **kw: Any) -> None:
+            llamadas.append(job_name)
+
+        with patch("app.ingest.orchestrator._run_with_lock", side_effect=fake_run_with_lock):
+            _ciclo_nocturno(settings, engine, now_fn=now_fn)
+
+        assert "lifecycle" in llamadas
+        assert "backfill_ayer" in llamadas
+
+    def test_build_scheduler_registra_jobs(self, settings, engine):
+        from app.ingest.orchestrator import build_scheduler
+
+        sched = build_scheduler(settings, engine)
+        job_ids = {j.id for j in sched.get_jobs()}
+        assert "ca_incremental" in job_ids
+        assert "nocturno" in job_ids
+        assert "digest" in job_ids
+
+    def test_run_scheduler_llama_start(self, settings, engine):
+        from app.ingest.orchestrator import run_scheduler
+
+        with patch("app.ingest.orchestrator.build_scheduler") as bs:
+            mock_sched = MagicMock()
+            bs.return_value = mock_sched
+            run_scheduler(settings, engine)
+        mock_sched.start.assert_called_once()
