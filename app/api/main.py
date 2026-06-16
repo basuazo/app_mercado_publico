@@ -118,3 +118,7 @@ def _make_app() -> FastAPI:
     s = get_settings()
     e = make_engine(s)
     return create_app(s, e)
+
+
+# Instancia de módulo requerida por: uvicorn app.api.main:app
+app = _make_app()
