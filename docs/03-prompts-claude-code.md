@@ -244,10 +244,10 @@ Al terminar: ruff, mypy, pytest (contra branch dev); commit. Yo ejecuto el deplo
 Cierra el proyecto para entrega según CLAUDE.md.
 
 1. Cobertura: pytest --cov; lleva app/clients, app/ingest, app/matching y app/auth a ≥80 % priorizando ramas de error.
-2. docs/operacion.md (runbook): instalación local; rotación del ticket; rotación de SECRET_KEY y JOBS_TOKEN (e impacto en sesiones); recuperar acceso admin; 401 persistente; 429 (esperar día calendario Chile); API caída; Neon suspendida o llena (qué purgar, cómo medir con /salud); pinger caído (síntoma: sync atrasada; remedio); respaldo/restore de la BD (pg_dump contra Neon); deploy y rollback en Render.
-3. docs/arquitectura.md: diagrama mermaid de módulos y flujo de datos; decisiones (Render+Neon, retención, advisory lock, un ticket compartido) y limitaciones conocidas (gotchas API, tasas de cambio configuradas a mano, rate limit de login en memoria).
+2. docs/operacion.md (runbook): instalación local; rotación del ticket; rotación de SECRET_KEY y JOBS_TOKEN (e impacto en sesiones); recuperar acceso admin; 401 persistente; 429 (esperar día calendario Chile); API caída; Neon suspendida o llena (qué purgar, cómo medir con /salud); pinger caído (síntoma: sync atrasada; remedio); respaldo/restore de la BD (pg_dump contra Neon); deploy y rollback en Render; nota sobre DATABASE_URL con prefijo postgresql+psycopg:// requerido por psycopg3.
+3. docs/arquitectura.md: diagrama mermaid de módulos y flujo de datos; decisiones (Render+Neon, retención, advisory lock, un ticket compartido, psycopg3 con prefijo postgresql+psycopg://, branches Neon dev/production) y limitaciones conocidas (gotchas API, tasas de cambio configuradas a mano, rate limit de login en memoria, WEB_CONCURRENCY=1 en Render free).
 4. pip-audit; corrige lo razonable y documenta lo diferido.
-5. README final con quickstart (local y producción) y CHANGELOG.
+5. README final con quickstart (local y producción) y CHANGELOG. El quickstart debe incluir: DATABASE_URL debe usar prefijo postgresql+psycopg:// (no postgresql://); rama dev de Neon para local, rama production para Render.
 
 Commit final con tag v0.1.0.
 ```

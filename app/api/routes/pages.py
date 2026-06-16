@@ -178,6 +178,7 @@ async def perfil_crear(
         fuentes=fuentes_list,
         frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
     )
+    session.commit()
     return RedirectResponse(url="/perfiles?mensaje=Perfil+creado", status_code=303)
 
 
@@ -194,6 +195,7 @@ async def perfil_eliminar(
     if perfil is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     eliminar_perfil(session, perfil_id, user.id)
+    session.commit()
     return RedirectResponse(url="/perfiles?mensaje=Perfil+eliminado", status_code=303)
 
 
@@ -227,6 +229,7 @@ async def perfil_editar(
         fuentes=fuentes_list,
         frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
     )
+    session.commit()
     return RedirectResponse(url="/perfiles?mensaje=Perfil+actualizado", status_code=303)
 
 
