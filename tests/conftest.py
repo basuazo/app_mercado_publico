@@ -9,12 +9,10 @@ from app.core.settings import Settings
 
 @pytest.fixture(scope="session")
 def db_url() -> str:
-    """Retorna DATABASE_URL del entorno y verifica que NO apunte a la branch production.
+    """Retorna DATABASE_URL del entorno y verifica que NO sea igual a DATABASE_URL_PROD.
 
-    Neon genera hostnames con el patrón:
-      <user>.<region>-<branch-slug>-<project>.neon.host
-    La branch production tiene el slug "-production-" en el hostname.
-    Si apunta a prod, el test falla para proteger datos reales.
+    Si ambas URLs son idénticas el entorno apunta a la branch production de Neon
+    y los tests fallan para proteger datos reales.
     """
     try:
         settings = Settings()  # type: ignore[call-arg]
@@ -26,18 +24,11 @@ def db_url() -> str:
         # SQLite: no hay riesgo de apuntar a prod
         return url
 
-    # Protección: rechazar si el hostname contiene el slug de la branch production
-    # Neon usa "-production-" (o "production" sin prefijo si es la branch principal)
-    import urllib.parse
-
-    parsed = urllib.parse.urlparse(url)
-    host = parsed.hostname or ""
-    forbidden_slugs = ("-production-", "production.")
-    for slug in forbidden_slugs:
-        if slug in host:
-            pytest.fail(
-                f"DATABASE_URL apunta a la branch production de Neon ({host}). "
-                "Usa la branch 'dev' para tests. Revisa tu .env."
-            )
+    prod_url = getattr(settings, "database_url_prod", "")
+    if prod_url and url.strip() == prod_url.strip():
+        pytest.fail(
+            "DATABASE_URL es idéntica a DATABASE_URL_PROD — los tests apuntarían "
+            "a la branch production de Neon. Revisa tu .env."
+        )
 
     return url

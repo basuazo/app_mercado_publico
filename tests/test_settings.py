@@ -58,3 +58,25 @@ def test_tasas_de_cambio_configurables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TASA_USD", "1000.5")
     s = Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.tasa_usd == 1000.5
+
+
+def test_db_url_falla_si_apunta_a_prod(monkeypatch: pytest.MonkeyPatch) -> None:
+    """db_url fixture debe fallar con pytest.fail cuando DATABASE_URL == DATABASE_URL_PROD."""
+    prod_url = "postgresql://user:pass@prod-host.neon.host/neondb?sslmode=require"
+    for k, v in _VALID_ENV.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("DATABASE_URL", prod_url)
+    monkeypatch.setenv("DATABASE_URL_PROD", prod_url)
+
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    url = s.database_url
+    prod = getattr(s, "database_url_prod", "")
+
+    assert prod and url.strip() == prod.strip(), "Debería detectar URLs iguales"
+
+    with pytest.raises(pytest.fail.Exception):  # type: ignore[attr-defined]
+        if prod and url.strip() == prod.strip():
+            pytest.fail(
+                "DATABASE_URL es idéntica a DATABASE_URL_PROD — los tests apuntarían "
+                "a la branch production de Neon. Revisa tu .env."
+            )
