@@ -56,7 +56,7 @@ dev         ← branch para desarrollo local y pytest
 1. **New → Web Service** → conectar repo.
 2. **Runtime:** Python 3  
    **Build command:** `pip install -e ".[dev]"`  
-   **Start command:** `alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT`  
+   **Start command:** `alembic upgrade head && uvicorn app.api.main:_make_app --factory --host 0.0.0.0 --port $PORT`  
    **Health check path:** `/api/salud/ping`  
    **Plan:** Free
 3. En **Environment** → agregar todas las variables de `render.yaml` (los `sync: false` son secretos que debes escribir a mano):

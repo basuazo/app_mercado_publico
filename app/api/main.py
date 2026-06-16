@@ -106,3 +106,15 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
         return RedirectResponse(url=f"/login?next={next_url}", status_code=302)
 
     return app
+
+
+# ---------------------------------------------------------------------------
+# Factory para uvicorn --factory (startCommand en render.yaml)
+# ---------------------------------------------------------------------------
+
+def _make_app() -> FastAPI:
+    from app.core.settings import get_settings
+
+    s = get_settings()
+    e = make_engine(s)
+    return create_app(s, e)

@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -e ".[dev]"
-    startCommand: alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && uvicorn app.api.main:_make_app --factory --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/salud/ping
     envVars:
       # Secretos — sync: false para que Render no los toque automáticamente
