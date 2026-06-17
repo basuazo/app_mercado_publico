@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB as _PG_JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
+from app.models.enums import EstadoAlerta, EstadoOportunidad, FrecuenciaAlerta, RolUsuario
 
 # Renders as JSONB on Postgres (GIN indexable), falls back to JSON elsewhere (tests).
 JSONB = JSON().with_variant(_PG_JSONB(), "postgresql")
@@ -259,7 +259,11 @@ class Alerta(Base):
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     enviada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     canal: Mapped[str] = mapped_column(String(20), nullable=False, default="email")
-    estado: Mapped[str] = mapped_column(String(20), nullable=False, default="pendiente")
+    estado: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=EstadoAlerta.PENDIENTE.value
+    )
+    intentos_envio: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
 
     match: Mapped[OportunidadMatch] = relationship("OportunidadMatch", back_populates="alertas")
 

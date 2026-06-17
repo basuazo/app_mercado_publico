@@ -19,6 +19,12 @@ class FrecuenciaAlerta(enum.StrEnum):
     DIGEST = "digest"
 
 
+class EstadoAlerta(enum.StrEnum):
+    PENDIENTE = "pendiente"
+    ENVIADA = "enviada"
+    FALLIDA = "fallida"
+
+
 class EstadoOportunidad(enum.StrEnum):
     # Estados licitaciones
     PUBLICADA = "publicada"

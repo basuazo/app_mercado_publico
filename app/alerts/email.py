@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
 from app.core.settings import Settings
-from app.models.enums import FrecuenciaAlerta
+from app.models.enums import EstadoAlerta, FrecuenciaAlerta
 from app.models.tables import (
     Alerta,
     CompraAgil,
@@ -262,7 +262,7 @@ def _load_alertas_pendientes(session: Session, frecuencia: FrecuenciaAlerta) -> 
             .join(PerfilBusqueda, OportunidadMatch.perfil_id == PerfilBusqueda.id)
             .join(Usuario, PerfilBusqueda.owner_id == Usuario.id)
             .where(
-                Alerta.estado == "pendiente",
+                Alerta.estado == EstadoAlerta.PENDIENTE.value,
                 PerfilBusqueda.frecuencia_alerta == frecuencia.value,
                 PerfilBusqueda.activo.is_(True),
                 Usuario.activo.is_(True),
@@ -302,7 +302,7 @@ def enviar_pendientes_inmediatas(session: Session, settings: Settings) -> dict[s
             body_text = _jinja.get_template("alerta_inmediata.txt").render(**ctx)
             body_html = _jinja.get_template("alerta_inmediata.html").render(**ctx)
             _smtp_send(settings, ctx["owner_email"], subject, body_text, body_html)
-            alerta.estado = "enviada"
+            alerta.estado = EstadoAlerta.ENVIADA.value
             alerta.enviada_en = _now_utc()
             session.commit()
             counter.consume()
@@ -310,6 +310,15 @@ def enviar_pendientes_inmediatas(session: Session, settings: Settings) -> dict[s
         except Exception:
             _log.error("Error enviando inmediata id=%d a %s", alerta.id, ctx["owner_email"], exc_info=True)
             session.rollback()
+            alerta.intentos_envio += 1
+            if alerta.intentos_envio >= alerta.max_intentos:
+                alerta.estado = EstadoAlerta.FALLIDA.value
+                _log.warning(
+                    "Alerta id=%d marcada fallida tras %d intentos",
+                    alerta.id,
+                    alerta.intentos_envio,
+                )
+            session.commit()
             errores += 1
 
     if pospuestos > 0:
@@ -351,7 +360,7 @@ def enviar_digest(session: Session, settings: Settings) -> dict[str, int]:
             _smtp_send(settings, owner_email, subject, body_text, body_html)
             ahora = _now_utc()
             for a in user_alertas:
-                a.estado = "enviada"
+                a.estado = EstadoAlerta.ENVIADA.value
                 a.enviada_en = ahora
             session.commit()
             counter.consume()
@@ -359,6 +368,16 @@ def enviar_digest(session: Session, settings: Settings) -> dict[str, int]:
         except Exception:
             _log.error("Error enviando digest a %s", owner_email, exc_info=True)
             session.rollback()
+            for a in user_alertas:
+                a.intentos_envio += 1
+                if a.intentos_envio >= a.max_intentos:
+                    a.estado = EstadoAlerta.FALLIDA.value
+                    _log.warning(
+                        "Alerta id=%d marcada fallida tras %d intentos",
+                        a.id,
+                        a.intentos_envio,
+                    )
+            session.commit()
             errores += 1
 
     if pospuestos > 0:

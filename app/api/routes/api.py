@@ -225,12 +225,13 @@ async def jobs_run(
         run_lifecycle,
         run_match,
         run_sync_activas,
+        run_sync_ca,
     )
 
     engine = request.app.state.engine
 
     _jobs: dict[str, Any] = {
-        "ca":        lambda: run_sync_activas(settings, engine),
+        "ca":        lambda: run_sync_ca(settings, engine),
         "activas":   lambda: run_sync_activas(settings, engine),
         "detalles":  lambda: run_detalles(settings, engine),
         "lifecycle": lambda: run_lifecycle(settings, engine),

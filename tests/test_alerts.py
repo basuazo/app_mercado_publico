@@ -439,6 +439,50 @@ class TestEnviarInmediatas:
         assert estados.count("enviada") == 1
         assert estados.count("pendiente") == 2
 
+    def test_fallo_incrementa_intentos(self, session: Session, monkeypatch):
+        """Un fallo de envío incrementa intentos_envio y deja la alerta pendiente."""
+        _, a = self._setup_alerta_inmediata(session)
+        monkeypatch.setattr(
+            "app.alerts.email._smtp_send", lambda *args: (_ for _ in ()).throw(RuntimeError("smtp fail"))
+        )
+        enviar_pendientes_inmediatas(session, _fake_settings())
+        session.expire_all()
+        alerta_db = session.get(Alerta, a.id)
+        assert alerta_db is not None
+        assert alerta_db.intentos_envio == 1
+        assert alerta_db.estado == "pendiente"
+
+    def test_tres_fallos_marca_fallida(self, session: Session, monkeypatch):
+        """Tras max_intentos fallos consecutivos la alerta pasa a estado 'fallida'."""
+        _, a = self._setup_alerta_inmediata(session)
+        a.max_intentos = 3
+        session.commit()
+
+        monkeypatch.setattr(
+            "app.alerts.email._smtp_send", lambda *args: (_ for _ in ()).throw(RuntimeError("smtp fail"))
+        )
+        # Tres ciclos de envío simulando re-ejecuciones del job
+        for _ in range(3):
+            enviar_pendientes_inmediatas(session, _fake_settings())
+            session.expire_all()
+
+        alerta_db = session.get(Alerta, a.id)
+        assert alerta_db is not None
+        assert alerta_db.estado == "fallida"
+        assert alerta_db.intentos_envio == 3
+
+    def test_alerta_fallida_no_se_reintenta(self, session: Session, monkeypatch):
+        """Una alerta en estado 'fallida' no se carga en el siguiente ciclo."""
+        _, a = self._setup_alerta_inmediata(session)
+        a.estado = "fallida"
+        a.intentos_envio = 3
+        session.commit()
+
+        llamadas: list[str] = []
+        monkeypatch.setattr("app.alerts.email._smtp_send", lambda s, to, *args: llamadas.append(to))
+        enviar_pendientes_inmediatas(session, _fake_settings())
+        assert llamadas == []
+
 
 # ---------------------------------------------------------------------------
 # 5. Tests de envío — digest
