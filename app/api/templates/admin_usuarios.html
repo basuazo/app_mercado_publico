@@ -53,7 +53,7 @@
       <td>
         {% if u.activo and u.id != current_user.id %}
         <form method="post" action="/admin/usuarios/{{ u.id }}/desactivar"
-              onsubmit="return confirm('¿Desactivar a {{ u.email }}?')">
+              onsubmit="return confirm('¿Desactivar a ' + {{ u.email|tojson }} + '?')">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="btn btn-sm btn-outline-danger">Desactivar</button>
         </form>

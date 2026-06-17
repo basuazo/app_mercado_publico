@@ -517,3 +517,65 @@ def test_ping_sin_auth_ni_datos(engine, settings):
         r = tc.get("/api/salud/ping")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# A1 security fixes
+# ---------------------------------------------------------------------------
+
+
+def test_logger_enmascara_secretos_adicionales(monkeypatch):
+    """SMTP_PASSWORD, BREVO_API_KEY, DATABASE_URL y ADMIN_PASSWORD deben quedar como ***."""
+    import logging
+
+    monkeypatch.setenv("SMTP_PASSWORD", "smtp-secreto-123")
+    monkeypatch.setenv("BREVO_API_KEY", "brevo-key-456")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@host/db")
+    monkeypatch.setenv("ADMIN_PASSWORD", "admin-pw-789")
+
+    from app.core.logging import _SecretFilter
+
+    f = _SecretFilter()
+    f._reload()
+
+    for valor in ("smtp-secreto-123", "brevo-key-456", "postgresql://user:pw@host/db", "admin-pw-789"):
+        record = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="", lineno=0,
+            msg=f"credencial: {valor}", args=(), exc_info=None,
+        )
+        f.filter(record)
+        assert "***" in record.msg, f"El secreto '{valor}' no fue enmascarado"
+        assert valor not in record.msg, f"El secreto '{valor}' quedó expuesto"
+
+
+def test_bcrypt_cost_12():
+    """hash_password debe generar hashes con coste 12 ($2b$12$)."""
+    from app.auth.password import hash_password
+
+    h = hash_password("cualquier-contraseña")
+    assert h.startswith("$2b$12$"), f"Coste inesperado en el hash: {h[:10]}"
+
+
+def test_login_redirect_double_slash(client, usuario):
+    """next=//evil.com debe redirigir a / y no a //evil.com."""
+    from app.auth.rate_limit import clear_attempts
+
+    clear_attempts("testclient")  # evita contaminación del rate limiter entre tests
+
+    r = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": _PW, "next": "//evil.com"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    location = r.headers["location"]
+    assert not location.startswith("//"), f"Open redirect no mitigado: {location}"
+    assert location == "/"
+
+
+def test_security_headers_presentes(client):
+    """El middleware debe añadir X-Content-Type-Options, X-Frame-Options y Referrer-Policy."""
+    r = client.get("/api/salud/ping")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "DENY"
+    assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"

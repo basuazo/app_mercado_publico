@@ -6,10 +6,19 @@ import re
 
 
 class _SecretFilter(logging.Filter):
-    """Reemplaza valores de MP_TICKET, SECRET_KEY y JOBS_TOKEN en los mensajes."""
+    """Reemplaza valores de secretos de entorno en los mensajes de log."""
 
     _PLACEHOLDER = "***"
-    _ENV_VARS = ("MP_TICKET", "SECRET_KEY", "JOBS_TOKEN")
+    _ENV_VARS = (
+        "MP_TICKET",
+        "SECRET_KEY",
+        "JOBS_TOKEN",
+        "SMTP_PASSWORD",
+        "BREVO_API_KEY",
+        "DATABASE_URL",
+        "DATABASE_URL_PROD",
+        "ADMIN_PASSWORD",
+    )
 
     def __init__(self) -> None:
         super().__init__()

@@ -64,7 +64,7 @@ async def login_post(
     clear_attempts(ip)
     token = create_session_token(settings.secret_key, user.id)
 
-    safe_next = next if next.startswith("/") else "/"
+    safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
 
     response = RedirectResponse(url=safe_next, status_code=303)
     response.set_cookie(

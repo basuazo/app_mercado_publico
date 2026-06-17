@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from passlib.context import CryptContext
 
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def verify_password(plain: str, hashed: str) -> bool:

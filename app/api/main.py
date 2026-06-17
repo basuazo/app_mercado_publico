@@ -6,7 +6,7 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -104,6 +104,14 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     ) -> RedirectResponse:
         next_url = exc.next_url or "/"
         return RedirectResponse(url=f"/login?next={next_url}", status_code=302)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next: object) -> Response:
+        response: Response = await call_next(request)  # type: ignore[operator]
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
     return app
 
