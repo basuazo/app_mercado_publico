@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+
+import httpx
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -179,8 +181,10 @@ def _ctx_alerta(alerta: Alerta, session: Session) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Envío SMTP (mockeable en tests)
+# Envío de correo (Brevo REST API preferido; SMTP como fallback local)
 # ---------------------------------------------------------------------------
+
+_BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
 def _smtp_send(
@@ -190,11 +194,48 @@ def _smtp_send(
     body_text: str,
     body_html: str,
 ) -> None:
-    """Envía un correo vía SMTP con STARTTLS. Stub-able en tests."""
-    if not settings.smtp_host:
-        _log.warning("SMTP no configurado — correo a %s descartado", to_email)
-        return
+    """Envía un correo usando Brevo REST API o SMTP como fallback."""
+    if settings.brevo_api_key:
+        _brevo_send(settings, to_email, subject, body_text, body_html)
+    elif settings.smtp_host:
+        _smtp_send_raw(settings, to_email, subject, body_text, body_html)
+    else:
+        _log.warning("Sin proveedor de correo configurado — correo a %s descartado", to_email)
 
+
+def _brevo_send(
+    settings: Settings,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+) -> None:
+    payload = {
+        "sender": {"email": settings.smtp_from},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": body_html,
+        "textContent": body_text,
+    }
+    response = httpx.post(
+        _BREVO_ENDPOINT,
+        headers={"api-key": settings.brevo_api_key, "Content-Type": "application/json"},
+        json=payload,
+        timeout=15.0,
+    )
+    _log.info("Brevo response status=%d to=%s", response.status_code, to_email)
+    if not response.is_success:
+        _log.error("Brevo error status=%d body=%s", response.status_code, response.text)
+        response.raise_for_status()
+
+
+def _smtp_send_raw(
+    settings: Settings,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.smtp_from

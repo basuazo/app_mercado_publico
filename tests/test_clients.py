@@ -274,12 +274,38 @@ def test_v1_429_retry_after(settings_fake, mem_engine):
 
 
 @respx.mock
-def test_v1_5xx_retry(settings_fake, mem_engine):
-    """5xx → tenacity reintenta hasta 3 veces y luego lanza MPServerError."""
-    respx.get(_V1_BASE + "licitaciones.json").mock(return_value=httpx.Response(503))
+def test_v1_5xx_maximo_2_intentos(settings_fake, mem_engine):
+    """500 persistente → exactamente 2 intentos totales (1 reintento) y MPServerError."""
+    route = respx.get(_V1_BASE + "licitaciones.json").mock(return_value=httpx.Response(500))
     client = _v1_client(settings_fake, mem_engine)
-    with patch("tenacity.wait_exponential.__call__", return_value=0), pytest.raises(MPServerError):
+    with patch("time.sleep"), pytest.raises(MPServerError):
         client.licitaciones_activas()
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_v1_5xx_transitorio_ok(settings_fake, mem_engine):
+    """500 en primer intento, 200 en segundo → éxito con 2 intentos totales."""
+    respx.get(_V1_BASE + "licitaciones.json").mock(
+        side_effect=[
+            httpx.Response(500),
+            httpx.Response(200, json={"Listado": [], "Cantidad": 0, "FechaCreacion": "", "CodigoEstado": 0}),
+        ]
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    with patch("time.sleep"):
+        result = client.licitaciones_activas()
+    assert result == []
+
+
+@respx.mock
+def test_v1_429_no_reintenta(settings_fake, mem_engine):
+    """429 → nunca reintenta; MPRateLimitError propagado de inmediato."""
+    route = respx.get(_V1_BASE + "licitaciones.json").mock(return_value=httpx.Response(429))
+    client = _v1_client(settings_fake, mem_engine)
+    with pytest.raises(MPRateLimitError):
+        client.licitaciones_activas()
+    assert route.call_count == 1
 
 
 @respx.mock

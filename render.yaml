@@ -20,7 +20,10 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      # SMTP (Brevo u otro proveedor gratuito)
+      # Brevo REST API (reemplaza SMTP; Render bloquea TCP saliente a puertos SMTP)
+      - key: BREVO_API_KEY
+        sync: false
+      # SMTP (solo para desarrollo local; deprecated en producción)
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
+import respx
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -148,6 +150,7 @@ def _match(
 def _fake_settings(limit: int = 250) -> Any:
     s = MagicMock()
     s.email_daily_limit = limit
+    s.brevo_api_key = ""  # desactivado por defecto; tests Brevo lo sobreescriben
     s.smtp_host = "smtp.test.local"
     s.smtp_port = 587
     s.smtp_user = "user"
@@ -529,6 +532,81 @@ class TestEnviarDigest:
         for m in pa.matches:
             for a in m.alertas:
                 assert a.estado == "enviada"
+
+
+# ---------------------------------------------------------------------------
+# Tests Brevo REST API
+# ---------------------------------------------------------------------------
+
+
+class TestBrevoSend:
+    """Verifica que _brevo_send llama al endpoint correcto con el header api-key."""
+
+    def _settings_brevo(self, limit: int = 250) -> Any:
+        s = _fake_settings(limit)
+        s.brevo_api_key = "test-brevo-key-abc123"
+        s.smtp_from = "from@test.com"
+        return s
+
+    @respx.mock
+    def test_brevo_llama_endpoint_correcto(self):
+        """Verifica endpoint, header api-key y payload de Brevo."""
+        from app.alerts.email import _brevo_send
+
+        route = respx.post("https://api.brevo.com/v3/smtp/email").mock(
+            return_value=httpx.Response(201, json={"messageId": "<abc@brevo>"})
+        )
+        s = self._settings_brevo()
+        _brevo_send(s, "dest@ejemplo.cl", "Asunto", "texto", "<p>html</p>")
+
+        assert route.called
+        req = route.calls.last.request
+        assert req.headers["api-key"] == "test-brevo-key-abc123"
+        import json
+        body = json.loads(req.content)
+        assert body["to"] == [{"email": "dest@ejemplo.cl"}]
+        assert body["sender"] == {"email": "from@test.com"}
+        assert body["subject"] == "Asunto"
+        assert body["htmlContent"] == "<p>html</p>"
+        assert body["textContent"] == "texto"
+
+    @respx.mock
+    def test_brevo_error_5xx_levanta_excepcion(self):
+        """Un 5xx de Brevo debe propagarse como excepción."""
+        from app.alerts.email import _brevo_send
+
+        respx.post("https://api.brevo.com/v3/smtp/email").mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+        s = self._settings_brevo()
+        with pytest.raises(httpx.HTTPStatusError):
+            _brevo_send(s, "dest@ejemplo.cl", "Asunto", "texto", "<p>html</p>")
+
+    @respx.mock
+    def test_smtp_send_usa_brevo_cuando_api_key_configurada(self):
+        """_smtp_send delega a Brevo si brevo_api_key está presente."""
+        from app.alerts.email import _smtp_send as smtp_send_fn
+
+        route = respx.post("https://api.brevo.com/v3/smtp/email").mock(
+            return_value=httpx.Response(201, json={"messageId": "<x>"})
+        )
+        s = self._settings_brevo()
+        smtp_send_fn(s, "dest@ejemplo.cl", "Asunto", "texto", "<p>html</p>")
+        assert route.called
+
+    def test_smtp_send_fallback_sin_brevo(self, monkeypatch):
+        """Sin brevo_api_key, _smtp_send usa la ruta SMTP."""
+        from app.alerts.email import _smtp_send as smtp_send_fn
+
+        llamadas: list[str] = []
+        monkeypatch.setattr(
+            "app.alerts.email._smtp_send_raw",
+            lambda s, to, *a: llamadas.append(to),
+        )
+        s = _fake_settings()
+        s.brevo_api_key = ""
+        smtp_send_fn(s, "dest@ejemplo.cl", "Asunto", "texto", "<p>html</p>")
+        assert llamadas == ["dest@ejemplo.cl"]
 
 
 # ---------------------------------------------------------------------------

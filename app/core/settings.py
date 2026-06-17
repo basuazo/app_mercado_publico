@@ -23,7 +23,10 @@ class Settings(BaseSettings):
     api_daily_budget: int = Field(default=9000, description="Presupuesto máximo de requests/día")
     email_daily_limit: int = Field(default=250, description="Tope de correos por día")
 
-    # --- SMTP (opcionales) ---
+    # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---
+    brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS")
+
+    # --- SMTP (deprecated: solo para desarrollo local sin Brevo configurado) ---
     smtp_host: str = Field(default="", description="Host SMTP")
     smtp_port: int = Field(default=587, description="Puerto SMTP")
     smtp_user: str = Field(default="", description="Usuario SMTP")

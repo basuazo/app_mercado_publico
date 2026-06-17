@@ -10,13 +10,6 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import Engine, text
-from tenacity import (
-    RetryError,
-    Retrying,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from app.core.logging import get_logger
 
@@ -210,28 +203,47 @@ class BaseClient:
             raise MPParseError(f"Respuesta no es JSON válido: {exc}") from exc
 
     def _request(self, method: str, url: str, **kwargs: object) -> dict[str, object]:
+        # MPServerError: máx 2 intentos totales (1 reintento) — absorbe errores transitorios
+        # httpx.TimeoutException: máx 3 intentos totales (2 reintentos)
+        # MPRateLimitError: nunca reintentar
+        _MAX_SERVER_ATTEMPTS = 2
+        _MAX_TIMEOUT_ATTEMPTS = 3
+
         self._quota.check_budget()
         self._rate_limiter.acquire()
-        try:
-            for attempt in Retrying(
-                retry=retry_if_exception_type((MPServerError, httpx.TimeoutException)),
-                stop=stop_after_attempt(3),
-                wait=wait_exponential(multiplier=1, min=2, max=30),
-                reraise=True,
-            ):
-                with attempt:
-                    _log.debug("HTTP %s %s", method, url)
-                    response = self._http.request(
-                        method,
-                        url,
-                        **kwargs,  # type: ignore[arg-type]
-                    )
-                    data = self._handle_response(response)
-        except RetryError as exc:
-            raise MPServerError("Agotados los reintentos", status_code=0) from exc
-        except (MPAuthError, MPRateLimitError, MPParseError):
-            raise
-        except httpx.TimeoutException as exc:
-            raise MPServerError("Timeout de red", status_code=0) from exc
-        self._quota.consume()
-        return data
+
+        server_attempt = 0
+        timeout_attempt = 0
+
+        while True:
+            try:
+                _log.debug("HTTP %s %s", method, url)
+                response = self._http.request(method, url, **kwargs)  # type: ignore[arg-type]
+                data = self._handle_response(response)
+                self._quota.consume()
+                return data
+            except (MPAuthError, MPRateLimitError, MPParseError):
+                raise
+            except MPServerError:
+                server_attempt += 1
+                if server_attempt >= _MAX_SERVER_ATTEMPTS:
+                    raise
+                delay = min(2.0 * (2 ** (server_attempt - 1)), 30.0)
+                _log.warning(
+                    "MPServerError intento %d/%d; reintentando en %.1f s",
+                    server_attempt,
+                    _MAX_SERVER_ATTEMPTS,
+                    delay,
+                )
+                time.sleep(delay)
+            except httpx.TimeoutException as exc:
+                timeout_attempt += 1
+                if timeout_attempt >= _MAX_TIMEOUT_ATTEMPTS:
+                    raise MPServerError("Timeout de red", status_code=0) from exc
+                delay = min(2.0 * (2 ** (timeout_attempt - 1)), 30.0)
+                _log.warning(
+                    "TimeoutException intento %d/%d; reintentando en %.1f s",
+                    timeout_attempt,
+                    _MAX_TIMEOUT_ATTEMPTS,
+                    delay,
+                )
