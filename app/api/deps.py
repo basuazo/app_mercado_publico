@@ -41,12 +41,14 @@ def _get_user_from_request(request: Request, session: Session) -> Usuario | None
     if not token:
         return None
     settings = request.app.state.settings
-    user_id = decode_session_token(settings.secret_key, token)
-    if user_id is None:
+    decoded = decode_session_token(settings.secret_key, token)
+    if decoded is None:
         return None
+    user_id, nonce = decoded
     user = session.get(Usuario, user_id)
     if user is None or not user.activo:
         return None
+    request.state.csrf_nonce = nonce
     return user
 
 
@@ -101,7 +103,7 @@ def api_require_admin(
 # ---------------------------------------------------------------------------
 
 
-def check_csrf(request: Request, user_id: int, form_token: str = "") -> None:
+def check_csrf(request: Request, form_token: str = "") -> None:
     """Valida CSRF desde header X-CSRF-Token o campo de formulario.
 
     Prioridad: header X-CSRF-Token > campo form csrf_token.
@@ -109,5 +111,6 @@ def check_csrf(request: Request, user_id: int, form_token: str = "") -> None:
     """
     token = request.headers.get("X-CSRF-Token") or form_token
     settings = request.app.state.settings
-    if not validate_csrf_token(settings.secret_key, user_id, token):
+    nonce = getattr(request.state, "csrf_nonce", None)
+    if not nonce or not validate_csrf_token(settings.secret_key, nonce, token):
         raise HTTPException(status_code=403, detail="CSRF token inválido")

@@ -39,7 +39,7 @@ def _ctx(request: Request, user: Usuario, **extra: Any) -> dict[str, Any]:
     settings = request.app.state.settings
     return {
         "current_user": user,
-        "csrf_token": generate_csrf_token(settings.secret_key, user.id),
+        "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
         **extra,
     }
 
@@ -166,7 +166,7 @@ async def perfil_crear(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
-    check_csrf(request, user.id, csrf_token)
+    check_csrf(request, csrf_token)
     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
     ex_list = [k.strip() for k in excluir.split(",") if k.strip()]
     fuentes_list = fuentes or ["licitaciones", "compras_agiles"]
@@ -191,7 +191,7 @@ async def perfil_eliminar(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
-    check_csrf(request, user.id, csrf_token)
+    check_csrf(request, csrf_token)
     perfil = obtener_perfil(session, perfil_id, user.id)
     if perfil is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
@@ -213,7 +213,7 @@ async def perfil_editar(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
-    check_csrf(request, user.id, csrf_token)
+    check_csrf(request, csrf_token)
     perfil = obtener_perfil(session, perfil_id, user.id)
     if perfil is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
@@ -265,7 +265,7 @@ async def admin_usuario_crear(
     user: Usuario = Depends(html_require_admin),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
-    check_csrf(request, user.id, csrf_token)
+    check_csrf(request, csrf_token)
     existente = session.execute(
         select(Usuario).where(Usuario.email == email)
     ).scalar_one_or_none()
@@ -292,7 +292,7 @@ async def admin_usuario_desactivar(
     user: Usuario = Depends(html_require_admin),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
-    check_csrf(request, user.id, csrf_token)
+    check_csrf(request, csrf_token)
     target = session.get(Usuario, uid)
     if target is None:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")

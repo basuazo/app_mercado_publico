@@ -148,7 +148,7 @@ async def api_crear_perfil(
     user: Usuario = Depends(api_require_user),
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    check_csrf(request, user.id)
+    check_csrf(request)
     nuevo = crear_perfil(
         session,
         owner_id=user.id,
@@ -170,7 +170,7 @@ async def api_actualizar_perfil(
     user: Usuario = Depends(api_require_user),
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    check_csrf(request, user.id)
+    check_csrf(request)
     if obtener_perfil(session, perfil_id, user.id) is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     actualizar_perfil(
@@ -194,7 +194,7 @@ async def api_eliminar_perfil(
     user: Usuario = Depends(api_require_user),
     session: Session = Depends(get_db),
 ) -> None:
-    check_csrf(request, user.id)
+    check_csrf(request)
     if obtener_perfil(session, perfil_id, user.id) is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     eliminar_perfil(session, perfil_id, user.id)

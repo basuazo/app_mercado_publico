@@ -23,7 +23,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.main import create_app
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
-from app.auth.session import create_session_token
+from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.core.settings import Settings
 from app.models.base import Base
 from app.models.enums import FrecuenciaAlerta, RolUsuario
@@ -104,13 +104,23 @@ def admin(engine):
 
 
 def _cookie(settings: Settings, user_id: int) -> dict[str, str]:
-    from app.auth.session import COOKIE_NAME
     token = create_session_token(settings.secret_key, user_id)
     return {COOKIE_NAME: token}
 
 
-def _csrf_header(settings: Settings, user_id: int) -> dict[str, str]:
-    return {"X-CSRF-Token": generate_csrf_token(settings.secret_key, user_id)}
+def _session(settings: Settings, user_id: int) -> tuple[dict[str, str], dict[str, str]]:
+    """Cookie de sesión + header X-CSRF-Token coherentes (mismo nonce).
+
+    El CSRF token rota por sesión, así que cookie y header deben derivar
+    del mismo create_session_token() para que validate_csrf_token() pase.
+    """
+    token = create_session_token(settings.secret_key, user_id)
+    decoded = decode_session_token(settings.secret_key, token)
+    assert decoded is not None
+    _, nonce = decoded
+    cookies = {COOKIE_NAME: token}
+    headers = {"X-CSRF-Token": generate_csrf_token(settings.secret_key, nonce)}
+    return cookies, headers
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +136,6 @@ def test_login_ok(client, usuario, settings):
     )
     assert r.status_code == 303
     assert r.headers["location"] == "/"
-    from app.auth.session import COOKIE_NAME
     assert COOKIE_NAME in r.cookies
 
 
@@ -161,9 +170,13 @@ def test_login_usuario_inactivo(engine, client, settings):
 
 
 def test_logout_borra_cookie(client, usuario, settings):
-    cookies = _cookie(settings, usuario)
-    csrf = _csrf_header(settings, usuario)
-    r = client.post("/logout", data={"csrf_token": csrf["X-CSRF-Token"]}, cookies=cookies, follow_redirects=False)
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/logout",
+        data={"csrf_token": headers["X-CSRF-Token"]},
+        cookies=cookies,
+        follow_redirects=False,
+    )
     assert r.status_code == 303
 
 
@@ -254,7 +267,6 @@ def test_oportunidad_ajena_404(engine, client, settings):
         user_id_propio = _crear_usuario_normal(s, "propio@test.cl")
         s.commit()
 
-    from app.auth.session import COOKIE_NAME
     client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, user_id_propio))
     r = client.get("/oportunidad/licitaciones/LIC-999")
     assert r.status_code == 404
@@ -287,11 +299,12 @@ def test_crear_perfil_sin_csrf_403(client, usuario, settings):
 
 
 def test_crear_perfil_con_csrf_header_ok(client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
     r = client.post(
         "/perfiles/nuevo",
         data={"nombre": "Mi perfil", "keywords": "tecnología"},
-        headers=_csrf_header(settings, usuario),
-        cookies=_cookie(settings, usuario),
+        headers=headers,
+        cookies=cookies,
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -397,10 +410,11 @@ def test_api_perfil_ajeno_404(engine, client, settings):
         propio_id = _crear_usuario_normal(s, "propio2@test.cl")
         s.commit()
 
+    cookies, headers = _session(settings, propio_id)
     r = client.delete(
         f"/api/perfiles/{perfil_id}",
-        headers={**_csrf_header(settings, propio_id)},
-        cookies=_cookie(settings, propio_id),
+        headers=headers,
+        cookies=cookies,
     )
     assert r.status_code == 404
 
@@ -411,10 +425,8 @@ def test_api_perfil_ajeno_404(engine, client, settings):
 
 
 def test_api_perfil_put_persiste(engine, client, usuario, settings):
-    from app.auth.session import COOKIE_NAME
-
-    client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, usuario))
-    headers = _csrf_header(settings, usuario)
+    cookies, headers = _session(settings, usuario)
+    client.cookies.set(COOKIE_NAME, cookies[COOKIE_NAME])
 
     # Crear
     r = client.post(
@@ -443,10 +455,8 @@ def test_api_perfil_put_persiste(engine, client, usuario, settings):
 
 
 def test_api_perfil_delete_persiste(engine, client, usuario, settings):
-    from app.auth.session import COOKIE_NAME
-
-    client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, usuario))
-    headers = _csrf_header(settings, usuario)
+    cookies, headers = _session(settings, usuario)
+    client.cookies.set(COOKIE_NAME, cookies[COOKIE_NAME])
 
     # Crear
     r = client.post(
@@ -473,8 +483,6 @@ def test_api_perfil_delete_persiste(engine, client, usuario, settings):
 
 
 def test_logout_csrf_invalido(client, usuario, settings):
-    from app.auth.session import COOKIE_NAME
-
     client.cookies.set(COOKIE_NAME, create_session_token(settings.secret_key, usuario))
     r = client.post("/logout", data={"csrf_token": ""}, follow_redirects=False)
     # Debe redirigir a /login con error, sin eliminar la cookie

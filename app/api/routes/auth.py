@@ -94,7 +94,7 @@ async def logout(
         user = _get_user_from_request(request, session)
         if user is not None:
             token = request.headers.get("X-CSRF-Token") or csrf_token
-            if not validate_csrf_token(settings.secret_key, user.id, token):
+            if not validate_csrf_token(settings.secret_key, request.state.csrf_nonce, token):
                 return RedirectResponse(url="/login?error=CSRF+inválido", status_code=303)
 
     response = RedirectResponse(url="/login", status_code=303)
