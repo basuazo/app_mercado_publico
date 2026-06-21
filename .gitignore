@@ -56,3 +56,5 @@ coverage.xml
 # Windows
 Thumbs.db
 desktop.ini
+
+audits/
