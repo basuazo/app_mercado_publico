@@ -20,7 +20,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.api.main import create_app
+from app.api.main import _normalizar_url_driver, create_app
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
@@ -525,6 +525,31 @@ def test_ping_sin_auth_ni_datos(engine, settings):
         r = tc.get("/api/salud/ping")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Normalización de driver en DATABASE_URL (make_engine)
+# ---------------------------------------------------------------------------
+
+
+def test_normaliza_postgresql_sin_driver():
+    url = "postgresql://user:pw@host/db"
+    assert _normalizar_url_driver(url) == "postgresql+psycopg://user:pw@host/db"
+
+
+def test_normaliza_postgres_sin_driver():
+    url = "postgres://user:pw@host/db"
+    assert _normalizar_url_driver(url) == "postgresql+psycopg://user:pw@host/db"
+
+
+def test_normaliza_respeta_driver_explicito():
+    url = "postgresql+psycopg://user:pw@host/db"
+    assert _normalizar_url_driver(url) == url
+
+
+def test_normaliza_no_toca_sqlite():
+    url = "sqlite:///:memory:"
+    assert _normalizar_url_driver(url) == url
 
 
 # ---------------------------------------------------------------------------

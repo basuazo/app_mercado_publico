@@ -19,11 +19,25 @@ from app.api.routes import pages as pages_router
 from app.core.settings import Settings
 
 
+def _normalizar_url_driver(url: str) -> str:
+    """Fuerza el driver psycopg v3 en URLs postgres sin driver explícito.
+
+    SQLAlchemy elige psycopg2 por defecto para "postgresql://"/"postgres://",
+    pero el proyecto depende de psycopg[binary] (v3), no psycopg2.
+    """
+    if url.startswith("postgresql+") or url.startswith("postgres+"):
+        return url
+    if url.startswith("postgresql://") or url.startswith("postgres://"):
+        _, _, resto = url.partition("://")
+        return f"postgresql+psycopg://{resto}"
+    return url
+
+
 def make_engine(settings: Settings) -> Engine:
     """Crea el engine con parámetros apropiados para Neon (Postgres en producción)."""
     from typing import Any
 
-    url = settings.database_url
+    url = _normalizar_url_driver(settings.database_url)
     is_postgres = url.startswith("postgresql") or url.startswith("postgres")
 
     kwargs: dict[str, Any] = {"pool_pre_ping": True}
