@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -550,6 +550,148 @@ def test_normaliza_respeta_driver_explicito():
 def test_normaliza_no_toca_sqlite():
     url = "sqlite:///:memory:"
     assert _normalizar_url_driver(url) == url
+
+
+# ---------------------------------------------------------------------------
+# F9a: regiones / monto_min_clp / monto_max_clp en el formulario de perfiles
+# ---------------------------------------------------------------------------
+
+
+def test_parse_regiones_ignora_no_numerico():
+    from app.api.routes.pages import _parse_regiones
+
+    assert _parse_regiones(["13", "5", "abc", "", "  9  "]) == [13, 5, 9]
+
+
+def test_parse_regiones_vacio():
+    from app.api.routes.pages import _parse_regiones
+
+    assert _parse_regiones([]) == []
+
+
+def test_parse_monto_vacio_es_none():
+    from app.api.routes.pages import _parse_monto
+
+    assert _parse_monto("") is None
+    assert _parse_monto("   ") is None
+
+
+def test_parse_monto_invalido_es_none():
+    from app.api.routes.pages import _parse_monto
+
+    assert _parse_monto("no-es-un-numero") is None
+
+
+def test_parse_monto_valido():
+    from app.api.routes.pages import _parse_monto
+
+    assert _parse_monto("1500000") == 1_500_000.0
+    assert _parse_monto("  2500.5  ") == 2500.5
+
+
+def test_perfil_crear_persiste_regiones_y_montos(engine, client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/perfiles/nuevo",
+        data={
+            "nombre": "Con filtros",
+            "keywords": "",
+            "regiones": ["13", "5", "abc"],
+            "monto_min_clp": "1000000",
+            "monto_max_clp": "5000000",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "Perfil+creado" in r.headers["location"]
+
+    with Session(engine) as s:
+        perfil = s.execute(
+            select(PerfilBusqueda).where(PerfilBusqueda.nombre == "Con filtros")
+        ).scalar_one()
+        assert perfil.regiones == [13, 5]
+        assert perfil.monto_min_clp == 1_000_000.0
+        assert perfil.monto_max_clp == 5_000_000.0
+
+
+def test_perfil_crear_monto_min_mayor_que_max_no_persiste(engine, client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/perfiles/nuevo",
+        data={
+            "nombre": "Rango invertido",
+            "keywords": "",
+            "monto_min_clp": "9000000",
+            "monto_max_clp": "1000000",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+
+    with Session(engine) as s:
+        existe = s.execute(
+            select(PerfilBusqueda).where(PerfilBusqueda.nombre == "Rango invertido")
+        ).scalar_one_or_none()
+        assert existe is None
+
+
+def test_perfil_crear_sin_keywords_ni_filtros_error_amistoso(client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/perfiles/nuevo",
+        data={"nombre": "Vacío total", "keywords": "", "excluir": ""},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+
+
+def test_perfil_editar_persiste_regiones_y_montos(engine, client, usuario, settings):
+    from app.matching.perfiles import crear_perfil
+
+    with Session(engine) as s:
+        perfil = crear_perfil(s, owner_id=usuario, nombre="Editable", keywords=["luz"])
+        s.commit()
+        perfil_id = perfil.id
+
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        f"/perfiles/{perfil_id}/editar",
+        data={
+            "nombre": "Editable",
+            "keywords": "luz",
+            "regiones": ["1", "2"],
+            "monto_min_clp": "200000",
+            "monto_max_clp": "800000",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "Perfil+actualizado" in r.headers["location"]
+
+    with Session(engine) as s:
+        actualizado = s.get(PerfilBusqueda, perfil_id)
+        assert actualizado is not None
+        assert actualizado.regiones == [1, 2]
+        assert actualizado.monto_min_clp == 200_000.0
+        assert actualizado.monto_max_clp == 800_000.0
+
+
+def test_perfiles_get_muestra_regiones_disponibles(client, usuario, settings):
+    cookies, _ = _session(settings, usuario)
+    r = client.get("/perfiles", cookies=cookies)
+    assert r.status_code == 200
+    assert "Tarapacá" in r.text
+    assert "Metropolitana de Santiago" in r.text
 
 
 # ---------------------------------------------------------------------------

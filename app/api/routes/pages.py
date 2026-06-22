@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,6 +23,7 @@ from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.matching.perfiles import (
+    PerfilInvalido,
     actualizar_perfil,
     crear_perfil,
     eliminar_perfil,
@@ -29,6 +31,7 @@ from app.matching.perfiles import (
     obtener_perfil,
 )
 from app.models.enums import FrecuenciaAlerta, RolUsuario
+from app.models.seeds import REGIONES
 from app.models.tables import CompraAgil, Licitacion, Usuario
 
 router = APIRouter()
@@ -131,6 +134,27 @@ async def oportunidad_detalle(
 # ---------------------------------------------------------------------------
 
 
+def _parse_regiones(valores: list[str]) -> list[int]:
+    """Convierte códigos de región del formulario a int, ignorando lo no numérico."""
+    out: list[int] = []
+    for v in valores:
+        v = v.strip()
+        if v.isdigit():
+            out.append(int(v))
+    return out
+
+
+def _parse_monto(valor: str) -> float | None:
+    """Convierte un monto opcional del formulario a float; vacío o inválido → None."""
+    valor = valor.strip()
+    if not valor:
+        return None
+    try:
+        return float(valor)
+    except ValueError:
+        return None
+
+
 @router.get("/perfiles", response_class=HTMLResponse)
 async def perfiles_get(
     request: Request,
@@ -148,6 +172,7 @@ async def perfiles_get(
             user,
             perfiles=perfiles,
             frecuencias=list(FrecuenciaAlerta),
+            regiones_disponibles=REGIONES,
             mensaje=mensaje,
             error=error,
         ),
@@ -161,6 +186,9 @@ async def perfil_crear(
     keywords: str = Form(""),
     excluir: str = Form(""),
     fuentes: list[str] = Form(default=[]),
+    regiones: list[str] = Form(default=[]),
+    monto_min_clp: str = Form(""),
+    monto_max_clp: str = Form(""),
     frecuencia_alerta: str = Form("inmediata"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
@@ -170,15 +198,27 @@ async def perfil_crear(
     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
     ex_list = [k.strip() for k in excluir.split(",") if k.strip()]
     fuentes_list = fuentes or ["licitaciones", "compras_agiles"]
-    crear_perfil(
-        session,
-        owner_id=user.id,
-        nombre=nombre,
-        keywords=kw_list,
-        keywords_excluir=ex_list,
-        fuentes=fuentes_list,
-        frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
-    )
+    regiones_list = _parse_regiones(regiones)
+    monto_min = _parse_monto(monto_min_clp)
+    monto_max = _parse_monto(monto_max_clp)
+    if monto_min is not None and monto_max is not None and monto_min > monto_max:
+        msg = quote("El monto mínimo no puede ser mayor al monto máximo")
+        return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
+    try:
+        crear_perfil(
+            session,
+            owner_id=user.id,
+            nombre=nombre,
+            keywords=kw_list,
+            keywords_excluir=ex_list,
+            regiones=regiones_list,
+            monto_min_clp=monto_min,
+            monto_max_clp=monto_max,
+            fuentes=fuentes_list,
+            frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
+        )
+    except PerfilInvalido as exc:
+        return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
     session.commit()
     return RedirectResponse(url="/perfiles?mensaje=Perfil+creado", status_code=303)
 
@@ -208,6 +248,9 @@ async def perfil_editar(
     keywords: str = Form(""),
     excluir: str = Form(""),
     fuentes: list[str] = Form(default=[]),
+    regiones: list[str] = Form(default=[]),
+    monto_min_clp: str = Form(""),
+    monto_max_clp: str = Form(""),
     frecuencia_alerta: str = Form("inmediata"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
@@ -220,16 +263,28 @@ async def perfil_editar(
     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
     ex_list = [k.strip() for k in excluir.split(",") if k.strip()]
     fuentes_list = fuentes or ["licitaciones", "compras_agiles"]
-    actualizar_perfil(
-        session,
-        perfil_id=perfil_id,
-        owner_id=user.id,
-        nombre=nombre,
-        keywords=kw_list,
-        keywords_excluir=ex_list,
-        fuentes=fuentes_list,
-        frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
-    )
+    regiones_list = _parse_regiones(regiones)
+    monto_min = _parse_monto(monto_min_clp)
+    monto_max = _parse_monto(monto_max_clp)
+    if monto_min is not None and monto_max is not None and monto_min > monto_max:
+        msg = quote("El monto mínimo no puede ser mayor al monto máximo")
+        return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
+    try:
+        actualizar_perfil(
+            session,
+            perfil_id=perfil_id,
+            owner_id=user.id,
+            nombre=nombre,
+            keywords=kw_list,
+            keywords_excluir=ex_list,
+            regiones=regiones_list,
+            monto_min_clp=monto_min,
+            monto_max_clp=monto_max,
+            fuentes=fuentes_list,
+            frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
+        )
+    except PerfilInvalido as exc:
+        return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
     session.commit()
     return RedirectResponse(url="/perfiles?mensaje=Perfil+actualizado", status_code=303)
 
