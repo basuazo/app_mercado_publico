@@ -32,6 +32,29 @@ AHORA = datetime(2026, 6, 13, 12, 0, 0)
 
 _PW_HASH = "$2b$12$fakehashforteststhatislong.enough.xyz"  # bcrypt placeholder
 
+# Identificadores fijos del dataset — única fuente de verdad para que los
+# fixtures de Postgres puedan limpiar antes/después sin duplicar la lista.
+USER_EMAILS: tuple[str, ...] = ("owner_a@test.com", "owner_b@test.com")
+LICITACION_CODIGOS: tuple[str, ...] = (
+    "LIC-TILDE",
+    "LIC-ILUMINA",
+    "LIC-PRODUCTO",
+    "LIC-EXCLUIDO",
+    "LIC-MONTO-BAJO",
+    "LIC-MONTO-NULL",
+    "LIC-NOMBRE-BONUS",
+    "LIC-NO-MATCH",
+    "LIC-URGENCIA-ZERO",
+)
+CA_CODIGOS: tuple[str, ...] = (
+    "CA-0OF",
+    "CA-SIN-MONTO",
+    "CA-2OF",
+    "CA-OTRA-REGION",
+    "CA-ILUMINA-5OF",
+    "CA-CIERRE-1DIA",
+)
+
 
 def crear_dataset(session: Session) -> dict:
     """Inserta el dataset completo en `session`. Hace flush pero NO commit.

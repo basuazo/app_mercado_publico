@@ -65,6 +65,24 @@
             {% endfor %}
           </div>
         </div>
+        <div class="col-md-8">
+          <label class="form-label">Rubros UNSPSC que sigues (recall aditivo: suman candidatos aunque no haya keyword)</label>
+          <select multiple name="categorias_unspsc" class="form-select" style="height: 160px;">
+            {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
+            <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
+              {% for fam_codigo, fam_nombre in fams %}
+              <option value="{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+          <input type="text" name="categorias_unspsc" class="form-control mt-1"
+                 placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma: 43211500,43211503">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Organismos que sigues (códigos/RUT separados por coma)</label>
+          <input type="text" name="organismos_seguidos" class="form-control" placeholder="ej: 12345,76123456-7">
+        </div>
         <div class="col-12">
           <button type="submit" class="btn btn-primary">Crear perfil</button>
         </div>
@@ -105,6 +123,12 @@
       {% if p.monto_min_clp is not none or p.monto_max_clp is not none %}
         | Monto: {{ p.monto_min_clp | int if p.monto_min_clp is not none else '—' }}
         – {{ p.monto_max_clp | int if p.monto_max_clp is not none else '—' }} CLP
+      {% endif %}
+      {% if p.categorias_unspsc %}
+        | Rubros: {{ rubros_por_perfil.get(p.id, []) | join(', ') }}
+      {% endif %}
+      {% if p.organismos_seguidos %}
+        | Organismos seguidos: {{ p.organismos_seguidos | join(', ') }}
       {% endif %}
     </small>
 
@@ -168,6 +192,25 @@
               </div>
               {% endfor %}
             </div>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Rubros UNSPSC que sigues</label>
+            <select multiple name="categorias_unspsc" class="form-select" style="height: 160px;">
+              {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
+              <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
+                {% for fam_codigo, fam_nombre in fams %}
+                <option value="{{ fam_codigo }}" {% if fam_codigo in p.categorias_unspsc %}selected{% endif %}>{{ fam_codigo }} — {{ fam_nombre }}</option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+            <input type="text" name="categorias_unspsc" class="form-control mt-1"
+                   placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Organismos que sigues (separados por coma)</label>
+            <input type="text" name="organismos_seguidos" class="form-control"
+                   value="{{ p.organismos_seguidos | join(', ') }}">
           </div>
           <div class="col-12">
             <button type="submit" class="btn btn-primary btn-sm">Guardar cambios</button>

@@ -754,3 +754,140 @@ def test_security_headers_presentes(client):
     assert r.headers.get("x-content-type-options") == "nosniff"
     assert r.headers.get("x-frame-options") == "DENY"
     assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+
+# ---------------------------------------------------------------------------
+# F9b: parseo de categorias_unspsc / organismos_seguidos en rutas de perfiles
+# ---------------------------------------------------------------------------
+
+
+def test_parse_categorias_descarta_no_digitos_y_largos_invalidos():
+    from app.api.routes.pages import _parse_categorias
+
+    assert _parse_categorias(["43", "4321", "abc", "123", "43211500", "432115001"]) == [
+        "43",
+        "4321",
+        "43211500",
+    ]
+
+
+def test_parse_categorias_divide_texto_libre_por_coma():
+    from app.api.routes.pages import _parse_categorias
+
+    assert _parse_categorias(["4321", "432115,43211500"]) == ["4321", "432115", "43211500"]
+
+
+def test_parse_categorias_deduplica():
+    from app.api.routes.pages import _parse_categorias
+
+    assert _parse_categorias(["4321", "4321"]) == ["4321"]
+
+
+def test_parse_categorias_vacio():
+    from app.api.routes.pages import _parse_categorias
+
+    assert _parse_categorias([]) == []
+
+
+def test_parse_organismos_separa_por_coma_y_limpia_espacios():
+    from app.api.routes.pages import _parse_organismos
+
+    assert _parse_organismos(" 12345 , 76123456-7 ,") == ["12345", "76123456-7"]
+
+
+def test_parse_organismos_vacio():
+    from app.api.routes.pages import _parse_organismos
+
+    assert _parse_organismos("") == []
+
+
+def test_perfil_crear_persiste_categorias_y_organismos(engine, client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/perfiles/nuevo",
+        data={
+            "nombre": "Con rubros",
+            "keywords": "",
+            "categorias_unspsc": ["4321", "abc", "432115,43211500"],
+            "organismos_seguidos": "ORG-1, 76123456-7",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "Perfil+creado" in r.headers["location"]
+
+    with Session(engine) as s:
+        perfil = s.execute(
+            select(PerfilBusqueda).where(PerfilBusqueda.nombre == "Con rubros")
+        ).scalar_one()
+        assert perfil.categorias_unspsc == ["4321", "432115", "43211500"]
+        assert perfil.organismos_seguidos == ["ORG-1", "76123456-7"]
+
+
+def test_perfil_crear_solo_rubro_sin_keywords_no_da_error(engine, client, usuario, settings):
+    """categorias_unspsc por sí sola debe ser criterio mínimo válido (no PerfilInvalido)."""
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/perfiles/nuevo",
+        data={"nombre": "Solo rubro web", "keywords": "", "categorias_unspsc": ["4321"]},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "Perfil+creado" in r.headers["location"]
+
+
+def test_perfil_editar_persiste_categorias_y_organismos(engine, client, usuario, settings):
+    from app.matching.perfiles import crear_perfil
+
+    with Session(engine) as s:
+        perfil = crear_perfil(s, owner_id=usuario, nombre="Editable rubro", keywords=["luz"])
+        s.commit()
+        perfil_id = perfil.id
+
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        f"/perfiles/{perfil_id}/editar",
+        data={
+            "nombre": "Editable rubro",
+            "keywords": "luz",
+            "categorias_unspsc": ["1010"],
+            "organismos_seguidos": "ORG-EDITADO",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "Perfil+actualizado" in r.headers["location"]
+
+    with Session(engine) as s:
+        actualizado = s.get(PerfilBusqueda, perfil_id)
+        assert actualizado is not None
+        assert actualizado.categorias_unspsc == ["1010"]
+        assert actualizado.organismos_seguidos == ["ORG-EDITADO"]
+
+
+def test_perfiles_get_muestra_rubros_y_organismos(engine, client, usuario, settings):
+    from app.matching.perfiles import crear_perfil
+
+    with Session(engine) as s:
+        crear_perfil(
+            s,
+            owner_id=usuario,
+            nombre="Con rubro visible",
+            categorias_unspsc=["4321"],
+            organismos_seguidos=["ORG-VISIBLE"],
+        )
+        s.commit()
+
+    cookies, _ = _session(settings, usuario)
+    r = client.get("/perfiles", cookies=cookies)
+    assert r.status_code == 200
+    assert "ORG-VISIBLE" in r.text
+    # El nombre de la familia 4321 debe resolverse vía el catálogo, no solo el código crudo.
+    assert "Equipo inform" in r.text or "4321" in r.text
+    assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"

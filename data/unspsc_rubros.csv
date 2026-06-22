@@ -1,0 +1,511 @@
+nivel,codigo,nombre
+segmento,10,Material
+segmento,11,Materiales de Minerales y Tejidos y de Plantas y Animales no Comestibles
+segmento,12,Productos químicos incluyendo los bio-químicos y gases industriales
+segmento,13,Resina y Colofonia y Caucho y Espuma y Película y Materiales Elastoméricos
+segmento,14,Materiales y Productos de Papel
+segmento,15,Combustibles
+segmento,20,Maquinaria de minería y perforación de pozos y accesorios
+segmento,21,Maquinaria y Accesorios para Agricultura
+segmento,22,Maquinaria y Accesorios para Construcción y Edificación
+segmento,23,Maquinaria y Accesorios de Fabricación y Transformación Industrial
+segmento,24,Maquinaria
+segmento,25,Vehículos Comerciales
+segmento,26,Maquinaria y Accesorios para Generación y Distribución de Energía
+segmento,27,Herramientas y Maquinaria en General
+segmento,30,Componentes y Suministros de Fabricación
+segmento,31,Componentes y Suministros de Fabricación
+segmento,32,Componentes y Suministros Electrónicos
+segmento,39,Suministros
+segmento,40,Sistemas
+segmento,41,Equipo de Laboratorio
+segmento,42,Equipo
+segmento,43,Telecomunicaciones y radiodifusión de tecnología de la información
+segmento,44,Equipo
+segmento,45,Equipo y Suministros de Imprenta
+segmento,46,Equipos y Suministros de Defensa
+segmento,47,Equipo y Suministros de limpieza
+segmento,48,Maquinaria
+segmento,49,Equipos
+segmento,50,Alimentos
+segmento,51,Medicamentos y Productos Farmacéuticos
+segmento,52,Muebles
+segmento,53,Ropa
+segmento,54,Productos para Relojería
+segmento,55,Productos Publicados
+segmento,56,Muebles y mobiliario
+segmento,57,"Humanitarian Relief Items, Kits, or Accessories"
+segmento,60,Instrumentos musicales
+segmento,64,"Financial Instruments, Products, Contracts and Agreements"
+segmento,70,Servicios de Contratación Agrícola
+segmento,71,Servicios de Perforación de Minería
+segmento,72,Servicios de Construcción y Mantenimiento
+segmento,73,Servicios de Producción y Fabricación Industrial
+segmento,76,Servicios de Limpieza Industrial
+segmento,77,Servicios Medioambientales
+segmento,78,Servicios de Transporte
+segmento,80,Servicios de Gestión
+segmento,81,Servicios basados en ingeniería
+segmento,82,Servicios Editoriales
+segmento,83,Servicios Públicos y Servicios Relacionados con el Sector Público
+segmento,84,Servicios Financieros y de Seguros
+segmento,85,Servicios Sanitarios
+segmento,86,Servicios Educativos y de Formación
+segmento,90,Servicios de Viajes
+segmento,91,Servicios Personales y Domésticos
+segmento,92,Servicios de Defensa Nacional
+segmento,93,Servicios Políticos y de Asuntos Cívicos
+segmento,94,Organizaciones y Clubes
+segmento,95,Land and Buildings and Structures and Thoroughfares
+familia,1010,Animales vivos
+familia,1011,Productos de casa para el animal doméstico
+familia,1012,Pienso para animales
+familia,1013,Recipientes y hábitat para animales
+familia,1014,Artículos de talabartería y arreos
+familia,1015,Semillas
+familia,1016,Productos de floricultura y silvicultura
+familia,1017,Abonos
+familia,1019,Productos para el control de plagas y malas hierbas
+familia,1020,Live rose bushes
+familia,1021,Live plants of high species or variety count flowers
+familia,1022,Live plants of low species or variety count flowers
+familia,1110,Minerales
+familia,1111,Tierra y piedra
+familia,1112,Productos no comestibles de planta y silvicultura
+familia,1113,Productos animales no comestibles
+familia,1114,Chatarra y materiales de desecho
+familia,1115,Fibra
+familia,1116,Tejidos y materiales de cuero
+familia,1117,Aleaciones
+familia,1118,Óxido metálico
+familia,1119,Desechos metálicos y chatarra
+familia,1213,Materiales explosivos
+familia,1214,Elementos y gases
+familia,1216,Aditivos
+familia,1217,Colorantes
+familia,1218,Ceras y aceites
+familia,1219,Solventes
+familia,1235,Compuestos y mezclas
+familia,1310,Caucho y elastómeros
+familia,1311,Resinas y colofonias y otros materiales derivados de resina
+familia,1410,Materiales de papel
+familia,1411,Productos de papel
+familia,1412,Papel para uso industrial
+familia,1510,Combustibles
+familia,1511,Combustibles gaseosos y aditivos
+familia,1512,Lubricantes
+familia,1513,Combustible para reactores nucleares
+familia,2010,Maquinaria y equipo de minería y explotación de canteras
+familia,2011,Equipo de perforación y explotación de pozos
+familia,2012,Equipo para perforación y exploración para petróleo
+familia,2013,Materiales para operaciones y perforación de petróleo y gas
+familia,2014,Equipo de producción y operación de gas y petróleo
+familia,2110,Maquinaria y equipo para agricultura
+familia,2111,Equipo de pesca y acuicultura
+familia,2210,Maquinaria y equipo pesado de construcción
+familia,2310,Maquinaria para la transformación de materias primas
+familia,2311,Maquinaria para transformación de petróleo
+familia,2312,Maquinaria y accesorios de textiles y tejidos
+familia,2313,Maquinaria y equipos lapidarios
+familia,2314,Maquinaria de reparación y accesorios para trabajar cuero
+familia,2315,Maquinaria
+familia,2316,Máquinas
+familia,2318,Equipo industrial para alimentos y bebidas
+familia,2319,Mezcladores y sus partes y accesorios
+familia,2320,Equipamiento par transferencia de masa
+familia,2321,Maquinaria de fabricación electrónica
+familia,2322,Equipo y maquinaria de procesamiento de pollos
+familia,2323,Equipo y maquinaria de procesamiento de madera y aserrado
+familia,2324,Metal cutting machinery and accessories
+familia,2325,Metal forming machinery and accessories
+familia,2326,Rapid prototyping machinery and accessories
+familia,2327,Welding and soldering and brazing machinery and accessories and supplies
+familia,2328,Metal treatment machinery
+familia,2329,Industrial machine tools
+familia,2330,Wire machinery and equipment
+familia,2410,Maquinaria y equipo para manejo de materiales
+familia,2411,Recipientes y almacenamiento
+familia,2412,Materiales de envasado
+familia,2413,Refrigeración industrial
+familia,2414,Suministros de embalaje
+familia,2510,Vehículos de motor
+familia,2511,Transporte marítimo
+familia,2512,Maquinaria y equipo para ferrocarril y tranvías
+familia,2513,Aeronaves
+familia,2515,Cosmonaves
+familia,2516,Bicicletas no motorizadas
+familia,2517,Componentes y sistemas de transporte
+familia,2518,Carrocerías y remolques
+familia,2519,Equipo para servicios de transporte
+familia,2520,Sistemas aeroespaciales y componentes y equipo
+familia,2610,Fuentes de energía
+familia,2611,Transmisión de baterías
+familia,2612,Alambres
+familia,2613,Generación de energía
+familia,2614,Maquinaria y equipo para energía atómica o nuclear
+familia,2711,Herramientas de mano
+familia,2712,Maquinaria y equipo hidráulico
+familia,2713,Maquinaria y equipo neumático
+familia,2714,Herramientas especializadas de automoción
+familia,3010,Materiales estructurales: formas básicas
+familia,3011,Hormigón
+familia,3012,Carreteras y paisaje
+familia,3013,Productos de construcción estructurales
+familia,3014,Aislamiento
+familia,3015,Materiales para acabado de exteriores
+familia,3016,Materiales de acabado de interiores
+familia,3017,Puertas y ventanas y vidrio
+familia,3018,Instalaciones de baño
+familia,3019,Equipo de apoyo para Construcción y Mantenimiento
+familia,3024,Portable Structure Building Components
+familia,3025,Underground mining structures and materials
+familia,3026,Structural materials
+familia,3110,Piezas de fundición
+familia,3111,Extrusiones
+familia,3113,Forjaduras
+familia,3114,Molduras
+familia,3115,Cuerda y cadena y cable y alambre y correa
+familia,3116,Ferretería
+familia,3117,Cojinetes
+familia,3118,Juntas obturadoras y sellos
+familia,3119,Materiales de molduración
+familia,3120,Adhesivos y selladores
+familia,3121,Pinturas y tapa poros y acabados
+familia,3122,Extractos de teñir y de curtir
+familia,3123,Materia prima en placas o barras labradas
+familia,3124,Óptica industrial
+familia,3125,Sistemas de control neumático
+familia,3126,Cubiertas
+familia,3127,Piezas hechas a máquina
+familia,3128,Componentes de placa y estampados
+familia,3129,Estiramientos por presión labrados
+familia,3130,Forjas labradas
+familia,3131,Conjuntos de tubería fabricada
+familia,3132,Conjuntos fabricados de material en barras
+familia,3133,Conjuntos estructurales fabricados
+familia,3134,Conjuntos de placa fabricado
+familia,3135,Conjuntos de tubería fabricada
+familia,3136,Conjuntos de placa fabricados
+familia,3137,Refractarios
+familia,3138,imanes y materiales magnéticos
+familia,3139,Machinings
+familia,3140,Gaskets
+familia,3141,Seals
+familia,3142,Sintered parts
+familia,3210,Circuitos impresos
+familia,3211,Dispositivo semiconductor discreto
+familia,3212,Componentes pasivos discretos
+familia,3213,Piezas de componentes y hardware electrónicos y accesorios
+familia,3214,Dispositivos de tubo electrónico y accesorios
+familia,3215,Automation control devices and components and accessories
+familia,3910,Lámparas y bombillas y componentes para lámparas
+familia,3911,Iluminación
+familia,3912,Equipos
+familia,3913,Electrical wire management devices and accessories and supplies
+familia,4010,Calefacción
+familia,4014,Distribución de fluidos y gas
+familia,4015,Bombas y compresores industriales
+familia,4016,Filtrado y purificación industrial
+familia,4017,Pipe piping and pipe fittings
+familia,4018,Tubes tubing and tube fittings
+familia,4110,Equipo de laboratorio y científico
+familia,4111,Instrumentos de medida
+familia,4112,Suministros y accesorios de laboratorio
+familia,4115,"Clinical laboratory and toxicology testing systems, components, and supplies"
+familia,4117,Diagnostic and microbiological devices
+familia,4212,Equipos y suministros veterinarios
+familia,4213,Telas y vestidos médicos
+familia,4214,Suministros y productos de tratamiento y cuidado del enfermo
+familia,4215,Equipos y suministros dentales
+familia,4216,Equipo de diálisis y suministros
+familia,4217,Productos para los servicios médicos de urgencias y campo
+familia,4218,Productos de examen y control del paciente
+familia,4219,Productos de facilidad médica
+familia,4220,Productos de hacer imágenes diagnósticas médicas y de medicina nuclear
+familia,4221,Ayuda para personas con desafíos físicos para vivir independiente
+familia,4222,Productos para administración intravenosa y arterial
+familia,4223,Nutrición clínica
+familia,4224,Productos medicinales de deportes y prostético y ortopédico
+familia,4225,Productos de rehabilitación y terapia ocupacional y física
+familia,4226,Equipo y suministros post mortem y funerarios
+familia,4227,Productos de resucitación y anestesia y respiratorio
+familia,4228,Productos para la esterilización médica
+familia,4229,Productos quirúrgicos
+familia,4230,Suministros para formación y estudios de medicina
+familia,4231,Productos para el cuidado de heridas
+familia,4232,Orthopedic surgical implants
+familia,4319,Dispositivos de comunicaciones y accesorios
+familia,4320,Componentes para tecnología de la información
+familia,4321,Equipo informático y accesorios
+familia,4322,Datos-voz
+familia,4323,Software
+familia,4410,Maquinaria
+familia,4411,Accesorios de oficina y escritorio
+familia,4412,Suministros de oficina
+familia,4510,Equipo de imprenta y publicación
+familia,4511,Equipos de audio y video para presentación y composición
+familia,4512,Equipo de vídeo
+familia,4513,Medios fotográficos y de grabación
+familia,4514,Suministros fotográficos para cine
+familia,4610,Armas ligeras y munición
+familia,4611,Armas de guerra convencionales
+familia,4612,Misiles
+familia,4613,Cohetes y subsistemas
+familia,4614,Lanzadores
+familia,4615,Orden Público
+familia,4616,Seguridad y control público
+familia,4617,Seguridad
+familia,4618,Seguridad y protección personal
+familia,4619,Protección contra incendios
+familia,4620,Defense and law enforcement and security and safety training equipment
+familia,4621,Workplace safety equipment and supplies and training materials
+familia,4622,Military weapon and ammunition disarmament and disposal equipment and related products
+familia,4710,Tratamiento
+familia,4711,Equipo industrial de lavandería y limpieza en seco
+familia,4712,Equipo de limpieza
+familia,4713,Suministros de limpieza
+familia,4810,Equipos de servicios de alimentación para instituciones
+familia,4811,Máquinas expendedoras
+familia,4812,Equipo de Juego o de Apostar
+familia,4813,Funeral equipment and materials
+familia,4910,Coleccionables y condecoraciones
+familia,4912,Equipos y accesorios para acampada y exterior
+familia,4913,Equipos de pesca y caza
+familia,4914,Equipos para deportes acuáticos
+familia,4915,Equipos para deportes de invierno
+familia,4916,Equipos deportivos para campos y canchas
+familia,4917,Equipos de gimnasia y boxeo
+familia,4918,Juegos y equipo de tiro y mesa
+familia,4920,Equipo para entrenamiento físico
+familia,4921,Otros deportes
+familia,4922,Equipo de deporte y accesorios
+familia,4924,Equipo de recreo y parques infantiles y equipo y suministros de natación y de spa
+familia,5010,Frutas
+familia,5011,Productos de carne y aves de corral
+familia,5012,Pescados y mariscos
+familia,5013,Productos lácteos y huevos
+familia,5015,Aceites y grasas comestibles
+familia,5016,Chocolates
+familia,5017,Condimentos y conservantes
+familia,5018,Productos de panadería
+familia,5019,Alimentos preparados y conservados
+familia,5020,Bebidas
+familia,5021,Tabaco y productos de fumar y substitutos
+familia,5022,Productos de Cereales y Legumbres
+familia,5030,Fresh fruits
+familia,5031,Organic fresh fruits
+familia,5032,Dried fruit
+familia,5033,Dried organic fruit
+familia,5034,Frozen fruit
+familia,5036,Canned or jarred fruit
+familia,5037,Canned or jarred organic fruit
+familia,5038,Fresh fruit purees
+familia,5040,Fresh vegetables
+familia,5041,Organic fresh vegetables
+familia,5042,Dried vegetables
+familia,5043,Dried organic vegetables
+familia,5044,Frozen vegetables
+familia,5045,Frozen organic vegetables
+familia,5046,Canned or jarred vegetables
+familia,5047,Canned or jarred organic vegetables
+familia,5050,Nutritional supplements
+familia,5110,Medicamentos antiinfecciosos
+familia,5111,Agentes antitumorales
+familia,5112,Medicamentos cardiovasculares
+familia,5113,Medicamentos hematólicos
+familia,5114,Medicamentos para el sistema nervioso central
+familia,5115,Medicamentos para el sistema nervioso autónomo
+familia,5116,Medicamentos que afectan al tracto respiratorio
+familia,5117,Medicamentos que afectan al sistema gastrointestinal
+familia,5118,Hormonas y antagonistas hormonales
+familia,5119,Agentes que afectan el agua y los electrolitos
+familia,5120,Medicamentos inmunomoduladores
+familia,5124,eye
+familia,5126,Adrenergic blocking agents
+familia,5127,Anaesthetic drugs and related adjuncts and analeptics
+familia,5128,Antibacterials
+familia,5129,Antidepressants
+familia,5130,Fungicidas
+familia,5131,Antihistamines or H1 blockers
+familia,5132,Antihyperlipidemic and hypocholesterolemic agents
+familia,5133,Antipsychotics
+familia,5134,Medicamentos antivirales
+familia,5135,Estrógenos
+familia,5136,Hypnotics
+familia,5137,Controlled substance analgesics
+familia,5138,Nonsteroidal anti inflammatory drugs NSAIDs
+familia,5139,Sympathomimetic or adrenergic drugs
+familia,5140,Tranquilizers and antimanic and antianxiety drugs
+familia,5141,Vasodilators
+familia,5142,Corticosteroids
+familia,5143,Antihypertensive drugs
+familia,5144,Radiopharmaceuticals and contrast media
+familia,5145,Antihelmínticos y otros antiparasitarios
+familia,5146,Herbal drugs
+familia,5147,Antisépticos
+familia,5210,Revestimientos de suelos
+familia,5212,Ropa de cama
+familia,5213,Window treatments
+familia,5214,Aparatos electrodomésticos
+familia,5215,Utensilios de cocina domésticos
+familia,5216,Electrónica de consumo
+familia,5217,Tratamientos de pared doméstica
+familia,5310,Ropa
+familia,5311,Calzado
+familia,5312,Maletas
+familia,5313,Artículos de tocador
+familia,5314,Fuentes y accesorios de costura
+familia,5410,Joyería
+familia,5411,Relojes
+familia,5412,Gemas
+familia,5510,Medios impresos
+familia,5511,Material electrónico de referencia
+familia,5512,Etiquetado y accesorios
+familia,5610,Muebles de alojamiento
+familia,5611,Muebles comerciales e industriales
+familia,5612,Mobiliario institucional
+familia,5613,Merchandising furniture and accessories
+familia,5614,Decorative adornments
+familia,5701,Survival supplies
+familia,5702,Services related to humanitarian relief actions
+familia,5703,Humanitarian health supplies
+familia,5704,Educational or recreational items
+familia,5705,Humanitarian relief food
+familia,5706,Shelter and relief items
+familia,5707,Humanitarian logistics supplies
+familia,5708,Humanitarian IT equipment
+familia,6010,Materiales didácticos profesionales y de desarrollo y accesorios y suministros
+familia,6011,Decoraciones y suministros del aula
+familia,6012,Equipo de arte y manualidades
+familia,6013,Instrumentos musicales
+familia,6014,Juguetes y juegos
+familia,6410,Bank offered products
+familia,6411,Securities
+familia,6412,Insurable interest contracts
+familia,6414,Governmental property right conferrals
+familia,7010,Pesquerías y acuicultura
+familia,7011,Horticultura
+familia,7012,Servicios de ganadería
+familia,7013,Preparación
+familia,7014,Producción
+familia,7015,Cultivos forestales
+familia,7016,Fauna y flora
+familia,7017,Desarrollo y vigilancia de recursos hidráulicos
+familia,7019,Servicios de maquinaria y equipos de montaje e instalación agrícolas
+familia,7110,Servicios de minería
+familia,7111,Servicios de perforación y prospección petrolífera y de gas
+familia,7112,Servicios de mantenimiento y construcción de perforación de pozos
+familia,7113,Servicios de aumento de la extracción producción de gas y petróleo
+familia,7114,Servicios de restauración y recuperación de gas y aceite
+familia,7115,Servicios de procesar y gestión de datos del aceite y gas
+familia,7116,Servicios de gerencia del proyecto de aceite y gas del pozo
+familia,7210,Construcción de edificios
+familia,7211,Residential building construction services
+familia,7212,Nonresidential building construction services
+familia,7214,Heavy construction services
+familia,7215,Specialized trade construction and maintenance services
+familia,7310,Industrias de plásticos y productos químicos
+familia,7311,Industrias de la madera y el papel
+familia,7312,Industrias del metal y de minerales
+familia,7313,Industrias de alimentos y bebidas
+familia,7314,Industrias de fibras
+familia,7315,Servicios de apoyo a la fabricación
+familia,7316,Fabricación de maquinaria y equipo de transporte
+familia,7317,Fabricación de productos eléctricos e instrumentos de precisión
+familia,7318,Servicios de labrado y procesado
+familia,7610,Servicios de descontaminación
+familia,7611,Servicios de limpieza y de consejería
+familia,7612,Eliminación y tratamiento de desechos
+familia,7613,Limpieza de residuos tóxicos y peligrosos
+familia,7710,Gestión medioambiental
+familia,7711,Protección medioambiental
+familia,7712,Seguimiento
+familia,7713,Servicios de seguimiento
+familia,7714,Environmental laboratory services
+familia,7810,Transporte de correo y carga
+familia,7811,Transporte de pasajeros
+familia,7812,Manejo y embalaje de material
+familia,7813,Almacenaje
+familia,7814,Operaciones de transporte
+familia,7818,Servicios de mantenimiento o reparaciones de transportes
+familia,7820,Aviation-Related Services And Consultancy
+familia,8010,Servicios de asesoría de gestión
+familia,8011,Servicios de recursos humanos
+familia,8012,Servicios legales
+familia,8013,Servicios inmobiliarios
+familia,8014,Comercialización y distribución
+familia,8015,Política comercial y servicios
+familia,8016,Servicios de administración de empresas
+familia,8017,Public relations and professional communications services
+familia,8110,Servicios profesionales de ingeniería
+familia,8111,Servicios informáticos
+familia,8112,Economía
+familia,8113,Estadística
+familia,8114,Tecnologías de fabricación
+familia,8115,Servicios de pedología
+familia,8116,Information Technology Service Delivery
+familia,8117,Biological science services
+familia,8210,Publicidad
+familia,8211,Escritura y traducciones
+familia,8212,Servicios de reproducción
+familia,8213,Servicios fotográficos
+familia,8214,Diseño gráfico
+familia,8215,Artistas e intérpretes profesionales
+familia,8216,Film and theater production support services
+familia,8310,Servicios públicos
+familia,8311,Servicios de medios de telecomunicaciones
+familia,8312,Servicios de información
+familia,8410,Finanzas de desarrollo
+familia,8411,Contabilidad y auditorias
+familia,8412,Banca e inversiones
+familia,8413,Servicios de seguros y jubilación
+familia,8414,Agencias de crédito
+familia,8510,Servicios sanitarios integrales
+familia,8511,Prevención y control de enfermedades
+familia,8512,Práctica médica
+familia,8513,Ciencia médica
+familia,8514,Medicina alternativa y holística
+familia,8515,Servicios alimentarios y de nutrición
+familia,8516,Medical Surgical Equipment Maintenance Refurbishment and Repair Services
+familia,8517,Death and dying support services
+familia,8521,Diagnoses of infectious and parasitic diseases-part a
+familia,8526,"Diagnoses of endocrine, nutritional and metabolic diseases"
+familia,8527,Diagnoses of mental and behavioral disorders
+familia,8538,Diagnoses of certain conditions originating in the perinatal period
+familia,8540,"Diagnoses of congenital malformations, deformations, and chromosomal abnormalities"
+familia,8547,Surgical interventions or procedures of central nervous system
+familia,8570,Surgical interventions or procedures of lower bones
+familia,8576,Surgical interventions or procedures of anatomic regions-general
+familia,8610,Formación profesional
+familia,8611,Sistemas educativos alternativos
+familia,8612,Instituciones educativas
+familia,8613,Servicios educativos especializados
+familia,8614,Instalaciones educativas
+familia,9010,Restaurantes y catering (servicios de comidas y bebidas)
+familia,9011,Instalaciones hoteleras
+familia,9012,Facilitación de viajes
+familia,9013,Artes interpretativas
+familia,9014,Deportes comerciales
+familia,9015,Servicios de entretenimiento
+familia,9110,Aspecto personal
+familia,9111,Asistencia doméstica y personal
+familia,9210,Orden público y seguridad
+familia,9211,Servicios militares o defensa nacional
+familia,9212,Seguridad y protección personal
+familia,9310,Sistemas e instituciones políticas
+familia,9311,Condiciones sociopolíticas
+familia,9312,Relaciones internacionales
+familia,9313,Ayuda y asistencia humanitaria
+familia,9314,Servicios comunitarios y sociales
+familia,9315,Servicios de administración y financiación pública
+familia,9316,Tributación
+familia,9317,Política y regulación comercial
+familia,9410,Organizaciones laborales
+familia,9411,Organizaciones religiosas
+familia,9412,Clubes
+familia,9413,Organizaciones
+familia,9510,Land parcels
+familia,9511,Thoroughfares
+familia,9512,Permanent buildings and structures
+familia,9513,Portable buildings and structures
+familia,9514,Prefabricated buildings and structures

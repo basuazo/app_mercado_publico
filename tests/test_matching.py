@@ -16,19 +16,24 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.matching.engine import (
+    _candidatos_ca,
+    _candidatos_licitaciones,
     _keywords_en_textos,
     _norm,
+    _rubros_hit,
     _score_ca,
     _score_licitacion,
     _upsert_match,
     match_perfil,
     match_todos,
     score_competencia,
+    score_estructural,
     score_texto,
     score_urgencia,
 )
 from app.matching.perfiles import (
     PerfilInvalido,
+    actualizar_perfil,
     crear_perfil,
     eliminar_perfil,
     listar_perfiles,
@@ -149,6 +154,40 @@ class TestScoreCompetencia:
     def test_licitacion_neutro(self):
         assert score_competencia("licitaciones", 0) == 8.0
         assert score_competencia("licitaciones", 99) == 8.0
+
+
+class TestScoreEstructural:
+    """F9b: recall aditivo por rubro UNSPSC y organismo seguido."""
+
+    def test_sin_hits_es_cero(self):
+        assert score_estructural(False, False) == 0.0
+
+    def test_solo_rubro(self):
+        assert score_estructural(True, False) == 20.0
+
+    def test_solo_organismo(self):
+        assert score_estructural(False, True) == 15.0
+
+    def test_ambos(self):
+        assert score_estructural(True, True) == 35.0
+
+
+class TestRubrosHit:
+    def test_sin_categorias_no_hay_hits(self):
+        assert _rubros_hit([], ["43211500"]) == []
+
+    def test_prefijo_matchea_codigo_mas_largo(self):
+        assert _rubros_hit(["4321"], ["43211500", "99999999"]) == ["4321"]
+
+    def test_multiples_prefijos_solo_devuelve_los_que_matchean(self):
+        hits = _rubros_hit(["4321", "1010"], ["43211500"])
+        assert hits == ["4321"]
+
+    def test_codigos_vacios_o_none_no_rompen(self):
+        assert _rubros_hit(["4321"], ["", None]) == []  # type: ignore[list-item]
+
+    def test_sin_codigos_producto(self):
+        assert _rubros_hit(["4321"], []) == []
 
 
 class TestBuildTsquery:
@@ -288,6 +327,47 @@ class TestPerfilesCRUD:
         assert eliminar_perfil(session, p.id, u2.id) is False
 
 
+class TestPerfilesCRUDRubrosOrganismos:
+    """F9b: categorias_unspsc y organismos_seguidos como criterio mínimo válido."""
+
+    def _user(self, session: Session) -> Usuario:
+        u = Usuario(email=f"rubro{id(session)}@test.com", password_hash=_PW_HASH, activo=True)
+        session.add(u)
+        session.flush()
+        return u
+
+    def test_crear_perfil_solo_rubro(self, session: Session):
+        u = self._user(session)
+        p = crear_perfil(session, u.id, "Solo rubro", categorias_unspsc=["4321"])
+        assert p.id is not None
+        assert list(p.categorias_unspsc) == ["4321"]  # type: ignore[arg-type]
+
+    def test_crear_perfil_solo_organismo(self, session: Session):
+        u = self._user(session)
+        p = crear_perfil(session, u.id, "Solo organismo", organismos_seguidos=["ORG-1"])
+        assert p.id is not None
+        assert list(p.organismos_seguidos) == ["ORG-1"]  # type: ignore[arg-type]
+
+    def test_crear_perfil_sin_nada_sigue_invalido(self, session: Session):
+        u = self._user(session)
+        with pytest.raises(PerfilInvalido):
+            crear_perfil(session, u.id, "Vacío total")
+
+    def test_actualizar_perfil_persiste_rubros_y_organismos(self, session: Session):
+        u = self._user(session)
+        p = crear_perfil(session, u.id, "Editable", keywords=["x"])
+        actualizar_perfil(
+            session,
+            p.id,
+            u.id,
+            categorias_unspsc=["4321"],
+            organismos_seguidos=["ORG-2"],
+        )
+        session.flush()
+        assert list(p.categorias_unspsc) == ["4321"]  # type: ignore[arg-type]
+        assert list(p.organismos_seguidos) == ["ORG-2"]  # type: ignore[arg-type]
+
+
 # ---------------------------------------------------------------------------
 # 3. Tests FTS — requieren Postgres con migración aplicada
 # ---------------------------------------------------------------------------
@@ -319,16 +399,40 @@ class TestMatchFTS:
 
     @pytest.fixture()
     def ds(self, pg_session):
-        """Dataset completo cargado en la sesión Postgres."""
+        """Dataset completo cargado en la sesión Postgres.
+
+        Idempotente: limpia por código/email conocido ANTES y DESPUÉS de
+        insertar, para autorepararse si una corrida anterior no llegó a su
+        propio teardown (p.ej. el proceso se interrumpió) en vez de chocar
+        con un UniqueViolation en la siguiente corrida. Las licitaciones/CA
+        del dataset no cuelgan de Usuario (sin cascade), así que se limpian
+        aparte por código.
+        """
+        from app.models.tables import CompraAgil, Licitacion
+        from tests.fixtures.dataset_matching import CA_CODIGOS, LICITACION_CODIGOS, USER_EMAILS
+
+        def _limpiar() -> None:
+            for u in pg_session.execute(
+                select(Usuario).where(Usuario.email.in_(USER_EMAILS))
+            ).scalars():
+                pg_session.delete(u)
+            for codigo in LICITACION_CODIGOS:
+                obj = pg_session.get(Licitacion, codigo)
+                if obj:
+                    pg_session.delete(obj)
+            for codigo in CA_CODIGOS:
+                obj_ca = pg_session.get(CompraAgil, codigo)
+                if obj_ca:
+                    pg_session.delete(obj_ca)
+            pg_session.commit()
+
+        _limpiar()
         data = crear_dataset(pg_session)
         pg_session.commit()
-        yield data
-        # Limpiar después del test (borrar por email de los users creados)
-        for u in [data["users"]["a"], data["users"]["b"]]:
-            obj = pg_session.get(Usuario, u.id)
-            if obj:
-                pg_session.delete(obj)
-        pg_session.commit()
+        try:
+            yield data
+        finally:
+            _limpiar()
 
     def test_match_tilde_insensitive(self, pg_session, ds):
         """Keyword 'electrico' (sin tilde) debe encontrar 'Suministro material electrico'."""
@@ -584,6 +688,39 @@ class TestScoreLicitacion:
         _, razones = _score_licitacion(lic, ["xyznotfound"], _AHORA_LOCAL)
         assert razones["campo_hit"] == "desconocido"
 
+    def test_categorias_hit_en_razones_y_score_sin_keywords(self, session: Session):
+        """F9b: rubro-only (sin keywords) debe puntuar > 0 vía score_estructural."""
+        from app.models.tables import LicitacionItem
+
+        lic = _make_lic(session, "LIC-SCRUBRO", nombre="cosa neutra sin relacion")
+        session.add(
+            LicitacionItem(
+                licitacion_codigo=lic.codigo, codigo_producto="43211500", nombre="laptop"
+            )
+        )
+        session.flush()
+        score, razones = _score_licitacion(
+            lic, [], _AHORA_LOCAL, categorias_unspsc=["4321"]
+        )
+        assert razones["categorias_hit"] == ["4321"]
+        assert score > 0.0
+
+    def test_organismo_seguido_en_razones_y_score_sin_keywords(self, session: Session):
+        lic = _make_lic(session, "LIC-SCORG", nombre="cosa neutra")
+        lic.codigo_organismo = "ORG-Y"
+        session.flush()
+        score, razones = _score_licitacion(
+            lic, [], _AHORA_LOCAL, organismos_seguidos=["ORG-Y"]
+        )
+        assert razones["organismo_seguido"] is True
+        assert score > 0.0
+
+    def test_sin_rubro_ni_organismo_no_aparecen_en_razones(self, session: Session):
+        lic = _make_lic(session, "LIC-SCNONE", nombre="sin match", cierre_dias=5)
+        _, razones = _score_licitacion(lic, ["xyznotfound"], _AHORA_LOCAL)
+        assert "categorias_hit" not in razones
+        assert "organismo_seguido" not in razones
+
 
 class TestScoreCa:
     def test_score_ca_con_keyword(self, session: Session):
@@ -606,6 +743,28 @@ class TestScoreCa:
         session.flush()
         _, razones = _score_ca(ca, ["algo"], _AHORA_LOCAL)
         assert razones["dias_al_cierre"] == 0.0
+
+    def test_ca_categorias_hit_en_razones_sin_keywords(self, session: Session):
+        from app.models.tables import CaProducto
+
+        ca = _make_ca(session, "CA-SCRUBRO", nombre="cosa neutra")
+        session.add(
+            CaProducto(ca_codigo=ca.codigo, codigo_producto="43211500", nombre="laptop")
+        )
+        session.flush()
+        score, razones = _score_ca(ca, [], _AHORA_LOCAL, categorias_unspsc=["4321"])
+        assert razones["categorias_hit"] == ["4321"]
+        assert score > 0.0
+
+    def test_ca_organismo_seguido_en_razones_sin_keywords(self, session: Session):
+        ca = _make_ca(session, "CA-SCORG", nombre="cosa neutra")
+        ca.organismo_rut = "76999999-9"
+        session.flush()
+        score, razones = _score_ca(
+            ca, [], _AHORA_LOCAL, organismos_seguidos=["76999999-9"]
+        )
+        assert razones["organismo_seguido"] is True
+        assert score > 0.0
 
 
 class TestUpsertMatch:
@@ -788,3 +947,155 @@ class TestMatchPerfilMockedCandidatos:
 
         # match_todos captura errores internamente
         assert result["perfiles_procesados"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 5. F9b: recall aditivo por rubro UNSPSC / organismo seguido (SQL real, SQLite)
+#
+# Sin keywords no se invoca FTS (websearch_to_tsquery, Postgres-only), así que
+# _candidatos_* corren SQL estándar (EXISTS/LIKE/IN) y funcionan también en
+# SQLite — no requieren @needs_postgres.
+# ---------------------------------------------------------------------------
+
+
+class TestCandidatosRecallAditivo:
+    def test_candidatos_licitaciones_por_rubro_sin_keyword(self, session: Session):
+        from app.models.tables import LicitacionItem
+
+        lic = _make_lic(session, "LIC-RECALL1", nombre="cosa sin relacion")
+        session.add(
+            LicitacionItem(licitacion_codigo=lic.codigo, codigo_producto="43211500", nombre="laptop")
+        )
+        session.flush()
+
+        candidatos = _candidatos_licitaciones(
+            session, _AHORA_LOCAL, None, None, categorias_unspsc=["4321"]
+        )
+        assert "LIC-RECALL1" in [c.codigo for c in candidatos]
+
+    def test_candidatos_licitaciones_sin_rubro_match_no_aparece(self, session: Session):
+        from app.models.tables import LicitacionItem
+
+        lic = _make_lic(session, "LIC-RECALL2", nombre="cosa sin relacion")
+        session.add(
+            LicitacionItem(licitacion_codigo=lic.codigo, codigo_producto="99999999", nombre="otro")
+        )
+        session.flush()
+
+        candidatos = _candidatos_licitaciones(
+            session, _AHORA_LOCAL, None, None, categorias_unspsc=["4321"]
+        )
+        assert "LIC-RECALL2" not in [c.codigo for c in candidatos]
+
+    def test_candidatos_licitaciones_por_organismo_seguido(self, session: Session):
+        lic = _make_lic(session, "LIC-RECALL3")
+        lic.codigo_organismo = "ORG-X"
+        session.flush()
+
+        candidatos = _candidatos_licitaciones(
+            session, _AHORA_LOCAL, None, None, organismos_seguidos=["ORG-X"]
+        )
+        assert "LIC-RECALL3" in [c.codigo for c in candidatos]
+
+    def test_candidatos_licitaciones_organismo_no_seguido_no_aparece(self, session: Session):
+        lic = _make_lic(session, "LIC-RECALL4")
+        lic.codigo_organismo = "ORG-OTRO"
+        session.flush()
+
+        candidatos = _candidatos_licitaciones(
+            session, _AHORA_LOCAL, None, None, organismos_seguidos=["ORG-X"]
+        )
+        assert "LIC-RECALL4" not in [c.codigo for c in candidatos]
+
+    def test_candidatos_ca_por_rubro_sin_keyword(self, session: Session):
+        from app.models.tables import CaProducto
+
+        ca = _make_ca(session, "CA-RECALL1")
+        session.add(
+            CaProducto(ca_codigo=ca.codigo, codigo_producto="43211500", nombre="laptop")
+        )
+        session.flush()
+
+        candidatos = _candidatos_ca(session, _AHORA_LOCAL, None, None, categorias_unspsc=["4321"])
+        assert "CA-RECALL1" in [c.codigo for c in candidatos]
+
+    def test_candidatos_ca_por_organismo_seguido(self, session: Session):
+        ca = _make_ca(session, "CA-RECALL2")
+        ca.organismo_rut = "76123456-7"
+        session.flush()
+
+        candidatos = _candidatos_ca(
+            session, _AHORA_LOCAL, None, None, organismos_seguidos=["76123456-7"]
+        )
+        assert "CA-RECALL2" in [c.codigo for c in candidatos]
+
+    def test_candidatos_sin_criterios_devuelve_todo_como_antes(self, session: Session):
+        """Sin keywords/rubros/organismos: comportamiento preexistente (sin filtro
+        de inclusión, filtran región/monto localmente en match_perfil)."""
+        _make_lic(session, "LIC-RECALL5")
+        candidatos = _candidatos_licitaciones(session, _AHORA_LOCAL, None, None)
+        assert "LIC-RECALL5" in [c.codigo for c in candidatos]
+
+
+class TestMatchPerfilRecallAditivo:
+    """match_perfil end-to-end (sin mocks) para perfiles rubro-only / organismo-only."""
+
+    def test_match_perfil_rubro_only_sin_keywords(self, session: Session):
+        from app.models.tables import LicitacionItem, PerfilBusqueda, Usuario
+
+        u = Usuario(email="recall1@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        perfil = PerfilBusqueda(
+            owner_id=u.id,
+            nombre="Rubro only",
+            keywords=[],
+            categorias_unspsc=["4321"],
+            fuentes=["licitaciones"],
+            activo=True,
+        )
+        session.add(perfil)
+        session.flush()
+
+        lic = _make_lic(session, "LIC-E2E-RUBRO", nombre="cosa neutra sin keyword")
+        session.add(
+            LicitacionItem(licitacion_codigo=lic.codigo, codigo_producto="43211500", nombre="laptop")
+        )
+        session.flush()
+
+        result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        assert result["nuevos"] == 1
+        match = session.execute(
+            select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil.id)
+        ).scalar_one()
+        assert match.razones.get("categorias_hit") == ["4321"]
+        assert match.score > 0.0
+
+    def test_match_perfil_organismo_only_sin_keywords(self, session: Session):
+        from app.models.tables import PerfilBusqueda, Usuario
+
+        u = Usuario(email="recall2@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        perfil = PerfilBusqueda(
+            owner_id=u.id,
+            nombre="Organismo only",
+            keywords=[],
+            organismos_seguidos=["ORG-SEGUIDO"],
+            fuentes=["licitaciones"],
+            activo=True,
+        )
+        session.add(perfil)
+        session.flush()
+
+        lic = _make_lic(session, "LIC-E2E-ORG", nombre="cosa neutra")
+        lic.codigo_organismo = "ORG-SEGUIDO"
+        session.flush()
+
+        result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        assert result["nuevos"] == 1
+        match = session.execute(
+            select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil.id)
+        ).scalar_one()
+        assert match.razones.get("organismo_seguido") is True
+        assert match.score > 0.0

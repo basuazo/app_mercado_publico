@@ -27,12 +27,16 @@ def _validar(
     regiones: list[int],
     monto_min: float | None,
     monto_max: float | None,
+    categorias_unspsc: list[str] | None = None,
+    organismos_seguidos: list[str] | None = None,
 ) -> None:
     tiene_keywords = bool(keywords)
     tiene_filtro = bool(regiones) or monto_min is not None or monto_max is not None
-    if not (tiene_keywords or tiene_filtro):
+    tiene_rubro_organismo = bool(categorias_unspsc) or bool(organismos_seguidos)
+    if not (tiene_keywords or tiene_filtro or tiene_rubro_organismo):
         raise PerfilInvalido(
-            "Se necesita al menos 1 keyword o 1 filtro estructurado (región, monto)"
+            "Se necesita al menos 1 keyword o 1 filtro estructurado "
+            "(región, monto, rubro UNSPSC u organismo seguido)"
         )
 
 
@@ -46,6 +50,8 @@ def crear_perfil(
     regiones: list[int] | None = None,
     monto_min_clp: float | None = None,
     monto_max_clp: float | None = None,
+    categorias_unspsc: list[str] | None = None,
+    organismos_seguidos: list[str] | None = None,
     fuentes: list[str] | None = None,
     frecuencia_alerta: FrecuenciaAlerta | None = None,
 ) -> PerfilBusqueda:
@@ -53,9 +59,11 @@ def crear_perfil(
     kw = list(keywords or [])
     kw_excluir = list(keywords_excluir or [])
     regs = list(regiones or [])
+    cats = list(categorias_unspsc or [])
+    orgs = list(organismos_seguidos or [])
     fuentes_list: list[str] = list(fuentes or ["licitaciones", "compras_agiles"])
 
-    _validar(kw, regs, monto_min_clp, monto_max_clp)
+    _validar(kw, regs, monto_min_clp, monto_max_clp, cats, orgs)
 
     perfil = PerfilBusqueda(
         owner_id=owner_id,
@@ -65,6 +73,8 @@ def crear_perfil(
         regiones=regs,
         monto_min_clp=monto_min_clp,
         monto_max_clp=monto_max_clp,
+        categorias_unspsc=cats,
+        organismos_seguidos=orgs,
         fuentes=fuentes_list,
         frecuencia_alerta=frecuencia_alerta or FrecuenciaAlerta.DIGEST,
         activo=True,
@@ -113,7 +123,9 @@ def actualizar_perfil(
             setattr(p, k, v)
     kw = cast(list[str], list(p.keywords or []))
     regs = cast(list[int], list(p.regiones or []))
-    _validar(kw, regs, p.monto_min_clp, p.monto_max_clp)
+    cats = cast(list[str], list(p.categorias_unspsc or []))
+    orgs = cast(list[str], list(p.organismos_seguidos or []))
+    _validar(kw, regs, p.monto_min_clp, p.monto_max_clp, cats, orgs)
     return p
 
 

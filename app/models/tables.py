@@ -208,6 +208,8 @@ class PerfilBusqueda(Base):
     regiones: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=list)
     monto_min_clp: Mapped[float | None] = mapped_column(Float, nullable=True)
     monto_max_clp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    categorias_unspsc: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=list)
+    organismos_seguidos: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=list)
     fuentes: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=lambda: ["licitaciones", "compras_agiles"]
     )

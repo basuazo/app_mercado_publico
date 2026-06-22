@@ -22,6 +22,7 @@ from app.api.query import check_oportunidad_access, get_oportunidades_usuario
 from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
+from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.matching.perfiles import (
     PerfilInvalido,
     actualizar_perfil,
@@ -182,6 +183,39 @@ def _parse_monto(valor: str) -> float | None:
         return None
 
 
+def _parse_categorias(valores: list[str]) -> list[str]:
+    """Convierte prefijos UNSPSC del formulario (select multiple + texto libre con
+    comas, ambos bajo el mismo name) a una lista de prefijos válidos: solo
+    dígitos, largo 2/4/6/8. Descarta lo inválido y deduplica preservando orden."""
+    out: list[str] = []
+    vistos: set[str] = set()
+    for v in valores:
+        for parte in v.split(","):
+            p = parte.strip()
+            if p.isdigit() and len(p) in (2, 4, 6, 8) and p not in vistos:
+                vistos.add(p)
+                out.append(p)
+    return out
+
+
+def _parse_organismos(valor: str) -> list[str]:
+    """Convierte el campo de texto de organismos seguidos (separados por coma) a lista."""
+    return [o.strip() for o in valor.split(",") if o.strip()]
+
+
+def _agrupar_familias_por_segmento(
+    segmentos_list: list[tuple[str, str]], familias_list: list[tuple[str, str]]
+) -> list[tuple[str, str, list[tuple[str, str]]]]:
+    """Agrupa familias UNSPSC bajo su segmento (familia.codigo[:2]) para el <select>."""
+    por_segmento: dict[str, list[tuple[str, str]]] = {codigo: [] for codigo, _ in segmentos_list}
+    for fam_codigo, fam_nombre in familias_list:
+        por_segmento.setdefault(fam_codigo[:2], []).append((fam_codigo, fam_nombre))
+    return [
+        (seg_codigo, seg_nombre, por_segmento.get(seg_codigo, []))
+        for seg_codigo, seg_nombre in segmentos_list
+    ]
+
+
 @router.get("/perfiles", response_class=HTMLResponse)
 async def perfiles_get(
     request: Request,
@@ -191,6 +225,9 @@ async def perfiles_get(
     error: str = "",
 ) -> HTMLResponse:
     perfiles = listar_perfiles(session, user.id)
+    rubros_por_perfil = {
+        p.id: [nombre_rubro(c) or c for c in (p.categorias_unspsc or [])] for p in perfiles
+    }
     return _TEMPLATES.TemplateResponse(
         request,
         "perfiles.html",
@@ -200,6 +237,8 @@ async def perfiles_get(
             perfiles=perfiles,
             frecuencias=list(FrecuenciaAlerta),
             regiones_disponibles=REGIONES,
+            rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
+            rubros_por_perfil=rubros_por_perfil,
             mensaje=mensaje,
             error=error,
         ),
@@ -216,6 +255,8 @@ async def perfil_crear(
     regiones: list[str] = Form(default=[]),
     monto_min_clp: str = Form(""),
     monto_max_clp: str = Form(""),
+    categorias_unspsc: list[str] = Form(default=[]),
+    organismos_seguidos: str = Form(""),
     frecuencia_alerta: str = Form("inmediata"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
@@ -228,6 +269,8 @@ async def perfil_crear(
     regiones_list = _parse_regiones(regiones)
     monto_min = _parse_monto(monto_min_clp)
     monto_max = _parse_monto(monto_max_clp)
+    categorias_list = _parse_categorias(categorias_unspsc)
+    organismos_list = _parse_organismos(organismos_seguidos)
     if monto_min is not None and monto_max is not None and monto_min > monto_max:
         msg = quote("El monto mínimo no puede ser mayor al monto máximo")
         return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
@@ -241,6 +284,8 @@ async def perfil_crear(
             regiones=regiones_list,
             monto_min_clp=monto_min,
             monto_max_clp=monto_max,
+            categorias_unspsc=categorias_list,
+            organismos_seguidos=organismos_list,
             fuentes=fuentes_list,
             frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
         )
@@ -278,6 +323,8 @@ async def perfil_editar(
     regiones: list[str] = Form(default=[]),
     monto_min_clp: str = Form(""),
     monto_max_clp: str = Form(""),
+    categorias_unspsc: list[str] = Form(default=[]),
+    organismos_seguidos: str = Form(""),
     frecuencia_alerta: str = Form("inmediata"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
@@ -293,6 +340,8 @@ async def perfil_editar(
     regiones_list = _parse_regiones(regiones)
     monto_min = _parse_monto(monto_min_clp)
     monto_max = _parse_monto(monto_max_clp)
+    categorias_list = _parse_categorias(categorias_unspsc)
+    organismos_list = _parse_organismos(organismos_seguidos)
     if monto_min is not None and monto_max is not None and monto_min > monto_max:
         msg = quote("El monto mínimo no puede ser mayor al monto máximo")
         return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
@@ -307,6 +356,8 @@ async def perfil_editar(
             regiones=regiones_list,
             monto_min_clp=monto_min,
             monto_max_clp=monto_max,
+            categorias_unspsc=categorias_list,
+            organismos_seguidos=organismos_list,
             fuentes=fuentes_list,
             frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
         )

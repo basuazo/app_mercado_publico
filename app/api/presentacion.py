@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.catalogos.unspsc import nombre_rubro
 from app.models.seeds import REGIONES
 
 # Mapa código → nombre de región (derivado de seeds, fuente única de verdad).
@@ -85,5 +86,13 @@ def razones_legibles(razones: dict[str, Any] | None) -> list[str]:
 
     if razones.get("monto_no_informado"):
         frases.append("Monto no informado por el organismo")
+
+    categorias_hit = razones.get("categorias_hit") or []
+    if categorias_hit:
+        nombres = [nombre_rubro(str(c)) or str(c) for c in categorias_hit]
+        frases.append(f"Coincide con rubro que sigues: {', '.join(nombres)}")
+
+    if razones.get("organismo_seguido"):
+        frases.append("De un organismo que sigues")
 
     return frases
