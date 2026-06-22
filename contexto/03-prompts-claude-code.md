@@ -203,6 +203,7 @@ Prepara el despliegue 100 % gratuito según CLAUDE.md (sección "Despliegue").
    d. Respaldo de jobs: cron-job.org → POST /api/jobs/run?job=ca cada 1 h con header X-Jobs-Token (por si el scheduler interno falló).
    e. Verificación post-deploy: login admin, correr job manual, revisar /salud, confirmar que tras 2 h el servicio no se durmió.
    f. Advertencia TZ: los crons externos corren en UTC; la ventana nocturna la valida la app en America/Santiago, no el cron.
+   
 6. Smoke test de despliegue documentado (checklist manual).
 7. Tests locales: lifespan apaga el scheduler; /api/salud/ping responde sin auth y sin datos.
 

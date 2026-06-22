@@ -15,11 +15,10 @@ from datetime import UTC, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-
-import httpx
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -121,10 +120,7 @@ def _url_ficha(fuente: str, codigo: str) -> str:
             "https://www.mercadopublico.cl/Procurement/Modules/RFB/"
             f"DetailsAcquisition.aspx?qs={codigo}"
         )
-    return (
-        "https://www.mercadopublico.cl/cmr/www/public/"
-        f"oportContratacion_detalle.aspx?qs={codigo}"
-    )
+    return "https://buscador.mercadopublico.cl/compra-agil"
 
 
 def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, Any]:

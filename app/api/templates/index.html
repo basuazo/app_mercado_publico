@@ -51,11 +51,19 @@
         {% endif %}
       </small>
     </div>
-    <small class="text-muted">
+    <small class="text-muted d-block">
       {{ item.organismo }}
+      {% if item.region_nombre %} — {{ item.region_nombre }}{% endif %}
       {% if item.monto %} — ${{ '{:,.0f}'.format(item.monto) }}{% endif %}
       {% if item.estado %} — {{ item.estado }}{% endif %}
     </small>
+    {% if item.razones %}
+    <div class="mt-1">
+      {% for r in item.razones %}
+      <span class="badge bg-light text-dark border me-1 fw-normal">{{ r }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
   </a>
   {% endfor %}
 </div>

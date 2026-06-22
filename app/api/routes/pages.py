@@ -119,13 +119,40 @@ async def oportunidad_detalle(
     if op is None:
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
 
-    from app.api.query import _url_ficha
+    from app.api.presentacion import nombre_region, razones_legibles
+    from app.api.query import _url_ficha, mostrar_ficha_oficial
+
     url_ficha = _url_ficha(fuente, codigo)
+
+    # Datos enriquecidos para la ficha
+    items: list[Any]
+    organismo: str | None
+    region_nombre: str | None
+    if isinstance(op, Licitacion):
+        items = list(op.items)
+        organismo = op.codigo_organismo
+        region_nombre = None
+    else:
+        items = list(op.productos)
+        organismo = op.organismo_nombre
+        region_nombre = nombre_region(op.region)
 
     return _TEMPLATES.TemplateResponse(
         request,
         "oportunidad.html",
-        _ctx(request, user, match=match, oportunidad=op, fuente=fuente, url_ficha=url_ficha),
+        _ctx(
+            request,
+            user,
+            match=match,
+            oportunidad=op,
+            fuente=fuente,
+            url_ficha=url_ficha,
+            mostrar_ficha=mostrar_ficha_oficial(op.estado),
+            items=items,
+            organismo=organismo,
+            region_nombre=region_nombre,
+            razones=razones_legibles(match.razones),
+        ),
     )
 
 

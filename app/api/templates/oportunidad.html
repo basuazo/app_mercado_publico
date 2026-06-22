@@ -9,36 +9,45 @@
 </nav>
 
 <h2 class="mb-1">{{ oportunidad.nombre }}</h2>
-<p class="text-muted mb-3">{{ fuente }} — {{ oportunidad.codigo }}</p>
+<p class="text-muted mb-3">
+  {% if fuente == 'licitaciones' %}Licitación{% else %}Compra Ágil{% endif %}
+  — {{ oportunidad.codigo }}
+</p>
 
 <div class="row mb-4">
-  <div class="col-md-6">
+  <div class="col-md-7">
     <ul class="list-unstyled">
-      <li><strong>Estado:</strong> {{ oportunidad.estado }}</li>
+      <li class="mb-1"><strong>Estado:</strong> {{ oportunidad.estado }}</li>
+      <li class="mb-1"><strong>Organismo:</strong> {{ organismo or '—' }}</li>
+      {% if region_nombre %}
+      <li class="mb-1"><strong>Región:</strong> {{ region_nombre }}</li>
+      {% endif %}
+      {% if oportunidad.fecha_publicacion %}
+      <li class="mb-1"><strong>Publicación:</strong> {{ oportunidad.fecha_publicacion.strftime('%d/%m/%Y') }}</li>
+      {% endif %}
       {% if oportunidad.fecha_cierre %}
-      <li><strong>Cierre:</strong> {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</li>
+      <li class="mb-1"><strong>Cierre:</strong> {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</li>
       {% endif %}
       {% if fuente == 'licitaciones' and oportunidad.monto_clp %}
-      <li><strong>Monto:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_clp) }}</li>
-      <li><strong>Organismo:</strong> {{ oportunidad.codigo_organismo }}</li>
+      <li class="mb-1"><strong>Monto estimado:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_clp) }}</li>
       {% endif %}
       {% if fuente == 'compras_agiles' %}
       {% if oportunidad.monto_disponible_clp %}
-      <li><strong>Monto disponible:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_disponible_clp) }}</li>
+      <li class="mb-1"><strong>Monto disponible:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_disponible_clp) }}</li>
       {% endif %}
-      <li><strong>Organismo:</strong> {{ oportunidad.organismo_nombre }}</li>
-      <li><strong>Región:</strong> {{ oportunidad.region }}</li>
+      <li class="mb-1"><strong>Ofertas recibidas:</strong> {{ oportunidad.total_ofertas }}</li>
       {% endif %}
     </ul>
   </div>
-  <div class="col-md-6">
+  <div class="col-md-5">
     <div class="card border-primary">
       <div class="card-body">
         <h5 class="card-title">Score de coincidencia</h5>
-        <p class="display-4 mb-0">{{ match.score }}</p>
-        {% if match.razones %}
-        <ul class="small mt-2">
-          {% for r in match.razones %}
+        <p class="display-4 mb-2">{{ match.score | round(0) | int }}<small class="text-muted fs-6">/100</small></p>
+        {% if razones %}
+        <p class="mb-1 small fw-semibold">Por qué coincide:</p>
+        <ul class="small mb-0 ps-3">
+          {% for r in razones %}
           <li>{{ r }}</li>
           {% endfor %}
         </ul>
@@ -53,8 +62,45 @@
 <p>{{ oportunidad.descripcion }}</p>
 {% endif %}
 
-<a href="{{ url_ficha }}" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
-  Ver en Mercado Público ↗
-</a>
-<a href="/" class="btn btn-outline-secondary ms-2">Volver</a>
+{% if items %}
+<h5 class="mt-4">
+  {% if fuente == 'licitaciones' %}Ítems solicitados{% else %}Productos{% endif %}
+  <span class="text-muted fs-6">({{ items | length }})</span>
+</h5>
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Descripción</th>
+        <th class="text-end">Cantidad</th>
+        <th>Unidad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td>{{ it.nombre }}</td>
+        <td class="text-end">{% if it.cantidad is not none %}{{ '{:,.0f}'.format(it.cantidad) }}{% else %}—{% endif %}</td>
+        <td>{{ it.unidad or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="mt-4">
+  {% if mostrar_ficha %}
+  <a href="{{ url_ficha }}" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+    Ver ficha oficial en Mercado Público ↗
+  </a>
+  <span class="text-muted small ms-2">Requiere sesión iniciada como proveedor.</span>
+  {% else %}
+  <span class="text-muted small">
+    Proceso {{ oportunidad.estado }}: la ficha oficial solo está disponible para la unidad compradora.
+  </span>
+  {% endif %}
+  <a href="/" class="btn btn-outline-secondary ms-2">Volver</a>
+</div>
+<p class="text-muted small mt-3">Fuente: Dirección ChileCompra</p>
 {% endblock %}

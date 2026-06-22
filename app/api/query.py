@@ -8,20 +8,36 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.presentacion import nombre_region, razones_legibles
 from app.matching.perfiles import listar_perfiles
+from app.models.enums import EstadoOportunidad
 from app.models.tables import CompraAgil, Licitacion, OportunidadMatch
 
 
 def _url_ficha(fuente: str, codigo: str) -> str:
+    """URL de la ficha oficial en Mercado Público.
+
+    Para licitaciones es la ficha estándar (DetailsAcquisition): accesible para
+    proveedores con sesión iniciada en procesos abiertos. Para Compra Ágil se
+    apunta al buscador público vigente. Ver `mostrar_ficha_oficial` para cuándo
+    conviene exponer este enlace en la UI.
+    """
     if fuente == "licitaciones":
         return (
             "https://www.mercadopublico.cl/Procurement/Modules/RFB/"
             f"DetailsAcquisition.aspx?qs={codigo}"
         )
-    return (
-        "https://www.mercadopublico.cl/cmr/www/public/"
-        f"oportContratacion_detalle.aspx?qs={codigo}"
-    )
+    return "https://buscador.mercadopublico.cl/compra-agil"
+
+
+def mostrar_ficha_oficial(estado: str | None) -> bool:
+    """La ficha oficial solo es navegable de forma fiable en procesos abiertos.
+
+    En procesos cerrados/terminales Mercado Público responde
+    "No Pertenece a la unidad de la ficha" a quien no es la unidad dueña, así
+    que no exponemos el enlace en esos casos.
+    """
+    return estado == EstadoOportunidad.PUBLICADA.value
 
 
 def get_oportunidades_usuario(
@@ -122,7 +138,10 @@ def get_oportunidades_usuario(
             "monto": monto,
             "organismo": organismo,
             "region": reg,
+            "region_nombre": nombre_region(reg),
+            "razones": razones_legibles(m.razones),
             "url_ficha": _url_ficha(m.fuente, m.codigo_oportunidad),
+            "mostrar_ficha": mostrar_ficha_oficial(op.estado),
         })
 
     total = len(result)

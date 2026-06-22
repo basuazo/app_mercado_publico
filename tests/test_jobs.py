@@ -66,9 +66,9 @@ def test_job_activas_invoca_run_sync_activas():
 
 def test_job_ca_y_activas_son_funciones_distintas():
     """'ca' y 'activas' deben apuntar a funciones distintas del orchestrator."""
-    from app.api.routes.api import jobs_run  # solo para verificar el source
-
     import inspect
+
+    from app.api.routes.api import jobs_run  # solo para verificar el source
     source = inspect.getsource(jobs_run)
     # Verificar que run_sync_ca está importado y mapeado a "ca"
     assert "run_sync_ca" in source
