@@ -3,21 +3,30 @@
 Arquitectura:
 - score_texto, score_urgencia, score_competencia son funciones puras sin DB.
 - _candidatos_licitaciones/_candidatos_ca usan Postgres FTS (text() con bindparams).
+- _hits_licitaciones/_hits_ca detectan, también con Postgres FTS y de forma
+  set-based (una query por fuente, no por candidato), qué keywords matchean
+  cada candidato. match_perfil las invoca una vez por fuente y reparte los
+  resultados a _score_licitacion/_score_ca.
 - match_perfil no llama a ningún cliente HTTP; devuelve sin_detalle para que
   el orchestrator decida qué detalles buscar respetando el presupuesto de cuota.
+
+Invariante recall/score (F9c): la detección de keywords_hit usa la MISMA
+tsquery por keyword (criterio en app.matching.text.keywords_validas) que el
+recall de _candidatos_*. No existe cálculo por substring en Python — recall y
+score quedan unificados en un solo motor (Postgres FTS 'spanish').
 """
 
 from __future__ import annotations
 
-import unicodedata
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import exists, or_, select, text
+from sqlalchemy import String, bindparam, exists, or_, select, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
-from app.matching.text import build_exclude_tsquery, build_tsquery
+from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
 from app.models.enums import EstadoOportunidad
 from app.models.tables import (
     CaProducto,
@@ -97,39 +106,17 @@ def _rubros_hit(categorias_unspsc: list[str], codigos_producto: list[str]) -> li
 
 
 # ---------------------------------------------------------------------------
-# Normalización para keyword matching en Python (tilde-tolerante)
-# ---------------------------------------------------------------------------
-
-
-def _norm(s: str) -> str:
-    """Minúsculas + quitar diacríticos (NFD + filtrar categoría Mn)."""
-    nfd = unicodedata.normalize("NFD", s.lower())
-    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
-
-
-def _kw_bare(kw: str) -> str:
-    """Quita comillas de frases y normaliza."""
-    return _norm(kw.strip().strip('"'))
-
-
-def _keywords_en_textos(keywords: list[str], textos: list[str]) -> list[str]:
-    """Devuelve las keywords que aparecen en cualquiera de los textos (normalizado)."""
-    textos_norm = [_norm(t) for t in textos if t]
-    return [kw for kw in keywords if any(_kw_bare(kw) in t for t in textos_norm)]
-
-
-# ---------------------------------------------------------------------------
 # Fragmentos SQL para FTS (Postgres únicamente)
 # Siempre usados como text().bindparams(q=...) — nunca interpolados.
 # ---------------------------------------------------------------------------
 
 _FTS_LIC_INCLUDE = (
-    "licitaciones.tsv @@ websearch_to_tsquery('spanish', :q) "
+    "(licitaciones.tsv @@ websearch_to_tsquery('spanish', :q) "
     "OR EXISTS ("
     "SELECT 1 FROM licitacion_items li "
     "WHERE li.licitacion_codigo = licitaciones.codigo "
     "AND to_tsvector('spanish', inmutable_unaccent(li.nombre)) "
-    "@@ websearch_to_tsquery('spanish', :q))"
+    "@@ websearch_to_tsquery('spanish', :q)))"
 )
 _FTS_LIC_EXCLUDE = (
     "NOT (licitaciones.tsv @@ websearch_to_tsquery('spanish', :qx) "
@@ -140,12 +127,12 @@ _FTS_LIC_EXCLUDE = (
     "@@ websearch_to_tsquery('spanish', :qx)))"
 )
 _FTS_CA_INCLUDE = (
-    "compras_agiles.tsv @@ websearch_to_tsquery('spanish', :q) "
+    "(compras_agiles.tsv @@ websearch_to_tsquery('spanish', :q) "
     "OR EXISTS ("
     "SELECT 1 FROM ca_productos p "
     "WHERE p.ca_codigo = compras_agiles.codigo "
     "AND to_tsvector('spanish', inmutable_unaccent(p.nombre)) "
-    "@@ websearch_to_tsquery('spanish', :q))"
+    "@@ websearch_to_tsquery('spanish', :q)))"
 )
 _FTS_CA_EXCLUDE = (
     "NOT (compras_agiles.tsv @@ websearch_to_tsquery('spanish', :qx) "
@@ -246,6 +233,125 @@ def _candidatos_ca(
 
 
 # ---------------------------------------------------------------------------
+# Detección set-based de keywords_hit (Postgres FTS — misma tsquery que el recall)
+# ---------------------------------------------------------------------------
+
+# Para cada (codigo, keyword) se evalúa el hit por campo en una CTE y luego se
+# agrega por codigo: una sola query por fuente cubre todos los candidatos y
+# todas las keywords del perfil (sin N+1).
+_HITS_LIC_SQL = text(
+    """
+    WITH pares AS (
+        SELECT
+            l.codigo AS codigo,
+            kw.keyword AS keyword,
+            to_tsvector('spanish', inmutable_unaccent(coalesce(l.nombre, '')))
+                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_nombre,
+            to_tsvector('spanish', inmutable_unaccent(coalesce(l.descripcion, '')))
+                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_descripcion,
+            EXISTS (
+                SELECT 1 FROM licitacion_items li
+                WHERE li.licitacion_codigo = l.codigo
+                AND to_tsvector('spanish', inmutable_unaccent(li.nombre))
+                    @@ websearch_to_tsquery('spanish', kw.keyword)
+            ) AS hit_producto
+        FROM licitaciones l
+        CROSS JOIN unnest(:keywords) AS kw(keyword)
+        WHERE l.codigo = ANY(:codigos)
+    )
+    SELECT
+        codigo,
+        array_agg(keyword) FILTER (WHERE hit_nombre OR hit_descripcion OR hit_producto)
+            AS keywords_hit,
+        bool_or(hit_nombre) AS hit_nombre,
+        bool_or(hit_descripcion) AS hit_descripcion,
+        bool_or(hit_producto) AS hit_producto
+    FROM pares
+    GROUP BY codigo
+    """
+).bindparams(
+    bindparam("keywords", type_=ARRAY(String)),
+    bindparam("codigos", type_=ARRAY(String)),
+)
+
+_HITS_CA_SQL = text(
+    """
+    WITH pares AS (
+        SELECT
+            c.codigo AS codigo,
+            kw.keyword AS keyword,
+            to_tsvector('spanish', inmutable_unaccent(coalesce(c.nombre, '')))
+                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_nombre,
+            to_tsvector('spanish', inmutable_unaccent(coalesce(c.descripcion, '')))
+                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_descripcion,
+            EXISTS (
+                SELECT 1 FROM ca_productos p
+                WHERE p.ca_codigo = c.codigo
+                AND to_tsvector('spanish', inmutable_unaccent(p.nombre))
+                    @@ websearch_to_tsquery('spanish', kw.keyword)
+            ) AS hit_producto
+        FROM compras_agiles c
+        CROSS JOIN unnest(:keywords) AS kw(keyword)
+        WHERE c.codigo = ANY(:codigos)
+    )
+    SELECT
+        codigo,
+        array_agg(keyword) FILTER (WHERE hit_nombre OR hit_descripcion OR hit_producto)
+            AS keywords_hit,
+        bool_or(hit_nombre) AS hit_nombre,
+        bool_or(hit_descripcion) AS hit_descripcion,
+        bool_or(hit_producto) AS hit_producto
+    FROM pares
+    GROUP BY codigo
+    """
+).bindparams(
+    bindparam("keywords", type_=ARRAY(String)),
+    bindparam("codigos", type_=ARRAY(String)),
+)
+
+# Resultado por candidato sin ningún keyword_hit (perfil sin keywords, o
+# candidato que entró solo por rubro/organismo seguido).
+_SIN_HITS: tuple[list[str], str] = ([], "desconocido")
+
+
+def _campo_hit(hit_nombre: bool, hit_descripcion: bool, hit_producto: bool) -> str:
+    """Precedencia nombre > descripcion > producto > desconocido."""
+    if hit_nombre:
+        return "nombre"
+    if hit_descripcion:
+        return "descripcion"
+    if hit_producto:
+        return "producto"
+    return "desconocido"
+
+
+def _hits_licitaciones(
+    session: Session, codigos: list[str], keywords: list[str]
+) -> dict[str, tuple[list[str], str]]:
+    """keywords_hit + campo_hit por licitación, en una sola query set-based."""
+    if not codigos or not keywords:
+        return {}
+    filas = session.execute(_HITS_LIC_SQL, {"codigos": codigos, "keywords": keywords}).all()
+    return {
+        codigo: (list(keywords_hit or []), _campo_hit(hit_nombre, hit_descripcion, hit_producto))
+        for codigo, keywords_hit, hit_nombre, hit_descripcion, hit_producto in filas
+    }
+
+
+def _hits_ca(
+    session: Session, codigos: list[str], keywords: list[str]
+) -> dict[str, tuple[list[str], str]]:
+    """keywords_hit + campo_hit por Compra Ágil, en una sola query set-based."""
+    if not codigos or not keywords:
+        return {}
+    filas = session.execute(_HITS_CA_SQL, {"codigos": codigos, "keywords": keywords}).all()
+    return {
+        codigo: (list(keywords_hit or []), _campo_hit(hit_nombre, hit_descripcion, hit_producto))
+        for codigo, keywords_hit, hit_nombre, hit_descripcion, hit_producto in filas
+    }
+
+
+# ---------------------------------------------------------------------------
 # Upsert de matches
 # ---------------------------------------------------------------------------
 
@@ -295,25 +401,18 @@ def _upsert_match(
 def _score_licitacion(
     lic: Licitacion,
     keywords: list[str],
+    keywords_hit: list[str],
+    campo_hit: str,
     ahora: datetime,
     categorias_unspsc: list[str] | None = None,
     organismos_seguidos: list[str] | None = None,
 ) -> tuple[float, dict[str, Any]]:
-    nombres_items = [i.nombre for i in lic.items]
-    kw_hit_nombre = _keywords_en_textos(keywords, [lic.nombre])
-    kw_hit_desc = _keywords_en_textos(keywords, [lic.descripcion])
-    kw_hit_prod = _keywords_en_textos(keywords, nombres_items)
-    kw_hit = list(set(kw_hit_nombre) | set(kw_hit_desc) | set(kw_hit_prod))
+    """Combina score_texto/urgencia/competencia/estructural en el score final.
 
-    hit_en_nombre = bool(kw_hit_nombre)
-    if kw_hit_nombre:
-        campo_hit = "nombre"
-    elif kw_hit_desc:
-        campo_hit = "descripcion"
-    elif kw_hit_prod:
-        campo_hit = "producto"
-    else:
-        campo_hit = "desconocido"
+    keywords_hit/campo_hit vienen de _hits_licitaciones (FTS set-based) —
+    misma tsquery que decidió el recall (invariante F9c).
+    """
+    hit_en_nombre = campo_hit == "nombre"
 
     dias = 0.0
     if lic.fecha_cierre:
@@ -325,14 +424,14 @@ def _score_licitacion(
         organismos_seguidos or []
     )
 
-    st = score_texto(keywords, kw_hit, hit_en_nombre)
+    st = score_texto(keywords, keywords_hit, hit_en_nombre)
     su = score_urgencia(dias)
     sc = score_competencia("licitaciones", 0)
     se = score_estructural(bool(categorias_hit), organismo_seguido)
     total = min(100.0, st + su + sc + se)
 
     razones: dict[str, Any] = {
-        "keywords_hit": kw_hit,
+        "keywords_hit": keywords_hit,
         "campo_hit": campo_hit,
         "dias_al_cierre": round(dias, 1),
         "ofertas": None,
@@ -347,25 +446,14 @@ def _score_licitacion(
 def _score_ca(
     ca: CompraAgil,
     keywords: list[str],
+    keywords_hit: list[str],
+    campo_hit: str,
     ahora: datetime,
     categorias_unspsc: list[str] | None = None,
     organismos_seguidos: list[str] | None = None,
 ) -> tuple[float, dict[str, Any]]:
-    nombres_prods = [p.nombre for p in ca.productos]
-    kw_hit_nombre = _keywords_en_textos(keywords, [ca.nombre])
-    kw_hit_desc = _keywords_en_textos(keywords, [ca.descripcion])
-    kw_hit_prod = _keywords_en_textos(keywords, nombres_prods)
-    kw_hit = list(set(kw_hit_nombre) | set(kw_hit_desc) | set(kw_hit_prod))
-
-    hit_en_nombre = bool(kw_hit_nombre)
-    if kw_hit_nombre:
-        campo_hit = "nombre"
-    elif kw_hit_desc:
-        campo_hit = "descripcion"
-    elif kw_hit_prod:
-        campo_hit = "producto"
-    else:
-        campo_hit = "desconocido"
+    """Análogo a _score_licitacion para Compra Ágil."""
+    hit_en_nombre = campo_hit == "nombre"
 
     dias = 0.0
     if ca.fecha_cierre:
@@ -377,14 +465,14 @@ def _score_ca(
     )
     organismo_seguido = bool(ca.organismo_rut) and ca.organismo_rut in (organismos_seguidos or [])
 
-    st = score_texto(keywords, kw_hit, hit_en_nombre)
+    st = score_texto(keywords, keywords_hit, hit_en_nombre)
     su = score_urgencia(dias)
     sc = score_competencia("compras_agiles", ca.total_ofertas)
     se = score_estructural(bool(categorias_hit), organismo_seguido)
     total = min(100.0, st + su + sc + se)
 
     razones: dict[str, Any] = {
-        "keywords_hit": kw_hit,
+        "keywords_hit": keywords_hit,
         "campo_hit": campo_hit,
         "dias_al_cierre": round(dias, 1),
         "ofertas": ca.total_ofertas,
@@ -421,7 +509,8 @@ def match_perfil(
     categorias_unspsc = cast(list[str], list(perfil.categorias_unspsc or []))
     organismos_seguidos = cast(list[str], list(perfil.organismos_seguidos or []))
 
-    q = build_tsquery(keywords) if keywords else None
+    kws_validas = keywords_validas(keywords)
+    q = build_tsquery(keywords) if kws_validas else None
     qx = build_exclude_tsquery(keywords_excluir) if keywords_excluir else None
 
     nuevos = actualizados = descartados = 0
@@ -432,6 +521,7 @@ def match_perfil(
         lics = _candidatos_licitaciones(
             session, ahora, q, qx, categorias_unspsc, organismos_seguidos
         )
+        hits_lic = _hits_licitaciones(session, [lic.codigo for lic in lics], kws_validas)
         for lic in lics:
             # Filtro de monto (local)
             monto = lic.monto_clp
@@ -446,8 +536,9 @@ def match_perfil(
             else:
                 razones_extra["monto_no_informado"] = True
 
+            kw_hit, campo_hit = hits_lic.get(lic.codigo, _SIN_HITS)
             sc, razones = _score_licitacion(
-                lic, keywords, ahora, categorias_unspsc, organismos_seguidos
+                lic, keywords, kw_hit, campo_hit, ahora, categorias_unspsc, organismos_seguidos
             )
             razones.update(razones_extra)
 
@@ -461,6 +552,7 @@ def match_perfil(
 
     if "compras_agiles" in fuentes:
         cas = _candidatos_ca(session, ahora, q, qx, categorias_unspsc, organismos_seguidos)
+        hits_ca = _hits_ca(session, [ca.codigo for ca in cas], kws_validas)
         for ca in cas:
             # Filtro de región (solo CA, local — spec regla 7)
             if regiones and ca.region not in regiones:
@@ -479,7 +571,10 @@ def match_perfil(
             else:
                 razones_extra_ca["monto_no_informado"] = True
 
-            sc, razones = _score_ca(ca, keywords, ahora, categorias_unspsc, organismos_seguidos)
+            kw_hit_ca, campo_hit_ca = hits_ca.get(ca.codigo, _SIN_HITS)
+            sc, razones = _score_ca(
+                ca, keywords, kw_hit_ca, campo_hit_ca, ahora, categorias_unspsc, organismos_seguidos
+            )
             razones.update(razones_extra_ca)
 
             es_nuevo = _upsert_match(

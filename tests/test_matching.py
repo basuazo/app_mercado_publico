@@ -18,8 +18,6 @@ from sqlalchemy.orm import Session
 from app.matching.engine import (
     _candidatos_ca,
     _candidatos_licitaciones,
-    _keywords_en_textos,
-    _norm,
     _rubros_hit,
     _score_ca,
     _score_licitacion,
@@ -212,30 +210,6 @@ class TestBuildTsquery:
     def test_build_exclude_tsquery(self):
         q = build_exclude_tsquery(["excluido", "rechazado"])
         assert q == "excluido OR rechazado"
-
-
-class TestNormalizacion:
-    def test_tilde_insensitive(self):
-        assert _norm("eléctrico") == "electrico"
-        assert _norm("Eléctrico") == "electrico"
-        assert _norm("ELÉCTRICO") == "electrico"
-
-    def test_keyword_en_texto_con_tilde(self):
-        # keyword sin tilde debe encontrarse en texto con tilde
-        hit = _keywords_en_textos(["electrico"], ["Material Eléctrico"])
-        assert "electrico" in hit
-
-    def test_keyword_con_tilde_en_texto_sin_tilde(self):
-        hit = _keywords_en_textos(["eléctrico"], ["Material electrico"])
-        assert "eléctrico" in hit
-
-    def test_frase_entre_comillas(self):
-        hit = _keywords_en_textos(['"cable electrico"'], ["Compra de cable electrico"])
-        assert '"cable electrico"' in hit
-
-    def test_no_hit_cuando_no_aparece(self):
-        hit = _keywords_en_textos(["electrico"], ["Servicio de limpieza"])
-        assert hit == []
 
 
 # ---------------------------------------------------------------------------
@@ -587,9 +561,9 @@ class TestMatchFTS:
         assert all(m.perfil_id == perfil_b1.id for m in matches_b1)
 
     def test_match_todos_procesa_todos_perfiles(self, pg_session, ds):
-        """match_todos corre para los 3 perfiles activos del dataset."""
+        """match_todos corre para los 4 perfiles activos del dataset."""
         result = match_todos(pg_session, ahora=AHORA)
-        assert result["perfiles_procesados"] == 3
+        assert result["perfiles_procesados"] == 4
 
     def test_match_upsert_idempotente(self, pg_session, ds):
         """Ejecutar match_perfil dos veces no duplica matches."""
@@ -612,6 +586,42 @@ class TestMatchFTS:
         result = match_perfil(perfil, pg_session, ahora=AHORA)
         # Ninguna licitación del dataset tiene raw_json → todos en sin_detalle
         assert len(result["sin_detalle_licitaciones"]) > 0
+
+    def test_match_variante_morfologica_genero_sube_score(self, pg_session, ds):
+        """F9c: keyword 'eléctrico' (masc. sing.) debe contar como hit contra
+        'electricas' (fem. plural) — mismo stem 'electr' en FTS 'spanish'.
+        Antes (score por substring) el recall encontraba LIC-MORFO-FEM pero el
+        score la contaba con 0 keywords_hit; ahora deben quedar unificados."""
+        perfil = ds["perfiles"]["a2"]  # keywords=["eléctrico"], solo licitaciones
+        match_perfil(perfil, pg_session, ahora=AHORA)
+        match = pg_session.execute(
+            select(OportunidadMatch).where(
+                OportunidadMatch.perfil_id == perfil.id,
+                OportunidadMatch.codigo_oportunidad == "LIC-MORFO-FEM",
+            )
+        ).scalar_one_or_none()
+        assert match is not None
+        assert match.razones["keywords_hit"] == ["eléctrico"]
+        assert match.razones["campo_hit"] == "nombre"
+        # texto: 1/1 keyword hit + bonus_nombre = 65 → capped a 60
+        # + urgencia (10 días → 10) + competencia neutra licitaciones (8) = 78
+        assert match.score == pytest.approx(78.0)
+
+    def test_match_variante_morfologica_plural_sube_score(self, pg_session, ds):
+        """F9c: keyword 'aseo' (singular) debe contar como hit contra 'aseos'
+        (plural) — mismo stem 'ase' en FTS 'spanish'."""
+        perfil = ds["perfiles"]["a3"]  # keywords=["aseo"], solo compras_agiles
+        match_perfil(perfil, pg_session, ahora=AHORA)
+        match = pg_session.execute(
+            select(OportunidadMatch).where(
+                OportunidadMatch.perfil_id == perfil.id,
+                OportunidadMatch.codigo_oportunidad == "CA-MORFO-ASEO",
+            )
+        ).scalar_one_or_none()
+        assert match is not None
+        assert match.razones["keywords_hit"] == ["aseo"]
+        assert match.razones["campo_hit"] == "nombre"
+        assert match.score > 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -659,19 +669,23 @@ def _make_ca(session: Session, codigo: str, nombre: str = "CA Test", cierre_dias
 
 
 class TestScoreLicitacion:
+    """F9c: keywords_hit/campo_hit ya vienen precomputados (FTS set-based, fuera
+    de esta función) — _score_licitacion solo combina los subscores."""
+
     def test_score_con_keyword_en_nombre(self, session: Session):
         lic = _make_lic(session, "LIC-SC1", nombre="material eléctrico", cierre_dias=5)
         keywords = ["eléctrico"]
-        score, razones = _score_licitacion(lic, keywords, _AHORA_LOCAL)
+        score, razones = _score_licitacion(lic, keywords, ["eléctrico"], "nombre", _AHORA_LOCAL)
         assert score > 0
         assert razones["campo_hit"] == "nombre"
         assert razones["dias_al_cierre"] == pytest.approx(5.0, abs=0.1)
 
     def test_score_con_keyword_en_descripcion(self, session: Session):
         lic = _make_lic(session, "LIC-SC2", nombre="compra servicios", cierre_dias=10)
-        # La descripcion contiene "prueba" (ver _make_lic)
         keywords = ["prueba"]
-        score, razones = _score_licitacion(lic, keywords, _AHORA_LOCAL)
+        score, razones = _score_licitacion(
+            lic, keywords, ["prueba"], "descripcion", _AHORA_LOCAL
+        )
         assert razones["campo_hit"] == "descripcion"
 
     def test_score_sin_fecha_cierre(self, session: Session):
@@ -680,12 +694,12 @@ class TestScoreLicitacion:
         lic = Licitacion(codigo="LIC-NODATE", nombre="sin fecha", descripcion="", estado="publicada", fecha_cierre=None)
         session.add(lic)
         session.flush()
-        _, razones = _score_licitacion(lic, ["algo"], _AHORA_LOCAL)
+        _, razones = _score_licitacion(lic, ["algo"], [], "desconocido", _AHORA_LOCAL)
         assert razones["dias_al_cierre"] == 0.0
 
     def test_campo_hit_desconocido(self, session: Session):
         lic = _make_lic(session, "LIC-SC3", nombre="sin match", cierre_dias=5)
-        _, razones = _score_licitacion(lic, ["xyznotfound"], _AHORA_LOCAL)
+        _, razones = _score_licitacion(lic, ["xyznotfound"], [], "desconocido", _AHORA_LOCAL)
         assert razones["campo_hit"] == "desconocido"
 
     def test_categorias_hit_en_razones_y_score_sin_keywords(self, session: Session):
@@ -700,7 +714,7 @@ class TestScoreLicitacion:
         )
         session.flush()
         score, razones = _score_licitacion(
-            lic, [], _AHORA_LOCAL, categorias_unspsc=["4321"]
+            lic, [], [], "desconocido", _AHORA_LOCAL, categorias_unspsc=["4321"]
         )
         assert razones["categorias_hit"] == ["4321"]
         assert score > 0.0
@@ -710,30 +724,33 @@ class TestScoreLicitacion:
         lic.codigo_organismo = "ORG-Y"
         session.flush()
         score, razones = _score_licitacion(
-            lic, [], _AHORA_LOCAL, organismos_seguidos=["ORG-Y"]
+            lic, [], [], "desconocido", _AHORA_LOCAL, organismos_seguidos=["ORG-Y"]
         )
         assert razones["organismo_seguido"] is True
         assert score > 0.0
 
     def test_sin_rubro_ni_organismo_no_aparecen_en_razones(self, session: Session):
         lic = _make_lic(session, "LIC-SCNONE", nombre="sin match", cierre_dias=5)
-        _, razones = _score_licitacion(lic, ["xyznotfound"], _AHORA_LOCAL)
+        _, razones = _score_licitacion(lic, ["xyznotfound"], [], "desconocido", _AHORA_LOCAL)
         assert "categorias_hit" not in razones
         assert "organismo_seguido" not in razones
 
 
 class TestScoreCa:
+    """F9c: keywords_hit/campo_hit ya vienen precomputados (FTS set-based, fuera
+    de esta función) — _score_ca solo combina los subscores."""
+
     def test_score_ca_con_keyword(self, session: Session):
         ca = _make_ca(session, "CA-SC1", nombre="silla ergonómica", cierre_dias=4, ofertas=0)
-        score, razones = _score_ca(ca, ["ergonómica"], _AHORA_LOCAL)
+        score, razones = _score_ca(ca, ["ergonómica"], ["ergonómica"], "nombre", _AHORA_LOCAL)
         assert score > 0
         assert razones["campo_hit"] == "nombre"
         assert razones["ofertas"] == 0
 
     def test_score_ca_campo_hit_descripcion(self, session: Session):
         ca = _make_ca(session, "CA-SC2", nombre="compra varios", cierre_dias=4)
-        score, razones = _score_ca(ca, ["CA"], _AHORA_LOCAL)
-        assert razones["campo_hit"] in ("nombre", "descripcion", "desconocido")
+        score, razones = _score_ca(ca, ["CA"], ["CA"], "descripcion", _AHORA_LOCAL)
+        assert razones["campo_hit"] == "descripcion"
 
     def test_score_ca_sin_fecha_cierre(self, session: Session):
         from app.models.tables import CompraAgil
@@ -741,7 +758,7 @@ class TestScoreCa:
         ca = CompraAgil(codigo="CA-NODATE", nombre="sin fecha", descripcion="", estado="publicada", fecha_cierre=None, total_ofertas=0)
         session.add(ca)
         session.flush()
-        _, razones = _score_ca(ca, ["algo"], _AHORA_LOCAL)
+        _, razones = _score_ca(ca, ["algo"], [], "desconocido", _AHORA_LOCAL)
         assert razones["dias_al_cierre"] == 0.0
 
     def test_ca_categorias_hit_en_razones_sin_keywords(self, session: Session):
@@ -752,7 +769,9 @@ class TestScoreCa:
             CaProducto(ca_codigo=ca.codigo, codigo_producto="43211500", nombre="laptop")
         )
         session.flush()
-        score, razones = _score_ca(ca, [], _AHORA_LOCAL, categorias_unspsc=["4321"])
+        score, razones = _score_ca(
+            ca, [], [], "desconocido", _AHORA_LOCAL, categorias_unspsc=["4321"]
+        )
         assert razones["categorias_hit"] == ["4321"]
         assert score > 0.0
 
@@ -761,7 +780,7 @@ class TestScoreCa:
         ca.organismo_rut = "76999999-9"
         session.flush()
         score, razones = _score_ca(
-            ca, [], _AHORA_LOCAL, organismos_seguidos=["76999999-9"]
+            ca, [], [], "desconocido", _AHORA_LOCAL, organismos_seguidos=["76999999-9"]
         )
         assert razones["organismo_seguido"] is True
         assert score > 0.0
@@ -831,7 +850,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session)
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]):
+             patch("app.matching.engine._candidatos_ca", return_value=[]), \
+             patch("app.matching.engine._hits_licitaciones", return_value={}):
             result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["nuevos"] == 1
@@ -843,7 +863,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session, monto_min=100_000.0)
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]):
+             patch("app.matching.engine._candidatos_ca", return_value=[]), \
+             patch("app.matching.engine._hits_licitaciones", return_value={}):
             result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["descartados"] == 1
@@ -855,7 +876,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session, monto_max=1_000_000.0)
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]):
+             patch("app.matching.engine._candidatos_ca", return_value=[]), \
+             patch("app.matching.engine._hits_licitaciones", return_value={}):
             result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["descartados"] == 1
@@ -870,7 +892,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session, monto_min=100_000.0)
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]):
+             patch("app.matching.engine._candidatos_ca", return_value=[]), \
+             patch("app.matching.engine._hits_licitaciones", return_value={}):
             result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["nuevos"] == 1
@@ -881,7 +904,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session, regiones=[13])
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[ca_rm, ca_otra]):
+             patch("app.matching.engine._candidatos_ca", return_value=[ca_rm, ca_otra]), \
+             patch("app.matching.engine._hits_ca", return_value={}):
             result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["descartados"] == 1
@@ -898,7 +922,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session, fuentes=["compras_agiles"], monto_min=100_000.0)
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[ca]):
+             patch("app.matching.engine._candidatos_ca", return_value=[ca]), \
+             patch("app.matching.engine._hits_ca", return_value={}):
             result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["nuevos"] == 1
@@ -908,7 +933,8 @@ class TestMatchPerfilMockedCandidatos:
         perfil = self._perfil(session)
 
         with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]):
+             patch("app.matching.engine._candidatos_ca", return_value=[]), \
+             patch("app.matching.engine._hits_licitaciones", return_value={}):
             r1 = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
             r2 = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 

@@ -1,8 +1,9 @@
 """Dataset sintético para tests de matching (F4).
 
-15 oportunidades (9 licitaciones + 6 compras ágiles) y 3 perfiles de 2 dueños distintos.
+17 oportunidades (10 licitaciones + 7 compras ágiles) y 4 perfiles de 2 dueños distintos.
 Cubre: tilde vs sin tilde, keyword en producto, exclusión, monto fuera de rango,
-CA otra región, bonus nombre, 0 ofertas vs >3 ofertas, urgencia límite.
+CA otra región, bonus nombre, 0 ofertas vs >3 ofertas, urgencia límite, variantes
+morfológicas de género/número (F9c: electrico/electrica, aseo/aseos).
 
 Uso:
     from tests.fixtures.dataset_matching import crear_dataset, AHORA
@@ -45,6 +46,7 @@ LICITACION_CODIGOS: tuple[str, ...] = (
     "LIC-NOMBRE-BONUS",
     "LIC-NO-MATCH",
     "LIC-URGENCIA-ZERO",
+    "LIC-MORFO-FEM",
 )
 CA_CODIGOS: tuple[str, ...] = (
     "CA-0OF",
@@ -53,6 +55,7 @@ CA_CODIGOS: tuple[str, ...] = (
     "CA-OTRA-REGION",
     "CA-ILUMINA-5OF",
     "CA-CIERRE-1DIA",
+    "CA-MORFO-ASEO",
 )
 
 
@@ -113,6 +116,15 @@ def crear_dataset(session: Session) -> dict:
         fuentes=["compras_agiles"],
         regiones=[13],
     )
+    # A3 (dueño A): "aseo", solo CA — para tests de consistencia morfológica F9c
+    # (aseo/aseos comparten stem 'ase' en FTS 'spanish').
+    perfil_a3 = crear_perfil(
+        session,
+        user_a.id,
+        "Aseo (A3)",
+        keywords=["aseo"],
+        fuentes=["compras_agiles"],
+    )
     session.flush()
 
     # ------------------------------------------------------------------
@@ -159,6 +171,16 @@ def crear_dataset(session: Session) -> dict:
 
     # 9. Cierre en 35 días → urgencia 0 (>30)
     _lic("LIC-URGENCIA-ZERO", "Material electrico reposicion", monto=200_000.0, dias=35.0)
+
+    # 10. Variante morfológica de género/número: nombre con "electricas" (fem. plural)
+    # → keyword "eléctrico" (masc. singular) — mismo stem 'electr' en FTS 'spanish'.
+    # F9c: antes el score (substring) no contaba este hit aunque el recall (FTS) sí.
+    _lic(
+        "LIC-MORFO-FEM",
+        "Mantencion de redes electricas en edificio municipal",
+        monto=400_000.0,
+        dias=10.0,
+    )
 
     session.flush()
 
@@ -226,11 +248,22 @@ def crear_dataset(session: Session) -> dict:
         dias=20.0 / 24.0,
     )
 
+    # CA-7: variante morfológica de número plural "aseos" → keyword "aseo"
+    # (mismo stem 'ase' en FTS 'spanish'), para PERFIL-A3.
+    _ca(
+        "CA-MORFO-ASEO",
+        "Contratacion de aseos generales edificio municipal",
+        region=13,
+        ofertas=2,
+        monto=300_000.0,
+        dias=10.0,
+    )
+
     session.flush()
 
     return {
         "users": {"a": user_a, "b": user_b},
-        "perfiles": {"a1": perfil_a1, "a2": perfil_a2, "b1": perfil_b1},
+        "perfiles": {"a1": perfil_a1, "a2": perfil_a2, "a3": perfil_a3, "b1": perfil_b1},
         "licitaciones": lics,
         "cas": cas,
     }
