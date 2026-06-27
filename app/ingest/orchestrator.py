@@ -82,10 +82,10 @@ def _make_clients(settings: Settings, engine: Engine) -> tuple[MercadoPublicoV1C
     return MercadoPublicoV1Client(settings, engine), MercadoPublicoV2Client(settings, engine)
 
 
-def run_sync_activas(settings: Settings, engine: Engine) -> dict[str, int]:
+def run_sync_activas(settings: Settings, engine: Engine, limit: int | None = None) -> dict[str, int]:
     v1, _ = _make_clients(settings, engine)
     with Session(engine) as session:
-        return sync_activas(session, v1, settings)
+        return sync_activas(session, v1, settings, limit=limit)
 
 
 def run_sync_ca(settings: Settings, engine: Engine) -> dict[str, int]:

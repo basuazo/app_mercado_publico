@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.clients.base import MPRateLimitError
@@ -175,6 +176,72 @@ class TestSyncActivas:
         v1.licitaciones_por_fecha.return_value = [_lic_basica("LIC-FECHA")]
         result = sync_por_fecha(session, v1, settings, date(2026, 1, 1))
         assert result["nuevas"] == 1
+
+    def test_limit_acota_licitaciones_procesadas(self, session, settings):
+        """--limit (run-once) acota cuántas licitaciones se procesan."""
+        v1 = MagicMock()
+        v1.licitaciones_activas.return_value = [_lic_basica(f"LIC-L{i:03d}") for i in range(50)]
+
+        result = sync_activas(session, v1, settings, limit=10)
+
+        assert result["total"] == 10
+        assert session.execute(select(Licitacion)).scalars().all().__len__() == 10
+
+    def test_lote_recupera_de_desconexion_transitoria(self, session, settings, monkeypatch):
+        """Una OperationalError transitoria en un commit se reintenta y no pierde el lote."""
+        v1 = MagicMock()
+        v1.licitaciones_activas.return_value = [
+            _lic_basica(f"LIC-R{i:03d}") for i in range(450)
+        ]
+
+        original_commit = session.commit
+        llamadas = {"n": 0}
+
+        def commit_fragil() -> None:
+            llamadas["n"] += 1
+            # Falla solo en el primer intento de comitear el 2º lote (items 200-399).
+            if llamadas["n"] == 2:
+                raise OperationalError("commit", {}, Exception("server closed the connection"))
+            original_commit()
+
+        monkeypatch.setattr(session, "commit", commit_fragil)
+        monkeypatch.setattr("app.core.db_retry.time.sleep", lambda s: None)
+
+        result = sync_activas(session, v1, settings)
+
+        # Tras el reintento, el lote que falló transitoriamente se persiste igual.
+        assert result["total"] == 450
+        # 3 lotes (200+200+50) + 1 guardar_estado + 1 reintento extra por la falla = 5.
+        assert llamadas["n"] == 5
+
+    def test_lote_descartado_tras_agotar_reintentos_no_aborta_corrida(
+        self, session, settings, monkeypatch
+    ):
+        """Si un lote falla en sus 3 intentos, se descarta y la corrida sigue con el siguiente."""
+        v1 = MagicMock()
+        v1.licitaciones_activas.return_value = [
+            _lic_basica(f"LIC-X{i:03d}") for i in range(450)
+        ]
+
+        original_commit = session.commit
+        llamadas = {"n": 0}
+
+        def commit_segundo_lote_siempre_falla() -> None:
+            llamadas["n"] += 1
+            # Las llamadas 2, 3 y 4 son los 3 intentos del commit del 2º lote.
+            if llamadas["n"] in (2, 3, 4):
+                raise OperationalError("commit", {}, Exception("server closed the connection"))
+            original_commit()
+
+        monkeypatch.setattr(session, "commit", commit_segundo_lote_siempre_falla)
+        monkeypatch.setattr("app.core.db_retry.time.sleep", lambda s: None)
+
+        result = sync_activas(session, v1, settings)
+
+        # Lote 1 (200) y lote 3 (50) se persisten; el lote 2 (200) se pierde sin abortar la corrida.
+        assert result["total"] == 250
+        lics = session.execute(select(Licitacion)).scalars().all()
+        assert len(lics) == 250
 
 
 class TestFetchDetalles:
@@ -836,3 +903,38 @@ class TestOrchestratorRunners:
             bs.return_value = mock_sched
             run_scheduler(settings, engine)
         mock_sched.start.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests del CLI (run-once --limit)
+# ---------------------------------------------------------------------------
+
+
+class TestCliRunOnce:
+    def test_limit_se_pasa_a_run_sync_activas(self, monkeypatch):
+        from app.ingest.__main__ import cmd_run_once
+
+        monkeypatch.setenv("MP_TICKET", "ticket-test-cli")
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+        monkeypatch.setenv("SECRET_KEY", "clave-test-cli-32bytesxxxxxxxxxx")
+        monkeypatch.setenv("JOBS_TOKEN", "token-test-cli-jobs-xxxxxxxxxxx")
+
+        with patch("app.ingest.__main__.run_sync_activas") as mock_run:
+            mock_run.return_value = {"nuevas": 0, "actualizadas": 0, "total": 0}
+            cmd_run_once("activas", limit=5)
+
+        assert mock_run.call_args.kwargs.get("limit") == 5
+
+    def test_sin_limit_pasa_none(self, monkeypatch):
+        from app.ingest.__main__ import cmd_run_once
+
+        monkeypatch.setenv("MP_TICKET", "ticket-test-cli")
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+        monkeypatch.setenv("SECRET_KEY", "clave-test-cli-32bytesxxxxxxxxxx")
+        monkeypatch.setenv("JOBS_TOKEN", "token-test-cli-jobs-xxxxxxxxxxx")
+
+        with patch("app.ingest.__main__.run_sync_activas") as mock_run:
+            mock_run.return_value = {"nuevas": 0, "actualizadas": 0, "total": 0}
+            cmd_run_once("activas")
+
+        assert mock_run.call_args.kwargs.get("limit") is None

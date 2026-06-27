@@ -37,13 +37,13 @@ def _make_engine(settings: Settings) -> Engine:
     )
 
 
-def cmd_run_once(job: str) -> None:
+def cmd_run_once(job: str, limit: int | None = None) -> None:
     setup_logging()
     settings = get_settings()
     engine = _make_engine(settings)
 
     dispatch: dict[str, Callable[[], Any]] = {
-        "activas": lambda: run_sync_activas(settings, engine),
+        "activas": lambda: run_sync_activas(settings, engine, limit=limit),
         "ca": lambda: run_sync_ca(settings, engine),
         "detalles": lambda: run_detalles(settings, engine),
         "lifecycle": lambda: run_lifecycle(settings, engine),
@@ -83,13 +83,19 @@ def main() -> None:
         required=True,
         help="Job a ejecutar",
     )
+    once.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limita cuántas licitaciones procesa (solo job=activas; pruebas locales acotadas)",
+    )
 
     sub.add_parser("run-scheduler", help="Inicia el scheduler APScheduler (bloqueante)")
 
     args = parser.parse_args()
 
     if args.cmd == "run-once":
-        cmd_run_once(args.job)
+        cmd_run_once(args.job, limit=args.limit)
     elif args.cmd == "run-scheduler":
         cmd_run_scheduler()
 

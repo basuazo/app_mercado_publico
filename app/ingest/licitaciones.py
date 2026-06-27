@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.types import LicitacionBasica, LicitacionDetalle
+from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.montos import normalizar_clp
 from app.core.settings import Settings
@@ -15,8 +16,6 @@ from app.models.enums import estado_licitacion
 from app.models.tables import Licitacion, LicitacionItem, SyncState
 
 _log = get_logger(__name__)
-
-_BATCH = 200
 
 
 def _ahora() -> datetime:
@@ -112,6 +111,30 @@ def _guardar_estado(
         state.notas = notas
 
 
+def _procesar_lote_licitaciones(session: Session, lote: list[LicitacionBasica], contexto: str) -> tuple[int, int]:
+    """Aplica upsert_basica a un lote y comitea con reintento ante desconexión (regla 12).
+
+    Si el lote falla tras los reintentos, queda logueado y se descarta (0, 0):
+    la corrida sigue con el siguiente lote en vez de abortar todo.
+    """
+    contador = {"nuevas": 0, "actualizadas": 0}
+
+    def _aplicar() -> None:
+        contador["nuevas"] = 0
+        contador["actualizadas"] = 0
+        for item in lote:
+            _, es_nueva = upsert_basica(session, item)
+            if es_nueva:
+                contador["nuevas"] += 1
+            else:
+                contador["actualizadas"] += 1
+
+    ok = commit_con_retry(session, _aplicar, contexto=f"{contexto} (lote de {len(lote)})")
+    if not ok:
+        return 0, 0
+    return contador["nuevas"], contador["actualizadas"]
+
+
 # ---------------------------------------------------------------------------
 # API pública
 # ---------------------------------------------------------------------------
@@ -121,30 +144,36 @@ def sync_activas(
     session: Session,
     v1_client: MercadoPublicoV1Client,
     settings: Settings,
+    limit: int | None = None,
 ) -> dict[str, int]:
     """Sincroniza licitaciones activas via API. Un request total.
 
-    Upsert en lotes de 200, commit por lote.
-    Retorna conteo de nuevas y actualizadas.
+    Upsert en lotes de settings.ingest_batch_size, commit por lote con
+    reintento ante desconexión transitoria (regla 12: nunca una transacción
+    larga ni todo el avance perdido por una caída).
+    `limit`, si se especifica, acota cuántas licitaciones se procesan
+    (para pruebas locales acotadas).
     """
     items = v1_client.licitaciones_activas()
+    batch_size = settings.ingest_batch_size
     nuevas = actualizadas = 0
     lote: list[LicitacionBasica] = []
 
-    for item in items:
-        _, es_nueva = upsert_basica(session, item)
-        if es_nueva:
-            nuevas += 1
-        else:
-            actualizadas += 1
+    for idx, item in enumerate(items):
+        if limit is not None and idx >= limit:
+            break
         lote.append(item)
 
-        if len(lote) >= _BATCH:
-            session.commit()
+        if len(lote) >= batch_size:
+            n, a = _procesar_lote_licitaciones(session, lote, "sync_activas")
+            nuevas += n
+            actualizadas += a
             lote = []
 
     if lote:
-        session.commit()
+        n, a = _procesar_lote_licitaciones(session, lote, "sync_activas")
+        nuevas += n
+        actualizadas += a
 
     _guardar_estado(session, "licitaciones_activas", ok=True, requests_usadas=1)
     session.commit()
@@ -234,23 +263,23 @@ def sync_por_fecha(
     El guard 22:00–07:00 lo aplica el scheduler, no esta función.
     """
     items = v1_client.licitaciones_por_fecha(fecha)
+    batch_size = settings.ingest_batch_size
     nuevas = actualizadas = 0
     lote: list[LicitacionBasica] = []
 
     for item in items:
-        _, es_nueva = upsert_basica(session, item)
-        if es_nueva:
-            nuevas += 1
-        else:
-            actualizadas += 1
         lote.append(item)
 
-        if len(lote) >= _BATCH:
-            session.commit()
+        if len(lote) >= batch_size:
+            n, a = _procesar_lote_licitaciones(session, lote, "sync_por_fecha")
+            nuevas += n
+            actualizadas += a
             lote = []
 
     if lote:
-        session.commit()
+        n, a = _procesar_lote_licitaciones(session, lote, "sync_por_fecha")
+        nuevas += n
+        actualizadas += a
 
     _log.info("sync_por_fecha(%s): %d nuevas, %d actualizadas", fecha, nuevas, actualizadas)
     return {"nuevas": nuevas, "actualizadas": actualizadas, "total": nuevas + actualizadas}

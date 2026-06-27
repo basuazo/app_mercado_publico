@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     api_daily_budget: int = Field(default=9000, description="Presupuesto máximo de requests/día")
     email_daily_limit: int = Field(default=250, description="Tope de correos por día")
 
+    # --- Ingesta por lotes (regla 12: nunca un día completo en memoria) ---
+    ingest_batch_size: int = Field(
+        default=200, description="Tamaño de lote para commits incrementales en la ingesta"
+    )
+
     # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---
     brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS")
 

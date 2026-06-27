@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.clients.base import MPRateLimitError
 from app.clients.mp_v2 import MercadoPublicoV2Client
-from app.clients.types import CompraAgilBasica, CompraAgilDetalle
+from app.clients.types import CompraAgilBasica, CompraAgilDetalle, RespuestaListadoV2
+from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.models.enums import estado_ca
@@ -136,25 +137,45 @@ def sync_incremental(
                 numero_pagina=pagina,
             )
 
-            for ca in resp.items:
-                # Filtro local por estado (spec: sin filtro en el endpoint)
-                if ca.estado not in _ESTADOS_VALIDOS:
-                    descartadas += 1
-                    continue
+            pagina_nuevas = pagina_actualizadas = pagina_descartadas = 0
+            pagina_cursor: datetime | None = None
 
-                _, es_nueva = upsert_ca_basica(session, ca)
-                if es_nueva:
-                    nuevas += 1
-                else:
-                    actualizadas += 1
+            def _aplicar_pagina(resp: RespuestaListadoV2 = resp) -> None:
+                nonlocal pagina_nuevas, pagina_actualizadas, pagina_descartadas, pagina_cursor
+                pagina_nuevas = pagina_actualizadas = pagina_descartadas = 0
+                pagina_cursor = None
+                for ca in resp.items:
+                    # Filtro local por estado (spec: sin filtro en el endpoint)
+                    if ca.estado not in _ESTADOS_VALIDOS:
+                        pagina_descartadas += 1
+                        continue
 
-                if ca.fecha_ultimo_cambio is not None and (
-                    nuevo_cursor_dt is None or ca.fecha_ultimo_cambio > nuevo_cursor_dt
+                    _, es_nueva = upsert_ca_basica(session, ca)
+                    if es_nueva:
+                        pagina_nuevas += 1
+                    else:
+                        pagina_actualizadas += 1
+
+                    if ca.fecha_ultimo_cambio is not None and (
+                        pagina_cursor is None or ca.fecha_ultimo_cambio > pagina_cursor
+                    ):
+                        pagina_cursor = ca.fecha_ultimo_cambio
+
+            # Commit por página con reintento → progreso persiste incluso ante
+            # desconexión transitoria o ante un 429 en la página siguiente.
+            ok = commit_con_retry(session, _aplicar_pagina, contexto=f"CA pág {pagina}")
+            if ok:
+                nuevas += pagina_nuevas
+                actualizadas += pagina_actualizadas
+                descartadas += pagina_descartadas
+                if pagina_cursor is not None and (
+                    nuevo_cursor_dt is None or pagina_cursor > nuevo_cursor_dt
                 ):
-                    nuevo_cursor_dt = ca.fecha_ultimo_cambio
-
-            # Commit por página → progreso persiste incluso ante 429 en pág siguiente
-            session.commit()
+                    nuevo_cursor_dt = pagina_cursor
+            else:
+                _log.error(
+                    "sync_incremental CA: página %d descartada tras reintentos fallidos", pagina
+                )
 
             if pagina >= resp.paginacion.total_paginas:
                 break
