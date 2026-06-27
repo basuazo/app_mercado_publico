@@ -15,6 +15,7 @@ from app.core.settings import Settings, get_settings
 from app.ingest.orchestrator import (
     run_alerts,
     run_catalogos,
+    run_datos_abiertos,
     run_detalles,
     run_digest,
     run_lifecycle,
@@ -25,7 +26,18 @@ from app.ingest.orchestrator import (
     run_sync_ca,
 )
 
-_JOBS = ("activas", "ca", "detalles", "lifecycle", "catalogos", "retencion", "match", "alerts", "digest")
+_JOBS = (
+    "activas",
+    "ca",
+    "detalles",
+    "lifecycle",
+    "catalogos",
+    "retencion",
+    "match",
+    "alerts",
+    "digest",
+    "datos-abiertos",
+)
 
 
 def _make_engine(settings: Settings) -> Engine:
@@ -37,7 +49,9 @@ def _make_engine(settings: Settings) -> Engine:
     )
 
 
-def cmd_run_once(job: str, limit: int | None = None) -> None:
+def cmd_run_once(
+    job: str, limit: int | None = None, anio: int | None = None, mes: int | None = None
+) -> None:
     setup_logging()
     settings = get_settings()
     engine = _make_engine(settings)
@@ -52,6 +66,7 @@ def cmd_run_once(job: str, limit: int | None = None) -> None:
         "match": lambda: run_match(settings, engine),
         "alerts": lambda: run_alerts(settings, engine),
         "digest": lambda: run_digest(settings, engine),
+        "datos-abiertos": lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes),
     }
 
     if job not in dispatch:
@@ -89,13 +104,25 @@ def main() -> None:
         default=None,
         help="Limita cuántas licitaciones procesa (solo job=activas; pruebas locales acotadas)",
     )
+    once.add_argument(
+        "--anio",
+        type=int,
+        default=None,
+        help="Año del archivo de datos abiertos a procesar (solo job=datos-abiertos; default: mes actual)",
+    )
+    once.add_argument(
+        "--mes",
+        type=int,
+        default=None,
+        help="Mes del archivo de datos abiertos a procesar (solo job=datos-abiertos; default: mes actual)",
+    )
 
     sub.add_parser("run-scheduler", help="Inicia el scheduler APScheduler (bloqueante)")
 
     args = parser.parse_args()
 
     if args.cmd == "run-once":
-        cmd_run_once(args.job, limit=args.limit)
+        cmd_run_once(args.job, limit=args.limit, anio=args.anio, mes=args.mes)
     elif args.cmd == "run-scheduler":
         cmd_run_scheduler()
 

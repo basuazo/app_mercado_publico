@@ -59,6 +59,15 @@ class Settings(BaseSettings):
         description='Keywords amplias para pre-filtrar licitaciones antes de pedir detalle. JSON: \'["word1","word2"]\'',
     )
 
+    # --- Datos abiertos (F-rubros): ítems UNSPSC sin gastar cuota de la API ---
+    datos_abiertos_habilitado: bool = Field(
+        default=True, description="Habilita la ingesta de licitacion_items desde datos abiertos"
+    )
+    datos_abiertos_base_url: str = Field(
+        default="https://transparenciachc.blob.core.windows.net",
+        description="Base URL del Azure Blob público de datos abiertos de ChileCompra",
+    )
+
 
 def get_settings() -> "Settings":
     return Settings()  # type: ignore[call-arg]

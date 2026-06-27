@@ -26,6 +26,7 @@ from app.core.retencion import purgar_terminales
 from app.core.settings import Settings
 from app.ingest.catalogos import refresh_organismos
 from app.ingest.compra_agil import sync_incremental, upsert_ca_detalle
+from app.ingest.datos_abiertos import sync_items_datos_abiertos
 from app.ingest.licitaciones import (
     fetch_detalles_pendientes,
     sync_activas,
@@ -104,6 +105,14 @@ def run_lifecycle(settings: Settings, engine: Engine) -> dict[str, int]:
     v1, v2 = _make_clients(settings, engine)
     with Session(engine) as session:
         return refresh_estados(session, v1, v2, settings)
+
+
+def run_datos_abiertos(
+    settings: Settings, engine: Engine, anio: int | None = None, mes: int | None = None
+) -> dict[str, int]:
+    """Completa licitacion_items desde datos abiertos (sin cuota de API)."""
+    with Session(engine) as session:
+        return sync_items_datos_abiertos(session, settings, anio=anio, mes=mes)
 
 
 def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
@@ -254,11 +263,16 @@ def _ciclo_nocturno(
     engine: Engine,
     now_fn: Callable[..., datetime] | None = None,
 ) -> None:
-    """Lifecycle + backfill del día anterior. Solo ejecuta en ventana 22:00–07:00."""
+    """Datos abiertos + lifecycle + backfill del día anterior.
+
+    Solo ejecuta en ventana 22:00–07:00. datos_abiertos va primero para que sus
+    ítems UNSPSC estén disponibles antes del próximo ciclo de match (08:00).
+    """
     if not en_ventana_nocturna(now_fn):
         _log.warning("ciclo_nocturno: fuera de ventana horaria — abortando")
         return
 
+    _run_with_lock("datos_abiertos", lambda: run_datos_abiertos(settings, engine), engine)
     _run_with_lock("lifecycle", lambda: run_lifecycle(settings, engine), engine)
 
     # Backfill: ayer (simple, se puede extender a rangos mayores)
