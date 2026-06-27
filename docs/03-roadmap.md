@@ -21,36 +21,34 @@
 - **Pendiente:** correr ruff/mypy/pytest y commitear
   (`F8: resultados legibles, ficha enriquecida y link condicional`).
 
-## Deuda técnica — driver psycopg v3
-**Estado: pendiente de confirmar.**
-- `make_engine` debe normalizar `postgresql://` → `postgresql+psycopg://` para que
-  `pytest` colecte `test_api.py` (hoy falla por `psycopg2` no instalado).
-- Prompt ya entregado; verificar que quedó aplicado y la suite colecta los 228 tests.
+## Deuda técnica
+- **Driver psycopg v3: RESUELTO.** Confirmado en runtime real al correr
+  `validar_unspsc.py` y la suite contra Neon.
+- **`test_jobs_run_job_ca`:** test preexistente que pega a la API real sin mock
+  (viola "tests de red SIEMPRE mockeados"). Migrar a respx. No bloqueante.
 
 ---
 
 ## F9a — Exponer filtros existentes + validar cobertura UNSPSC
-**Estado: en curso.** Rutas `crear`/`editar` ya parsean y pasan regiones y montos.
-- **Falta confirmar/terminar:**
-  - Formulario `perfiles.html`: checkboxes de región (desde `seeds.REGIONES`),
-    inputs de monto mín/máx, y mostrar estos filtros en la lista de perfiles.
-  - Script `scripts/validar_unspsc.py` (read-only): % de ítems con `codigo_producto`
-    poblado y con formato UNSPSC válido; top prefijos de 2 y 4 dígitos.
-  - Tests del parseo de regiones/montos y de la persistencia.
-  - ruff/mypy/pytest verde → commit `F9a`.
-- **Salida a auditar:** el reporte de UNSPSC define cómo diseñamos F9b.
+**Estado: HECHO (commit 38a34ac).** Formulario expone regiones/montos, parseo
+defensivo, fix `p.excluir`→`p.keywords_excluir`. Script `scripts/validar_unspsc.py`
+confirmó cobertura UNSPSC en licitaciones ~99.5% válida; CA sin productos ingestados.
 
 ## F9b — Rubros UNSPSC + seguir organismos
-**Estado: siguiente. Depende de F9a (números de cobertura UNSPSC).**
-- Modelo: nuevas columnas en `PerfilBusqueda` — `categorias_unspsc` (list[str],
-  prefijos de código) y `organismos_seguidos` (list[str], código/RUT de organismo).
-  Migración Alembic.
-- Matching (`app/matching/engine.py`): rubros y organismos como **recall aditivo**
-  (suman candidatos aunque no haya keyword); región y monto siguen siendo filtros
-  restrictivos. Nuevos componentes de score + razones (`categorias_hit`,
-  `organismo_seguido`) y su traducción en `presentacion.py`.
-- Formulario: campos para rubros (prefijos UNSPSC) y organismos a seguir.
-- Tests de recall/score por rubro y por organismo. Commit `F9b`.
+**Estado: HECHO (commit cd479aa).** Migración `616613c3d7cf`; catálogo
+`app/catalogos/unspsc.py` desde `data/unspsc_rubros.csv` (UNGM 22-jun-2026);
+recall aditivo (FTS OR `codigo_producto LIKE 'prefijo%'` OR `organismo IN ...`),
+`score_estructural` (+20 rubro / +15 organismo, tope 100), formulario con selector
+de rubros + organismos, 36 tests. ruff/mypy verde.
+
+## F9c — Consistencia recall/score (stemming)
+**Estado: HECHO (commit 3436a55).** Detección de hits movida a Postgres FTS
+(set-based, sin N+1) reusando la misma `websearch_to_tsquery('spanish', ...)` del
+recall; `score_texto` sigue puro pero recibe hits stem-based. Eliminada la detección
+por substring. Invariante recall/score documentada vía `keywords_validas()`.
+- **Bonus:** corregido bug de precedencia `AND`/`OR` en los fragmentos FTS de
+  exclusión (las exclusiones se "saltaban" en ciertos casos). Confirmado contra Neon.
+- `@needs_postgres` corre verde por primera vez (95 passed), incluidos los 3 previos.
 
 ---
 
