@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Seguidas — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Oportunidades seguidas</h2>
+
+<div class="mb-3">
+  {% if incluir_archivadas %}
+  <a href="/seguidas" class="btn btn-sm btn-outline-secondary">Ocultar archivadas</a>
+  {% else %}
+  <a href="/seguidas?archivadas=1" class="btn btn-sm btn-outline-secondary">Ver archivadas</a>
+  {% endif %}
+</div>
+
+{% if items %}
+<div class="list-group">
+  {% for item in items %}
+  <div class="list-group-item">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <a href="{{ item.url_ficha_app }}"><strong>{{ item.nombre }}</strong></a>
+        <span class="badge bg-secondary ms-2">{{ item.seguimiento.fuente }}</span>
+        {% if item.seguimiento.archivada %}
+        <span class="badge bg-light text-dark border ms-1">Archivada</span>
+        {% endif %}
+      </div>
+      <small class="text-muted">
+        {% if item.fecha_cierre %}Cierre: {{ item.fecha_cierre.strftime('%d/%m/%Y') }}{% endif %}
+      </small>
+    </div>
+    <small class="text-muted d-block">Estado: {{ item.estado }}</small>
+
+    <div class="mt-2">
+      {% if item.seguimiento.archivada %}
+      <form method="post" action="/oportunidad/{{ item.seguimiento.fuente }}/{{ item.seguimiento.codigo_oportunidad }}/desarchivar" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="/seguidas{% if incluir_archivadas %}?archivadas=1{% endif %}">
+        <button type="submit" class="btn btn-sm btn-outline-success">Desarchivar</button>
+      </form>
+      {% else %}
+      <form method="post" action="/oportunidad/{{ item.seguimiento.fuente }}/{{ item.seguimiento.codigo_oportunidad }}/archivar" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="/seguidas{% if incluir_archivadas %}?archivadas=1{% endif %}">
+        <button type="submit" class="btn btn-sm btn-outline-warning">Archivar</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/oportunidad/{{ item.seguimiento.fuente }}/{{ item.seguimiento.codigo_oportunidad }}/dejar-de-seguir" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="/seguidas{% if incluir_archivadas %}?archivadas=1{% endif %}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Dejar de seguir</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+  {% if incluir_archivadas %}No tienes oportunidades seguidas.{% else %}No tienes oportunidades seguidas activas.{% endif %}
+</div>
+{% endif %}
+{% endblock %}

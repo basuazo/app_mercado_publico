@@ -17,7 +17,7 @@ from sqlalchemy import not_, select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models.tables import Alerta, CompraAgil, Licitacion, OportunidadMatch
+from app.models.tables import Alerta, CompraAgil, Licitacion, OportunidadMatch, OportunidadSeguida
 
 _log = get_logger(__name__)
 
@@ -176,4 +176,54 @@ def detectar_recordatorios(
         creados += 1
 
     _log.info("detectar_recordatorios: %d alertas creadas", creados)
+    return creados
+
+
+def detectar_cambio_estado_seguidas(session: Session) -> int:
+    """Crea alertas 'seguimiento_estado:<estado>' para seguimientos no archivados
+    cuyo estado actual difiere de OportunidadSeguida.estado_visto.
+
+    A diferencia de detectar_cambio_estado (que solo dispara para una lista
+    acotada de estados notables), aquí CUALQUIER cambio de estado alerta: el
+    usuario siguió esta oportunidad específica para no perderse su avance.
+    Idempotente por construcción: estado_visto se actualiza en el mismo paso,
+    así que una transición nunca genera dos alertas.
+    """
+    creados = 0
+
+    rows_lic = list(
+        session.execute(
+            select(OportunidadSeguida, Licitacion.estado)
+            .join(Licitacion, OportunidadSeguida.codigo_oportunidad == Licitacion.codigo)
+            .where(
+                OportunidadSeguida.fuente == "licitaciones",
+                OportunidadSeguida.archivada.is_(False),
+                Licitacion.estado != OportunidadSeguida.estado_visto,
+            )
+        ).all()
+    )
+    for seguimiento, estado_nuevo in rows_lic:
+        session.add(Alerta(seguimiento_id=seguimiento.id, tipo=f"seguimiento_estado:{estado_nuevo}"))
+        seguimiento.estado_visto = estado_nuevo
+        seguimiento.actualizado_en = _ahora_utc()
+        creados += 1
+
+    rows_ca = list(
+        session.execute(
+            select(OportunidadSeguida, CompraAgil.estado)
+            .join(CompraAgil, OportunidadSeguida.codigo_oportunidad == CompraAgil.codigo)
+            .where(
+                OportunidadSeguida.fuente == "compras_agiles",
+                OportunidadSeguida.archivada.is_(False),
+                CompraAgil.estado != OportunidadSeguida.estado_visto,
+            )
+        ).all()
+    )
+    for seguimiento, estado_nuevo in rows_ca:
+        session.add(Alerta(seguimiento_id=seguimiento.id, tipo=f"seguimiento_estado:{estado_nuevo}"))
+        seguimiento.estado_visto = estado_nuevo
+        seguimiento.actualizado_en = _ahora_utc()
+        creados += 1
+
+    _log.info("detectar_cambio_estado_seguidas: %d alertas creadas", creados)
     return creados

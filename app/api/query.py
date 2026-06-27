@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles
 from app.matching.perfiles import listar_perfiles
+from app.matching.seguimiento import listar_seguidas
 from app.models.enums import EstadoOportunidad
 from app.models.tables import CompraAgil, Licitacion, OportunidadMatch
 
@@ -146,6 +147,54 @@ def get_oportunidades_usuario(
 
     total = len(result)
     return result[offset : offset + limit], total
+
+
+def listar_seguidas_detalle(
+    session: Session,
+    user_id: int,
+    *,
+    incluir_archivadas: bool = False,
+) -> list[dict[str, Any]]:
+    """Seguimientos del usuario enriquecidos con el estado/datos actuales de la oportunidad.
+
+    Si la oportunidad subyacente ya no existe (caso raro), degrada a los datos
+    mínimos guardados en el seguimiento en vez de romper el render.
+    """
+    seguidas = listar_seguidas(session, user_id, incluir_archivadas=incluir_archivadas)
+
+    lic_codigos = [s.codigo_oportunidad for s in seguidas if s.fuente == "licitaciones"]
+    ca_codigos = [s.codigo_oportunidad for s in seguidas if s.fuente == "compras_agiles"]
+
+    lics: dict[str, Licitacion] = {}
+    if lic_codigos:
+        for lic in session.execute(
+            select(Licitacion).where(Licitacion.codigo.in_(lic_codigos))
+        ).scalars():
+            lics[lic.codigo] = lic
+
+    cas: dict[str, CompraAgil] = {}
+    if ca_codigos:
+        for c in session.execute(
+            select(CompraAgil).where(CompraAgil.codigo.in_(ca_codigos))
+        ).scalars():
+            cas[c.codigo] = c
+
+    result: list[dict[str, Any]] = []
+    for s in seguidas:
+        op: Licitacion | CompraAgil | None
+        if s.fuente == "licitaciones":
+            op = lics.get(s.codigo_oportunidad)
+        else:
+            op = cas.get(s.codigo_oportunidad)
+
+        result.append({
+            "seguimiento": s,
+            "nombre": op.nombre if op is not None else s.codigo_oportunidad,
+            "estado": op.estado if op is not None else s.estado_visto,
+            "fecha_cierre": op.fecha_cierre if op is not None else None,
+            "url_ficha_app": f"/oportunidad/{s.fuente}/{s.codigo_oportunidad}",
+        })
+    return result
 
 
 def check_oportunidad_access(

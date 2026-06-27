@@ -18,7 +18,11 @@ from app.api.deps import (
     html_require_admin,
     html_require_user,
 )
-from app.api.query import check_oportunidad_access, get_oportunidades_usuario
+from app.api.query import (
+    check_oportunidad_access,
+    get_oportunidades_usuario,
+    listar_seguidas_detalle,
+)
 from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
@@ -30,6 +34,12 @@ from app.matching.perfiles import (
     eliminar_perfil,
     listar_perfiles,
     obtener_perfil,
+)
+from app.matching.seguimiento import (
+    archivar_seguimiento,
+    dejar_de_seguir,
+    obtener_seguimiento,
+    seguir_oportunidad,
 )
 from app.models.enums import FrecuenciaAlerta, RolUsuario
 from app.models.seeds import REGIONES
@@ -124,6 +134,7 @@ async def oportunidad_detalle(
     from app.api.query import _url_ficha, mostrar_ficha_oficial
 
     url_ficha = _url_ficha(fuente, codigo)
+    seguimiento = obtener_seguimiento(session, user.id, fuente, codigo)
 
     # Datos enriquecidos para la ficha
     items: list[Any]
@@ -153,7 +164,108 @@ async def oportunidad_detalle(
             organismo=organismo,
             region_nombre=region_nombre,
             razones=razones_legibles(match.razones),
+            seguimiento=seguimiento,
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Seguir / archivar oportunidades (F-seguir)
+# ---------------------------------------------------------------------------
+
+
+def _safe_next(next_: str, fallback: str) -> str:
+    """Evita open-redirect: solo se acepta una ruta relativa propia."""
+    if next_.startswith("/") and not next_.startswith("//"):
+        return next_
+    return fallback
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/seguir")
+async def oportunidad_seguir(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
+        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    op: Licitacion | CompraAgil | None
+    op = session.get(Licitacion, codigo) if fuente == "licitaciones" else session.get(CompraAgil, codigo)
+    estado_actual = op.estado if op is not None else ""
+    seguir_oportunidad(session, owner_id=user.id, fuente=fuente, codigo=codigo, estado_actual=estado_actual)
+    session.commit()
+    return RedirectResponse(url=_safe_next(next, f"/oportunidad/{fuente}/{codigo}"), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/archivar")
+async def oportunidad_archivar(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=True):
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    session.commit()
+    return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/desarchivar")
+async def oportunidad_desarchivar(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=False):
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    session.commit()
+    return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/dejar-de-seguir")
+async def oportunidad_dejar_de_seguir(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    if not dejar_de_seguir(session, owner_id=user.id, fuente=fuente, codigo=codigo):
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    session.commit()
+    return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
+
+
+@router.get("/seguidas", response_class=HTMLResponse)
+async def seguidas_get(
+    request: Request,
+    archivadas: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    incluir_archivadas = archivadas == "1"
+    items = listar_seguidas_detalle(session, user.id, incluir_archivadas=incluir_archivadas)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "seguidas.html",
+        _ctx(request, user, items=items, incluir_archivadas=incluir_archivadas),
     )
 
 

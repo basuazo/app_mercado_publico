@@ -176,6 +176,7 @@ def run_alerts(settings: Settings, engine: Engine) -> dict[str, Any]:
     """Detecta eventos y envía alertas inmediatas pendientes."""
     from app.alerts.detector import (
         detectar_cambio_estado,
+        detectar_cambio_estado_seguidas,
         detectar_nuevo_match,
         detectar_recordatorios,
     )
@@ -185,6 +186,7 @@ def run_alerts(settings: Settings, engine: Engine) -> dict[str, Any]:
         n1 = detectar_nuevo_match(session)
         n2 = detectar_cambio_estado(session)
         n3 = detectar_recordatorios(session)
+        n4 = detectar_cambio_estado_seguidas(session)
         session.commit()
 
     with Session(engine) as session:
@@ -194,6 +196,7 @@ def run_alerts(settings: Settings, engine: Engine) -> dict[str, Any]:
         "detectados_nuevo": n1,
         "detectados_cambio": n2,
         "detectados_recordatorio": n3,
+        "detectados_seguimiento": n4,
         **result,
     }
 

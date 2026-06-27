@@ -1,0 +1,13 @@
+Una oportunidad que sigues cambió de estado
+
+{{ nombre }}
+{% if organismo %}Organismo  : {{ organismo }}
+{% endif %}Cierre     : {{ fecha_cierre }}
+Nuevo estado: {{ estado }}
+
+{{ mensaje }}
+
+Ver ficha: {{ url }}
+
+---
+Fuente: Dirección ChileCompra

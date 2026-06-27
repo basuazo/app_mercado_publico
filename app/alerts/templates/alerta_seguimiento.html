@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><title>Alerta Mercado Público</title></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:16px">
+<h2 style="color:#003366">Una oportunidad que sigues cambió de estado</h2>
+<h3>{{ nombre }}</h3>
+<table style="border-collapse:collapse;width:100%">
+  {% if organismo %}
+  <tr><td style="padding:4px;color:#555">Organismo</td><td style="padding:4px">{{ organismo }}</td></tr>
+  {% endif %}
+  <tr><td style="padding:4px;color:#555">Cierre</td><td style="padding:4px">{{ fecha_cierre }}</td></tr>
+  <tr><td style="padding:4px;color:#555">Nuevo estado</td><td style="padding:4px"><strong>{{ estado }}</strong></td></tr>
+</table>
+<p>{{ mensaje }}</p>
+<p><a href="{{ url }}" style="color:#0066cc">Ver ficha en MP Oportunidades</a></p>
+<hr>
+<small style="color:#888">Fuente: Dirección ChileCompra</small>
+</body>
+</html>

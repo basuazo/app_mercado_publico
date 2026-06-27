@@ -53,6 +53,9 @@ class Usuario(Base):
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
         "PerfilBusqueda", back_populates="owner", cascade="all, delete-orphan"
     )
+    seguidas: Mapped[list[OportunidadSeguida]] = relationship(
+        "OportunidadSeguida", back_populates="owner", cascade="all, delete-orphan"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +228,37 @@ class PerfilBusqueda(Base):
 
 
 # ---------------------------------------------------------------------------
+# Oportunidades seguidas (F-seguir)
+# ---------------------------------------------------------------------------
+
+
+class OportunidadSeguida(Base):
+    __tablename__ = "oportunidades_seguidas"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "fuente", "codigo_oportunidad", name="uq_seguida"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False
+    )
+    fuente: Mapped[str] = mapped_column(String(30), nullable=False)
+    codigo_oportunidad: Mapped[str] = mapped_column(String(50), nullable=False)
+    estado_visto: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    archivada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_now, onupdate=_now
+    )
+
+    owner: Mapped[Usuario] = relationship("Usuario", back_populates="seguidas")
+    alertas: Mapped[list[Alerta]] = relationship(
+        "Alerta", back_populates="seguimiento", cascade="all, delete-orphan"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Matches y alertas
 # ---------------------------------------------------------------------------
 
@@ -252,11 +286,18 @@ class OportunidadMatch(Base):
 
 
 class Alerta(Base):
+    """Alerta de un match de perfil O de un seguimiento explícito — exactamente
+    uno de match_id/seguimiento_id está poblado (enforced en el código que crea
+    cada Alerta, ver app/alerts/detector.py)."""
+
     __tablename__ = "alertas"
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(
-        ForeignKey("oportunidades_match.id", ondelete="CASCADE"), nullable=False
+    match_id: Mapped[int | None] = mapped_column(
+        ForeignKey("oportunidades_match.id", ondelete="CASCADE"), nullable=True
+    )
+    seguimiento_id: Mapped[int | None] = mapped_column(
+        ForeignKey("oportunidades_seguidas.id", ondelete="CASCADE"), nullable=True
     )
     tipo: Mapped[str] = mapped_column(String(50), nullable=False)
     enviada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -267,7 +308,10 @@ class Alerta(Base):
     intentos_envio: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
 
-    match: Mapped[OportunidadMatch] = relationship("OportunidadMatch", back_populates="alertas")
+    match: Mapped[OportunidadMatch | None] = relationship("OportunidadMatch", back_populates="alertas")
+    seguimiento: Mapped[OportunidadSeguida | None] = relationship(
+        "OportunidadSeguida", back_populates="alertas"
+    )
 
 
 # ---------------------------------------------------------------------------

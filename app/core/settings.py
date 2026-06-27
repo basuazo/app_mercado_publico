@@ -59,6 +59,12 @@ class Settings(BaseSettings):
         description='Keywords amplias para pre-filtrar licitaciones antes de pedir detalle. JSON: \'["word1","word2"]\'',
     )
 
+    # --- URL pública de la app (F-seguir): enlaces de email a la ficha propia ---
+    app_base_url: str = Field(
+        default="",
+        description="URL base pública de la app (ej. https://mp-oportunidades.onrender.com), sin slash final. Vacío → enlaces relativos en emails",
+    )
+
     # --- Datos abiertos (F-rubros): ítems UNSPSC sin gastar cuota de la API ---
     datos_abiertos_habilitado: bool = Field(
         default=True, description="Habilita la ingesta de licitacion_items desde datos abiertos"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.clients.mp_v1 import MercadoPublicoV1Client
@@ -14,7 +14,7 @@ from app.core.settings import Settings
 from app.ingest.compra_agil import upsert_ca_detalle
 from app.ingest.licitaciones import upsert_detalle
 from app.models.enums import ESTADOS_TERMINALES, EstadoOportunidad
-from app.models.tables import CompraAgil, Licitacion
+from app.models.tables import CompraAgil, Licitacion, OportunidadSeguida
 
 _log = get_logger(__name__)
 
@@ -36,6 +36,12 @@ def refresh_estados(
 ) -> dict[str, int]:
     """Re-consulta oportunidades no terminales con fecha_cierre en ±7/+3 días.
 
+    También incluye, sin importar la fecha de cierre, las oportunidades
+    seguidas (no archivadas) por algún usuario — el usuario las marcó como
+    importantes y quiere detectar su avance aunque ya no sean match de ningún
+    perfil (F-seguir). Son pocas, así que no comprometen el presupuesto diario
+    (regla 3).
+
     Prioriza por cercanía de cierre (las más urgentes primero).
     Respeta max_requests (1 req por oportunidad).
     """
@@ -45,14 +51,20 @@ def refresh_estados(
     budget_restante = max_requests
     actualizadas_lic = actualizadas_ca = errores = 0
 
-    # --- Licitaciones no terminales próximas a cierre ---
+    # --- Licitaciones no terminales próximas a cierre, o seguidas ---
     lics = list(
         session.execute(
             select(Licitacion)
             .where(
                 Licitacion.estado.not_in([e.value for e in ESTADOS_TERMINALES]),
-                Licitacion.fecha_cierre >= ventana_inicio,
-                Licitacion.fecha_cierre <= ventana_fin,
+                or_(
+                    Licitacion.fecha_cierre.between(ventana_inicio, ventana_fin),
+                    exists().where(
+                        OportunidadSeguida.codigo_oportunidad == Licitacion.codigo,
+                        OportunidadSeguida.fuente == "licitaciones",
+                        OportunidadSeguida.archivada.is_(False),
+                    ),
+                ),
             )
             .order_by(Licitacion.fecha_cierre.asc())
             .limit(budget_restante)
@@ -73,14 +85,20 @@ def refresh_estados(
             session.rollback()
             errores += 1
 
-    # --- Compras Ágiles no terminales próximas a cierre ---
+    # --- Compras Ágiles no terminales próximas a cierre, o seguidas ---
     cas = list(
         session.execute(
             select(CompraAgil)
             .where(
                 CompraAgil.estado.not_in([e.value for e in ESTADOS_TERMINALES]),
-                CompraAgil.fecha_cierre >= ventana_inicio,
-                CompraAgil.fecha_cierre <= ventana_fin,
+                or_(
+                    CompraAgil.fecha_cierre.between(ventana_inicio, ventana_fin),
+                    exists().where(
+                        OportunidadSeguida.codigo_oportunidad == CompraAgil.codigo,
+                        OportunidadSeguida.fuente == "compras_agiles",
+                        OportunidadSeguida.archivada.is_(False),
+                    ),
+                ),
             )
             .order_by(CompraAgil.fecha_cierre.asc())
             .limit(budget_restante)
