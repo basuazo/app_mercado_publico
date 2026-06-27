@@ -25,6 +25,7 @@ from app.ingest.licitaciones import (
     fetch_detalles_pendientes,
     sync_activas,
     sync_por_fecha,
+    upsert_basica,
 )
 from app.ingest.orchestrator import _run_with_lock, en_ventana_nocturna
 from app.models.tables import CompraAgil, Licitacion, SyncState
@@ -242,6 +243,75 @@ class TestSyncActivas:
         assert result["total"] == 250
         lics = session.execute(select(Licitacion)).scalars().all()
         assert len(lics) == 250
+
+
+class TestUpsertBasicaAntiClobber:
+    def test_no_borra_fecha_cierre_existente_al_recibir_item_sin_fecha(self, session, settings):
+        """El listado de activas sin fecha (None) no debe pisar la fecha del detalle."""
+        upsert_basica(session, _lic_basica("LIC-DET", estado=5))
+        session.commit()
+        lic = session.get(Licitacion, "LIC-DET")
+        assert lic is not None
+        assert lic.fecha_cierre is not None
+
+        item_sin_fecha = LicitacionBasica(
+            codigo="LIC-DET",
+            nombre="Test",
+            estado=None,
+            fecha_publicacion=None,
+            fecha_cierre=None,
+            tipo="L1",
+            codigo_organismo="ORG-001",
+        )
+        upsert_basica(session, item_sin_fecha)
+        session.commit()
+
+        session.expire_all()
+        lic = session.get(Licitacion, "LIC-DET")
+        assert lic is not None
+        assert lic.fecha_cierre == datetime(2026, 3, 1)
+        assert lic.estado == "publicada"
+        assert lic.estado_codigo == 5
+
+    def test_licitacion_nueva_sin_fecha_queda_en_none(self, session, settings):
+        """Para una licitación nueva sí se acepta None: no hay nada que preservar."""
+        item_sin_fecha = LicitacionBasica(
+            codigo="LIC-NUEVA",
+            nombre="Test",
+            estado=None,
+            fecha_publicacion=None,
+            fecha_cierre=None,
+            tipo="L1",
+            codigo_organismo="ORG-001",
+        )
+        upsert_basica(session, item_sin_fecha)
+        session.commit()
+
+        lic = session.get(Licitacion, "LIC-NUEVA")
+        assert lic is not None
+        assert lic.fecha_cierre is None
+        assert lic.estado == "desconocido"
+
+    def test_activa_con_fecha_futura_queda_publicada(self, session, settings):
+        """Licitación activa (estado=5) con fecha de cierre futura → publicada, no descartada."""
+        fecha_futura = date.today() + timedelta(days=30)
+        item = LicitacionBasica(
+            codigo="LIC-FUTURA",
+            nombre="Test",
+            estado=5,
+            fecha_publicacion=date.today(),
+            fecha_cierre=fecha_futura,
+            tipo="L1",
+            codigo_organismo="ORG-001",
+        )
+        upsert_basica(session, item)
+        session.commit()
+
+        lic = session.get(Licitacion, "LIC-FUTURA")
+        assert lic is not None
+        assert lic.estado == "publicada"
+        assert lic.fecha_cierre is not None
+        assert lic.fecha_cierre > datetime.now(UTC).replace(tzinfo=None)
 
 
 class TestFetchDetalles:

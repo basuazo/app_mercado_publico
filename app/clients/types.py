@@ -27,15 +27,23 @@ def parse_binario(v: object) -> bool | None:
 
 
 def parse_fecha_v1(s: object) -> date | None:
-    """Parsea fechas v1 en formato ddmmaaaa."""
+    """Parsea fechas v1: ddmmaaaa (8 dígitos) o ISO-8601 (algunos listados, p.ej. activas).
+
+    El listado de licitaciones activas trae FechaCierre/FechaPublicacion en
+    ISO-8601 en vez del ddmmaaaa habitual del resto de v1 (regla 6: parseo
+    siempre defensivo). Devuelve None solo si ningún formato calza.
+    """
     if not s or not isinstance(s, str):
         return None
     s = s.strip()
-    if len(s) != 8:
-        return None
+    if len(s) == 8 and s.isdigit():
+        try:
+            return date(int(s[4:]), int(s[2:4]), int(s[:2]))
+        except ValueError:
+            return None
     try:
-        return date(int(s[4:]), int(s[2:4]), int(s[:2]))
-    except (ValueError, TypeError):
+        return date.fromisoformat(s[:10])
+    except ValueError:
         return None
 
 

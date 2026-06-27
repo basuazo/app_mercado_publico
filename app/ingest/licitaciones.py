@@ -29,7 +29,12 @@ def _fecha_a_dt(d: date | None) -> datetime | None:
 
 
 def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion, bool]:
-    """Upsert básico de una licitación. Devuelve (objeto, es_nueva)."""
+    """Upsert básico de una licitación. Devuelve (objeto, es_nueva).
+
+    No sobrescribe estado/fecha_publicacion/fecha_cierre con None/DESCONOCIDO
+    cuando el item entrante (p.ej. del listado de activas) no trae el dato:
+    preserva el valor existente, que pudo venir de un detalle más completo.
+    """
     existing = session.get(Licitacion, item.codigo)
     es_nueva = existing is None
 
@@ -43,12 +48,20 @@ def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion,
         lic = existing
 
     lic.nombre = item.nombre
-    lic.estado_codigo = item.estado
-    lic.estado = estado_licitacion(item.estado).value
+    if item.estado is not None or es_nueva:
+        lic.estado_codigo = item.estado
+        lic.estado = estado_licitacion(item.estado).value
     lic.tipo = item.tipo
     lic.codigo_organismo = item.codigo_organismo
-    lic.fecha_publicacion = _fecha_a_dt(item.fecha_publicacion)
-    lic.fecha_cierre = _fecha_a_dt(item.fecha_cierre)
+
+    fecha_publicacion = _fecha_a_dt(item.fecha_publicacion)
+    if fecha_publicacion is not None or es_nueva:
+        lic.fecha_publicacion = fecha_publicacion
+
+    fecha_cierre = _fecha_a_dt(item.fecha_cierre)
+    if fecha_cierre is not None or es_nueva:
+        lic.fecha_cierre = fecha_cierre
+
     lic.actualizado_en = _ahora()
     return lic, es_nueva
 

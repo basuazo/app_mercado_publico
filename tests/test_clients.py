@@ -130,6 +130,19 @@ def test_parse_fecha_v1_invalida():
     assert parse_fecha_v1("corta") is None
 
 
+def test_parse_fecha_v1_iso_fecha():
+    """El listado de activas trae fechas en ISO-8601 (YYYY-MM-DD), no ddmmaaaa."""
+    d = parse_fecha_v1("2026-06-30")
+    assert d is not None
+    assert (d.year, d.month, d.day) == (2026, 6, 30)
+
+
+def test_parse_fecha_v1_iso_datetime():
+    d = parse_fecha_v1("2026-06-30T18:00:00")
+    assert d is not None
+    assert (d.year, d.month, d.day) == (2026, 6, 30)
+
+
 # ---------------------------------------------------------------------------
 # Tests de QuotaTracker
 # ---------------------------------------------------------------------------
@@ -206,6 +219,39 @@ def test_v1_licitaciones_activas_ok(settings_fake, mem_engine):
     assert isinstance(result[0], LicitacionBasica)
     assert result[0].codigo == "1234-5-L114"
     assert result[0].estado == 5
+
+
+@respx.mock
+def test_v1_licitaciones_activas_fecha_iso(settings_fake, mem_engine):
+    """El listado de activas puede traer FechaCierre/FechaPublicacion en ISO-8601."""
+    respx.get(_V1_BASE + "licitaciones.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "Cantidad": 1,
+                "Listado": [
+                    {
+                        "CodigoExterno": "1234-5-L114",
+                        "Nombre": "Test Licitacion ISO",
+                        "CodigoEstado": 5,
+                        "FechaCierre": "2026-06-30T18:00:00",
+                        "FechaPublicacion": "2026-06-01T10:00:00",
+                        "Tipo": "L1",
+                        "CodigoOrganismo": "6945",
+                    },
+                ],
+            },
+        )
+    )
+    client = _v1_client(settings_fake, mem_engine)
+    result = client.licitaciones_activas()
+    assert len(result) == 1
+    assert result[0].fecha_cierre is not None
+    assert (result[0].fecha_cierre.year, result[0].fecha_cierre.month, result[0].fecha_cierre.day) == (
+        2026,
+        6,
+        30,
+    )
 
 
 @respx.mock

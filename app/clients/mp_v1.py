@@ -132,6 +132,8 @@ class MercadoPublicoV1Client:
         listado = data.get("Listado") or []
         if not isinstance(listado, list):
             return []
+        if listado and isinstance(listado[0], dict):
+            _log.debug("Formato crudo FechaCierre (listado activas): %r", listado[0].get("FechaCierre"))
         return [_parse_licitacion_basica(item) for item in listado if isinstance(item, dict)]
 
     def licitacion_detalle(self, codigo: str) -> LicitacionDetalle:
