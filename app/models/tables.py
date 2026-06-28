@@ -48,6 +48,7 @@ class Usuario(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     rol: Mapped[RolUsuario] = mapped_column(String(20), nullable=False, default=RolUsuario.USUARIO)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    rut_proveedor: Mapped[str | None] = mapped_column(String(20), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
@@ -121,6 +122,27 @@ class LicitacionItem(Base):
     unidad: Mapped[str] = mapped_column(String(50), nullable=False, default="")
 
     licitacion: Mapped[Licitacion] = relationship("Licitacion", back_populates="items")
+
+
+class OfertaCompetencia(Base):
+    """Oferta de un proveedor (por ítem) en una licitación adjudicada, capturada
+    desde datos abiertos (lic-da) — ver docs/05-competencia.md. Solo lectura,
+    poblada por app.ingest.datos_abiertos.capturar_competencia (F-competencia)."""
+
+    __tablename__ = "ofertas_competencia"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    licitacion_codigo: Mapped[str] = mapped_column(
+        ForeignKey("licitaciones.codigo", ondelete="CASCADE"), nullable=False, index=True
+    )
+    codigo_item: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    rut_proveedor: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    nombre_proveedor: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    monto_unitario: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_linea_adjudicada: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    seleccionada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
 
 
 # ---------------------------------------------------------------------------

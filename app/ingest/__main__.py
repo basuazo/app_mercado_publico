@@ -15,6 +15,7 @@ from app.core.settings import Settings, get_settings
 from app.ingest.orchestrator import (
     run_alerts,
     run_catalogos,
+    run_competencia,
     run_datos_abiertos,
     run_detalles,
     run_digest,
@@ -37,6 +38,7 @@ _JOBS = (
     "alerts",
     "digest",
     "datos-abiertos",
+    "competencia",
 )
 
 
@@ -67,6 +69,7 @@ def cmd_run_once(
         "alerts": lambda: run_alerts(settings, engine),
         "digest": lambda: run_digest(settings, engine),
         "datos-abiertos": lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes),
+        "competencia": lambda: run_competencia(settings, engine),
     }
 
     if job not in dispatch:

@@ -6,6 +6,27 @@
 {% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
+<!-- RUT de proveedor (opcional): resalta tus propias ofertas en el análisis de competencia -->
+<div class="card mb-4">
+  <div class="card-header">Mi RUT de proveedor</div>
+  <div class="card-body">
+    <form method="post" action="/perfiles/rut-proveedor" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-md-4">
+        <label class="form-label">RUT (opcional)</label>
+        <input type="text" name="rut_proveedor" class="form-control" placeholder="76.123.456-7"
+               value="{{ current_user.rut_proveedor or '' }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Guardar</button>
+      </div>
+      <div class="col-12">
+        <span class="text-muted small">Si lo configuras, tus propias ofertas se resaltan en el análisis de competencia de las oportunidades adjudicadas que sigues.</span>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Formulario nuevo perfil -->
 <div class="card mb-4">
   <div class="card-header">Nuevo perfil</div>

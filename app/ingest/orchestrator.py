@@ -26,7 +26,7 @@ from app.core.retencion import purgar_terminales
 from app.core.settings import Settings
 from app.ingest.catalogos import refresh_organismos
 from app.ingest.compra_agil import sync_incremental, upsert_ca_detalle
-from app.ingest.datos_abiertos import sync_items_datos_abiertos
+from app.ingest.datos_abiertos import capturar_competencia, sync_items_datos_abiertos
 from app.ingest.licitaciones import (
     fetch_detalles_pendientes,
     sync_activas,
@@ -113,6 +113,12 @@ def run_datos_abiertos(
     """Completa licitacion_items desde datos abiertos (sin cuota de API)."""
     with Session(engine) as session:
         return sync_items_datos_abiertos(session, settings, anio=anio, mes=mes)
+
+
+def run_competencia(settings: Settings, engine: Engine) -> dict[str, int]:
+    """Captura ofertas (lic-da) de licitaciones seguidas y adjudicadas (sin cuota de API)."""
+    with Session(engine) as session:
+        return capturar_competencia(session, settings)
 
 
 def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
@@ -266,10 +272,12 @@ def _ciclo_nocturno(
     engine: Engine,
     now_fn: Callable[..., datetime] | None = None,
 ) -> None:
-    """Datos abiertos + lifecycle + backfill del día anterior.
+    """Datos abiertos + lifecycle + competencia + backfill del día anterior.
 
     Solo ejecuta en ventana 22:00–07:00. datos_abiertos va primero para que sus
     ítems UNSPSC estén disponibles antes del próximo ciclo de match (08:00).
+    competencia va DESPUÉS de lifecycle: necesita que los estados (incl. las
+    adjudicadas vía refresh_estados de seguidas) estén al día (F-competencia).
     """
     if not en_ventana_nocturna(now_fn):
         _log.warning("ciclo_nocturno: fuera de ventana horaria — abortando")
@@ -277,6 +285,7 @@ def _ciclo_nocturno(
 
     _run_with_lock("datos_abiertos", lambda: run_datos_abiertos(settings, engine), engine)
     _run_with_lock("lifecycle", lambda: run_lifecycle(settings, engine), engine)
+    _run_with_lock("competencia", lambda: run_competencia(settings, engine), engine)
 
     # Backfill: ayer (simple, se puede extender a rangos mayores)
     ayer = (datetime.now(UTC) - timedelta(days=1)).date()

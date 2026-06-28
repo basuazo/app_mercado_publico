@@ -12,7 +12,7 @@ from app.api.presentacion import nombre_region, razones_legibles
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas
 from app.models.enums import EstadoOportunidad
-from app.models.tables import CompraAgil, Licitacion, OportunidadMatch
+from app.models.tables import CompraAgil, Licitacion, OfertaCompetencia, OportunidadMatch
 
 
 def _url_ficha(fuente: str, codigo: str) -> str:
@@ -195,6 +195,56 @@ def listar_seguidas_detalle(
             "url_ficha_app": f"/oportunidad/{s.fuente}/{s.codigo_oportunidad}",
         })
     return result
+
+
+def resumen_competencia(session: Session, licitacion_codigo: str) -> list[dict[str, Any]]:
+    """Resumen de competencia por proveedor (F-competencia): total adjudicado
+    (suma de monto_linea_adjudicada de ofertas seleccionadas) e ítems ganados,
+    ordenado desc. Agrupa por rut_proveedor (más estable que el nombre, ver
+    docs/05-competencia.md §3). Vacío si no hay ofertas capturadas aún."""
+    ofertas = list(
+        session.execute(
+            select(OfertaCompetencia)
+            .where(OfertaCompetencia.licitacion_codigo == licitacion_codigo)
+            .where(OfertaCompetencia.seleccionada.is_(True))
+        ).scalars()
+    )
+    por_proveedor: dict[str, dict[str, Any]] = {}
+    for o in ofertas:
+        entry = por_proveedor.setdefault(
+            o.rut_proveedor,
+            {
+                "rut_proveedor": o.rut_proveedor,
+                "nombre_proveedor": o.nombre_proveedor,
+                "total_adjudicado": 0.0,
+                "items_ganados": 0,
+            },
+        )
+        entry["total_adjudicado"] += o.monto_linea_adjudicada or 0.0
+        entry["items_ganados"] += 1
+    resumen = list(por_proveedor.values())
+    resumen.sort(key=lambda d: d["total_adjudicado"], reverse=True)
+    return resumen
+
+
+def detalle_competencia(session: Session, licitacion_codigo: str) -> list[dict[str, Any]]:
+    """Detalle por ítem de todas las ofertas (seleccionadas y no) de una licitación."""
+    ofertas = session.execute(
+        select(OfertaCompetencia)
+        .where(OfertaCompetencia.licitacion_codigo == licitacion_codigo)
+        .order_by(OfertaCompetencia.codigo_item, OfertaCompetencia.seleccionada.desc())
+    ).scalars()
+    return [
+        {
+            "codigo_item": o.codigo_item,
+            "rut_proveedor": o.rut_proveedor,
+            "nombre_proveedor": o.nombre_proveedor,
+            "monto_unitario": o.monto_unitario,
+            "monto_linea_adjudicada": o.monto_linea_adjudicada,
+            "seleccionada": o.seleccionada,
+        }
+        for o in ofertas
+    ]
 
 
 def check_oportunidad_access(

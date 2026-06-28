@@ -15,21 +15,30 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import httpx
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.clients.datos_abiertos import (
     ItemDA,
+    OfertaDA,
     descargar_zip,
     head_last_modified,
     stream_items,
+    stream_ofertas,
     url_lic_da,
 )
 from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.models.enums import EstadoOportunidad
-from app.models.tables import Licitacion, LicitacionItem, SyncState
+from app.models.tables import (
+    Licitacion,
+    LicitacionItem,
+    OfertaCompetencia,
+    OportunidadSeguida,
+    SyncState,
+)
 
 _log = get_logger(__name__)
 _FUENTE = "datos_abiertos_lic"
@@ -41,6 +50,15 @@ _VACIO: dict[str, int] = {
     "no_unspsc": 0,
     "descargado": 0,
 }
+
+_VACIO_COMPETENCIA: dict[str, int] = {
+    "licitaciones_tocadas": 0,
+    "ofertas_insertadas": 0,
+    "sin_encontrar": 0,
+    "descargados": 0,
+}
+
+_MESES_FALLBACK = 4
 
 
 def _ahora() -> datetime:
@@ -188,4 +206,168 @@ def sync_items_datos_abiertos(
         "items_insertados": items_insertados,
         "no_unspsc": no_unspsc,
         "descargado": 1,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Análisis de competencia (F-competencia)
+# ---------------------------------------------------------------------------
+
+
+def _licitaciones_competencia_objetivo(session: Session) -> list[tuple[str, datetime | None]]:
+    """Licitaciones SEGUIDAS (no archivadas), adjudicadas, sin ofertas aún capturadas."""
+    tiene_ofertas = exists().where(OfertaCompetencia.licitacion_codigo == Licitacion.codigo)
+    es_seguida = exists().where(
+        OportunidadSeguida.fuente == "licitaciones",
+        OportunidadSeguida.codigo_oportunidad == Licitacion.codigo,
+        OportunidadSeguida.archivada.is_(False),
+    )
+    rows = session.execute(
+        select(Licitacion.codigo, Licitacion.fecha_publicacion)
+        .where(Licitacion.estado == EstadoOportunidad.ADJUDICADA.value)
+        .where(es_seguida)
+        .where(~tiene_ofertas)
+    ).all()
+    return [(codigo, fecha_pub) for codigo, fecha_pub in rows]
+
+
+def _meses_anteriores(anio: int, mes: int, n: int) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
+    a, m = anio, mes
+    for _ in range(n):
+        out.append((a, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            a -= 1
+    return out
+
+
+def _candidatos_mes(
+    fecha_publicacion: datetime | None, mes_actual: tuple[int, int]
+) -> list[tuple[int, int]]:
+    """Meses a intentar, en orden: el de `fecha_publicacion` (si existe) primero,
+    luego el actual y los ~3 anteriores (regla de fallback — ver docs/05-competencia.md
+    §0: fecha_publicacion suele venir NULL para licitaciones adjudicadas)."""
+    candidatos: list[tuple[int, int]] = []
+    if fecha_publicacion is not None:
+        candidatos.append((fecha_publicacion.year, fecha_publicacion.month))
+    for am in _meses_anteriores(mes_actual[0], mes_actual[1], _MESES_FALLBACK):
+        if am not in candidatos:
+            candidatos.append(am)
+    return candidatos
+
+
+def _insertar_lote_ofertas(session: Session, lote: list[OfertaDA], contexto: str) -> bool:
+    def _aplicar() -> None:
+        for o in lote:
+            session.add(
+                OfertaCompetencia(
+                    licitacion_codigo=o.codigo_externo,
+                    codigo_item=o.codigo_item,
+                    rut_proveedor=o.rut_proveedor,
+                    nombre_proveedor=o.nombre_proveedor,
+                    monto_unitario=o.monto_unitario,
+                    monto_linea_adjudicada=o.monto_linea_adjudicada,
+                    cantidad=o.cantidad,
+                    seleccionada=o.seleccionada,
+                )
+            )
+
+    return commit_con_retry(session, _aplicar, contexto=contexto)
+
+
+def capturar_competencia(session: Session, settings: Settings) -> dict[str, int]:
+    """Captura las ofertas (lic-da) de licitaciones SEGUIDAS y adjudicadas, sin cuota de API.
+
+    Idempotente: una licitación que ya tiene OfertaCompetencia no se vuelve a
+    procesar. Como fecha_publicacion suele venir NULL (ver docs/05-competencia.md
+    §0), se escanean hasta `_MESES_FALLBACK` meses recientes de lic-da hasta
+    encontrar el CodigoExterno; si no aparece en ninguno, se deja para la
+    siguiente corrida (no es un error — el archivo del mes puede no estar
+    publicado aún).
+    """
+    if not settings.datos_abiertos_habilitado:
+        return dict(_VACIO_COMPETENCIA)
+
+    objetivo = _licitaciones_competencia_objetivo(session)
+    if not objetivo:
+        return dict(_VACIO_COMPETENCIA)
+
+    mes_actual = _mes_actual_chile()
+    batch_size = settings.ingest_batch_size
+
+    licitaciones_tocadas: set[str] = set()
+    ofertas_insertadas = 0
+    sin_encontrar = 0
+    descargados = 0
+
+    with tempfile.TemporaryDirectory(prefix="mp_competencia_") as tmp_dir:
+        cache: dict[tuple[int, int], Path | None] = {}
+
+        def _zip_para(anio: int, mes: int) -> Path | None:
+            nonlocal descargados
+            clave = (anio, mes)
+            if clave in cache:
+                return cache[clave]
+            url = url_lic_da(anio, mes, settings.datos_abiertos_base_url)
+            destino = Path(tmp_dir) / f"comp-{anio}-{mes}.zip"
+            try:
+                descargar_zip(url, str(destino))
+                descargados += 1
+                cache[clave] = destino
+            except (httpx.HTTPError, OSError) as exc:
+                _log.warning("capturar_competencia: no se pudo descargar %s: %s", url, exc)
+                cache[clave] = None
+            return cache[clave]
+
+        for codigo, fecha_publicacion in objetivo:
+            encontrado = False
+            for anio, mes in _candidatos_mes(fecha_publicacion, mes_actual):
+                zip_path = _zip_para(anio, mes)
+                if zip_path is None:
+                    continue
+
+                vistos: set[tuple[str, str]] = set()
+                lote: list[OfertaDA] = []
+                hubo_filas = False
+                for oferta in stream_ofertas(str(zip_path), codigo):
+                    hubo_filas = True
+                    clave = (oferta.codigo_item, oferta.rut_proveedor)
+                    if clave in vistos:
+                        continue
+                    vistos.add(clave)
+                    lote.append(oferta)
+                    if len(lote) >= batch_size:
+                        if _insertar_lote_ofertas(session, lote, "competencia lote ofertas"):
+                            ofertas_insertadas += len(lote)
+                        lote = []
+                if lote and _insertar_lote_ofertas(session, lote, "competencia lote ofertas"):
+                    ofertas_insertadas += len(lote)
+
+                if hubo_filas:
+                    licitaciones_tocadas.add(codigo)
+                    encontrado = True
+                    break
+
+            if not encontrado:
+                sin_encontrar += 1
+                _log.warning(
+                    "capturar_competencia: %s no encontrada en los últimos %d meses de lic-da",
+                    codigo,
+                    _MESES_FALLBACK,
+                )
+
+    _log.info(
+        "capturar_competencia: licitaciones=%d ofertas=%d sin_encontrar=%d descargados=%d",
+        len(licitaciones_tocadas),
+        ofertas_insertadas,
+        sin_encontrar,
+        descargados,
+    )
+    return {
+        "licitaciones_tocadas": len(licitaciones_tocadas),
+        "ofertas_insertadas": ofertas_insertadas,
+        "sin_encontrar": sin_encontrar,
+        "descargados": descargados,
     }

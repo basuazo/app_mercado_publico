@@ -20,8 +20,10 @@ from app.api.deps import (
 )
 from app.api.query import (
     check_oportunidad_access,
+    detalle_competencia,
     get_oportunidades_usuario,
     listar_seguidas_detalle,
+    resumen_competencia,
 )
 from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
@@ -41,7 +43,7 @@ from app.matching.seguimiento import (
     obtener_seguimiento,
     seguir_oportunidad,
 )
-from app.models.enums import FrecuenciaAlerta, RolUsuario
+from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
 from app.models.seeds import REGIONES
 from app.models.tables import CompraAgil, Licitacion, Usuario
 
@@ -136,6 +138,12 @@ async def oportunidad_detalle(
     url_ficha = _url_ficha(fuente, codigo)
     seguimiento = obtener_seguimiento(session, user.id, fuente, codigo)
 
+    competencia_resumen: list[Any] = []
+    competencia_detalle: list[Any] = []
+    if isinstance(op, Licitacion) and op.estado == EstadoOportunidad.ADJUDICADA.value:
+        competencia_resumen = resumen_competencia(session, codigo)
+        competencia_detalle = detalle_competencia(session, codigo)
+
     # Datos enriquecidos para la ficha
     items: list[Any]
     organismo: str | None
@@ -165,6 +173,8 @@ async def oportunidad_detalle(
             region_nombre=region_nombre,
             razones=razones_legibles(match.razones),
             seguimiento=seguimiento,
+            competencia_resumen=competencia_resumen,
+            competencia_detalle=competencia_detalle,
         ),
     )
 
@@ -355,6 +365,22 @@ async def perfiles_get(
             error=error,
         ),
     )
+
+
+@router.post("/perfiles/rut-proveedor")
+async def perfil_rut_proveedor(
+    request: Request,
+    rut_proveedor: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Guarda el RUT de proveedor del usuario (opcional) para resaltar sus
+    propias ofertas en el análisis de competencia (F-competencia)."""
+    check_csrf(request, csrf_token)
+    user.rut_proveedor = rut_proveedor.strip() or None
+    session.commit()
+    return RedirectResponse(url="/perfiles?mensaje=RUT+de+proveedor+actualizado", status_code=303)
 
 
 @router.post("/perfiles/nuevo")

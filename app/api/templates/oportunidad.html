@@ -89,6 +89,65 @@
 </div>
 {% endif %}
 
+{% if competencia_resumen %}
+<h5 class="mt-4">
+  Análisis de competencia
+  <span class="text-muted fs-6">({{ competencia_resumen | length }} proveedor{{ 'es' if competencia_resumen | length != 1 else '' }})</span>
+</h5>
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Proveedor</th>
+        <th>RUT</th>
+        <th class="text-end">Ítems ganados</th>
+        <th class="text-end">Total adjudicado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in competencia_resumen %}
+      <tr class="{% if current_user.rut_proveedor and p.rut_proveedor == current_user.rut_proveedor %}table-success{% endif %}">
+        <td>{{ p.nombre_proveedor }} <span class="badge bg-primary">Adjudicatario</span></td>
+        <td>{{ p.rut_proveedor }}</td>
+        <td class="text-end">{{ p.items_ganados }}</td>
+        <td class="text-end">${{ '{:,.0f}'.format(p.total_adjudicado) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if competencia_detalle %}
+<details class="mb-3">
+  <summary class="text-muted small" style="cursor: pointer;">Ver detalle por ítem ({{ competencia_detalle | length }} ofertas)</summary>
+  <div class="table-responsive mt-2">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th>Ítem</th>
+          <th>Proveedor</th>
+          <th>RUT</th>
+          <th class="text-end">Monto unitario ofertado</th>
+          <th>Ganó</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in competencia_detalle %}
+        <tr class="{% if current_user.rut_proveedor and d.rut_proveedor == current_user.rut_proveedor %}table-success{% endif %}">
+          <td>{{ d.codigo_item }}</td>
+          <td>{{ d.nombre_proveedor }}</td>
+          <td>{{ d.rut_proveedor }}</td>
+          <td class="text-end">{% if d.monto_unitario is not none %}${{ '{:,.0f}'.format(d.monto_unitario) }}{% else %}—{% endif %}</td>
+          <td>{% if d.seleccionada %}✓{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+{% endif %}
+
 <div class="mt-4">
   {% if mostrar_ficha %}
   <a href="{{ url_ficha }}" class="btn btn-primary" target="_blank" rel="noopener noreferrer">

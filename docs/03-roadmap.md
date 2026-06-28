@@ -24,8 +24,17 @@
 ## Deuda técnica
 - **Driver psycopg v3: RESUELTO.** Confirmado en runtime real al correr
   `validar_unspsc.py` y la suite contra Neon.
+- **Ingesta por lotes: RESUELTO (commit f4fe80d).** `commit_con_retry` + batching
+  (`ingest_batch_size`) + `--limit`; un lote que falla se descarta sin abortar.
 - **`test_jobs_run_job_ca`:** test preexistente que pega a la API real sin mock
   (viola "tests de red SIEMPRE mockeados"). Migrar a respx. No bloqueante.
+- **`TestRefreshEstados` × 4: tests frágiles (no bug de lógica).** Hardcodean la
+  fecha `2026-06-18` contra el reloj real → fallan al pasar esa ventana. Fix:
+  congelar el tiempo con freezegun (ya en deps). No urgente.
+- **Parseo de fecha del listado v1: RESUELTO.** `parse_fecha_v1` aceptaba solo
+  ddmmaaaa; el listado `activas` trae ISO → fecha_cierre quedaba NULL y el recall
+  descartaba todo. Ahora acepta ISO + ddmmaaaa, y upsert_basica no sobreescribe con
+  nulos. (Confirmar si afectaba a producción.)
 
 ---
 
@@ -52,8 +61,55 @@ por substring. Invariante recall/score documentada vía `keywords_validas()`.
 
 ---
 
+## Spike datos abiertos — HECHO
+Ver `docs/04-datos-abiertos.md`. Fuente: `lic-da/{año}-{mes}.zip` (Azure Blob público,
+sin ticket); `CodigoProductoONU` (UNSPSC 8 díg) a nivel de ítem, enlazado por
+`CodigoExterno`. CSV ';' Latin-1 multilínea; dedup `(CodigoExterno, Codigoitem)`;
+0,4% códigos de 9 díg ("CONSULTORIA") → manejo defensivo.
+
+## F-rubros — Poblar licitacion_items desde datos abiertos — HECHO
+Ingesta selectiva (solo activas sin ítems), streaming, nocturna, cursor por
+`Last-Modified`. Validado en vivo: perfil solo-rubro → matches con razón de rubro, sin
+gastar cuota para los ítems. La API (detalle) queda solo para enriquecer matches.
+Nota producción: cobertura se construye con el `activas` completo + job nocturno; en
+local quedó acotada por el `--limit 200` de prueba.
+
+## F-datos — Compradores clasificados (datos abiertos)
+**Estado: pendiente.** Catálogo de organismos con su clasificación/sector → habilita
+el multi-select buscable de organismos (punto 2) y, con el histórico por organismo,
+recomendar organismos a seguir según los rubros del perfil.
+
+## F-plan — Plan Anual de Compra (pestaña de consulta aparte)
+**Estado: pendiente.** Sección/pestaña SEPARADA del feed de oportunidades, para
+*explorar* qué planea comprar cada organismo en el año (dato de consulta, no alertas).
+Requiere mini-spike previo (confirmar formato/URL del archivo de Plan Anual en datos
+abiertos). Definir si se ingiere filtrado o se consulta on-demand (cuidar Neon 0.5 GB).
+
+## F-seguir — Seguir/archivar oportunidades + alertas de avance — HECHO
+Tabla `OportunidadSeguida`, migración `7c9d2a1f4b3e`; `Alerta` generalizada
+(match_id|seguimiento_id). Rutas seguir/archivar/desarchivar/dejar-de-seguir + página
+`/seguidas`; botones en ficha y nav. `detectar_cambio_estado_seguidas` (idempotente,
+caso especial 'adjudicada') en `run_alerts`; lifecycle incluye seguidas no-matcheadas.
+Mail de seguimiento enlaza a la ficha de la app vía `APP_BASE_URL` (degrada si no está).
+Pendiente operativo: setear `APP_BASE_URL` en prod para links absolutos.
+
+## F-competencia — Análisis de competitividad al adjudicar — HECHO
+Spike en `docs/05-competencia.md`. Ganador = columna `Oferta seleccionada`;
+reconstrucción por `Codigoitem` y totales por `RutProveedor` sumando `MontoLineaAdjudica`.
+Modelo `OfertaCompetencia` (migración `9a1e6b2c5d7f`) + `Usuario.rut_proveedor` opcional;
+cliente `stream_ofertas` (float defensivo: enteros, notación científica y coma-decimal);
+`capturar_competencia` captura $0 desde `lic-da` para seguidas adjudicadas sin ofertas aún,
+con fallback de escaneo de ~4 meses (ya que `fecha_publicacion` viene NULL en la práctica —
+ver hallazgo del spike). Job nocturno tras `lifecycle` + CLI `run-once --job competencia`.
+Vista "Análisis de competencia" (resumen por proveedor + detalle por ítem) en la ficha,
+resalta el RUT propio si está configurado en `/perfiles`.
+- Deuda aparte detectada (no corregida aquí): 100% de adjudicadas en BD con
+  `fecha_publicacion`/`fecha_cierre` NULL — revisar el refresh de estados terminales.
+
 ## F10 — UX/UI
-**Estado: pendiente.** (Tarea original nº1.)
+**Estado: pendiente.** (Tarea original nº1.) Incluye: rubros con súper-categorías
+seleccionables en acordeón, organismos como multi-select clasificado, y fix del mail
+(enlazar a la ficha de la app, no a la URL no autorizada de MP).
 - Rediseño de dashboard, ficha de detalle y formulario de perfiles.
 - Enfoque: prototipo HTML iterado en el chat → aprobado → portado a plantillas Jinja
   (stack actual Bootstrap). No se toca código hasta tener el diseño visado.

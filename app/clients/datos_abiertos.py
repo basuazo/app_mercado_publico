@@ -94,6 +94,74 @@ def _parse_cantidad(v: str | None) -> float | None:
         return None
 
 
+def _parse_monto(v: str | None) -> float | None:
+    """Parseo defensivo de columnas monetarias de lic-da (regla 6).
+
+    ~97 % vienen como entero plano, ~2 % en notación científica ("5e+07") y
+    ~1 % mezclan coma decimal con notación científica ("9,9e+07" = 99.000.000)
+    — ver docs/05-competencia.md §5. Inválido -> None, nunca rompe la captura.
+    """
+    if not v:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        pass
+    try:
+        return float(v.replace(",", "."))
+    except ValueError:
+        return None
+
+
+@dataclass
+class OfertaDA:
+    """Una oferta (proveedor × ítem) de una licitación, tal como viene en lic-da."""
+
+    codigo_externo: str
+    codigo_item: str
+    rut_proveedor: str
+    nombre_proveedor: str
+    monto_unitario: float | None
+    monto_linea_adjudicada: float | None
+    cantidad: float | None
+    seleccionada: bool
+
+
+def stream_ofertas(zip_path: str, codigo_externo: str) -> Iterator[OfertaDA]:
+    """Stream de ofertas de UNA licitación (`codigo_externo`) desde el CSV del ZIP.
+
+    Mismo patrón RAM-safe que stream_items, filtrando por CodigoExterno antes
+    de yieldear — el archivo completo nunca se carga en memoria. Acceso a
+    columnas por nombre exacto (ver docs/05-competencia.md §1): `Codigoitem`,
+    `RutProveedor`, `NombreProveedor`, `MontoUnitarioOferta`, `MontoLineaAdjudica`,
+    `CantidadAdjudicada`, `"Oferta seleccionada"`.
+    """
+    with zipfile.ZipFile(zip_path) as zf:
+        nombres_csv = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        if not nombres_csv:
+            _log.warning("stream_ofertas: %s no contiene ningún CSV", zip_path)
+            return
+        with zf.open(nombres_csv[0]) as raw:
+            texto = io.TextIOWrapper(raw, encoding=_ENCODING, newline="")
+            reader = csv.DictReader(texto, delimiter=_DELIMITER)
+            for fila in reader:
+                if (fila.get("CodigoExterno") or "").strip() != codigo_externo:
+                    continue
+                yield OfertaDA(
+                    codigo_externo=codigo_externo,
+                    codigo_item=(fila.get("Codigoitem") or "").strip(),
+                    rut_proveedor=(fila.get("RutProveedor") or "").strip(),
+                    nombre_proveedor=(fila.get("NombreProveedor") or "").strip(),
+                    monto_unitario=_parse_monto(fila.get("MontoUnitarioOferta")),
+                    monto_linea_adjudicada=_parse_monto(fila.get("MontoLineaAdjudica")),
+                    cantidad=_parse_cantidad(fila.get("CantidadAdjudicada")),
+                    seleccionada=(fila.get("Oferta seleccionada") or "").strip() == "Seleccionada",
+                )
+
+
 def stream_items(zip_path: str) -> Iterator[ItemDA]:
     """Stream de ítems desde el CSV de licitaciones dentro del ZIP (RAM-safe).
 
