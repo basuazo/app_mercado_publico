@@ -16,6 +16,9 @@ services:
         sync: false
       - key: JOBS_TOKEN
         sync: false
+      # URL pública de la app (enlaces de email a la ficha propia, F-seguir)
+      - key: APP_BASE_URL
+        sync: false
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

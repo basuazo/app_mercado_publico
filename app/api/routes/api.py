@@ -220,6 +220,8 @@ async def jobs_run(
 
     from app.ingest.orchestrator import (
         run_alerts,
+        run_competencia,
+        run_datos_abiertos,
         run_detalles,
         run_digest,
         run_lifecycle,
@@ -231,20 +233,24 @@ async def jobs_run(
     engine = request.app.state.engine
 
     _jobs: dict[str, Any] = {
-        "ca":        lambda: run_sync_ca(settings, engine),
-        "activas":   lambda: run_sync_activas(settings, engine),
-        "detalles":  lambda: run_detalles(settings, engine),
+        "ca": lambda: run_sync_ca(settings, engine),
+        "activas": lambda: run_sync_activas(settings, engine),
+        "detalles": lambda: run_detalles(settings, engine),
+        "datos-abiertos": lambda: run_datos_abiertos(settings, engine),
         "lifecycle": lambda: run_lifecycle(settings, engine),
-        "match":     lambda: run_match(settings, engine),
-        "alerts":    lambda: run_alerts(settings, engine),
-        "digest":    lambda: run_digest(settings, engine),
+        "match": lambda: run_match(settings, engine),
+        "competencia": lambda: run_competencia(settings, engine),
+        "alerts": lambda: run_alerts(settings, engine),
+        "digest": lambda: run_digest(settings, engine),
     }
 
     def _full_cycle() -> None:
         run_sync_activas(settings, engine)
         run_detalles(settings, engine)
+        run_datos_abiertos(settings, engine)
         run_lifecycle(settings, engine)
         run_match(settings, engine)
+        run_competencia(settings, engine)
         run_alerts(settings, engine)
 
     if job == "all":

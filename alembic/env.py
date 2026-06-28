@@ -14,14 +14,17 @@ if config.config_file_name is not None:
 
 # Importar todos los modelos para que autogenerate los detecte
 import app.models.tables  # noqa: E402, F401
+from app.core.db import normalizar_url_driver  # noqa: E402
 from app.models.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
-# Tomar DATABASE_URL del entorno si no está en alembic.ini
+# Tomar DATABASE_URL del entorno si no está en alembic.ini. Misma normalización
+# de driver que make_engine (app/api/main.py): así "alembic upgrade head" en el
+# startCommand de Render nunca falla por psycopg2 vs psycopg v3.
 db_url = os.environ.get("DATABASE_URL")
 if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+    config.set_main_option("sqlalchemy.url", normalizar_url_driver(db_url))
 
 
 def run_migrations_offline() -> None:

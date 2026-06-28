@@ -250,3 +250,34 @@ DATABASE_URL=postgresql://user:pw@host/neondb?sslmode=require
 ```
 
 El archivo `render.yaml` ya define el prefijo correcto en los ejemplos de `docs/despliegue.md`.
+
+---
+
+## 14. Jobs y cadencia recomendada
+
+Todos corren automáticamente vía el scheduler interno (APScheduler, ver
+`app/ingest/orchestrator.py::build_scheduler`) mientras el proceso esté despierto.
+También se pueden disparar a mano con `POST /api/jobs/run?job=<nombre>`
+(`X-Jobs-Token` requerido) — útil para forzar un ciclo fuera de horario o tras un deploy
+(ver "heal post-deploy" en [despliegue.md](despliegue.md)).
+
+| Job | Cadencia (scheduler interno) | Qué hace |
+|---|---|---|
+| `ca` | cada 30 min | Sync incremental de Compra Ágil (cursor `fecha_ultimo_cambio`) |
+| `activas` | 08:00, 13:00, 18:00 Chile | Listado v1 de licitaciones activas |
+| `detalles` | tras cada `activas` | Detalle de licitaciones pendientes (gasta cuota API) |
+| `datos-abiertos` | 23:30 Chile (ciclo nocturno, primero) | `licitacion_items` (UNSPSC) desde `lic-da`, $0 cuota — ver `docs/04-datos-abiertos.md` |
+| `lifecycle` | 23:30 Chile (ciclo nocturno) | Refresca estados de oportunidades próximas a cierre o seguidas |
+| `match` | tras cada `activas`/`ca` | Recalcula matches contra perfiles activos |
+| `competencia` | 23:30 Chile (ciclo nocturno, después de `lifecycle`) | Captura ofertas (`lic-da`) de seguidas recién adjudicadas, $0 cuota — ver `docs/05-competencia.md` |
+| `alerts` | tras cada `match` | Detecta eventos y envía alertas inmediatas pendientes |
+| `digest` | diario, hora `DIGEST_HOUR` (default 8) | Envía el digest agrupado por usuario |
+| `retencion` | diario 03:00 Chile | Purga `raw_json`/filas terminales > 90 días |
+| `catalogos` | semanal, lunes 02:00 Chile | Refresca catálogo de organismos |
+
+`datos-abiertos` corre **antes** de `lifecycle`/`match` en el ciclo nocturno para que
+los ítems UNSPSC estén disponibles antes del próximo matching; `competencia` corre
+**después** de `lifecycle` porque depende de que los estados (incl. adjudicaciones de
+seguidas) estén al día. Ninguno de los dos gasta cuota de la API (regla 7 de CLAUDE.md).
+`POST /api/jobs/run` sin `job` (o `job=all`) ejecuta el ciclo completo en este orden:
+activas → detalles → datos-abiertos → lifecycle → match → competencia → alerts.

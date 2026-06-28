@@ -764,6 +764,8 @@ class TestRefreshEstados:
         return ca
 
     def test_actualiza_licitaciones(self, session, settings):
+        from freezegun import freeze_time
+
         from app.ingest.lifecycle import refresh_estados
 
         self._licitacion(session, "LIC-LIFE")
@@ -771,11 +773,14 @@ class TestRefreshEstados:
         v1.licitacion_detalle.return_value = _lic_detalle("LIC-LIFE")
         v2 = MagicMock()
 
-        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        with freeze_time("2026-06-18 10:00:00"):  # dentro de ventana ±7/+3 de fecha_cierre
+            result = refresh_estados(session, v1, v2, settings, max_requests=10)
         assert result["actualizadas_licitaciones"] == 1
         assert result["errores"] == 0
 
     def test_error_en_licitacion_no_aborta(self, session, settings):
+        from freezegun import freeze_time
+
         from app.ingest.lifecycle import refresh_estados
 
         self._licitacion(session, "LIC-FAIL")
@@ -790,11 +795,14 @@ class TestRefreshEstados:
         v1.licitacion_detalle.side_effect = side_licitacion
         v2 = MagicMock()
 
-        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        with freeze_time("2026-06-18 10:00:00"):
+            result = refresh_estados(session, v1, v2, settings, max_requests=10)
         assert result["errores"] == 1
         assert result["actualizadas_licitaciones"] == 1
 
     def test_actualiza_compras_agiles(self, session, settings):
+        from freezegun import freeze_time
+
         from app.clients.types import CompraAgilDetalle
         from app.ingest.lifecycle import refresh_estados
 
@@ -820,11 +828,14 @@ class TestRefreshEstados:
         v2 = MagicMock()
         v2.detalle_compra_agil.return_value = detalle_ca
 
-        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        with freeze_time("2026-06-18 10:00:00"):
+            result = refresh_estados(session, v1, v2, settings, max_requests=10)
         assert result["actualizadas_ca"] == 1
         assert result["errores"] == 0
 
     def test_error_en_ca_no_aborta(self, session, settings):
+        from freezegun import freeze_time
+
         from app.ingest.lifecycle import refresh_estados
 
         self._ca(session, "CA-FAIL")
@@ -832,7 +843,8 @@ class TestRefreshEstados:
         v2 = MagicMock()
         v2.detalle_compra_agil.side_effect = RuntimeError("fallo CA")
 
-        result = refresh_estados(session, v1, v2, settings, max_requests=10)
+        with freeze_time("2026-06-18 10:00:00"):
+            result = refresh_estados(session, v1, v2, settings, max_requests=10)
         assert result["errores"] == 1
 
     def test_max_requests_limita_ciclo(self, session, settings):

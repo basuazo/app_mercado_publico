@@ -20,6 +20,7 @@ DATABASE_URL_PROD=postgresql://user:pw@host-prod.neon.host/neondb?sslmode=requir
 MP_TICKET=...
 SECRET_KEY=...           # cadena aleatoria ≥ 32 chars (python -c "import secrets; print(secrets.token_hex(32))")
 JOBS_TOKEN=...           # idem
+APP_BASE_URL=https://tu-app.onrender.com   # sin slash final; enlaces de email a la ficha propia (F-seguir)
 ADMIN_EMAIL=admin@tuempresa.cl
 ADMIN_PASSWORD=...       # contraseña segura; solo usada en el seed inicial
 SMTP_HOST=smtp-relay.brevo.com
@@ -67,6 +68,7 @@ dev         ← branch para desarrollo local y pytest
    | `DATABASE_URL` | connection string de la branch **production** de Neon |
    | `SECRET_KEY` | cadena aleatoria ≥ 32 chars |
    | `JOBS_TOKEN` | cadena aleatoria ≥ 32 chars |
+   | `APP_BASE_URL` | URL pública del servicio (p.ej. `https://mp-oportunidades.onrender.com`), sin slash final — la conoces recién tras el primer deploy |
    | `ADMIN_EMAIL` | email del primer admin |
    | `ADMIN_PASSWORD` | contraseña del primer admin |
    | `SMTP_HOST` | p.ej. `smtp-relay.brevo.com` |
@@ -133,6 +135,24 @@ Checklist manual tras el primer deploy:
 - [ ] Verificar que `base_datos.porcentaje` < 80 %.
 - [ ] Crear un perfil de búsqueda → esperar el próximo ciclo → revisar oportunidades en el dashboard.
 - [ ] Confirmar que tras 2 h el servicio **no se durmió** (el pinger debe estar activo).
+
+**Nota — heal post-deploy:** justo después de desplegar (o de poblar `production` por
+primera vez), correr una vez manualmente activas → datos-abiertos → match, en ese
+orden, en lugar de esperar al ciclo programado:
+
+```bash
+curl -X POST "https://tu-app.onrender.com/api/jobs/run?job=activas" -H "X-Jobs-Token: $JOBS_TOKEN"
+# esperar a que termine, luego:
+curl -X POST "https://tu-app.onrender.com/api/jobs/run?job=datos-abiertos" -H "X-Jobs-Token: $JOBS_TOKEN"
+# y luego:
+curl -X POST "https://tu-app.onrender.com/api/jobs/run?job=match" -H "X-Jobs-Token: $JOBS_TOKEN"
+```
+
+Motivo: los datos que ya existen en `production` pueden traer el bug viejo de
+`fecha_cierre` (listado v1 devolvía ISO-8601 y `parse_fecha_v1` solo aceptaba
+`ddmmaaaa` — corregido en código, pero las filas ya ingeridas con `fecha_cierre=NULL`
+no se reparan solas). Re-correr `activas` las reescribe con la fecha correcta;
+`datos-abiertos` rellena `licitacion_items` antes de que `match` las evalúe.
 
 ---
 
