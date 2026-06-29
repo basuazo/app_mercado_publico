@@ -87,6 +87,10 @@ class Settings(BaseSettings):
         default=30,
         description="TTL del caché de plan_compra_lineas/sync (el PAC se regenera ~mensualmente)",
     )
+    plan_compra_sectores_bulk_url: str = Field(
+        default="https://mserv-datos-abiertos.chilecompra.cl/v1/elastic/organization/all",
+        description="Endpoint bulk de clasificación por sector de organismos (F-datos)",
+    )
     plan_compra_anio_inicio: int = Field(
         default=2025,
         description="Primer año con PAC publicado en datos abiertos (verificado en el spike)",

@@ -148,3 +148,30 @@ def estado_planificacion_pac(valor: object) -> EstadoPlanificacionPAC:
         _log.warning("Estado planificación PAC sin mapeo: %r", valor)
         return EstadoPlanificacionPAC.DESCONOCIDO
     return estado
+
+
+# Sector del organismo (F-datos) — dominio propio, ver docs/08-datos-organismos.md §3-bis b.
+SECTOR_SIN_CLASIFICACION = "Sin clasificación"
+ID_SECTOR_SIN_CLASIFICACION = 8
+
+
+def normalizar_sector(id_sector: object, sector: object) -> tuple[int, str]:
+    """Normaliza (idSector, sector) del bulk `/v1/elastic/organization/all`.
+
+    La fuente siempre trae idSector entero 1-8, pero para idSector==8 el
+    campo `sector` viene null (sin etiqueta legible) — y cualquier organismo
+    del catálogo que no aparezca en el bulk tampoco tiene sector. En ambos
+    casos se devuelve el centinela "Sin clasificación", nunca None/null
+    (regla 6: no propagar null a la UI). No se hardcodea el texto de los
+    7 sectores nombrados: se usa tal cual viene de la fuente.
+    """
+    try:
+        id_sector_int = int(str(id_sector))
+    except (TypeError, ValueError):
+        _log.warning("normalizar_sector: idSector inválido: %r", id_sector)
+        return ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION
+    if not (1 <= id_sector_int <= 8):
+        _log.warning("normalizar_sector: idSector fuera de rango 1-8: %d", id_sector_int)
+        return ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION
+    nombre = sector.strip() if isinstance(sector, str) and sector.strip() else SECTOR_SIN_CLASIFICACION
+    return id_sector_int, nombre

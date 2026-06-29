@@ -16,14 +16,21 @@ from app.clients.plan_compra import (
     InstitucionPAC as InstitucionPACDA,
 )
 from app.clients.plan_compra import (
+    SectorOrganismo,
     descargar_pac,
     listar_instituciones,
+    listar_organismos_sector,
     parse_pac_csv,
     url_pac,
 )
 from app.core.settings import Settings
-from app.ingest.plan_compra import get_plan, sync_instituciones_pac
-from app.models.enums import EstadoPlanificacionPAC
+from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
+from app.models.enums import (
+    ID_SECTOR_SIN_CLASIFICACION,
+    SECTOR_SIN_CLASIFICACION,
+    EstadoPlanificacionPAC,
+    normalizar_sector,
+)
 from app.models.tables import InstitucionPAC, PlanCompraLinea, PlanCompraSync, SyncState
 
 _VALID_ENV = {
@@ -157,6 +164,109 @@ def test_listar_instituciones_item_sin_codigo_se_descarta():
 def test_listar_instituciones_payload_invalido_retorna_vacio():
     respx.get("https://fake.test/instituciones").mock(return_value=httpx.Response(200, json={"payload": "no-es-lista"}))
     assert listar_instituciones(kpi_url="https://fake.test/instituciones") == []
+
+
+# ---------------------------------------------------------------------------
+# Cliente: listar_organismos_sector (F-datos, ver docs/08-datos-organismos.md §3-bis a)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_listar_organismos_sector_array_plano_ok():
+    """Envelope DISTINTO al resto de la API: array JSON plano, no {success,payload}."""
+    respx.get("https://fake.test/sectores").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "idType": 2,
+                    "type": "comprador",
+                    "entcode": 7002,
+                    "rut": "",
+                    "name": "JUNAEB",
+                    "hasProfile": 1,
+                    "idSector": 2,
+                    "sector": "Gobierno Central, Universidades",
+                    "synonyms": "junaeb",
+                    "comparables": "7253;1968268",
+                    "id": "x",
+                },
+            ],
+        )
+    )
+    out = listar_organismos_sector(bulk_url="https://fake.test/sectores")
+    assert out == [SectorOrganismo(entcode=7002, id_sector=2, sector="Gobierno Central, Universidades")]
+
+
+@respx.mock
+def test_listar_organismos_sector_id_sector_8_sector_null_pasa_none():
+    """idSector==8 trae sector null en la fuente (ver §3-bis b) — el cliente no
+    normaliza, solo pasa None; normalizar_sector (enums) decide el fallback."""
+    respx.get("https://fake.test/sectores").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"idType": 2, "type": "comprador", "entcode": 1999111, "idSector": 8, "sector": None},
+            ],
+        )
+    )
+    out = listar_organismos_sector(bulk_url="https://fake.test/sectores")
+    assert out == [SectorOrganismo(entcode=1999111, id_sector=8, sector=None)]
+
+
+@respx.mock
+def test_listar_organismos_sector_filtra_solo_comprador():
+    respx.get("https://fake.test/sectores").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"idType": 2, "type": "comprador", "entcode": 1, "idSector": 1, "sector": "Fuerzas Armadas"},
+                {"idType": 1, "type": "proveedor", "entcode": 2, "idSector": 1, "sector": "Fuerzas Armadas"},
+            ],
+        )
+    )
+    out = listar_organismos_sector(bulk_url="https://fake.test/sectores")
+    assert [o.entcode for o in out] == [1]
+
+
+@respx.mock
+def test_listar_organismos_sector_entcode_invalido_se_descarta():
+    respx.get("https://fake.test/sectores").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"type": "comprador", "idSector": 1, "sector": "Fuerzas Armadas"}],
+        )
+    )
+    assert listar_organismos_sector(bulk_url="https://fake.test/sectores") == []
+
+
+@respx.mock
+def test_listar_organismos_sector_payload_no_es_array_retorna_vacio():
+    respx.get("https://fake.test/sectores").mock(
+        return_value=httpx.Response(200, json={"success": "OK", "payload": []})
+    )
+    assert listar_organismos_sector(bulk_url="https://fake.test/sectores") == []
+
+
+# ---------------------------------------------------------------------------
+# enums.normalizar_sector
+# ---------------------------------------------------------------------------
+
+
+def test_normalizar_sector_nombrado_se_preserva():
+    assert normalizar_sector(2, "Gobierno Central, Universidades") == (2, "Gobierno Central, Universidades")
+
+
+def test_normalizar_sector_8_sin_nombre_cae_a_sin_clasificacion():
+    assert normalizar_sector(8, None) == (ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION)
+
+
+def test_normalizar_sector_fuera_de_rango_cae_a_sin_clasificacion():
+    assert normalizar_sector(99, "Lo que sea") == (ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION)
+
+
+def test_normalizar_sector_tipo_invalido_cae_a_sin_clasificacion():
+    assert normalizar_sector("no-es-entero", "Lo que sea") == (ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION)
 
 
 # ---------------------------------------------------------------------------
@@ -410,3 +520,116 @@ class TestSyncInstitucionesPac:
         instituciones = session.execute(select(InstitucionPAC)).scalars().all()
         assert len(instituciones) == 1
         assert instituciones[0].razon_social == "NUEVA"
+
+
+# ---------------------------------------------------------------------------
+# Servicio: sync_sectores_organismos (F-datos)
+# ---------------------------------------------------------------------------
+
+
+class TestSyncSectoresOrganismos:
+    def test_primera_corrida_clasifica_por_entcode(self, session, settings):
+        session.add(InstitucionPAC(codigo_entidad=224060, razon_social="MINISTERIO  PUBLICO", rut="61.935.400-1"))
+        session.add(InstitucionPAC(codigo_entidad=7055, razon_social="GOBERNACION TALAGANTE", rut=""))
+        session.commit()
+
+        with respx.mock:
+            respx.get(settings.plan_compra_sectores_bulk_url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json=[
+                        {"type": "comprador", "entcode": 224060, "idSector": 3, "sector": "Legislativo y Judicial"},
+                    ],
+                )
+            )
+            n = sync_sectores_organismos(session, settings)
+
+        assert n == 2  # actualiza TODAS las filas del catálogo, no solo las que vinieron en el bulk
+        ministerio = session.get(InstitucionPAC, 224060)
+        assert ministerio.id_sector == 3
+        assert ministerio.sector == "Legislativo y Judicial"
+
+        # ausente del bulk -> fallback "Sin clasificación" (regla 6, nunca NULL)
+        gobernacion = session.get(InstitucionPAC, 7055)
+        assert gobernacion.id_sector == ID_SECTOR_SIN_CLASIFICACION
+        assert gobernacion.sector == SECTOR_SIN_CLASIFICACION
+
+        estado = session.get(SyncState, "plan_compra_sectores")
+        assert estado is not None
+        assert estado.ultimo_ok is not None
+
+    def test_id_sector_8_sin_nombre_cae_a_sin_clasificacion(self, session, settings):
+        session.add(InstitucionPAC(codigo_entidad=1999111, razon_social="COMISION X", rut=""))
+        session.commit()
+
+        with respx.mock:
+            respx.get(settings.plan_compra_sectores_bulk_url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json=[{"type": "comprador", "entcode": 1999111, "idSector": 8, "sector": None}],
+                )
+            )
+            sync_sectores_organismos(session, settings)
+
+        fila = session.get(InstitucionPAC, 1999111)
+        assert fila.id_sector == ID_SECTOR_SIN_CLASIFICACION
+        assert fila.sector == SECTOR_SIN_CLASIFICACION
+
+    def test_segunda_corrida_dentro_de_ttl_no_pega_a_la_red_si_ya_clasificado(self, session, settings):
+        ahora = datetime.now(UTC).replace(tzinfo=None)
+        session.add(
+            InstitucionPAC(
+                codigo_entidad=224060,
+                razon_social="MINISTERIO  PUBLICO",
+                rut="",
+                sector="Legislativo y Judicial",
+                id_sector=3,
+            )
+        )
+        session.add(SyncState(fuente="plan_compra_sectores", ultima_ejecucion=ahora, ultimo_ok=ahora))
+        session.commit()
+
+        with respx.mock:
+            n = sync_sectores_organismos(session, settings)
+
+        assert n == 0
+
+    def test_fuerza_refresh_si_hay_fila_sin_clasificar_aunque_ttl_este_fresco(self, session, settings):
+        """sync_instituciones_pac puede reemplazar el catálogo (delete+insert) y
+        dejar id_sector en NULL aunque el TTL de sync_sectores_organismos no
+        haya vencido — debe forzar un refresh igual (ver docstring del servicio)."""
+        ahora = datetime.now(UTC).replace(tzinfo=None)
+        session.add(InstitucionPAC(codigo_entidad=224060, razon_social="MINISTERIO  PUBLICO", rut=""))
+        session.add(SyncState(fuente="plan_compra_sectores", ultima_ejecucion=ahora, ultimo_ok=ahora))
+        session.commit()
+
+        with respx.mock:
+            respx.get(settings.plan_compra_sectores_bulk_url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json=[{"type": "comprador", "entcode": 224060, "idSector": 3, "sector": "Legislativo y Judicial"}],
+                )
+            )
+            n = sync_sectores_organismos(session, settings)
+
+        assert n == 1
+        assert session.get(InstitucionPAC, 224060).id_sector == 3
+
+    def test_reejecutar_no_duplica_filas_upsert_idempotente(self, session, settings):
+        session.add(InstitucionPAC(codigo_entidad=224060, razon_social="MINISTERIO  PUBLICO", rut=""))
+        session.commit()
+
+        with respx.mock:
+            respx.get(settings.plan_compra_sectores_bulk_url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json=[{"type": "comprador", "entcode": 224060, "idSector": 3, "sector": "Legislativo y Judicial"}],
+                )
+            )
+            sync_sectores_organismos(session, settings)
+            settings.plan_compra_ttl_dias = 0  # fuerza una segunda corrida real
+            sync_sectores_organismos(session, settings)
+
+        filas = session.execute(select(InstitucionPAC)).scalars().all()
+        assert len(filas) == 1
+        assert filas[0].id_sector == 3

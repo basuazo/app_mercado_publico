@@ -17,15 +17,26 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.clients.plan_compra import descargar_pac, listar_instituciones, parse_pac_csv
+from app.clients.plan_compra import (
+    descargar_pac,
+    listar_instituciones,
+    listar_organismos_sector,
+    parse_pac_csv,
+)
 from app.core.logging import get_logger
 from app.core.settings import Settings
-from app.models.enums import estado_planificacion_pac
+from app.models.enums import (
+    ID_SECTOR_SIN_CLASIFICACION,
+    SECTOR_SIN_CLASIFICACION,
+    estado_planificacion_pac,
+    normalizar_sector,
+)
 from app.models.tables import InstitucionPAC, PlanCompraLinea, PlanCompraSync, SyncState
 
 _log = get_logger(__name__)
 
 _FUENTE_INSTITUCIONES = "plan_compra_instituciones"
+_FUENTE_SECTORES = "plan_compra_sectores"
 
 
 def _ahora() -> datetime:
@@ -177,3 +188,65 @@ def sync_instituciones_pac(session: Session, settings: Settings) -> int:
 
     _log.info("sync_instituciones_pac: instituciones=%d", len(instituciones))
     return len(instituciones)
+
+
+def sync_sectores_organismos(session: Session, settings: Settings) -> int:
+    """Puebla `InstitucionPAC.sector`/`id_sector` desde el bulk de datos
+    abiertos (ver docs/08-datos-organismos.md §3-bis a). TTL largo, mismo
+    patrón de `sync_state` que `sync_instituciones_pac`.
+
+    Upsert idempotente por `codigo_entidad` (UPDATE en sitio, no
+    delete+insert): re-ejecutar no duplica nada. Los organismos del catálogo
+    que NO aparezcan en el bulk quedan con el centinela "Sin clasificación"
+    (regla 6 — nunca NULL sin manejar).
+
+    `sync_instituciones_pac` reemplaza el catálogo completo (delete+insert)
+    cuando SU propio TTL vence, lo que deja `sector`/`id_sector` en NULL para
+    las filas nuevas aunque el TTL de este servicio siga fresco — por eso se
+    fuerza un refresh si hay alguna fila sin clasificar, sin esperar al
+    vencimiento del TTL propio. Debe llamarse junto a/después de
+    `sync_instituciones_pac`.
+    """
+    ahora = _ahora()
+    state = session.get(SyncState, _FUENTE_SECTORES)
+    hay_sin_clasificar = (
+        session.execute(select(InstitucionPAC.codigo_entidad).where(InstitucionPAC.id_sector.is_(None)).limit(1)).first()
+        is not None
+    )
+    if (
+        state is not None
+        and state.ultimo_ok is not None
+        and _fresco(state.ultimo_ok, settings.plan_compra_ttl_dias, ahora)
+        and not hay_sin_clasificar
+    ):
+        return 0
+
+    organismos = listar_organismos_sector(bulk_url=settings.plan_compra_sectores_bulk_url)
+    por_entcode = {o.entcode: o for o in organismos}
+
+    filas = session.execute(select(InstitucionPAC)).scalars().all()
+    actualizadas = 0
+    for fila in filas:
+        encontrado = por_entcode.get(fila.codigo_entidad)
+        if encontrado is not None:
+            id_sector, sector = normalizar_sector(encontrado.id_sector, encontrado.sector)
+        else:
+            id_sector, sector = ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION
+        fila.id_sector = id_sector
+        fila.sector = sector
+        actualizadas += 1
+
+    if state is None:
+        state = SyncState(fuente=_FUENTE_SECTORES)
+        session.add(state)
+    state.ultima_ejecucion = ahora
+    state.ultimo_ok = ahora
+    state.notas = f"organismos_bulk={len(organismos)} actualizadas={actualizadas}"
+    session.commit()
+
+    _log.info(
+        "sync_sectores_organismos: bulk=%d actualizadas=%d",
+        len(organismos),
+        actualizadas,
+    )
+    return actualizadas

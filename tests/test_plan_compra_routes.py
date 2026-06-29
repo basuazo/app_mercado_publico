@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -20,6 +22,7 @@ from app.models.tables import InstitucionPAC, PlanCompraLinea, PlanCompraSync, S
 
 _PW = "contraseña-segura-test"
 _FUENTE_INSTITUCIONES = "plan_compra_instituciones"
+_FUENTE_SECTORES = "plan_compra_sectores"
 
 
 @pytest.fixture()
@@ -67,22 +70,30 @@ def _cookie(settings: Settings, user_id: int) -> dict[str, str]:
 
 
 def _marcar_catalogo_instituciones_fresco(engine) -> None:
-    """Evita que la ruta dispare sync_instituciones_pac contra la red real:
-    deja el catálogo "fresco" según TTL sin necesidad de mockear HTTP."""
+    """Evita que la ruta dispare sync_instituciones_pac/sync_sectores_organismos
+    contra la red real: deja ambos catálogos "frescos" según TTL sin necesidad
+    de mockear HTTP. sync_sectores_organismos además fuerza refresh si detecta
+    alguna InstitucionPAC con id_sector NULL (ver app/ingest/plan_compra.py) —
+    por eso los helpers de este módulo que insertan InstitucionPAC ya traen
+    sector/id_sector seteados (nunca NULL)."""
     with Session(engine) as s:
-        s.add(
-            SyncState(
-                fuente=_FUENTE_INSTITUCIONES,
-                ultima_ejecucion=datetime.now(UTC).replace(tzinfo=None),
-                ultimo_ok=datetime.now(UTC).replace(tzinfo=None),
-            )
-        )
+        ahora = datetime.now(UTC).replace(tzinfo=None)
+        s.add(SyncState(fuente=_FUENTE_INSTITUCIONES, ultima_ejecucion=ahora, ultimo_ok=ahora))
+        s.add(SyncState(fuente=_FUENTE_SECTORES, ultima_ejecucion=ahora, ultimo_ok=ahora))
         s.commit()
 
 
 def _cachear_plan_ok(engine, codigo_entidad: int, agno: int, n_lineas: int = 2) -> None:
     with Session(engine) as s:
-        s.add(InstitucionPAC(codigo_entidad=codigo_entidad, razon_social="MINISTERIO PUBLICO", rut="61.935.400-1"))
+        s.add(
+            InstitucionPAC(
+                codigo_entidad=codigo_entidad,
+                razon_social="MINISTERIO PUBLICO",
+                rut="61.935.400-1",
+                sector="Legislativo y Judicial",
+                id_sector=3,
+            )
+        )
         s.add(
             PlanCompraSync(
                 codigo_entidad=codigo_entidad,
@@ -113,7 +124,15 @@ def _cachear_plan_ok(engine, codigo_entidad: int, agno: int, n_lineas: int = 2) 
 
 def _cachear_sin_plan(engine, codigo_entidad: int, agno: int) -> None:
     with Session(engine) as s:
-        s.add(InstitucionPAC(codigo_entidad=codigo_entidad, razon_social="GOBERNACION SIN PLAN", rut=""))
+        s.add(
+            InstitucionPAC(
+                codigo_entidad=codigo_entidad,
+                razon_social="GOBERNACION SIN PLAN",
+                rut="",
+                sector="Sin clasificación",
+                id_sector=8,
+            )
+        )
         s.add(
             PlanCompraSync(
                 codigo_entidad=codigo_entidad,
@@ -152,7 +171,15 @@ def test_plan_anual_render_ok_sin_seleccion(client, usuario, settings, engine):
 def test_plan_anual_busca_institucion_muestra_sugerencias(client, usuario, settings, engine):
     _marcar_catalogo_instituciones_fresco(engine)
     with Session(engine) as s:
-        s.add(InstitucionPAC(codigo_entidad=224060, razon_social="MINISTERIO  PUBLICO", rut="61.935.400-1"))
+        s.add(
+            InstitucionPAC(
+                codigo_entidad=224060,
+                razon_social="MINISTERIO  PUBLICO",
+                rut="61.935.400-1",
+                sector="Legislativo y Judicial",
+                id_sector=3,
+            )
+        )
         s.commit()
 
     r = client.get("/plan-anual?institucion=MINISTERIO", cookies=_cookie(settings, usuario))
@@ -213,3 +240,35 @@ def test_plan_anual_pagina_fuera_de_rango_se_acota(client, usuario, settings, en
     r = client.get("/plan-anual?codigo_entidad=224060&agno=2026&pagina=999", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Compra de prueba 0" in r.text
+
+
+# ---------------------------------------------------------------------------
+# F-datos: sync_sectores_organismos disparado desde la ruta (ver PASO 0-4)
+# ---------------------------------------------------------------------------
+
+
+def test_plan_anual_clasifica_sector_si_hay_institucion_sin_clasificar(client, usuario, settings, engine):
+    """Sin marcar el catálogo de sectores como fresco y con una InstitucionPAC
+    con id_sector NULL, la ruta debe pegarle al bulk (mockeado) y clasificarla."""
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+    with Session(engine) as s:
+        s.add(SyncState(fuente=_FUENTE_INSTITUCIONES, ultima_ejecucion=ahora, ultimo_ok=ahora))
+        s.add(InstitucionPAC(codigo_entidad=224060, razon_social="MINISTERIO  PUBLICO", rut="61.935.400-1"))
+        s.commit()
+
+    with respx.mock:
+        respx.get(settings.plan_compra_sectores_bulk_url).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {"idType": 2, "type": "comprador", "entcode": 224060, "rut": "", "name": "X", "idSector": 3, "sector": "Legislativo y Judicial"},
+                ],
+            )
+        )
+        r = client.get("/plan-anual", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+
+    with Session(engine) as s:
+        inst = s.get(InstitucionPAC, 224060)
+        assert inst.id_sector == 3
+        assert inst.sector == "Legislativo y Judicial"

@@ -74,10 +74,30 @@ gastar cuota para los ítems. La API (detalle) queda solo para enriquecer matche
 Nota producción: cobertura se construye con el `activas` completo + job nocturno; en
 local quedó acotada por el `--limit 200` de prueba.
 
-## F-datos — Compradores clasificados (datos abiertos)
-**Estado: pendiente.** Catálogo de organismos con su clasificación/sector → habilita
-el multi-select buscable de organismos (punto 2) y, con el histórico por organismo,
-recomendar organismos a seguir según los rubros del perfil.
+## F-datos — Compradores clasificados por sector (datos abiertos) — HECHO (alcance acotado)
+Spike en `docs/08-datos-organismos.md`. Fuente: bulk
+`GET https://mserv-datos-abiertos.chilecompra.cl/v1/elastic/organization/all` (datos
+abiertos, sin ticket, sin cuota; envelope DISTINTO al resto: array JSON plano).
+Cliente `listar_organismos_sector` (`app/clients/plan_compra.py`); normalización
+`normalizar_sector` (`app/models/enums.py`, fallback "Sin clasificación"/`id_sector=8`
+para `idSector` sin nombre o ausente del bulk). Columnas `sector`/`id_sector` en
+`InstitucionPAC` (migración `c4a8e0f7b1d3`). Servicio `sync_sectores_organismos`
+(`app/ingest/plan_compra.py`): upsert idempotente por `codigo_entidad`, TTL largo
+(reutiliza `plan_compra_ttl_dias`), se invoca junto a `sync_instituciones_pac` en
+`GET /plan-anual` y fuerza refresh si detecta filas sin clasificar (cubre el caso en
+que `sync_instituciones_pac` reemplazó el catálogo y dejó `id_sector` en NULL).
+Cobertura real ~85-87 % vía bulk, resto cae a "Sin clasificación" (ver spike §3-bis d).
+
+**Diferido a F10 (rediseño de UI, fuera de este alcance):**
+- **Agrupación del selector de organismos en el formulario de perfiles:** hoy
+  `organismos_seguidos` (`app/api/templates/perfiles.html`) es un campo de texto libre
+  separado por coma, **no un `<select>`** — no hay nada trivial que agrupar con
+  `<optgroup>` sin rediseñar el campo. La capa de datos (sector/id_sector) ya está lista
+  para cuando F10 construya el multi-select clasificado real.
+- **Recomendación de organismos por rubro:** `getTreeMap/getSectors/{entCode}/{año}` solo
+  trae nombres de segmento (top 10 por monto, sin código UNSPSC) — cruzar con los rubros
+  del perfil exigiría *fuzzy matching* frágil y pierde lo que esté fuera del top 10
+  (limitación real, ver spike §4). Queda pendiente de decidir si vale la pena igual.
 
 ## F-plan — Plan Anual de Compra (pestaña de consulta aparte) — HECHO
 Spike en `docs/07-plan-anual.md`. Fuente: ZIP CSV en `pac-files.da.mercadopublico.cl`

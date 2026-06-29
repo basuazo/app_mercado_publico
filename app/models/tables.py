@@ -392,6 +392,8 @@ class InstitucionPAC(Base):
     codigo_entidad: Mapped[int] = mapped_column(Integer, primary_key=True)
     razon_social: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     rut: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    id_sector: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 # ---------------------------------------------------------------------------

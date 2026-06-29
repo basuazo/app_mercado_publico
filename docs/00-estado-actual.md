@@ -17,8 +17,9 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   recall+score unificados en FTS con stemming), **F-rubros** (ítems desde datos abiertos
   sin gastar cuota), **F-seguir** (seguir/archivar + alertas de avance), **F-competencia**
   (análisis de competencia al adjudicarse), **F-plan** (consulta del Plan Anual de Compra,
-  pestaña separada, on-demand), F-deploy.
-- Suite: 422 tests verdes (21 skipped) en el run "plano".
+  pestaña separada, on-demand), **F-datos** (clasificación de organismos por sector,
+  datos abiertos sin ticket — alcance acotado, ver roadmap), F-deploy.
+- Suite: 437 tests verdes (21 skipped) en el run "plano".
 
 ## Qué hace hoy
 Descubrir oportunidades por keyword/región/**rubro UNSPSC**/organismo; ver ficha
@@ -63,9 +64,9 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - `test_jobs_run_job_ca`: skip (pega a la API real sin mock); migrar a respx.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
-- **F-datos:** catálogo de compradores clasificados → organismos buscables (multi-select).
 - **F10 UX:** acordeón de rubros con súper-categorías seleccionables, multi-select de
-  organismos, y fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`).
+  organismos clasificado por sector (datos ya listos desde F-datos: `InstitucionPAC.sector`),
+  y fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`).
 - **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM).
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.
 
@@ -73,6 +74,7 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - `00-estado-actual.md` (este) · `01-analisis-api-mercado-publico.md` (contrato/gotchas API)
 - `02-plan-desarrollo-y-auditoria.md` · `03-roadmap.md` (historial de fases + pendientes)
 - `04-datos-abiertos.md` (lic-da: ítems/UNSPSC) · `05-competencia.md` (ofertas/ganador)
-- `07-plan-anual.md` (PAC: spike + veredicto) · `arquitectura.md` · `despliegue.md` · `operacion.md`
+- `07-plan-anual.md` (PAC: spike + veredicto) · `08-datos-organismos.md` (sector: spike + veredicto)
+- `arquitectura.md` · `despliegue.md` · `operacion.md`
 
 *Reglas duras del proyecto (API, free tier, multiusuario, arquitectura): ver `CLAUDE.md`.*

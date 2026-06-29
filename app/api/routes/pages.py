@@ -32,7 +32,7 @@ from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
-from app.ingest.plan_compra import get_plan, sync_instituciones_pac
+from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
 from app.matching.perfiles import (
     PerfilInvalido,
     actualizar_perfil,
@@ -619,6 +619,7 @@ async def plan_anual_get(
 ) -> HTMLResponse:
     settings = request.app.state.settings
     sync_instituciones_pac(session, settings)
+    sync_sectores_organismos(session, settings)
 
     anio_actual = datetime.now(_TZ_CHILE).year
     anios_disponibles = list(range(settings.plan_compra_anio_inicio, anio_actual + 1))

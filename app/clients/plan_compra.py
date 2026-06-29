@@ -106,6 +106,67 @@ def listar_instituciones(
     return out
 
 
+_SECTOR_BULK_URL_DEFAULT = "https://mserv-datos-abiertos.chilecompra.cl/v1/elastic/organization/all"
+
+
+@dataclass
+class SectorOrganismo:
+    """Clasificación por sector de un organismo (bulk, ver docs/08-datos-organismos.md §3-bis a).
+
+    `sector` queda tal cual viene de la fuente (puede ser None: la fuente lo
+    deja null para idSector==8) — la normalización a "Sin clasificación" vive
+    en app.models.enums.normalizar_sector, no aquí (misma separación que
+    estado_planificacion_pac/parse_pac_csv: el cliente no decide semántica
+    de dominio).
+    """
+
+    entcode: int
+    id_sector: int
+    sector: str | None
+
+
+def listar_organismos_sector(
+    *,
+    bulk_url: str = _SECTOR_BULK_URL_DEFAULT,
+    timeout: float = 30.0,
+) -> list[SectorOrganismo]:
+    """Catálogo bulk de organismos "comprador" con su sector (sin auth, sin cuota).
+
+    Envelope DISTINTO al resto de esta API: un ARRAY JSON plano, no
+    `{success,payload,errores}` (ver docs/08-datos-organismos.md §3-bis a).
+    `entcode` es directamente `codigo_organismo` de nuestro modelo (mismo
+    identificador ya verificado en docs/07-plan-anual.md §5-bis d). Se ignoran
+    `rut` (siempre vacío en esta fuente), `synonyms` y `comparables`.
+    """
+    resp = httpx.get(bulk_url, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, list):
+        _log.warning("listar_organismos_sector: payload inesperado (no es array plano): %r", type(data))
+        return []
+
+    out: list[SectorOrganismo] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type") or "").strip().lower() != "comprador":
+            continue
+        try:
+            entcode = int(item["entcode"])
+        except (KeyError, TypeError, ValueError):
+            _log.warning("listar_organismos_sector: organismo sin entcode válido: %s", repr(item))
+            continue
+        try:
+            id_sector = int(item["idSector"])
+        except (KeyError, TypeError, ValueError):
+            _log.warning("listar_organismos_sector: entcode=%d sin idSector válido: %s", entcode, repr(item))
+            continue
+        sector_raw = item.get("sector")
+        sector = sector_raw.strip() if isinstance(sector_raw, str) and sector_raw.strip() else None
+        out.append(SectorOrganismo(entcode=entcode, id_sector=id_sector, sector=sector))
+    return out
+
+
 @dataclass
 class LineaPAC:
     """Una línea del PAC tal como viene en el CSV filtrado por institución/año."""
