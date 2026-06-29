@@ -79,11 +79,18 @@ local quedó acotada por el `--limit 200` de prueba.
 el multi-select buscable de organismos (punto 2) y, con el histórico por organismo,
 recomendar organismos a seguir según los rubros del perfil.
 
-## F-plan — Plan Anual de Compra (pestaña de consulta aparte)
-**Estado: pendiente.** Sección/pestaña SEPARADA del feed de oportunidades, para
-*explorar* qué planea comprar cada organismo en el año (dato de consulta, no alertas).
-Requiere mini-spike previo (confirmar formato/URL del archivo de Plan Anual en datos
-abiertos). Definir si se ingiere filtrado o se consulta on-demand (cuidar Neon 0.5 GB).
+## F-plan — Plan Anual de Compra (pestaña de consulta aparte) — HECHO
+Spike en `docs/07-plan-anual.md`. Fuente: ZIP CSV en `pac-files.da.mercadopublico.cl`
+filtrado por institución/año (datos abiertos, sin ticket, sin cuota). Cliente
+`app/clients/plan_compra.py` (UTF-8 con BOM, sin quoting, reconstrucción de
+descripciones multilínea sin comillas vía heurística de "cola plausible" de los 6
+campos finales). Modelos `PlanCompraLinea`/`PlanCompraSync`/`InstitucionPAC`
+(migración `b3f7c1d9e2a4`). Servicio on-demand `app/ingest/plan_compra.py`
+(`get_plan`/`sync_instituciones_pac`) con TTL ~30 días, upsert idempotente
+(borra+inserta el par institución/año) y caché de "sin_plan" (403). Ruta
+`GET /plan-anual` (separada del feed, sin scoping de ownership — dato público) con
+autocomplete de institución, selector de año y paginación. No incluye rubro/UNSPSC
+ni mecanismo de compra (no vienen en esta fuente — limitación conocida, ver spike §6).
 
 ## F-seguir — Seguir/archivar oportunidades + alertas de avance — HECHO
 Tabla `OportunidadSeguida`, migración `7c9d2a1f4b3e`; `Alerta` generalizada

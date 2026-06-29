@@ -22,7 +22,13 @@ from sqlalchemy.dialects.postgresql import JSONB as _PG_JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.enums import EstadoAlerta, EstadoOportunidad, FrecuenciaAlerta, RolUsuario
+from app.models.enums import (
+    EstadoAlerta,
+    EstadoOportunidad,
+    EstadoPlanificacionPAC,
+    FrecuenciaAlerta,
+    RolUsuario,
+)
 
 # Renders as JSONB on Postgres (GIN indexable), falls back to JSON elsewhere (tests).
 JSONB = JSON().with_variant(_PG_JSONB(), "postgresql")
@@ -337,6 +343,58 @@ class Alerta(Base):
 
 
 # ---------------------------------------------------------------------------
+# Plan Anual de Compra (F-plan) â€” datos abiertos, consulta on-demand
+# ---------------------------------------------------------------------------
+
+
+class PlanCompraLinea(Base):
+    """Una línea del PAC de una institución/año, cacheada desde datos abiertos
+    (ver docs/07-plan-anual.md). codigo_entidad es directamente codigo_organismo."""
+
+    __tablename__ = "plan_compra_lineas"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    codigo_entidad: Mapped[int] = mapped_column(Integer, nullable=False)
+    agno: Mapped[int] = mapped_column(Integer, nullable=False)
+    institucion_nombre: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    codigo_producto: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    descripcion_producto: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cantidad_estimada: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_unitario_clp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_estimado_clp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mes_estimado: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trimestre_estimado: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estado_planificacion: Mapped[str] = mapped_column(
+        String(30), nullable=False, default=EstadoPlanificacionPAC.DESCONOCIDO.value
+    )
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+
+
+class PlanCompraSync(Base):
+    """Caché/TTL por (codigo_entidad, agno): evita re-descargar el ZIP en cada
+    consulta (el PAC se regenera ~mensualmente, ver §5-bis g)."""
+
+    __tablename__ = "plan_compra_sync"
+
+    codigo_entidad: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agno: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    fuente_last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    n_filas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False, default="sin_plan")
+
+
+class InstitucionPAC(Base):
+    """Catálogo cacheado de instituciones del PAC (alimenta el autocomplete)."""
+
+    __tablename__ = "instituciones_pac"
+
+    codigo_entidad: Mapped[int] = mapped_column(Integer, primary_key=True)
+    razon_social: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    rut: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Estado de sincronizaciÃ³n
 # ---------------------------------------------------------------------------
 
@@ -362,3 +420,5 @@ Index("ix_licitaciones_fecha_cierre", Licitacion.fecha_cierre)
 Index("ix_compras_agiles_estado", CompraAgil.estado)
 Index("ix_compras_agiles_region", CompraAgil.region)
 Index("ix_oportunidades_match_perfil", OportunidadMatch.perfil_id)
+Index("ix_plan_compra_lineas_entidad_agno", PlanCompraLinea.codigo_entidad, PlanCompraLinea.agno)
+Index("ix_instituciones_pac_razon_social", InstitucionPAC.razon_social)

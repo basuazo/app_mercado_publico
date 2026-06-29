@@ -74,6 +74,24 @@ class Settings(BaseSettings):
         description="Base URL del Azure Blob público de datos abiertos de ChileCompra",
     )
 
+    # --- Plan Anual de Compra (F-plan): datos abiertos, sin ticket, sin cuota ---
+    plan_compra_pac_base_url: str = Field(
+        default="https://pac-files.da.mercadopublico.cl",
+        description="Base URL del host S3/CloudFront que sirve los ZIP del PAC",
+    )
+    plan_compra_kpi_url: str = Field(
+        default="https://mserv-datos-abiertos.chilecompra.cl/v1/kpi/instituciones",
+        description="Endpoint del catálogo de instituciones (autocomplete del PAC)",
+    )
+    plan_compra_ttl_dias: int = Field(
+        default=30,
+        description="TTL del caché de plan_compra_lineas/sync (el PAC se regenera ~mensualmente)",
+    )
+    plan_compra_anio_inicio: int = Field(
+        default=2025,
+        description="Primer año con PAC publicado en datos abiertos (verificado en el spike)",
+    )
+
 
 def get_settings() -> "Settings":
     return Settings()  # type: ignore[call-arg]

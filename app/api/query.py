@@ -12,7 +12,13 @@ from app.api.presentacion import nombre_region, razones_legibles
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas
 from app.models.enums import EstadoOportunidad
-from app.models.tables import CompraAgil, Licitacion, OfertaCompetencia, OportunidadMatch
+from app.models.tables import (
+    CompraAgil,
+    InstitucionPAC,
+    Licitacion,
+    OfertaCompetencia,
+    OportunidadMatch,
+)
 
 
 def _url_ficha(fuente: str, codigo: str) -> str:
@@ -245,6 +251,28 @@ def detalle_competencia(session: Session, licitacion_codigo: str) -> list[dict[s
         }
         for o in ofertas
     ]
+
+
+def buscar_instituciones_pac(
+    session: Session,
+    texto: str,
+    *,
+    limit: int = 20,
+) -> list[InstitucionPAC]:
+    """Autocomplete del Plan Anual de Compra: instituciones por razón social
+    (caché de app.ingest.plan_compra.sync_instituciones_pac). Vacío si `texto`
+    está vacío — no lista las ~1.333 instituciones de una sola vez."""
+    texto = texto.strip()
+    if not texto:
+        return []
+    return list(
+        session.execute(
+            select(InstitucionPAC)
+            .where(InstitucionPAC.razon_social.ilike(f"%{texto}%"))
+            .order_by(InstitucionPAC.razon_social)
+            .limit(limit)
+        ).scalars()
+    )
 
 
 def check_oportunidad_access(

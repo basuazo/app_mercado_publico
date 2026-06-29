@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Plan Anual de Compra — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-1">Plan Anual de Compra</h2>
+<p class="text-muted small mb-4">
+  Lo que cada organismo planea comprar en el año. Dato de consulta pública, sin alertas.
+  No incluye rubro/UNSPSC ni mecanismo de compra (no vienen en esta fuente).
+</p>
+
+<form class="row g-2 mb-4" method="get" action="/plan-anual">
+  <div class="col-md-6">
+    <label class="form-label small">Institución</label>
+    <input type="text" name="institucion" class="form-control" placeholder="Buscar por nombre..."
+           value="{{ institucion_texto }}" autocomplete="off">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label small">Año</label>
+    <select name="agno" class="form-select">
+      {% for a in anios_disponibles %}
+      <option value="{{ a }}" {% if a == agno %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3 d-flex align-items-end">
+    <button type="submit" class="btn btn-primary w-100">Buscar</button>
+  </div>
+</form>
+
+{% if institucion_texto and sugerencias %}
+<div class="list-group mb-4">
+  {% for s in sugerencias %}
+  <a class="list-group-item list-group-item-action {% if codigo_entidad == s.codigo_entidad %}active{% endif %}"
+     href="/plan-anual?institucion={{ institucion_texto }}&codigo_entidad={{ s.codigo_entidad }}&agno={{ agno }}">
+    {{ s.razon_social }}
+  </a>
+  {% endfor %}
+</div>
+{% elif institucion_texto %}
+<div class="alert alert-info">No se encontraron instituciones con ese nombre.</div>
+{% endif %}
+
+{% if institucion_seleccionada %}
+<h4 class="mb-3">{{ institucion_seleccionada.razon_social }} — {{ agno }}</h4>
+
+{% if sin_plan %}
+<div class="alert alert-warning">Sin plan publicado este año para esta institución.</div>
+{% elif lineas %}
+<p class="text-muted small">
+  {{ total_filas }} línea(s) — total estimado: ${{ '{:,.0f}'.format(total_estimado) }}
+  — página {{ pagina }}/{{ total_paginas }}
+</p>
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Descripción</th>
+        <th class="text-end">Cantidad</th>
+        <th class="text-end">Monto unitario</th>
+        <th class="text-end">Monto estimado</th>
+        <th>Mes</th>
+        <th>Trimestre</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in lineas %}
+      <tr>
+        <td>{{ l.descripcion_producto }}</td>
+        <td class="text-end">{% if l.cantidad_estimada is not none %}{{ '{:,.0f}'.format(l.cantidad_estimada) }}{% else %}—{% endif %}</td>
+        <td class="text-end">{% if l.monto_unitario_clp is not none %}${{ '{:,.0f}'.format(l.monto_unitario_clp) }}{% else %}—{% endif %}</td>
+        <td class="text-end">{% if l.monto_estimado_clp is not none %}${{ '{:,.0f}'.format(l.monto_estimado_clp) }}{% else %}—{% endif %}</td>
+        <td>{{ l.mes_estimado or '—' }}</td>
+        <td>{{ l.trimestre_estimado or '—' }}</td>
+        <td>{{ l.estado_planificacion }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_paginas > 1 %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm">
+    {% if pagina > 1 %}
+    <li class="page-item">
+      <a class="page-link" href="?institucion={{ institucion_texto }}&codigo_entidad={{ codigo_entidad }}&agno={{ agno }}&pagina={{ pagina - 1 }}">Anterior</a>
+    </li>
+    {% endif %}
+    {% if pagina < total_paginas %}
+    <li class="page-item">
+      <a class="page-link" href="?institucion={{ institucion_texto }}&codigo_entidad={{ codigo_entidad }}&agno={{ agno }}&pagina={{ pagina + 1 }}">Siguiente</a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+{% else %}
+<div class="alert alert-info">Sin líneas para esta institución/año.</div>
+{% endif %}
+{% endif %}
+{% endblock %}

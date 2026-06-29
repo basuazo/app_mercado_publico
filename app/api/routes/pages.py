@@ -1,10 +1,12 @@
-"""Rutas HTML: dashboard, detalle oportunidad, perfiles, admin, salud."""
+"""Rutas HTML: dashboard, detalle oportunidad, perfiles, admin, salud, plan anual."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -19,6 +21,7 @@ from app.api.deps import (
     html_require_user,
 )
 from app.api.query import (
+    buscar_instituciones_pac,
     check_oportunidad_access,
     detalle_competencia,
     get_oportunidades_usuario,
@@ -29,6 +32,7 @@ from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
+from app.ingest.plan_compra import get_plan, sync_instituciones_pac
 from app.matching.perfiles import (
     PerfilInvalido,
     actualizar_perfil,
@@ -45,9 +49,11 @@ from app.matching.seguimiento import (
 )
 from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
 from app.models.seeds import REGIONES
-from app.models.tables import CompraAgil, Licitacion, Usuario
+from app.models.tables import CompraAgil, InstitucionPAC, Licitacion, PlanCompraLinea, Usuario
 
 router = APIRouter()
+_TZ_CHILE = ZoneInfo("America/Santiago")
+_PAC_PAGE_SIZE = 100
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
@@ -593,4 +599,68 @@ async def salud_get(
         request,
         "salud.html",
         _ctx(request, user, salud=data),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Plan Anual de Compra (F-plan) — consulta pública, sin scoping de ownership
+# ---------------------------------------------------------------------------
+
+
+@router.get("/plan-anual", response_class=HTMLResponse)
+async def plan_anual_get(
+    request: Request,
+    institucion: str = "",
+    codigo_entidad: str = "",
+    agno: str = "",
+    pagina: int = 1,
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    settings = request.app.state.settings
+    sync_instituciones_pac(session, settings)
+
+    anio_actual = datetime.now(_TZ_CHILE).year
+    anios_disponibles = list(range(settings.plan_compra_anio_inicio, anio_actual + 1))
+
+    agno_int = int(agno) if agno.strip().isdigit() else anio_actual
+    codigo_entidad_int = int(codigo_entidad) if codigo_entidad.strip().isdigit() else None
+
+    sugerencias = buscar_instituciones_pac(session, institucion) if institucion.strip() else []
+
+    institucion_seleccionada: InstitucionPAC | None = None
+    lineas_totales: list[PlanCompraLinea] = []
+    sin_plan = False
+    if codigo_entidad_int is not None:
+        institucion_seleccionada = session.get(InstitucionPAC, codigo_entidad_int)
+        resultado = get_plan(session, settings, codigo_entidad_int, agno_int)
+        sin_plan = resultado.estado == "sin_plan"
+        lineas_totales = resultado.lineas
+
+    total_estimado = sum(linea.monto_estimado_clp or 0.0 for linea in lineas_totales)
+    total_filas = len(lineas_totales)
+    total_paginas = max(1, (total_filas + _PAC_PAGE_SIZE - 1) // _PAC_PAGE_SIZE)
+    pagina = max(1, min(pagina, total_paginas))
+    offset = (pagina - 1) * _PAC_PAGE_SIZE
+    lineas_pagina = lineas_totales[offset : offset + _PAC_PAGE_SIZE]
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "plan_anual.html",
+        _ctx(
+            request,
+            user,
+            institucion_texto=institucion,
+            sugerencias=sugerencias,
+            codigo_entidad=codigo_entidad_int,
+            institucion_seleccionada=institucion_seleccionada,
+            agno=agno_int,
+            anios_disponibles=anios_disponibles,
+            sin_plan=sin_plan,
+            lineas=lineas_pagina,
+            total_filas=total_filas,
+            total_estimado=total_estimado,
+            pagina=pagina,
+            total_paginas=total_paginas,
+        ),
     )

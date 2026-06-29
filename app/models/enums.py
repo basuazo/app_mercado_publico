@@ -122,3 +122,29 @@ def estado_ca(valor: object) -> EstadoOportunidad:
         _log.warning("Estado CA sin mapeo: %r", valor)
         return EstadoOportunidad.DESCONOCIDO
     return estado
+
+
+class EstadoPlanificacionPAC(enum.StrEnum):
+    """Estado de una línea del Plan Anual de Compra — dominio propio (F-plan),
+    distinto de EstadoOportunidad: no hay relación licitación/OC/CA aquí."""
+
+    PUBLICADO = "publicado"
+    DESCONOCIDO = "desconocido"
+
+
+# En el spike (docs/07-plan-anual.md §5-bis c) el 100 % de las filas observadas
+# vino como "Publicado" — cualquier otro valor futuro se trata como desconocido.
+_MAP_PLANIFICACION_PAC: dict[str, EstadoPlanificacionPAC] = {
+    "publicado": EstadoPlanificacionPAC.PUBLICADO,
+}
+
+
+def estado_planificacion_pac(valor: object) -> EstadoPlanificacionPAC:
+    if not isinstance(valor, str):
+        _log.warning("Estado planificación PAC no es string: %r", valor)
+        return EstadoPlanificacionPAC.DESCONOCIDO
+    estado = _MAP_PLANIFICACION_PAC.get(valor.lower().strip())
+    if estado is None:
+        _log.warning("Estado planificación PAC sin mapeo: %r", valor)
+        return EstadoPlanificacionPAC.DESCONOCIDO
+    return estado

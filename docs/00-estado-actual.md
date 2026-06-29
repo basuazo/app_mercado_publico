@@ -16,8 +16,9 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   (perfiles con regiones/montos/exclusiones, **rubros UNSPSC**, **organismos seguidos**,
   recall+score unificados en FTS con stemming), **F-rubros** (ítems desde datos abiertos
   sin gastar cuota), **F-seguir** (seguir/archivar + alertas de avance), **F-competencia**
-  (análisis de competencia al adjudicarse), F-deploy.
-- Suite: ~403 tests verdes en el run "plano" (sin DATABASE_URL).
+  (análisis de competencia al adjudicarse), **F-plan** (consulta del Plan Anual de Compra,
+  pestaña separada, on-demand), F-deploy.
+- Suite: 422 tests verdes (21 skipped) en el run "plano".
 
 ## Qué hace hoy
 Descubrir oportunidades por keyword/región/**rubro UNSPSC**/organismo; ver ficha
@@ -63,7 +64,6 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
 - **F-datos:** catálogo de compradores clasificados → organismos buscables (multi-select).
-- **F-plan:** pestaña Plan Anual de Compra (consulta; requiere mini-spike de formato).
 - **F10 UX:** acordeón de rubros con súper-categorías seleccionables, multi-select de
   organismos, y fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`).
 - **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM).
@@ -73,6 +73,6 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - `00-estado-actual.md` (este) · `01-analisis-api-mercado-publico.md` (contrato/gotchas API)
 - `02-plan-desarrollo-y-auditoria.md` · `03-roadmap.md` (historial de fases + pendientes)
 - `04-datos-abiertos.md` (lic-da: ítems/UNSPSC) · `05-competencia.md` (ofertas/ganador)
-- `arquitectura.md` · `despliegue.md` · `operacion.md`
+- `07-plan-anual.md` (PAC: spike + veredicto) · `arquitectura.md` · `despliegue.md` · `operacion.md`
 
 *Reglas duras del proyecto (API, free tier, multiusuario, arquitectura): ver `CLAUDE.md`.*
