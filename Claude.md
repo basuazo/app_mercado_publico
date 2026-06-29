@@ -65,3 +65,18 @@ passlib[bcrypt] + cookies firmadas, pytest + respx, ruff + mypy + pre-commit.
 - Commits en español con prefijo de fase: "F3: ingesta incremental de Compra Ágil".
 - No agregar dependencias fuera del stack sin proponer y justificar primero.
 ```
+
+## Investigación y verificación — reglas duras (NO negociables)
+20. No afirmar un NEGATIVO ("no existe / no está / no se puede / no está en datos
+    abiertos") sin haber consultado la FUENTE PRIMARIA directamente. Ausencia de
+    evidencia ≠ evidencia de ausencia.
+21. Para "¿existe X en la fuente Y?", ir al índice/listado de la propia Y, no a un
+    documento secundario que la menciona de pasada (ej.: el spike de licitaciones
+    NO es un inventario del portal de datos abiertos).
+22. SPA + WebFetch devuelve cascarón vacío → escalar al navegador real (render con
+    JS) ANTES de concluir; nunca cerrar una pregunta desde el cascarón. Las URLs
+    reales suelen estar en el bundle JS público (ver docs/04-datos-abiertos.md §0).
+23. Marcar confianza: distinguir lo VERIFICADO de lo INFERIDO. Un negativo no
+    verificado no se escribe como hecho ni se propaga a docs/prompts. Cualquier
+    afirmación que cambie una decisión de arquitectura se verifica en la fuente
+    antes de quedar escrita.
