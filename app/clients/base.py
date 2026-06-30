@@ -193,8 +193,14 @@ class BaseClient:
                 retry_after_seconds=secs,
             )
         if response.status_code >= 500:
+            # Cuerpo crudo truncado: la API a veces trae un mensaje útil en el
+            # envelope de error (ver docs/09-compra-agil-500.md). El ticket nunca
+            # viaja en el body (es header de request), pero igual pasa por el
+            # _SecretFilter del logger raíz como cualquier otro mensaje.
+            cuerpo = response.text[:500]
+            _log.warning("HTTP %s body=%s", response.status_code, cuerpo)
             raise MPServerError(
-                f"Error del servidor ({response.status_code})",
+                f"Error del servidor ({response.status_code}): {cuerpo}",
                 status_code=response.status_code,
             )
         try:

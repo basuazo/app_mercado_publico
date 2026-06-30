@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.clients.base import MPRateLimitError
+from app.clients.base import MPRateLimitError, MPServerError
 from app.clients.types import (
     CompraAgilBasica,
     LicitacionBasica,
@@ -557,6 +557,32 @@ class TestSyncIncrementalCA:
         # La llamada debe incluir cambio_desde = cursor - 5 min (naive UTC)
         esperado = (cursor_dt - timedelta(minutes=5)).replace(tzinfo=None)
         assert cambio_desde == esperado
+        # ... y el filtro de estado va junto con cambio_desde, no en su lugar.
+        assert primera_llamada.kwargs.get("estados")
+
+    def test_arranque_en_frio_siempre_manda_filtro_de_estado(self, session, settings):
+        """Cursor NULL (primera corrida): la API real responde 500 si la request
+        sale sin ningún filtro (docs/09-compra-agil-500.md). El mock reproduce ese
+        contrato — solo "responde 200" si llega `estados` o `cambio_desde` — para
+        blindar la regresión: si sync_incremental volviera a salir "pelado", este
+        test fallaría con el mismo MPServerError que la API real."""
+
+        def listar(
+            *, cambio_desde: datetime | None = None, estados: list[str] | None = None, **kwargs: Any
+        ) -> RespuestaListadoV2:
+            if not estados and cambio_desde is None:
+                raise MPServerError("500 ERROR_INTERNO simulando API sin filtro", status_code=500)
+            return _paginar([], 1, 1)
+
+        v2 = MagicMock()
+        v2.listar_compra_agil.side_effect = listar
+
+        result = sync_incremental(session, v2, settings)
+
+        assert result == {"nuevas": 0, "actualizadas": 0, "descartadas": 0}
+        primera_llamada = v2.listar_compra_agil.call_args_list[0]
+        assert primera_llamada.kwargs.get("estados")
+        assert primera_llamada.kwargs.get("cambio_desde") is None
 
 
 # ---------------------------------------------------------------------------

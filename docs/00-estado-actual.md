@@ -25,7 +25,7 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   rediseñada** con cabecera escaneable, competencia con oferentes que NO ganaron, rubro en
   ítems, y los mismos botones de feedback; **mail de match enlaza a la ficha de la app**
   (ya no a la URL no autorizada de MP) — **F10 COMPLETA**), F-deploy.
-- Suite: 473 tests verdes (21 skipped) en el run "plano".
+- Suite: 476 tests verdes (21 skipped) en el run "plano".
 - F10/perfiles, F10/dashboard y F10/ficha: verificados server-side (TestClient con ciclo ASGI
   completo + servidor local real con login), **no** con un navegador real (sin herramienta de
   automatización disponible sin instalar dependencia nueva fuera del stack) — recomendado un
@@ -61,6 +61,12 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - **Crons** (cron-job.org): pinger a `/api/salud/ping` (keep-alive) + `job=ca` horario +
   `job=all` nocturno (~02:00 Santiago). `job=all` ya incluye `datos-abiertos` y `competencia`.
   El endpoint `/api/jobs/run` es **POST** y exige header `X-Jobs-Token`.
+- **`job=ca` arreglado (era 500 persistente, ver `docs/09-compra-agil-500.md` y
+  `docs/03-roadmap.md`):** con cursor `NULL` la request a `/v2/compra-agil` salía sin
+  filtro real → la API responde 500 → cursor nunca avanzaba → bucle infinito de ERROR.
+  Fix: `sync_incremental` ahora manda siempre `estados` a la API. **Pendiente que Boris
+  verifique post-deploy** que el cron `ca` pasa de ERROR a OK en los logs de Render y que
+  aparecen Compras Ágiles en el dashboard (la primera corrida exitosa recién fija el cursor).
 - **Heal de datos tras deploy:** `POST /api/jobs/run?job=all` (o `activas`→`datos-abiertos`→`match`).
 - **EOL:** `.gitattributes` fuerza LF (`* text=auto eol=lf`). En esta sesión hubo un
   incidente de CRLF + archivos truncados en el working tree; se recuperó con `git restore .`

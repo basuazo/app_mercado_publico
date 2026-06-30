@@ -1,7 +1,7 @@
 # Spike — HTTP 500 en `GET /v2/compra-agil` (job `ca`)
 
 > Estado: **VERIFICADO** contra la API real (`api2.mercadopublico.cl`) el 2026-06-30.
-> Alcance: solo diagnóstico. No se modificó código de la app.
+> Causa raíz confirmada y **fix implementado** (§5) el mismo día.
 > MP_TICKET: nunca impreso ni pegado en este documento (regla 1).
 
 ---
@@ -172,31 +172,32 @@ no hay riesgo de fuga ahí).
 
 ---
 
-## 5. Fix recomendado (para implementar en un prompt aparte)
+## 5. Fix — IMPLEMENTADO
 
-**No tocar el formato de `cambio_desde`** — ya es válido en cualquiera de las 4 variantes
-probadas.
+**Estado: HECHO.** Se implementó la opción 1 (pasar `estados` siempre a la API), la
+recomendada en este spike por ser la más barata en cuota y la más fiel al diseño original
+de `docs/01`. Detalle completo en `docs/03-roadmap.md` ("Fix — Compra Ágil: 500 en
+arranque en frío"). Resumen:
 
-El fix real es en `app/ingest/compra_agil.py::sync_incremental`: cuando `cursor_dt is
-None` (primera corrida o recuperación tras fallo total), **nunca llamar a
-`listar_compra_agil` sin al menos un filtro real**. Dos opciones válidas, ambas
-verificadas con 200 en este spike:
+- `app/ingest/compra_agil.py::sync_incremental` manda **siempre**
+  `estados=sorted(_ESTADOS_VALIDOS)` a la API (combinado con `cambio_desde` cuando hay
+  cursor) — nunca sale una request solo con paginación.
+- `_filtros_listado` agrega una guarda defensiva: si alguna vez la combinación de
+  filtros fuera a salir vacía, aborta con `RuntimeError` **antes** de llamar a la API, en
+  vez de repetir el 500.
+- El filtro local de estado (`_aplicar_pagina`) se mantiene como defensa adicional, sin
+  cambios.
+- Mejora de §4 también implementada: `app/clients/base.py::_handle_response` ahora
+  loguea y propaga en el mensaje de `MPServerError` el cuerpo crudo de cualquier 5xx,
+  truncado a 500 caracteres.
+- Cubierto con tests respx/mock (`tests/test_ingest.py::TestSyncIncrementalCA`,
+  `tests/test_clients.py`): arranque en frío nunca sale sin filtro, cursor+estado van
+  juntos, y el cuerpo del 5xx aparece truncado en el log/excepción.
+- Sin migración de BD.
 
-1. **Pasar `estados=list(_ESTADOS_VALIDOS)` a la API** en vez de (o además de) filtrar
-   localmente, cuando no hay cursor. Esto además alinea con la recomendación original de
-   `docs/01` y reduce páginas/cuota gastada en estados que de todos modos se descartan
-   localmente (`desierta`, `cancelada`, `oc_emitida`).
-2. **Usar una fecha sentinela antigua como `cambio_desde`** (p. ej. una constante tipo
-   "inicio de la ingesta del proyecto") cuando `cursor_dt is None`, en vez de omitir el
-   parámetro. Mantiene el diseño actual de filtrar estado localmente, cambia menos código.
-
-Cualquiera de las dos rompe el bucle de fallo permanente. La opción 1 es la más barata en
-cuota (la API ya filtra, no hay que paginar por estados irrelevantes) y la más fiel al
-diseño original documentado; se recomienda esa salvo que haya una razón concreta para
-seguir filtrando estado solo localmente.
-
-Adicionalmente (independiente, baja prioridad): aplicar la mejora de §4 en `base.py` para
-que el próximo incidente similar no requiera repetir este spike manual.
+**Pendiente (operativo, no de código):** Boris debe verificar post-deploy que el cron
+`ca` pasa de ERROR a OK en los logs de Render, y que aparecen Compras Ágiles en el
+dashboard — la primera corrida exitosa es la que por fin fija el cursor.
 
 ---
 

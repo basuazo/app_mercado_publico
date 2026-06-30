@@ -267,6 +267,22 @@ plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el dis
   hizo clic-a-clic en un navegador. Recomendado probarlo a mano antes de dar por cerrado
   el look final.
 
+## Fix — Compra Ágil: 500 en arranque en frío — HECHO
+Spike + causa raíz en `docs/09-compra-agil-500.md`. `GET /v2/compra-agil` responde 500
+`ERROR_INTERNO` (persistente, 5/5) cuando la request sale sin **ningún filtro real**
+(solo paginación). `sync_incremental` solo mandaba `cambio_desde` cuando había cursor,
+así que con cursor `NULL` (arranque en frío, o tras cualquier corrida sin éxito total)
+la request salía "pelada" → 500 → el cursor nunca avanzaba → bucle de fallo permanente
+(el job `ca` quedaba en ERROR para siempre).
+Fix en `app/ingest/compra_agil.py::sync_incremental`: ahora manda **siempre**
+`estados=sorted(_ESTADOS_VALIDOS)` a la API (combinado con `cambio_desde` cuando hay
+cursor); `_filtros_listado` además aborta con `RuntimeError` antes de llamar a la API
+si alguna vez la request fuera a salir sin filtro real, como guarda contra regresión.
+El filtro local de estado se mantiene como defensa adicional. Mejora chica en
+`app/clients/base.py::_handle_response`: los 5xx ahora loguean (y propagan en el mensaje
+de `MPServerError`) el cuerpo crudo de la respuesta, truncado a 500 caracteres — acelera
+el próximo diagnóstico similar. Sin migración.
+
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
 `app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:

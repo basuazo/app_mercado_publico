@@ -18,8 +18,29 @@ from app.models.tables import CaProducto, CompraAgil, SyncState
 _log = get_logger(__name__)
 
 _FUENTE = "compra_agil"
-# Estados que se ingestan; el resto se descarta localmente (spec: filtrar después del API)
+# Estados que se ingestan. Se mandan también como filtro a la API (ver _filtros_listado):
+# /v2/compra-agil responde 500 si la request sale sin NINGÚN filtro real, y con cursor
+# NULL (arranque en frío) cambio_desde es None — así que el filtro de estado es lo que
+# garantiza que la request nunca salga "pelada" (docs/09-compra-agil-500.md).
+# El filtro local de estado se mantiene como defensa adicional por si la API cambia qué
+# acepta en el parámetro `estado`.
 _ESTADOS_VALIDOS = {"publicada", "cerrada", "proveedor_seleccionado"}
+
+
+def _filtros_listado(cambio_desde: datetime | None) -> list[str]:
+    """Devuelve los estados a filtrar en la API y valida que la request no salga "pelada".
+
+    Garantiza que listar_compra_agil SIEMPRE reciba al menos un filtro real (estado,
+    y cambio_desde si hay cursor) — nunca solo paginación, que es la combinación que
+    dispara el 500 documentado en docs/09-compra-agil-500.md.
+    """
+    estados = sorted(_ESTADOS_VALIDOS)
+    if not estados and cambio_desde is None:
+        raise RuntimeError(
+            "sync_incremental CA: la request de listado saldría sin filtro real "
+            "(ver docs/09-compra-agil-500.md) — abortando antes de llamar a la API"
+        )
+    return estados
 
 
 def _ahora() -> datetime:
@@ -129,10 +150,12 @@ def sync_incremental(
     exitoso = False
 
     try:
+        estados_filtro = _filtros_listado(cambio_desde)
         pagina = 1
         while True:
             resp = v2_client.listar_compra_agil(
                 cambio_desde=cambio_desde,
+                estados=estados_filtro,
                 tamano_pagina=50,
                 numero_pagina=pagina,
             )

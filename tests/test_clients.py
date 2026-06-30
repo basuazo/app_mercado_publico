@@ -330,6 +330,35 @@ def test_v1_5xx_maximo_2_intentos(settings_fake, mem_engine):
 
 
 @respx.mock
+def test_v2_5xx_cuerpo_crudo_en_log_y_excepcion(settings_fake, mem_engine, caplog):
+    """500 → el cuerpo crudo de la API (truncado) aparece en el log y en el mensaje
+    de MPServerError, para diagnosticar sin tener que reproducir manualmente
+    (docs/09-compra-agil-500.md §4)."""
+    cuerpo = (
+        '{"success": "ERROR", "trace": null, "payload": null, '
+        '"errors": [{"codigo": "ERROR_INTERNO", '
+        '"mensaje": "Servicio no disponible, intente nuevamente más tarde", "detalle": ""}]}'
+    )
+    respx.get(_V2_BASE + "/v2/compra-agil").mock(return_value=httpx.Response(500, text=cuerpo))
+    client = _v2_client(settings_fake, mem_engine)
+    with caplog.at_level(logging.WARNING), patch("time.sleep"), pytest.raises(MPServerError) as exc_info:
+        client.listar_compra_agil()
+    assert "ERROR_INTERNO" in str(exc_info.value)
+    assert any("ERROR_INTERNO" in r.getMessage() for r in caplog.records)
+
+
+@respx.mock
+def test_v2_5xx_cuerpo_se_trunca_a_500_chars(settings_fake, mem_engine):
+    """Un cuerpo de error largo no se cuela completo en la excepción — se trunca."""
+    cuerpo_largo = "x" * 2000
+    respx.get(_V2_BASE + "/v2/compra-agil").mock(return_value=httpx.Response(500, text=cuerpo_largo))
+    client = _v2_client(settings_fake, mem_engine)
+    with patch("time.sleep"), pytest.raises(MPServerError) as exc_info:
+        client.listar_compra_agil()
+    assert len(str(exc_info.value)) < len(cuerpo_largo)
+
+
+@respx.mock
 def test_v1_5xx_transitorio_ok(settings_fake, mem_engine):
     """500 en primer intento, 200 en segundo → éxito con 2 intentos totales."""
     respx.get(_V1_BASE + "licitaciones.json").mock(
