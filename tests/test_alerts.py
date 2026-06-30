@@ -147,7 +147,7 @@ def _match(
     return m
 
 
-def _fake_settings(limit: int = 250) -> Any:
+def _fake_settings(limit: int = 250, app_base_url: str = "") -> Any:
     s = MagicMock()
     s.email_daily_limit = limit
     s.brevo_api_key = ""  # desactivado por defecto; tests Brevo lo sobreescriben
@@ -159,6 +159,7 @@ def _fake_settings(limit: int = 250) -> Any:
     s.mp_ticket = "TICKET_SECRETO"
     s.secret_key = "SECRET_KEY_SECRETO"
     s.jobs_token = "JOBS_TOKEN_SECRETO"
+    s.app_base_url = app_base_url
     return s
 
 
@@ -683,7 +684,7 @@ class TestPlantillaSinSecretos:
         ).scalar_one()
 
         settings = _fake_settings()
-        ctx = _ctx_alerta(a_loaded, session)
+        ctx = _ctx_alerta(a_loaded, session, settings)
 
         html = _jinja.get_template("alerta_inmediata.html").render(**ctx)
         txt = _jinja.get_template("alerta_inmediata.txt").render(**ctx)
@@ -715,7 +716,7 @@ class TestPlantillaSinSecretos:
         ).scalar_one()
 
         settings = _fake_settings()
-        items = [_ctx_alerta(a_loaded, session)]
+        items = [_ctx_alerta(a_loaded, session, settings)]
         html = _jinja.get_template("digest.html").render(items=items)
         txt = _jinja.get_template("digest.txt").render(items=items)
 
@@ -745,13 +746,53 @@ class TestPlantillaSinSecretos:
             )
         ).scalar_one()
 
-        ctx = _ctx_alerta(a_loaded, session)
+        ctx = _ctx_alerta(a_loaded, session, _fake_settings())
         for tpl in ("alerta_inmediata.html", "alerta_inmediata.txt", "digest.html", "digest.txt"):
             if "digest" in tpl:
                 rendered = _jinja.get_template(tpl).render(items=[ctx])
             else:
                 rendered = _jinja.get_template(tpl).render(**ctx)
             assert "Fuente: Dirección ChileCompra" in rendered
+
+
+class TestUrlFichaApp:
+    """La alerta de match (inmediata y digest) enlaza a la ficha de la app,
+    nunca a mercadopublico.cl (mismo patrón que la alerta de seguimiento)."""
+
+    def _ctx(self, session: Session, settings: Any) -> dict[str, Any]:
+        u = _user(session)
+        p = _perfil(session, u, FrecuenciaAlerta.INMEDIATA)
+        _lic(session)
+        m = _match(session, p, "LIC-001")
+        a = Alerta(match_id=m.id, tipo="nuevo_match", estado="pendiente")
+        session.add(a)
+        session.flush()
+
+        session.expire_all()
+        from sqlalchemy.orm import selectinload
+
+        a_loaded = session.execute(
+            select(Alerta)
+            .where(Alerta.id == a.id)
+            .options(
+                selectinload(Alerta.match)
+                .selectinload(OportunidadMatch.perfil)
+                .selectinload(PerfilBusqueda.owner)
+            )
+        ).scalar_one()
+        return _ctx_alerta(a_loaded, session, settings)
+
+    def test_url_usa_app_base_url_si_configurado(self, session: Session):
+        ctx = self._ctx(session, _fake_settings(app_base_url="https://app.test"))
+        assert ctx["url"] == "https://app.test/oportunidad/licitaciones/LIC-001"
+
+    def test_url_relativa_si_no_hay_app_base_url(self, session: Session):
+        ctx = self._ctx(session, _fake_settings(app_base_url=""))
+        assert ctx["url"] == "/oportunidad/licitaciones/LIC-001"
+
+    def test_url_no_apunta_a_mercadopublico(self, session: Session):
+        ctx = self._ctx(session, _fake_settings(app_base_url="https://app.test"))
+        assert "mercadopublico.cl" not in ctx["url"]
 
 
 # ---------------------------------------------------------------------------

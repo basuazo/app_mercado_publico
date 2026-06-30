@@ -23,9 +23,9 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   **dashboard rediseñado** con tarjetas escaneables, orden score/cierre, **descartar +
   registro de feedback** "me sirve"/"descarte" — señal para F11; **ficha de detalle
   rediseñada** con cabecera escaneable, competencia con oferentes que NO ganaron, rubro en
-  ítems, y los mismos botones de feedback; solo el **mail** de F10 queda pendiente),
-  F-deploy.
-- Suite: 470 tests verdes (21 skipped) en el run "plano".
+  ítems, y los mismos botones de feedback; **mail de match enlaza a la ficha de la app**
+  (ya no a la URL no autorizada de MP) — **F10 COMPLETA**), F-deploy.
+- Suite: 473 tests verdes (21 skipped) en el run "plano".
 - F10/perfiles, F10/dashboard y F10/ficha: verificados server-side (TestClient con ciclo ASGI
   completo + servidor local real con login), **no** con un navegador real (sin herramienta de
   automatización disponible sin instalar dependencia nueva fuera del stack) — recomendado un
@@ -80,9 +80,7 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - `test_jobs_run_job_ca`: skip (pega a la API real sin mock); migrar a respx.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
-- **F10 UX (resto, parte 4/4):** fix del mail de match (enlazar a la ficha de la app vía
-  `APP_BASE_URL`, no a la URL no autorizada de MP). Perfiles, dashboard y ficha ya quedaron
-  hechos.
+- **F10 UX:** COMPLETA (perfiles, dashboard, ficha y mail).
 - **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM) —
   la señal ya se registra en `MatchFeedback` (F10 parte 2), falta el modelo que la consuma.
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.

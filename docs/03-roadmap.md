@@ -134,9 +134,33 @@ resalta el RUT propio si está configurado en `/perfiles`.
   `fecha_publicacion`/`fecha_cierre` NULL — revisar el refresh de estados terminales.
 
 ## F10 — UX/UI
-**Estado: parcial — formulario de perfiles, dashboard y ficha HECHOS; mail pendiente.**
+**Estado: COMPLETA — perfiles, dashboard, ficha y mail.**
 (Tarea original nº1.) Enfoque: prototipo HTML iterado en el chat → aprobado → portado a
 plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el diseño visado.
+
+**Hecho — mail de match enlaza a la ficha de la app (parte 4/4, este commit):**
+- La alerta inmediata de match y el digest (`_ctx_alerta` en `app/alerts/email.py`) enlazaban
+  a la URL OFICIAL de MP (`_url_ficha`: RFB `DetailsAcquisition.aspx` / buscador compra-agil),
+  que da el error "No Pertenece a la unidad de la ficha" — la oficial exige sesión/unidad
+  correcta. Ahora usan `_url_ficha_app(settings, fuente, codigo)`, el mismo helper que ya
+  usaba la alerta de seguimiento (degrada a ruta relativa si `APP_BASE_URL` no está; nunca
+  rompe el envío).
+- `_ctx_alerta` ahora recibe `settings` (antes solo `alerta`/`session`) para poder construir
+  la URL de la app; ambos llamadores (`enviar_pendientes_inmediatas`, `enviar_digest`) ya
+  tenían `settings` disponible.
+- `_url_ficha` (la de `app/alerts/email.py`, distinta de la homónima en `app/api/query.py`
+  que sigue usándose para el botón condicional "Ver ficha oficial en MP" de la ficha — F8)
+  quedó sin uso tras el cambio y se eliminó.
+- Texto de `alerta_inmediata.html`: "Ver ficha en Mercado Público" → "Ver ficha" (ya no
+  promete MP). `alerta_inmediata.txt`, `digest.html`, `digest.txt` y `alerta_seguimiento.*`
+  ya decían "Ver ficha"/"Ver ficha en MP Oportunidades" genérico — sin cambio de texto.
+- Desde la ficha de la app el usuario sigue teniendo el botón condicional "Ver ficha oficial
+  en MP" (F8) cuando corresponde, así que no se pierde el acceso a MP — el correo solo deja
+  de mandarlos directo a una URL no autorizada/rota.
+- Sin migración. Tests nuevos (`TestUrlFichaApp` en `tests/test_alerts.py`, 3 casos: URL
+  absoluta con `APP_BASE_URL`, ruta relativa sin él, y que no apunte a `mercadopublico.cl`)
+  + los 3 tests existentes de `TestPlantillaSinSecretos` actualizados a la nueva firma de
+  `_ctx_alerta`. Suite completa: 473 passed, 21 skipped.
 
 **Hecho — ficha de detalle rediseñada (parte 3, este commit):**
 - Cabecera escaneable: bloque de score arriba a la derecha (mismo color por tramo que el
@@ -242,11 +266,6 @@ plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el dis
   `/perfiles` reales, catálogo real de 1.333 organismos sincronizado en vivo) — pero no se
   hizo clic-a-clic en un navegador. Recomendado probarlo a mano antes de dar por cerrado
   el look final.
-
-**Pendiente (fuera de este commit):**
-- Fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`, no a la URL no
-  autorizada de MP) — última parte de F10 (4/4).
-- Conviene seguir en sesiones separadas (una fase/commit por parte, regla de flujo).
 
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +

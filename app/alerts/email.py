@@ -115,15 +115,6 @@ def _fmt_fecha(dt: datetime | None) -> str:
     return dt.strftime("%d/%m/%Y %H:%M")
 
 
-def _url_ficha(fuente: str, codigo: str) -> str:
-    if fuente == "licitaciones":
-        return (
-            "https://www.mercadopublico.cl/Procurement/Modules/RFB/"
-            f"DetailsAcquisition.aspx?qs={codigo}"
-        )
-    return "https://buscador.mercadopublico.cl/compra-agil"
-
-
 def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, Any]:
     if fuente == "licitaciones":
         lic = session.get(Licitacion, codigo)
@@ -156,7 +147,7 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
     }
 
 
-def _ctx_alerta(alerta: Alerta, session: Session) -> dict[str, Any]:
+def _ctx_alerta(alerta: Alerta, session: Session, settings: Settings) -> dict[str, Any]:
     """Construye el contexto Jinja2 para una alerta individual de match."""
     match = alerta.match
     assert match is not None, "alerta de match sin match_id"
@@ -173,7 +164,7 @@ def _ctx_alerta(alerta: Alerta, session: Session) -> dict[str, Any]:
         "estado": op["estado"],
         "score": match.score,
         "razones": match.razones,
-        "url": _url_ficha(match.fuente, match.codigo_oportunidad),
+        "url": _url_ficha_app(settings, match.fuente, match.codigo_oportunidad),
         "owner_email": perfil.owner.email,
     }
 
@@ -396,7 +387,7 @@ def enviar_pendientes_inmediatas(session: Session, settings: Settings) -> dict[s
         if counter.remaining() <= 0:
             pospuestos += 1
             continue
-        ctx = _ctx_alerta(alerta, session)
+        ctx = _ctx_alerta(alerta, session, settings)
         subject = f"[MP] {ctx['tipo_alerta']}: {ctx['nombre'][:50]}"
         if _enviar_una(session, settings, counter, alerta, ctx["owner_email"], subject, "alerta_inmediata", ctx):
             enviados += 1
@@ -445,7 +436,7 @@ def enviar_digest(session: Session, settings: Settings) -> dict[str, int]:
             pospuestos += len(user_alertas)
             continue
 
-        items = [_ctx_alerta(a, session) for a in user_alertas]
+        items = [_ctx_alerta(a, session, settings) for a in user_alertas]
         n = len(items)
         subject = f"[MP] Resumen: {n} oportunidad{'es' if n != 1 else ''}"
         try:
