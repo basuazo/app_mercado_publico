@@ -56,7 +56,15 @@ from app.matching.seguimiento import (
 )
 from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
 from app.models.seeds import REGIONES
-from app.models.tables import CompraAgil, InstitucionPAC, Licitacion, PlanCompraLinea, Usuario
+from app.models.tables import (
+    CaProducto,
+    CompraAgil,
+    InstitucionPAC,
+    Licitacion,
+    LicitacionItem,
+    PlanCompraLinea,
+    Usuario,
+)
 
 router = APIRouter()
 _log = get_logger(__name__)
@@ -191,17 +199,29 @@ async def oportunidad_detalle(
         competencia_detalle = detalle_competencia(session, codigo)
 
     # Datos enriquecidos para la ficha
-    items: list[Any]
+    items_raw: list[LicitacionItem] | list[CaProducto]
     organismo: str | None
     region_nombre: str | None
     if isinstance(op, Licitacion):
-        items = list(op.items)
+        items_raw = list(op.items)
         organismo = op.codigo_organismo
         region_nombre = None
     else:
-        items = list(op.productos)
+        items_raw = list(op.productos)
         organismo = op.organismo_nombre
         region_nombre = nombre_region(op.region)
+
+    items = [
+        {
+            "nombre": it.nombre,
+            "cantidad": it.cantidad,
+            "unidad": it.unidad,
+            "rubro": nombre_rubro(it.codigo_producto) if it.codigo_producto else None,
+        }
+        for it in items_raw
+    ]
+
+    feedback_item = get_item_oportunidad(session, user.id, fuente, codigo)
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -219,6 +239,7 @@ async def oportunidad_detalle(
             region_nombre=region_nombre,
             razones=razones_legibles(match.razones),
             seguimiento=seguimiento,
+            feedback_item=feedback_item,
             competencia_resumen=competencia_resumen,
             competencia_detalle=competencia_detalle,
         ),
@@ -243,16 +264,23 @@ def _render_card_partial(
     session: Session,
     fuente: str,
     codigo: str,
+    *,
+    origen: str = "dashboard",
 ) -> HTMLResponse:
-    """Re-renderiza la tarjeta de una oportunidad (acción rápida HTMX desde el
-    dashboard). Vacío si el usuario perdió acceso entretanto (regla 17)."""
+    """Re-renderiza el estado de una oportunidad tras una acción HTMX rápida.
+
+    `origen="dashboard"` (default) re-renderiza la tarjeta completa del feed;
+    `origen="ficha"` re-renderiza solo la fila de botones de feedback de la
+    ficha de detalle (`_ficha_acciones.html`) — son layouts distintos, no la
+    misma tarjeta. Vacío si el usuario perdió acceso entretanto (regla 17)."""
     item = get_item_oportunidad(session, user.id, fuente, codigo)
     if item is None:
         return HTMLResponse(content="", status_code=200)
     settings = request.app.state.settings
     csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
+    template = "_ficha_acciones_partial.html" if origen == "ficha" else "_card_partial.html"
     return _TEMPLATES.TemplateResponse(
-        request, "_card_partial.html", {"item": item, "csrf_token": csrf_token}
+        request, template, {"item": item, "csrf_token": csrf_token}
     )
 
 
@@ -285,6 +313,7 @@ async def oportunidad_me_sirve(
     fuente: str,
     codigo: str,
     next: str = Form(""),
+    origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -297,7 +326,7 @@ async def oportunidad_me_sirve(
     alternar_me_sirve(session, user.id, fuente, codigo)
     session.commit()
     if _es_htmx(request):
-        return _render_card_partial(request, user, session, fuente, codigo)
+        return _render_card_partial(request, user, session, fuente, codigo, origen=origen)
     return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
 
 
@@ -307,19 +336,24 @@ async def oportunidad_descartar(
     fuente: str,
     codigo: str,
     next: str = Form(""),
+    origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
-    """Descartar (F10 parte 2): registra feedback NEGATIVO y oculta el match
-    del feed (reversible vía /descartadas). Distinto de archivar (solo aplica
-    a seguidas)."""
+    """Descartar (F10 parte 2): registra feedback NEGATIVO. En el dashboard
+    oculta el match del feed (reversible vía /descartadas); en la ficha
+    (`origen=ficha`) no tiene sentido ocultar la página completa, así que
+    re-renderiza la fila de botones reflejando el nuevo estado. Distinto de
+    archivar (solo aplica a seguidas)."""
     check_csrf(request, csrf_token)
     if check_oportunidad_access(session, user.id, fuente, codigo) is None:
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
     marcar_descarte(session, user.id, fuente, codigo)
     session.commit()
     if _es_htmx(request):
+        if origen == "ficha":
+            return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
         # 200 con cuerpo vacío, no 204: htmx no swapea en absoluto ante un 204.
         return HTMLResponse(content="", status_code=200)
     return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
@@ -331,6 +365,7 @@ async def oportunidad_deshacer_descarte(
     fuente: str,
     codigo: str,
     next: str = Form(""),
+    origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -342,6 +377,8 @@ async def oportunidad_deshacer_descarte(
         raise HTTPException(status_code=404, detail="Descarte no encontrado")
     session.commit()
     if _es_htmx(request):
+        if origen == "ficha":
+            return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
         return HTMLResponse(content="", status_code=200)
     return RedirectResponse(url=_safe_next(next, "/descartadas"), status_code=303)
 

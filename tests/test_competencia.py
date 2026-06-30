@@ -426,10 +426,40 @@ class TestResumenCompetencia:
         session.commit()
 
         resumen = resumen_competencia(session, "LIC-A")
-        assert len(resumen) == 1
+        # incluye también al no-ganador (Prov A): panorama competitivo completo
+        assert len(resumen) == 2
         assert resumen[0]["rut_proveedor"] == "2-7"
+        assert resumen[0]["items_ofertados"] == 2
         assert resumen[0]["items_ganados"] == 2
         assert resumen[0]["total_adjudicado"] == 6500000.0
+        assert resumen[1]["rut_proveedor"] == "1-9"
+        assert resumen[1]["items_ofertados"] == 1
+        assert resumen[1]["items_ganados"] == 0
+        assert resumen[1]["total_adjudicado"] == 0.0
+
+    def test_incluye_no_ganadores(self, session):
+        """Proveedor que ofertó pero no ganó ningún ítem: items_ofertados>0,
+        items_ganados=0, total_adjudicado=0 — no desaparece del resumen."""
+        session.add_all(
+            [
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-1",
+                    rut_proveedor="PERDEDOR",
+                    nombre_proveedor="Perdedor",
+                    monto_linea_adjudicada=0,
+                    seleccionada=False,
+                ),
+            ]
+        )
+        session.commit()
+
+        resumen = resumen_competencia(session, "LIC-A")
+        assert len(resumen) == 1
+        assert resumen[0]["rut_proveedor"] == "PERDEDOR"
+        assert resumen[0]["items_ofertados"] == 1
+        assert resumen[0]["items_ganados"] == 0
+        assert resumen[0]["total_adjudicado"] == 0.0
 
     def test_orden_descendente_por_total(self, session):
         session.add_all(
@@ -456,6 +486,72 @@ class TestResumenCompetencia:
 
         resumen = resumen_competencia(session, "LIC-A")
         assert [r["rut_proveedor"] for r in resumen] == ["B", "A"]
+
+    def test_ganadores_antes_que_no_ganadores_aunque_no_ganador_oferte_mas(self, session):
+        """Ganadores siempre primero, sin importar items_ofertados del no-ganador."""
+        session.add_all(
+            [
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-1",
+                    rut_proveedor="GANADOR",
+                    nombre_proveedor="Ganador",
+                    monto_linea_adjudicada=100,
+                    seleccionada=True,
+                ),
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-2",
+                    rut_proveedor="PERDEDOR",
+                    nombre_proveedor="Perdedor",
+                    monto_linea_adjudicada=0,
+                    seleccionada=False,
+                ),
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-3",
+                    rut_proveedor="PERDEDOR",
+                    nombre_proveedor="Perdedor",
+                    monto_linea_adjudicada=0,
+                    seleccionada=False,
+                ),
+            ]
+        )
+        session.commit()
+
+        resumen = resumen_competencia(session, "LIC-A")
+        assert [r["rut_proveedor"] for r in resumen] == ["GANADOR", "PERDEDOR"]
+
+    def test_no_ganadores_ordenados_por_items_ofertados_desc(self, session):
+        session.add_all(
+            [
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-1",
+                    rut_proveedor="MENOS",
+                    nombre_proveedor="Menos",
+                    seleccionada=False,
+                ),
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-2",
+                    rut_proveedor="MAS",
+                    nombre_proveedor="Mas",
+                    seleccionada=False,
+                ),
+                OfertaCompetencia(
+                    licitacion_codigo="LIC-A",
+                    codigo_item="ITEM-3",
+                    rut_proveedor="MAS",
+                    nombre_proveedor="Mas",
+                    seleccionada=False,
+                ),
+            ]
+        )
+        session.commit()
+
+        resumen = resumen_competencia(session, "LIC-A")
+        assert [r["rut_proveedor"] for r in resumen] == ["MAS", "MENOS"]
 
     def test_sin_ofertas_retorna_vacio(self, session):
         assert resumen_competencia(session, "LIC-NOPE") == []

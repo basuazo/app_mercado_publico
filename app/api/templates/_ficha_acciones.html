@@ -1,0 +1,39 @@
+{% macro ficha_acciones(item, csrf_token) %}
+{% set fuente = item.match.fuente %}
+{% set codigo = item.match.codigo_oportunidad %}
+<span id="ficha-acciones-feedback" class="d-inline-block">
+  <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+        hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+        hx-target="#ficha-acciones-feedback" hx-swap="outerHTML" class="d-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ codigo }}">
+    <input type="hidden" name="origen" value="ficha">
+    {% if item.feedback == "sirve" %}
+    <button type="submit" class="btn btn-success">Me sirve</button>
+    {% else %}
+    <button type="submit" class="btn btn-outline-success">Me sirve</button>
+    {% endif %}
+  </form>
+
+  {% if item.feedback == "descarte" %}
+  <span class="text-muted small ms-2 me-1">Descartada</span>
+  <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/deshacer-descarte"
+        hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/deshacer-descarte"
+        hx-target="#ficha-acciones-feedback" hx-swap="outerHTML" class="d-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ codigo }}">
+    <input type="hidden" name="origen" value="ficha">
+    <button type="submit" class="btn btn-outline-secondary">Restaurar</button>
+  </form>
+  {% else %}
+  <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+        hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+        hx-target="#ficha-acciones-feedback" hx-swap="outerHTML" class="d-inline ms-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ codigo }}">
+    <input type="hidden" name="origen" value="ficha">
+    <button type="submit" class="btn btn-outline-danger">Descartar</button>
+  </form>
+  {% endif %}
+</span>
+{% endmacro %}

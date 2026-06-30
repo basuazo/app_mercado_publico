@@ -21,11 +21,13 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   datos abiertos sin ticket — alcance acotado, ver roadmap), **F10 (parcial)** (formulario
   de `/perfiles` rediseñado: rubros en acordeón, organismos en multi-select por sector;
   **dashboard rediseñado** con tarjetas escaneables, orden score/cierre, **descartar +
-  registro de feedback** "me sirve"/"descarte" — señal para F11; ficha/mail de F10 siguen
-  pendientes), F-deploy.
-- Suite: 458 tests verdes (21 skipped) en el run "plano".
-- F10/perfiles y F10/dashboard: verificados server-side (TestClient con ciclo ASGI completo
-  + servidor local real con login), **no** con un navegador real (sin herramienta de
+  registro de feedback** "me sirve"/"descarte" — señal para F11; **ficha de detalle
+  rediseñada** con cabecera escaneable, competencia con oferentes que NO ganaron, rubro en
+  ítems, y los mismos botones de feedback; solo el **mail** de F10 queda pendiente),
+  F-deploy.
+- Suite: 470 tests verdes (21 skipped) en el run "plano".
+- F10/perfiles, F10/dashboard y F10/ficha: verificados server-side (TestClient con ciclo ASGI
+  completo + servidor local real con login), **no** con un navegador real (sin herramienta de
   automatización disponible sin instalar dependencia nueva fuera del stack) — recomendado un
   vistazo manual a la interactividad JS/HTMX antes de dar el look final por cerrado.
 - **Pendiente operativo:** la migración `e1f4a7c9b2d6` (tabla `match_feedback`, F10 parte 2)
@@ -69,17 +71,18 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
   ser `Session(bind=conn)` (da 4 errors al correr `@needs_postgres`).
 - `test_match_todos_procesa_todos_perfiles` no se aísla (cuenta perfiles globales de la BD).
 - Branch `dev` tiene perfiles/seguimientos/matches de prueba (ids ~49–52) de la validación → limpiar.
-- Análisis de competencia: el badge "Adjudicatario" sale en todas las filas del resumen
-  (redundante; el resumen solo lista ganadores). Mejora futura: incluir también oferentes
-  que NO ganaron, para el panorama competitivo completo.
+- ~~Análisis de competencia: badge "Adjudicatario" en todas las filas; resumen solo lista
+  ganadores~~ — **resuelto en F10 parte 3**: `resumen_competencia` ahora incluye también a
+  quienes ofertaron y no ganaron (`items_ofertados`/`items_ganados`/`total_adjudicado` por
+  proveedor), y el badge "Ganó" solo aparece en la(s) fila(s) ganadora(s).
 - Adjudicadas en BD con `fecha_publicacion`/`fecha_cierre` NULL (calidad de datos; revisar
   el refresh de estados terminales).
 - `test_jobs_run_job_ca`: skip (pega a la API real sin mock); migrar a respx.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
-- **F10 UX (resto):** rediseño de la ficha de detalle, y fix del mail de match (enlazar a la
-  ficha de la app vía `APP_BASE_URL`). El formulario de `/perfiles` y el dashboard
-  (tarjetas + descartar + feedback) ya quedaron hechos.
+- **F10 UX (resto, parte 4/4):** fix del mail de match (enlazar a la ficha de la app vía
+  `APP_BASE_URL`, no a la URL no autorizada de MP). Perfiles, dashboard y ficha ya quedaron
+  hechos.
 - **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM) —
   la señal ya se registra en `MatchFeedback` (F10 parte 2), falta el modelo que la consuma.
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.

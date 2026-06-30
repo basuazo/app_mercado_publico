@@ -134,11 +134,46 @@ resalta el RUT propio si está configurado en `/perfiles`.
   `fecha_publicacion`/`fecha_cierre` NULL — revisar el refresh de estados terminales.
 
 ## F10 — UX/UI
-**Estado: parcial — formulario de perfiles y dashboard HECHOS; ficha y mail pendientes.**
+**Estado: parcial — formulario de perfiles, dashboard y ficha HECHOS; mail pendiente.**
 (Tarea original nº1.) Enfoque: prototipo HTML iterado en el chat → aprobado → portado a
 plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el diseño visado.
 
-**Hecho — dashboard rediseñado + descartar + feedback (parte 2, este commit):**
+**Hecho — ficha de detalle rediseñada (parte 3, este commit):**
+- Cabecera escaneable: bloque de score arriba a la derecha (mismo color por tramo que el
+  dashboard), chips de estado/urgencia "cierra en Xd" (color por tramo) con fecha/hora, monto,
+  razones del match como chips (consistente con el dashboard) en vez de lista de viñetas.
+  Datos clave (organismo, región, publicación, ofertas) en formato definición (`<dl>`).
+- **Competencia con oferentes que NO ganaron** (`resumen_competencia` en `app/api/query.py`):
+  agrupa TODAS las ofertas por `rut_proveedor` (antes solo las `seleccionada=True`), expone
+  `items_ofertados`/`items_ganados`/`total_adjudicado` por proveedor. Orden: ganadores primero
+  por `total_adjudicado` desc, luego no-ganadores por `items_ofertados` desc. Resuelve la deuda
+  conocida del badge "Adjudicatario" repitiéndose en todas las filas: ahora el badge "Ganó"
+  sale **solo** en la(s) fila(s) con `items_ganados > 0`. Los datos ya existían
+  (`capturar_competencia` siempre guardó todas las ofertas, no solo las ganadoras) — cambio
+  solo de query + template, sin tocar la ingesta.
+- **Rubro en los ítems**: nueva columna en la tabla de ítems/productos, resuelta vía
+  `app.catalogos.unspsc.nombre_rubro(codigo_producto)` en la ruta (`oportunidad_detalle` en
+  `app/api/routes/pages.py`); "—" si no hay `codigo_producto` o no resuelve (p. ej. Compra Ágil
+  sin UNSPSC) — defensivo, regla 6.
+- **Feedback en la ficha**: botones "Me sirve"/"Descartar" junto a "Seguir", reusando las
+  mismas rutas de F10 parte 2 (`me-sirve`/`descartar`/`deshacer-descarte`) — sin rutas nuevas.
+  Como el contexto es distinto al dashboard (acá no tiene sentido ocultar la página completa
+  al descartar), las rutas ahora aceptan un campo `origen` (`"dashboard"` default | `"ficha"`):
+  en la ficha, HTMX re-renderiza solo la fila de botones (`_ficha_acciones.html`, vía
+  `_render_card_partial(..., origen="ficha")`) reflejando el estado ("Me sirve" resaltado,
+  o "Descartada" + "Restaurar"); en el dashboard el comportamiento (200 vacío para ocultar la
+  tarjeta) no cambió — verificado con test de regresión explícito.
+- Sin migración (no hay cambios de esquema en este commit).
+- No verificado en navegador real (mismo motivo que las partes anteriores de F10); verificado
+  end-to-end con la app real vía `TestClient` (ciclo ASGI completo, plantillas Jinja reales)
+  contra una BD sqlite descartable: cabecera, rubro resuelto/ausente, competencia con
+  ganador+no-ganador y RUT propio resaltado, toggle me-sirve y descartar vía HTMX con
+  `origen=ficha` reflejando estado — los 7 pasos verificados manualmente, además de 9 tests
+  nuevos (`tests/test_ficha_routes.py`) y los tests de competencia actualizados/extendidos
+  (`tests/test_competencia.py`, `tests/test_competencia_routes.py`) para la nueva forma del
+  resumen.
+
+**Hecho — dashboard rediseñado + descartar + feedback (parte 2):**
 - `index.html` rediseñado: tarjetas más escaneables vía macro `card_oportunidad`
   (`app/api/templates/_card_oportunidad.html`, reusada también para el partial HTMX) — bloque
   de score con color por tramo (≥80 verde, 50–79 ámbar, <50 gris), chip de urgencia "cierra en
@@ -209,9 +244,8 @@ plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el dis
   el look final.
 
 **Pendiente (fuera de este commit):**
-- Rediseño de la ficha de detalle de oportunidad.
 - Fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`, no a la URL no
-  autorizada de MP).
+  autorizada de MP) — última parte de F10 (4/4).
 - Conviene seguir en sesiones separadas (una fase/commit por parte, regla de flujo).
 
 ## F11 — Matching con feedback (like/dislike)

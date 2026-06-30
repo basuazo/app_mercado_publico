@@ -167,11 +167,11 @@ def test_ficha_con_ofertas_muestra_resumen_y_detalle(client, usuario, settings, 
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Análisis de competencia" in r.text
-    assert "Adjudicatario" in r.text
+    assert "Ganó" in r.text
     assert "Prov Ganador" in r.text
-    # El detalle por ítem (sección opcional) sí incluye también a los no ganadores.
-    assert "Ver detalle por ítem" in r.text
+    # El resumen ahora incluye también a quienes ofertaron y no ganaron.
     assert "Prov Perdedor" in r.text
+    assert "Ver detalle por ítem" in r.text
 
 
 def test_ficha_no_adjudicada_no_muestra_seccion_aunque_haya_ofertas(client, usuario, settings, engine):

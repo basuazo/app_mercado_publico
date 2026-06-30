@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ficha_acciones.html" import ficha_acciones %}
 {% block title %}{{ oportunidad.nombre }} — MP Oportunidades{% endblock %}
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -8,54 +9,64 @@
   </ol>
 </nav>
 
-<h2 class="mb-1">{{ oportunidad.nombre }}</h2>
-<p class="text-muted mb-3">
+{% set dias_al_cierre = feedback_item.dias_al_cierre if feedback_item else none %}
+
+<div class="d-flex justify-content-between align-items-start gap-3 mb-1 flex-wrap">
+  <h2 class="mb-0">{{ oportunidad.nombre }}</h2>
+  {% if match.score >= 80 %}
+  <span class="badge bg-success fs-5">{{ match.score | round(0) | int }}</span>
+  {% elif match.score >= 50 %}
+  <span class="badge bg-warning text-dark fs-5">{{ match.score | round(0) | int }}</span>
+  {% else %}
+  <span class="badge bg-secondary fs-5">{{ match.score | round(0) | int }}</span>
+  {% endif %}
+</div>
+<p class="text-muted mb-2">
   {% if fuente == 'licitaciones' %}Licitación{% else %}Compra Ágil{% endif %}
   — {{ oportunidad.codigo }}
 </p>
 
-<div class="row mb-4">
-  <div class="col-md-7">
-    <ul class="list-unstyled">
-      <li class="mb-1"><strong>Estado:</strong> {{ oportunidad.estado }}</li>
-      <li class="mb-1"><strong>Organismo:</strong> {{ organismo or '—' }}</li>
-      {% if region_nombre %}
-      <li class="mb-1"><strong>Región:</strong> {{ region_nombre }}</li>
-      {% endif %}
-      {% if oportunidad.fecha_publicacion %}
-      <li class="mb-1"><strong>Publicación:</strong> {{ oportunidad.fecha_publicacion.strftime('%d/%m/%Y') }}</li>
-      {% endif %}
-      {% if oportunidad.fecha_cierre %}
-      <li class="mb-1"><strong>Cierre:</strong> {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</li>
-      {% endif %}
-      {% if fuente == 'licitaciones' and oportunidad.monto_clp %}
-      <li class="mb-1"><strong>Monto estimado:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_clp) }}</li>
-      {% endif %}
-      {% if fuente == 'compras_agiles' %}
-      {% if oportunidad.monto_disponible_clp %}
-      <li class="mb-1"><strong>Monto disponible:</strong> ${{ '{:,.0f}'.format(oportunidad.monto_disponible_clp) }}</li>
-      {% endif %}
-      <li class="mb-1"><strong>Ofertas recibidas:</strong> {{ oportunidad.total_ofertas }}</li>
-      {% endif %}
-    </ul>
-  </div>
-  <div class="col-md-5">
-    <div class="card border-primary">
-      <div class="card-body">
-        <h5 class="card-title">Score de coincidencia</h5>
-        <p class="display-4 mb-2">{{ match.score | round(0) | int }}<small class="text-muted fs-6">/100</small></p>
-        {% if razones %}
-        <p class="mb-1 small fw-semibold">Por qué coincide:</p>
-        <ul class="small mb-0 ps-3">
-          {% for r in razones %}
-          <li>{{ r }}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+<div class="mb-3">
+  <span class="badge bg-light text-dark border me-1">{{ oportunidad.estado }}</span>
+  {% if dias_al_cierre is not none %}
+    {% if dias_al_cierre <= 3 %}
+    <span class="badge bg-danger me-1">cierra en {{ dias_al_cierre | round(0) | int }}d — {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</span>
+    {% elif dias_al_cierre <= 7 %}
+    <span class="badge bg-warning text-dark me-1">cierra en {{ dias_al_cierre | round(0) | int }}d — {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</span>
+    {% else %}
+    <span class="badge bg-light text-dark border me-1">cierra en {{ dias_al_cierre | round(0) | int }}d — {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</span>
+    {% endif %}
+  {% endif %}
+  {% set monto = oportunidad.monto_clp if fuente == 'licitaciones' else oportunidad.monto_disponible_clp %}
+  {% if monto %}
+  <span class="badge bg-light text-dark border me-1">${{ '{:,.0f}'.format(monto) }}</span>
+  {% endif %}
 </div>
+
+{% if razones %}
+<div class="mb-3">
+  {% for r in razones %}
+  <span class="badge bg-light text-dark border me-1 fw-normal">{{ r }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<dl class="row mb-4">
+  <dt class="col-sm-3">Organismo</dt>
+  <dd class="col-sm-9">{{ organismo or '—' }}</dd>
+  {% if region_nombre %}
+  <dt class="col-sm-3">Región</dt>
+  <dd class="col-sm-9">{{ region_nombre }}</dd>
+  {% endif %}
+  {% if oportunidad.fecha_publicacion %}
+  <dt class="col-sm-3">Publicación</dt>
+  <dd class="col-sm-9">{{ oportunidad.fecha_publicacion.strftime('%d/%m/%Y') }}</dd>
+  {% endif %}
+  {% if fuente == 'compras_agiles' %}
+  <dt class="col-sm-3">Ofertas recibidas</dt>
+  <dd class="col-sm-9">{{ oportunidad.total_ofertas }}</dd>
+  {% endif %}
+</dl>
 
 {% if oportunidad.descripcion %}
 <h5>Descripción</h5>
@@ -72,6 +83,7 @@
     <thead>
       <tr>
         <th>Descripción</th>
+        <th>Rubro</th>
         <th class="text-end">Cantidad</th>
         <th>Unidad</th>
       </tr>
@@ -80,6 +92,7 @@
       {% for it in items %}
       <tr>
         <td>{{ it.nombre }}</td>
+        <td>{{ it.rubro or '—' }}</td>
         <td class="text-end">{% if it.cantidad is not none %}{{ '{:,.0f}'.format(it.cantidad) }}{% else %}—{% endif %}</td>
         <td>{{ it.unidad or '—' }}</td>
       </tr>
@@ -100,6 +113,7 @@
       <tr>
         <th>Proveedor</th>
         <th>RUT</th>
+        <th class="text-end">Ítems ofertados</th>
         <th class="text-end">Ítems ganados</th>
         <th class="text-end">Total adjudicado</th>
       </tr>
@@ -107,8 +121,9 @@
     <tbody>
       {% for p in competencia_resumen %}
       <tr class="{% if current_user.rut_proveedor and p.rut_proveedor == current_user.rut_proveedor %}table-success{% endif %}">
-        <td>{{ p.nombre_proveedor }} <span class="badge bg-primary">Adjudicatario</span></td>
+        <td>{{ p.nombre_proveedor }}{% if p.items_ganados > 0 %} <span class="badge bg-primary">Ganó</span>{% endif %}</td>
         <td>{{ p.rut_proveedor }}</td>
+        <td class="text-end">{{ p.items_ofertados }}</td>
         <td class="text-end">{{ p.items_ganados }}</td>
         <td class="text-end">${{ '{:,.0f}'.format(p.total_adjudicado) }}</td>
       </tr>
@@ -187,6 +202,10 @@
     </form>
     {% endif %}
   </span>
+
+  {% if feedback_item %}
+  <span class="ms-2">{{ ficha_acciones(feedback_item, csrf_token) }}</span>
+  {% endif %}
 </div>
 <p class="text-muted small mt-3">Fuente: Dirección ChileCompra</p>
 {% endblock %}

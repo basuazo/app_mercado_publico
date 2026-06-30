@@ -1,5 +1,11 @@
 # Spike — Análisis de competencia desde datos abiertos (`lic-da`)
 
+> **Actualización (F10 parte 3):** la vista de la ficha (`resumen_competencia` en
+> `app/api/query.py`) ahora muestra también a los proveedores que ofertaron y NO ganaron
+> (antes el resumen filtraba solo `seleccionada=True`) — el dato ya estaba capturado por
+> `capturar_competencia` desde este spike, solo faltaba exponerlo. Ver `docs/03-roadmap.md`
+> (F10) para el detalle del cambio.
+
 > Spike de investigación, NO ingiere datos ni toca la BD/modelos. Objetivo: confirmar
 > si el archivo `lic-da` (mismo dataset que [docs/04-datos-abiertos.md](04-datos-abiertos.md))
 > permite reconstruir el análisis de competencia — quién ofertó, montos, quién ganó —

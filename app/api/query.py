@@ -319,15 +319,18 @@ def listar_descartadas_detalle(session: Session, user_id: int) -> list[dict[str,
 
 
 def resumen_competencia(session: Session, licitacion_codigo: str) -> list[dict[str, Any]]:
-    """Resumen de competencia por proveedor (F-competencia): total adjudicado
-    (suma de monto_linea_adjudicada de ofertas seleccionadas) e ítems ganados,
-    ordenado desc. Agrupa por rut_proveedor (más estable que el nombre, ver
-    docs/05-competencia.md §3). Vacío si no hay ofertas capturadas aún."""
+    """Resumen de competencia por proveedor (F-competencia), incluyendo a quienes
+    ofertaron pero NO ganaron — panorama competitivo completo, no solo ganadores
+    (ver deuda señalada en docs/00-estado-actual.md, resuelta en F10 parte 3).
+    Por proveedor: items_ofertados (cuántos ítems ofertó en total), items_ganados
+    (cuántos le fueron adjudicados) y total_adjudicado (suma de
+    monto_linea_adjudicada de sus ofertas seleccionadas). Agrupa por
+    rut_proveedor (más estable que el nombre, ver docs/05-competencia.md §3).
+    Orden: ganadores primero por total_adjudicado desc; no-ganadores después
+    por items_ofertados desc. Vacío si no hay ofertas capturadas aún."""
     ofertas = list(
         session.execute(
-            select(OfertaCompetencia)
-            .where(OfertaCompetencia.licitacion_codigo == licitacion_codigo)
-            .where(OfertaCompetencia.seleccionada.is_(True))
+            select(OfertaCompetencia).where(OfertaCompetencia.licitacion_codigo == licitacion_codigo)
         ).scalars()
     )
     por_proveedor: dict[str, dict[str, Any]] = {}
@@ -337,14 +340,23 @@ def resumen_competencia(session: Session, licitacion_codigo: str) -> list[dict[s
             {
                 "rut_proveedor": o.rut_proveedor,
                 "nombre_proveedor": o.nombre_proveedor,
-                "total_adjudicado": 0.0,
+                "items_ofertados": 0,
                 "items_ganados": 0,
+                "total_adjudicado": 0.0,
             },
         )
-        entry["total_adjudicado"] += o.monto_linea_adjudicada or 0.0
-        entry["items_ganados"] += 1
+        entry["items_ofertados"] += 1
+        if o.seleccionada:
+            entry["items_ganados"] += 1
+            entry["total_adjudicado"] += o.monto_linea_adjudicada or 0.0
     resumen = list(por_proveedor.values())
-    resumen.sort(key=lambda d: d["total_adjudicado"], reverse=True)
+    resumen.sort(
+        key=lambda d: (
+            d["items_ganados"] == 0,
+            -d["total_adjudicado"],
+            -d["items_ofertados"],
+        )
+    )
     return resumen
 
 
