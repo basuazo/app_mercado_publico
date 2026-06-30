@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -20,10 +22,23 @@ from app.models.tables import (
     OfertaCompetencia,
     OportunidadMatch,
     PerfilBusqueda,
+    SyncState,
     Usuario,
 )
 
 _PW = "contraseña-segura-test"
+_FUENTE_INSTITUCIONES = "plan_compra_instituciones"
+_FUENTE_SECTORES = "plan_compra_sectores"
+
+
+def _marcar_catalogo_organismos_fresco(engine) -> None:
+    """Evita que GET /perfiles (incl. vía redirect tras POST) dispare
+    sync_instituciones_pac/sync_sectores_organismos contra la red real (F10)."""
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+    with Session(engine) as s:
+        s.add(SyncState(fuente=_FUENTE_INSTITUCIONES, ultima_ejecucion=ahora, ultimo_ok=ahora))
+        s.add(SyncState(fuente=_FUENTE_SECTORES, ultima_ejecucion=ahora, ultimo_ok=ahora))
+        s.commit()
 
 
 @pytest.fixture()
@@ -196,7 +211,8 @@ def test_ficha_sin_rut_propio_no_resalta(client, usuario, settings, engine):
 # ---------------------------------------------------------------------------
 
 
-def test_guardar_rut_proveedor(client, usuario, settings):
+def test_guardar_rut_proveedor(client, usuario, settings, engine):
+    _marcar_catalogo_organismos_fresco(engine)
     cookies, headers = _session(settings, usuario)
     r = client.post(
         "/perfiles/rut-proveedor",
@@ -212,6 +228,7 @@ def test_guardar_rut_proveedor(client, usuario, settings):
 
 
 def test_guardar_rut_proveedor_vacio_limpia_el_campo(client, usuario, settings, engine):
+    _marcar_catalogo_organismos_fresco(engine)
     cookies, headers = _session(settings, usuario)
     client.post("/perfiles/rut-proveedor", data={"rut_proveedor": "76.123.456-7"}, cookies=cookies, headers=headers)
     client.post("/perfiles/rut-proveedor", data={"rut_proveedor": "   "}, cookies=cookies, headers=headers)

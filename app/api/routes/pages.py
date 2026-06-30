@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -25,6 +26,7 @@ from app.api.query import (
     check_oportunidad_access,
     detalle_competencia,
     get_oportunidades_usuario,
+    listar_organismos_catalogo,
     listar_seguidas_detalle,
     resumen_competencia,
 )
@@ -32,6 +34,7 @@ from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
+from app.core.logging import get_logger
 from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
 from app.matching.perfiles import (
     PerfilInvalido,
@@ -52,6 +55,7 @@ from app.models.seeds import REGIONES
 from app.models.tables import CompraAgil, InstitucionPAC, Licitacion, PlanCompraLinea, Usuario
 
 router = APIRouter()
+_log = get_logger(__name__)
 _TZ_CHILE = ZoneInfo("America/Santiago")
 _PAC_PAGE_SIZE = 100
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -352,6 +356,22 @@ async def perfiles_get(
     mensaje: str = "",
     error: str = "",
 ) -> HTMLResponse:
+    settings = request.app.state.settings
+    try:
+        sync_instituciones_pac(session, settings)
+        sync_sectores_organismos(session, settings)
+    except httpx.HTTPError:
+        # Catálogo de organismos (F-plan/F-datos) sin red disponible: degrada al
+        # input manual en vez de romper la página (regla 6). Si ya había caché
+        # de una corrida anterior, listar_organismos_catalogo igual la sirve.
+        _log.warning("perfiles_get: no se pudo sincronizar el catálogo de organismos", exc_info=True)
+
+    organismos_catalogo = listar_organismos_catalogo(session)
+    organismos_json = [
+        {"id": o.codigo_entidad, "nombre": o.razon_social, "sector": o.sector or "Sin clasificación"}
+        for o in organismos_catalogo
+    ]
+
     perfiles = listar_perfiles(session, user.id)
     rubros_por_perfil = {
         p.id: [nombre_rubro(c) or c for c in (p.categorias_unspsc or [])] for p in perfiles
@@ -367,6 +387,8 @@ async def perfiles_get(
             regiones_disponibles=REGIONES,
             rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
             rubros_por_perfil=rubros_por_perfil,
+            organismos_catalogo_disponible=bool(organismos_json),
+            organismos_json=organismos_json,
             mensaje=mensaje,
             error=error,
         ),

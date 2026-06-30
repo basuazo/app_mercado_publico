@@ -134,13 +134,46 @@ resalta el RUT propio si está configurado en `/perfiles`.
   `fecha_publicacion`/`fecha_cierre` NULL — revisar el refresh de estados terminales.
 
 ## F10 — UX/UI
-**Estado: pendiente.** (Tarea original nº1.) Incluye: rubros con súper-categorías
-seleccionables en acordeón, organismos como multi-select clasificado, y fix del mail
-(enlazar a la ficha de la app, no a la URL no autorizada de MP).
-- Rediseño de dashboard, ficha de detalle y formulario de perfiles.
-- Enfoque: prototipo HTML iterado en el chat → aprobado → portado a plantillas Jinja
-  (stack actual Bootstrap). No se toca código hasta tener el diseño visado.
-- Conviene hacerlo después de F9 (cuando los perfiles y resultados ya son más ricos).
+**Estado: parcial — formulario de perfiles HECHO; dashboard, ficha y mail pendientes.**
+(Tarea original nº1.) Enfoque: prototipo HTML iterado en el chat → aprobado → portado a
+plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el diseño visado.
+
+**Hecho — `/perfiles` (este commit):**
+- Tarjeta de RUT de proveedor reetiquetada como "Ajustes de tu cuenta" (sin cambios de
+  backend).
+- Rubros UNSPSC: acordeón Bootstrap por segmento (macro `rubros_widget` en
+  `perfiles.html`), checkbox "seleccionar todo el segmento" con estado indeterminado,
+  buscador en cliente, chips removibles. `name="categorias_unspsc"` sin cambios — el
+  backend ya aceptaba múltiples valores bajo ese nombre.
+- Organismos: multi-select buscable agrupado por sector (macro `organismos_widget`),
+  alimentado por `InstitucionPAC` (F-plan) + `sector`/`id_sector` (F-datos) vía
+  `listar_organismos_catalogo` (`app/api/query.py`). El catálogo (~1.333 organismos) se
+  emite **una sola vez** como `const MP_ORGANISMOS_CATALOGO` en JS y lo reusan todos los
+  widgets (nuevo + cada edición) — no se duplica en el DOM por formulario. Submit sigue
+  enviando `organismos_seguidos` como CSV de `codigo_entidad` por un input oculto; códigos
+  preexistentes que no están en el catálogo (legado) se muestran igual como chip con el
+  código crudo, sin perder datos.
+- `GET /perfiles` ahora invoca `sync_instituciones_pac` + `sync_sectores_organismos` (igual
+  que `/plan-anual`); sin red disponible, degrada al input de texto libre de organismos en
+  vez de romper la página (regla 6) — verificado con respx simulando `ConnectError` y,
+  en vivo, contra los endpoints reales (1.333 organismos, 8 sectores, ver
+  `docs/08-datos-organismos.md`).
+- Fuentes y regiones pasaron de checkboxes simples a toggles tipo pill (`btn-check`).
+- Sin migración (no hay cambios de esquema en este commit; `sector`/`id_sector` ya
+  existían desde F-datos).
+- **No verificado con un navegador real** (sin herramienta de automatización de browser
+  disponible en el entorno sin instalar una dependencia nueva, fuera del stack declarado):
+  la interactividad JS (acordeón, chips, buscador) se validó con `node --check` + revisión
+  manual de lógica + un end-to-end real contra el servidor local (login, GET/POST
+  `/perfiles` reales, catálogo real de 1.333 organismos sincronizado en vivo) — pero no se
+  hizo clic-a-clic en un navegador. Recomendado probarlo a mano antes de dar por cerrado
+  el look final.
+
+**Pendiente (fuera de este commit):**
+- Rediseño de dashboard y ficha de detalle.
+- Fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`, no a la URL no
+  autorizada de MP).
+- Conviene seguir en sesiones separadas (una fase/commit por parte, regla de flujo).
 
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente.** Enfoque elegido: **reponderación ligera**, sin LLM.

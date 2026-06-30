@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas
-from app.models.enums import EstadoOportunidad
+from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad
 from app.models.tables import (
     CompraAgil,
     InstitucionPAC,
@@ -272,6 +272,21 @@ def buscar_instituciones_pac(
             .order_by(InstitucionPAC.razon_social)
             .limit(limit)
         ).scalars()
+    )
+
+
+def listar_organismos_catalogo(session: Session) -> list[InstitucionPAC]:
+    """Catálogo completo de organismos (F-plan + sector de F-datos) para el
+    multi-select agrupado por sector del formulario de perfiles (F10).
+
+    Orden alfabético por `sector` deja "Sin clasificación" al final de forma
+    natural (empieza con "Si", posterior a los 7 sectores nombrados en orden
+    alfabético — ver docs/08-datos-organismos.md §3-bis b), sin necesidad de
+    un caso especial. Vacío si el catálogo aún no se sincronizó (regla 6: la
+    ruta debe degradar a un campo de texto libre en ese caso, no romper)."""
+    orden_sector = func.coalesce(InstitucionPAC.sector, SECTOR_SIN_CLASIFICACION)
+    return list(
+        session.execute(select(InstitucionPAC).order_by(orden_sector, InstitucionPAC.razon_social)).scalars()
     )
 
 

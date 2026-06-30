@@ -1,19 +1,79 @@
 {% extends "base.html" %}
 {% block title %}Perfiles — MP Oportunidades{% endblock %}
+
+{% macro rubros_widget(form_id, rubros_agrupados, preseleccion) %}
+<div class="js-rubros-widget" data-form="{{ form_id }}">
+  <input type="text" class="form-control form-control-sm mb-2 js-rubro-buscador"
+         placeholder="Buscar rubro o segmento...">
+  <div class="js-rubro-chips d-flex flex-wrap gap-1 mb-2"></div>
+  <div class="accordion js-rubro-accordion" id="rubrosAcc_{{ form_id }}">
+    {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
+    <div class="accordion-item js-rubro-segmento" data-buscar="{{ (seg_codigo ~ ' ' ~ seg_nombre) | lower }}">
+      <h2 class="accordion-header d-flex align-items-center">
+        <div class="form-check ms-2 me-1">
+          <input class="form-check-input js-rubro-seg-toggle" type="checkbox"
+                 id="segall_{{ form_id }}_{{ seg_codigo }}" data-seg="{{ seg_codigo }}"
+                 title="Seleccionar todo el segmento">
+        </div>
+        <button class="accordion-button collapsed py-2" type="button"
+                data-bs-toggle="collapse" data-bs-target="#rubroColapso_{{ form_id }}_{{ seg_codigo }}">
+          {{ seg_codigo }} — {{ seg_nombre }}
+        </button>
+      </h2>
+      <div id="rubroColapso_{{ form_id }}_{{ seg_codigo }}" class="accordion-collapse collapse"
+           data-bs-parent="#rubrosAcc_{{ form_id }}">
+        <div class="accordion-body py-2">
+          {% for fam_codigo, fam_nombre in fams %}
+          <div class="form-check js-rubro-familia" data-buscar="{{ (fam_codigo ~ ' ' ~ fam_nombre) | lower }}">
+            <input class="form-check-input js-rubro-fam-check" type="checkbox" name="categorias_unspsc"
+                   value="{{ fam_codigo }}" id="fam_{{ form_id }}_{{ fam_codigo }}" data-seg="{{ seg_codigo }}"
+                   data-nombre="{{ fam_codigo }} — {{ fam_nombre }}"
+                   {% if fam_codigo in preseleccion %}checked{% endif %}>
+            <label class="form-check-label" for="fam_{{ form_id }}_{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <input type="text" name="categorias_unspsc" class="form-control form-control-sm mt-2"
+         placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma: 43211500,43211503">
+</div>
+{% endmacro %}
+
+{% macro organismos_widget(form_id, preseleccion, catalogo_disponible) %}
+{% if catalogo_disponible %}
+<div class="js-org-widget" data-form="{{ form_id }}" data-preseleccion="{{ preseleccion | join(',') }}">
+  <input type="text" class="form-control form-control-sm mb-2 js-org-buscador"
+         placeholder="Buscar organismo por nombre o sector...">
+  <div class="js-org-chips d-flex flex-wrap gap-1 mb-2"></div>
+  <div class="js-org-lista border rounded p-2 small" style="max-height: 200px; overflow-y: auto;"></div>
+  <input type="hidden" name="organismos_seguidos" class="js-org-hidden">
+</div>
+{% else %}
+<div class="alert alert-warning small py-2 mb-2">
+  Catálogo de organismos no disponible por ahora — escribe los códigos manualmente.
+</div>
+<input type="text" name="organismos_seguidos" class="form-control"
+       placeholder="ej: 12345,76123456-7" value="{{ preseleccion | join(',') }}">
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <h2 class="mb-4">Mis perfiles de búsqueda</h2>
 
 {% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
-<!-- RUT de proveedor (opcional): resalta tus propias ofertas en el análisis de competencia -->
+<!-- Ajustes de cuenta -->
 <div class="card mb-4">
-  <div class="card-header">Mi RUT de proveedor</div>
+  <div class="card-header">Ajustes de tu cuenta</div>
   <div class="card-body">
     <form method="post" action="/perfiles/rut-proveedor" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="col-md-4">
-        <label class="form-label">RUT (opcional)</label>
+        <label class="form-label">Tu RUT de proveedor (opcional)</label>
         <input type="text" name="rut_proveedor" class="form-control" placeholder="76.123.456-7"
                value="{{ current_user.rut_proveedor or '' }}">
       </div>
@@ -21,7 +81,10 @@
         <button type="submit" class="btn btn-outline-primary">Guardar</button>
       </div>
       <div class="col-12">
-        <span class="text-muted small">Si lo configuras, tus propias ofertas se resaltan en el análisis de competencia de las oportunidades adjudicadas que sigues.</span>
+        <span class="text-muted small">
+          Solo si vendes al Estado. Cuando una licitación que sigues se adjudica, resaltamos
+          tu propia oferta en el análisis de competencia. No afecta tus búsquedas.
+        </span>
       </div>
     </form>
   </div>
@@ -39,35 +102,6 @@
           <input type="text" name="nombre" class="form-control" required>
         </div>
         <div class="col-md-4">
-          <label class="form-label">Keywords (separadas por coma)</label>
-          <input type="text" name="keywords" class="form-control" placeholder="software, desarrollo, tecnología">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Excluir (separadas por coma)</label>
-          <input type="text" name="excluir" class="form-control" placeholder="limpieza, aseo">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Fuentes</label>
-          <div>
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="checkbox" name="fuentes" value="licitaciones" id="f_lic" checked>
-              <label class="form-check-label" for="f_lic">Licitaciones</label>
-            </div>
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="checkbox" name="fuentes" value="compras_agiles" id="f_ca" checked>
-              <label class="form-check-label" for="f_ca">Compra Ágil</label>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-2">
-          <label class="form-label">Monto mín. (CLP)</label>
-          <input type="number" name="monto_min_clp" class="form-control" min="0" step="1">
-        </div>
-        <div class="col-md-2">
-          <label class="form-label">Monto máx. (CLP)</label>
-          <input type="number" name="monto_max_clp" class="form-control" min="0" step="1">
-        </div>
-        <div class="col-md-4">
           <label class="form-label">Frecuencia de alerta</label>
           <select name="frecuencia_alerta" class="form-select">
             {% for f in frecuencias %}
@@ -75,34 +109,47 @@
             {% endfor %}
           </select>
         </div>
+        <div class="col-md-4">
+          <label class="form-label">Fuentes</label>
+          <div class="d-flex flex-wrap gap-2">
+            <input type="checkbox" class="btn-check" name="fuentes" value="licitaciones" id="f_lic" checked autocomplete="off">
+            <label class="btn btn-outline-primary btn-sm" for="f_lic">Licitaciones</label>
+            <input type="checkbox" class="btn-check" name="fuentes" value="compras_agiles" id="f_ca" checked autocomplete="off">
+            <label class="btn btn-outline-primary btn-sm" for="f_ca">Compra Ágil</label>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Keywords (separadas por coma)</label>
+          <input type="text" name="keywords" class="form-control" placeholder="software, desarrollo, tecnología">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Excluir (separadas por coma)</label>
+          <input type="text" name="excluir" class="form-control" placeholder="limpieza, aseo">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Monto mín. (CLP)</label>
+          <input type="number" name="monto_min_clp" class="form-control" min="0" step="1">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Monto máx. (CLP)</label>
+          <input type="number" name="monto_max_clp" class="form-control" min="0" step="1">
+        </div>
         <div class="col-12">
           <label class="form-label">Regiones (vacío = todas)</label>
           <div class="d-flex flex-wrap gap-2">
             {% for codigo, nombre in regiones_disponibles %}
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="checkbox" name="regiones" value="{{ codigo }}" id="reg_{{ codigo }}">
-              <label class="form-check-label" for="reg_{{ codigo }}">{{ nombre }}</label>
-            </div>
+            <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}" id="reg_{{ codigo }}" autocomplete="off">
+            <label class="btn btn-outline-secondary btn-sm" for="reg_{{ codigo }}">{{ nombre }}</label>
             {% endfor %}
           </div>
         </div>
-        <div class="col-md-8">
+        <div class="col-md-7">
           <label class="form-label">Rubros UNSPSC que sigues (recall aditivo: suman candidatos aunque no haya keyword)</label>
-          <select multiple name="categorias_unspsc" class="form-select" style="height: 160px;">
-            {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
-            <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
-              {% for fam_codigo, fam_nombre in fams %}
-              <option value="{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</option>
-              {% endfor %}
-            </optgroup>
-            {% endfor %}
-          </select>
-          <input type="text" name="categorias_unspsc" class="form-control mt-1"
-                 placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma: 43211500,43211503">
+          {{ rubros_widget("nuevo", rubros_agrupados, []) }}
         </div>
-        <div class="col-md-4">
-          <label class="form-label">Organismos que sigues (códigos/RUT separados por coma)</label>
-          <input type="text" name="organismos_seguidos" class="form-control" placeholder="ej: 12345,76123456-7">
+        <div class="col-md-5">
+          <label class="form-label">Organismos que sigues</label>
+          {{ organismos_widget("nuevo", [], organismos_catalogo_disponible) }}
         </div>
         <div class="col-12">
           <button type="submit" class="btn btn-primary">Crear perfil</button>
@@ -162,39 +209,6 @@
             <input type="text" name="nombre" class="form-control" value="{{ p.nombre }}" required>
           </div>
           <div class="col-md-4">
-            <label class="form-label">Keywords (separadas por coma)</label>
-            <input type="text" name="keywords" class="form-control" value="{{ p.keywords | join(', ') }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Excluir (separadas por coma)</label>
-            <input type="text" name="excluir" class="form-control" value="{{ p.keywords_excluir | join(', ') }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Fuentes</label>
-            <div>
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="fuentes" value="licitaciones"
-                       id="ef_lic_{{ p.id }}" {% if 'licitaciones' in p.fuentes %}checked{% endif %}>
-                <label class="form-check-label" for="ef_lic_{{ p.id }}">Licitaciones</label>
-              </div>
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="fuentes" value="compras_agiles"
-                       id="ef_ca_{{ p.id }}" {% if 'compras_agiles' in p.fuentes %}checked{% endif %}>
-                <label class="form-check-label" for="ef_ca_{{ p.id }}">Compra Ágil</label>
-              </div>
-            </div>
-          </div>
-          <div class="col-md-2">
-            <label class="form-label">Monto mín. (CLP)</label>
-            <input type="number" name="monto_min_clp" class="form-control" min="0" step="1"
-                   value="{{ p.monto_min_clp | int if p.monto_min_clp is not none else '' }}">
-          </div>
-          <div class="col-md-2">
-            <label class="form-label">Monto máx. (CLP)</label>
-            <input type="number" name="monto_max_clp" class="form-control" min="0" step="1"
-                   value="{{ p.monto_max_clp | int if p.monto_max_clp is not none else '' }}">
-          </div>
-          <div class="col-md-4">
             <label class="form-label">Frecuencia de alerta</label>
             <select name="frecuencia_alerta" class="form-select">
               {% for f in frecuencias %}
@@ -202,36 +216,52 @@
               {% endfor %}
             </select>
           </div>
+          <div class="col-md-4">
+            <label class="form-label">Fuentes</label>
+            <div class="d-flex flex-wrap gap-2">
+              <input type="checkbox" class="btn-check" name="fuentes" value="licitaciones"
+                     id="ef_lic_{{ p.id }}" {% if 'licitaciones' in p.fuentes %}checked{% endif %} autocomplete="off">
+              <label class="btn btn-outline-primary btn-sm" for="ef_lic_{{ p.id }}">Licitaciones</label>
+              <input type="checkbox" class="btn-check" name="fuentes" value="compras_agiles"
+                     id="ef_ca_{{ p.id }}" {% if 'compras_agiles' in p.fuentes %}checked{% endif %} autocomplete="off">
+              <label class="btn btn-outline-primary btn-sm" for="ef_ca_{{ p.id }}">Compra Ágil</label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Keywords (separadas por coma)</label>
+            <input type="text" name="keywords" class="form-control" value="{{ p.keywords | join(', ') }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Excluir (separadas por coma)</label>
+            <input type="text" name="excluir" class="form-control" value="{{ p.keywords_excluir | join(', ') }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Monto mín. (CLP)</label>
+            <input type="number" name="monto_min_clp" class="form-control" min="0" step="1"
+                   value="{{ p.monto_min_clp | int if p.monto_min_clp is not none else '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Monto máx. (CLP)</label>
+            <input type="number" name="monto_max_clp" class="form-control" min="0" step="1"
+                   value="{{ p.monto_max_clp | int if p.monto_max_clp is not none else '' }}">
+          </div>
           <div class="col-12">
             <label class="form-label">Regiones (vacío = todas)</label>
             <div class="d-flex flex-wrap gap-2">
               {% for codigo, nombre in regiones_disponibles %}
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="regiones" value="{{ codigo }}"
-                       id="ereg_{{ p.id }}_{{ codigo }}" {% if codigo in p.regiones %}checked{% endif %}>
-                <label class="form-check-label" for="ereg_{{ p.id }}_{{ codigo }}">{{ nombre }}</label>
-              </div>
+              <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}"
+                     id="ereg_{{ p.id }}_{{ codigo }}" {% if codigo in p.regiones %}checked{% endif %} autocomplete="off">
+              <label class="btn btn-outline-secondary btn-sm" for="ereg_{{ p.id }}_{{ codigo }}">{{ nombre }}</label>
               {% endfor %}
             </div>
           </div>
-          <div class="col-md-8">
+          <div class="col-md-7">
             <label class="form-label">Rubros UNSPSC que sigues</label>
-            <select multiple name="categorias_unspsc" class="form-select" style="height: 160px;">
-              {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
-              <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
-                {% for fam_codigo, fam_nombre in fams %}
-                <option value="{{ fam_codigo }}" {% if fam_codigo in p.categorias_unspsc %}selected{% endif %}>{{ fam_codigo }} — {{ fam_nombre }}</option>
-                {% endfor %}
-              </optgroup>
-              {% endfor %}
-            </select>
-            <input type="text" name="categorias_unspsc" class="form-control mt-1"
-                   placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma">
+            {{ rubros_widget("ed" ~ p.id, rubros_agrupados, p.categorias_unspsc or []) }}
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Organismos que sigues (separados por coma)</label>
-            <input type="text" name="organismos_seguidos" class="form-control"
-                   value="{{ p.organismos_seguidos | join(', ') }}">
+          <div class="col-md-5">
+            <label class="form-label">Organismos que sigues</label>
+            {{ organismos_widget("ed" ~ p.id, p.organismos_seguidos or [], organismos_catalogo_disponible) }}
           </div>
           <div class="col-12">
             <button type="submit" class="btn btn-primary btn-sm">Guardar cambios</button>
@@ -245,4 +275,214 @@
 {% else %}
 <div class="alert alert-info">Aún no tienes perfiles. Crea uno para recibir alertas.</div>
 {% endif %}
+
+<script>
+const MP_ORGANISMOS_CATALOGO = {{ organismos_json | tojson }};
+</script>
+<script>
+(function () {
+  "use strict";
+
+  function debounce(fn, wait) {
+    let temporizador;
+    return function (...args) {
+      clearTimeout(temporizador);
+      temporizador = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+
+  function quitarChip(boton, texto, alQuitar) {
+    boton.type = "button";
+    boton.className = "btn-close btn-close-white";
+    boton.style.fontSize = "0.55rem";
+    boton.setAttribute("aria-label", "Quitar " + texto);
+    boton.addEventListener("click", alQuitar);
+  }
+
+  function crearChip(texto, alQuitar) {
+    const chip = document.createElement("span");
+    chip.className = "badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-1";
+    chip.textContent = texto;
+    const boton = document.createElement("button");
+    quitarChip(boton, texto, alQuitar);
+    chip.appendChild(boton);
+    return chip;
+  }
+
+  // ---- Rubros: acordeón + chips + buscador (en cliente, sin red) ----
+  function initRubrosWidget(widget) {
+    const buscador = widget.querySelector(".js-rubro-buscador");
+    const chipsBox = widget.querySelector(".js-rubro-chips");
+    const segmentos = Array.from(widget.querySelectorAll(".js-rubro-segmento"));
+    const famChecks = Array.from(widget.querySelectorAll(".js-rubro-fam-check"));
+    const segToggles = Array.from(widget.querySelectorAll(".js-rubro-seg-toggle"));
+
+    function famsDeSegmento(segCodigo) {
+      return famChecks.filter((c) => c.dataset.seg === segCodigo);
+    }
+
+    function actualizarSegToggle(segToggle) {
+      if (!segToggle) return;
+      const fams = famsDeSegmento(segToggle.dataset.seg);
+      const marcados = fams.filter((c) => c.checked).length;
+      segToggle.checked = fams.length > 0 && marcados === fams.length;
+      segToggle.indeterminate = marcados > 0 && marcados < fams.length;
+    }
+
+    function renderChips() {
+      chipsBox.innerHTML = "";
+      famChecks.filter((c) => c.checked).forEach((c) => {
+        chipsBox.appendChild(
+          crearChip(c.dataset.nombre, () => {
+            c.checked = false;
+            actualizarSegToggle(segToggles.find((s) => s.dataset.seg === c.dataset.seg));
+            renderChips();
+          })
+        );
+      });
+    }
+
+    famChecks.forEach((c) => {
+      c.addEventListener("change", () => {
+        actualizarSegToggle(segToggles.find((s) => s.dataset.seg === c.dataset.seg));
+        renderChips();
+      });
+    });
+
+    segToggles.forEach((seg) => {
+      seg.addEventListener("change", () => {
+        famsDeSegmento(seg.dataset.seg).forEach((c) => {
+          c.checked = seg.checked;
+        });
+        seg.indeterminate = false;
+        renderChips();
+      });
+      actualizarSegToggle(seg);
+    });
+
+    if (buscador) {
+      buscador.addEventListener(
+        "input",
+        debounce(() => {
+          const q = buscador.value.trim().toLowerCase();
+          segmentos.forEach((seg) => {
+            const familias = Array.from(seg.querySelectorAll(".js-rubro-familia"));
+            if (!q) {
+              seg.classList.remove("d-none");
+              familias.forEach((f) => f.classList.remove("d-none"));
+              return;
+            }
+            const segCoincide = seg.dataset.buscar.includes(q);
+            let algunaFamilia = false;
+            familias.forEach((f) => {
+              const coincide = segCoincide || f.dataset.buscar.includes(q);
+              f.classList.toggle("d-none", !coincide);
+              if (coincide) algunaFamilia = true;
+            });
+            seg.classList.toggle("d-none", !algunaFamilia);
+            if (algunaFamilia && window.bootstrap) {
+              const collapseEl = seg.querySelector(".accordion-collapse");
+              if (collapseEl) {
+                window.bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
+              }
+            }
+          });
+        }, 150)
+      );
+    }
+
+    renderChips();
+  }
+
+  // ---- Organismos: buscador + lista filtrada agrupada por sector + chips ----
+  // El catálogo (MP_ORGANISMOS_CATALOGO) se emite UNA sola vez para toda la
+  // página; cada widget (nuevo + cada edición) lo reusa por referencia, sin
+  // duplicar las ~1.333 filas en el DOM por formulario.
+  function initOrganismosWidget(widget, catalogo) {
+    const buscador = widget.querySelector(".js-org-buscador");
+    const chipsBox = widget.querySelector(".js-org-chips");
+    const lista = widget.querySelector(".js-org-lista");
+    const hidden = widget.querySelector(".js-org-hidden");
+    const porId = new Map(catalogo.map((o) => [String(o.id), o]));
+    const MAX_RESULTADOS = 80;
+
+    const preseleccion = (widget.dataset.preseleccion || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const seleccionados = new Map();
+    preseleccion.forEach((codigo) => {
+      seleccionados.set(codigo, porId.get(codigo) || { id: codigo, nombre: codigo, sector: null });
+    });
+
+    function actualizarHidden() {
+      hidden.value = Array.from(seleccionados.keys()).join(",");
+    }
+
+    function renderChips() {
+      chipsBox.innerHTML = "";
+      seleccionados.forEach((org, codigo) => {
+        chipsBox.appendChild(
+          crearChip(org.nombre, () => {
+            seleccionados.delete(codigo);
+            actualizarHidden();
+            renderChips();
+            renderLista(buscador.value);
+          })
+        );
+      });
+    }
+
+    function renderLista(query) {
+      const q = query.trim().toLowerCase();
+      lista.innerHTML = "";
+      if (!q) {
+        lista.innerHTML =
+          '<div class="text-muted px-1">Escribe para buscar entre ' + catalogo.length + " organismos…</div>";
+        return;
+      }
+      let sectorActual = null;
+      let mostrados = 0;
+      for (const org of catalogo) {
+        if (seleccionados.has(String(org.id))) continue;
+        const texto = (org.nombre + " " + (org.sector || "")).toLowerCase();
+        if (!texto.includes(q)) continue;
+        if (org.sector !== sectorActual) {
+          sectorActual = org.sector;
+          const header = document.createElement("div");
+          header.className = "text-muted fw-semibold mt-1";
+          header.textContent = sectorActual;
+          lista.appendChild(header);
+        }
+        const fila = document.createElement("button");
+        fila.type = "button";
+        fila.className = "btn btn-sm btn-light text-start w-100 mb-1";
+        fila.textContent = org.nombre;
+        fila.addEventListener("click", () => {
+          seleccionados.set(String(org.id), org);
+          actualizarHidden();
+          renderChips();
+          renderLista(buscador.value);
+        });
+        lista.appendChild(fila);
+        mostrados += 1;
+        if (mostrados >= MAX_RESULTADOS) break;
+      }
+      if (mostrados === 0) {
+        lista.innerHTML = '<div class="text-muted px-1">No se encontraron organismos.</div>';
+      }
+    }
+
+    buscador.addEventListener("input", debounce(() => renderLista(buscador.value), 150));
+    actualizarHidden();
+    renderChips();
+    renderLista("");
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".js-rubros-widget").forEach(initRubrosWidget);
+    document.querySelectorAll(".js-org-widget").forEach((w) => initOrganismosWidget(w, MP_ORGANISMOS_CATALOGO));
+  });
+})();
+</script>
 {% endblock %}

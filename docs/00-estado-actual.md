@@ -18,8 +18,15 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   sin gastar cuota), **F-seguir** (seguir/archivar + alertas de avance), **F-competencia**
   (análisis de competencia al adjudicarse), **F-plan** (consulta del Plan Anual de Compra,
   pestaña separada, on-demand), **F-datos** (clasificación de organismos por sector,
-  datos abiertos sin ticket — alcance acotado, ver roadmap), F-deploy.
-- Suite: 437 tests verdes (21 skipped) en el run "plano".
+  datos abiertos sin ticket — alcance acotado, ver roadmap), **F10 (parcial)** (formulario
+  de `/perfiles` rediseñado: rubros en acordeón, organismos en multi-select por sector —
+  dashboard/ficha/mail de F10 siguen pendientes), F-deploy.
+- Suite: 439 tests verdes (21 skipped) en el run "plano".
+- F10/perfiles: verificado server-side (TestClient + servidor local real con login y
+  catálogo sincronizado en vivo contra datos abiertos), **no** con un navegador real
+  (sin herramienta de automatización disponible sin instalar dependencia nueva fuera del
+  stack) — recomendado un vistazo manual a la interactividad JS (acordeón/chips/buscador)
+  antes de dar el look final por cerrado.
 
 ## Qué hace hoy
 Descubrir oportunidades por keyword/región/**rubro UNSPSC**/organismo; ver ficha
@@ -64,9 +71,9 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - `test_jobs_run_job_ca`: skip (pega a la API real sin mock); migrar a respx.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
-- **F10 UX:** acordeón de rubros con súper-categorías seleccionables, multi-select de
-  organismos clasificado por sector (datos ya listos desde F-datos: `InstitucionPAC.sector`),
-  y fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`).
+- **F10 UX (resto):** rediseño de dashboard y ficha de detalle, y fix del mail de match
+  (enlazar a la ficha de la app vía `APP_BASE_URL`). El formulario de `/perfiles` ya quedó
+  hecho (rubros en acordeón, organismos en multi-select por sector).
 - **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM).
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.
 

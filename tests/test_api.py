@@ -14,7 +14,11 @@ Cobertura:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -101,6 +105,21 @@ def admin(engine):
         s.commit()
         s.refresh(u)
         return u.id
+
+
+_FUENTE_INSTITUCIONES = "plan_compra_instituciones"
+_FUENTE_SECTORES = "plan_compra_sectores"
+
+
+def _marcar_catalogo_organismos_fresco(engine) -> None:
+    """Evita que GET /perfiles dispare sync_instituciones_pac/sync_sectores_organismos
+    contra la red real (F10: el catálogo de organismos del multiselect se
+    sincroniza al cargar /perfiles, igual que /plan-anual)."""
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+    with Session(engine) as s:
+        s.add(SyncState(fuente=_FUENTE_INSTITUCIONES, ultima_ejecucion=ahora, ultimo_ok=ahora))
+        s.add(SyncState(fuente=_FUENTE_SECTORES, ultima_ejecucion=ahora, ultimo_ok=ahora))
+        s.commit()
 
 
 def _cookie(settings: Settings, user_id: int) -> dict[str, str]:
@@ -691,7 +710,8 @@ def test_perfil_editar_persiste_regiones_y_montos(engine, client, usuario, setti
         assert actualizado.monto_max_clp == 800_000.0
 
 
-def test_perfiles_get_muestra_regiones_disponibles(client, usuario, settings):
+def test_perfiles_get_muestra_regiones_disponibles(client, usuario, settings, engine):
+    _marcar_catalogo_organismos_fresco(engine)
     cookies, _ = _session(settings, usuario)
     r = client.get("/perfiles", cookies=cookies)
     assert r.status_code == 200
@@ -879,6 +899,7 @@ def test_perfil_editar_persiste_categorias_y_organismos(engine, client, usuario,
 def test_perfiles_get_muestra_rubros_y_organismos(engine, client, usuario, settings):
     from app.matching.perfiles import crear_perfil
 
+    _marcar_catalogo_organismos_fresco(engine)
     with Session(engine) as s:
         crear_perfil(
             s,
@@ -896,3 +917,49 @@ def test_perfiles_get_muestra_rubros_y_organismos(engine, client, usuario, setti
     # El nombre de la familia 4321 debe resolverse vía el catálogo, no solo el código crudo.
     assert "Equipo inform" in r.text or "4321" in r.text
     assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+
+# ---------------------------------------------------------------------------
+# F10: multiselect de organismos en /perfiles (catálogo presente vs degradado)
+# ---------------------------------------------------------------------------
+
+
+def test_perfiles_get_catalogo_disponible_muestra_multiselect(client, usuario, settings):
+    """Con el bulk de instituciones/sectores mockeado (red mockeada, regla del
+    proyecto), GET /perfiles sincroniza el catálogo y renderiza el widget JS
+    en vez del input de texto libre de organismos."""
+    cookies, _ = _session(settings, usuario)
+    with respx.mock:
+        respx.get(settings.plan_compra_kpi_url).mock(
+            return_value=httpx.Response(
+                200,
+                json={"payload": [{"codigoEntidad": 224060, "rut": "61.935.400-1", "razonSocial": "MINISTERIO  PUBLICO"}]},
+            )
+        )
+        respx.get(settings.plan_compra_sectores_bulk_url).mock(
+            return_value=httpx.Response(
+                200,
+                json=[{"type": "comprador", "entcode": 224060, "idSector": 3, "sector": "Legislativo y Judicial"}],
+            )
+        )
+        r = client.get("/perfiles", cookies=cookies)
+
+    assert r.status_code == 200
+    assert 'class="js-org-widget"' in r.text
+    assert "Catálogo de organismos no disponible" not in r.text
+    assert "MINISTERIO  PUBLICO" in r.text  # vive en el const JS del catálogo
+
+
+def test_perfiles_get_sin_red_degrada_a_input_manual(client, usuario, settings):
+    """Sin red disponible para el catálogo (primer arranque / sin conexión),
+    la página no debe romper: degrada al input de texto libre de organismos
+    (regla 6)."""
+    cookies, _ = _session(settings, usuario)
+    with respx.mock:
+        respx.get(settings.plan_compra_kpi_url).mock(side_effect=httpx.ConnectError("sin red"))
+        r = client.get("/perfiles", cookies=cookies)
+
+    assert r.status_code == 200
+    assert "Catálogo de organismos no disponible" in r.text
+    assert 'class="js-org-widget"' not in r.text
+    assert 'placeholder="ej: 12345,76123456-7"' in r.text
