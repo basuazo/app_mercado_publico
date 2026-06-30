@@ -63,6 +63,9 @@ class Usuario(Base):
     seguidas: Mapped[list[OportunidadSeguida]] = relationship(
         "OportunidadSeguida", back_populates="owner", cascade="all, delete-orphan"
     )
+    match_feedback: Mapped[list[MatchFeedback]] = relationship(
+        "MatchFeedback", back_populates="usuario", cascade="all, delete-orphan"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +316,36 @@ class OportunidadMatch(Base):
     )
 
 
+class MatchFeedback(Base):
+    """Feedback explícito del usuario sobre una oportunidad (F10 parte 2).
+
+    Señal para F11 (reponderación del matching): timestamp + valor + qué
+    oportunidad bastan; el resto (score, razones, perfil) se joinea al match
+    en F11, no se duplica aquí. Un feedback por usuario por oportunidad
+    (uq_match_feedback); alternar actualiza el valor existente o lo borra,
+    nunca duplica (ver app/matching/feedback.py).
+    """
+
+    __tablename__ = "match_feedback"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "fuente", "codigo_oportunidad", name="uq_match_feedback"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False
+    )
+    fuente: Mapped[str] = mapped_column(String(30), nullable=False)
+    codigo_oportunidad: Mapped[str] = mapped_column(String(50), nullable=False)
+    valor: Mapped[str] = mapped_column(String(20), nullable=False)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_now, onupdate=_now
+    )
+
+    usuario: Mapped[Usuario] = relationship("Usuario", back_populates="match_feedback")
+
+
 class Alerta(Base):
     """Alerta de un match de perfil O de un seguimiento explícito — exactamente
     uno de match_id/seguimiento_id está poblado (enforced en el código que crea
@@ -424,3 +457,4 @@ Index("ix_compras_agiles_region", CompraAgil.region)
 Index("ix_oportunidades_match_perfil", OportunidadMatch.perfil_id)
 Index("ix_plan_compra_lineas_entidad_agno", PlanCompraLinea.codigo_entidad, PlanCompraLinea.agno)
 Index("ix_instituciones_pac_razon_social", InstitucionPAC.razon_social)
+Index("ix_match_feedback_usuario", MatchFeedback.usuario_id)

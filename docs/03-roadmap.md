@@ -134,11 +134,50 @@ resalta el RUT propio si está configurado en `/perfiles`.
   `fecha_publicacion`/`fecha_cierre` NULL — revisar el refresh de estados terminales.
 
 ## F10 — UX/UI
-**Estado: parcial — formulario de perfiles HECHO; dashboard, ficha y mail pendientes.**
+**Estado: parcial — formulario de perfiles y dashboard HECHOS; ficha y mail pendientes.**
 (Tarea original nº1.) Enfoque: prototipo HTML iterado en el chat → aprobado → portado a
 plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el diseño visado.
 
-**Hecho — `/perfiles` (este commit):**
+**Hecho — dashboard rediseñado + descartar + feedback (parte 2, este commit):**
+- `index.html` rediseñado: tarjetas más escaneables vía macro `card_oportunidad`
+  (`app/api/templates/_card_oportunidad.html`, reusada también para el partial HTMX) — bloque
+  de score con color por tramo (≥80 verde, 50–79 ámbar, <50 gris), chip de urgencia "cierra en
+  Xd" con color por tramo (≤3d rojo, ≤7d ámbar), monto a la derecha, meta
+  "organismo · región · fuente", razones del match como chips.
+- Orden configurable: toggle "Mejor match" (score desc) / "Cierran pronto" (días al cierre
+  asc, nulos al final) vía `?orden=score|cierre`, preservando los filtros existentes
+  (perfil, fuente, texto).
+- Acciones por tarjeta vía HTMX (sin recargar), con fallback POST+redirect para clientes sin
+  JS: **Ver ficha** (link existente), **Seguir** (reusa `POST .../seguir` de F-seguir, ahora
+  HTMX-aware: responde con la tarjeta re-renderizada si `HX-Request`, redirect 303 si no),
+  **Me sirve** (`POST .../me-sirve`, toggle) y **Descartar** (`POST .../descartar`, oculta el
+  match del feed). HTMX "descartar" responde 200 con cuerpo vacío (no 204 — htmx no swapea
+  ante un 204) para que la tarjeta desaparezca del DOM vía `hx-swap="outerHTML"`.
+- "Descartar" es **distinto** de "archivar" (archivar sigue aplicando solo a seguidas).
+  Reversible: banner "Ver descartadas (N)" → página `/descartadas` (mirror de `/seguidas`)
+  con botón "Restaurar" (`POST .../deshacer-descarte`).
+- Modelo nuevo `MatchFeedback` (`usuario_id`, `fuente`, `codigo_oportunidad`, `valor` enum
+  {sirve, descarte}, `creado_en`, `actualizado_en`; unique por usuario+oportunidad — migración
+  `e1f4a7c9b2d6`, down_revision `c4a8e0f7b1d3`) + servicio `app/matching/feedback.py` (ownership
+  obligatorio, regla 17; alternar actualiza o borra, nunca duplica). Diseñada para que F11 la
+  consuma directo como señal de entrenamiento (timestamp + valor + qué oportunidad bastan).
+- Query del feed (`get_oportunidades_usuario`) excluye los matches con feedback "descarte" del
+  usuario actual (salvo en `/descartadas`); expone `siguiendo` y `feedback` por ítem para que la
+  tarjeta refleje el estado correcto sin N+1 (`listar_feedback_usuario`).
+- **Esta fase solo REGISTRA la señal — no reordena ni reentrena nada.** F11 es quien consumirá
+  `MatchFeedback` para reponderar el matching.
+- Migración verificada solo con `alembic ... --sql` (offline, sin tocar ninguna BD real — ver
+  nota operativa abajo); **no aplicada aún a la branch dev/prod de Neon**, pendiente de que el
+  humano la corra (`alembic upgrade head`) — además la branch dev ya estaba 3 migraciones
+  detrás de antes de esta fase (deuda preexistente, no introducida aquí).
+- No verificado en navegador real (mismo motivo que `/perfiles` — sin herramienta de
+  automatización en el entorno); verificado end-to-end con la app real vía `TestClient` (ciclo
+  ASGI completo, plantillas Jinja reales) contra una BD sqlite descartable: render de
+  tarjetas, orden score/cierre, toggle me-sirve, descartar+banner+`/descartadas`+restaurar,
+  seguir vía HTMX con tarjeta parcial — los 8 pasos verificados manualmente, además de 19 tests
+  nuevos (`tests/test_feedback_routes.py`) cubriendo lo mismo + CSRF + IDOR.
+
+**Hecho — `/perfiles` (fase anterior):**
 - Tarjeta de RUT de proveedor reetiquetada como "Ajustes de tu cuenta" (sin cambios de
   backend).
 - Rubros UNSPSC: acordeón Bootstrap por segmento (macro `rubros_widget` en
@@ -170,18 +209,21 @@ plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el dis
   el look final.
 
 **Pendiente (fuera de este commit):**
-- Rediseño de dashboard y ficha de detalle.
+- Rediseño de la ficha de detalle de oportunidad.
 - Fix del mail de match (enlazar a la ficha de la app vía `APP_BASE_URL`, no a la URL no
   autorizada de MP).
 - Conviene seguir en sesiones separadas (una fase/commit por parte, regla de flujo).
 
 ## F11 — Matching con feedback (like/dislike)
-**Estado: pendiente.** Enfoque elegido: **reponderación ligera**, sin LLM.
-- Tabla de feedback (like/dislike por match).
+**Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
+`app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:
+**reponderación ligera**, sin LLM.
 - Modelo de ranking liviano (regresión logística) sobre las features que ya produce
   el score; reentrena en milisegundos, pesos persistidos en Postgres, re-ordena
   resultados. Corre server-side, $0.
-- Necesita algo de UI (botones de feedback) — coordinar con F10.
+- Fuente de entrenamiento: `MatchFeedback` (timestamp + valor + qué oportunidad), joineado
+  contra `OportunidadMatch` para las features (score, razones, perfil) en el momento de
+  entrenar — no se duplica nada en la tabla de feedback.
 
 ---
 

@@ -25,7 +25,9 @@ from app.api.query import (
     buscar_instituciones_pac,
     check_oportunidad_access,
     detalle_competencia,
+    get_item_oportunidad,
     get_oportunidades_usuario,
+    listar_descartadas_detalle,
     listar_organismos_catalogo,
     listar_seguidas_detalle,
     resumen_competencia,
@@ -36,6 +38,8 @@ from app.auth.password import hash_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.core.logging import get_logger
 from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
+from app.matching.feedback import alternar_me_sirve, deshacer_descarte, listar_descartadas
+from app.matching.feedback import descartar as marcar_descarte
 from app.matching.perfiles import (
     PerfilInvalido,
     actualizar_perfil,
@@ -70,6 +74,13 @@ def _ctx(request: Request, user: Usuario, **extra: Any) -> dict[str, Any]:
     }
 
 
+def _es_htmx(request: Request) -> bool:
+    return request.headers.get("HX-Request") == "true"
+
+
+_ORDENES_VALIDOS = {"score", "cierre"}
+
+
 # ---------------------------------------------------------------------------
 # Dashboard principal
 # ---------------------------------------------------------------------------
@@ -81,6 +92,7 @@ async def index(
     fuente: str = "",
     texto: str = "",
     perfil_id: str = "",
+    orden: str = "score",
     pagina: int = 1,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -88,17 +100,20 @@ async def index(
     limit = 20
     offset = (pagina - 1) * limit
     perfil_id_int: int | None = int(perfil_id) if perfil_id.strip().isdigit() else None
+    orden = orden if orden in _ORDENES_VALIDOS else "score"
     items, total = get_oportunidades_usuario(
         session,
         user.id,
         fuente=fuente or None,
         texto=texto or None,
         perfil_id=perfil_id_int,
+        orden=orden,
         limit=limit,
         offset=offset,
     )
     perfiles = listar_perfiles(session, user.id)
     total_paginas = max(1, (total + limit - 1) // limit)
+    n_descartadas = len(listar_descartadas(session, user.id))
     return _TEMPLATES.TemplateResponse(
         request,
         "index.html",
@@ -112,8 +127,29 @@ async def index(
             fuente=fuente,
             texto=texto,
             perfil_id=perfil_id,
+            orden=orden,
+            n_descartadas=n_descartadas,
             perfiles=perfiles,
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Descartadas (F10 parte 2)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/descartadas", response_class=HTMLResponse)
+async def descartadas_get(
+    request: Request,
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    items = listar_descartadas_detalle(session, user.id)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "descartadas.html",
+        _ctx(request, user, items=items),
     )
 
 
@@ -201,7 +237,26 @@ def _safe_next(next_: str, fallback: str) -> str:
     return fallback
 
 
-@router.post("/oportunidad/{fuente}/{codigo}/seguir")
+def _render_card_partial(
+    request: Request,
+    user: Usuario,
+    session: Session,
+    fuente: str,
+    codigo: str,
+) -> HTMLResponse:
+    """Re-renderiza la tarjeta de una oportunidad (acción rápida HTMX desde el
+    dashboard). Vacío si el usuario perdió acceso entretanto (regla 17)."""
+    item = get_item_oportunidad(session, user.id, fuente, codigo)
+    if item is None:
+        return HTMLResponse(content="", status_code=200)
+    settings = request.app.state.settings
+    csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
+    return _TEMPLATES.TemplateResponse(
+        request, "_card_partial.html", {"item": item, "csrf_token": csrf_token}
+    )
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/seguir", response_model=None)
 async def oportunidad_seguir(
     request: Request,
     fuente: str,
@@ -210,7 +265,7 @@ async def oportunidad_seguir(
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
     if check_oportunidad_access(session, user.id, fuente, codigo) is None:
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
@@ -219,7 +274,76 @@ async def oportunidad_seguir(
     estado_actual = op.estado if op is not None else ""
     seguir_oportunidad(session, owner_id=user.id, fuente=fuente, codigo=codigo, estado_actual=estado_actual)
     session.commit()
+    if _es_htmx(request):
+        return _render_card_partial(request, user, session, fuente, codigo)
     return RedirectResponse(url=_safe_next(next, f"/oportunidad/{fuente}/{codigo}"), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/me-sirve", response_model=None)
+async def oportunidad_me_sirve(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    """Toggle de "me sirve" (F10 parte 2): registra feedback POSITIVO, señal
+    para F11. No reordena ni entrena nada aquí."""
+    check_csrf(request, csrf_token)
+    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
+        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    alternar_me_sirve(session, user.id, fuente, codigo)
+    session.commit()
+    if _es_htmx(request):
+        return _render_card_partial(request, user, session, fuente, codigo)
+    return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/descartar", response_model=None)
+async def oportunidad_descartar(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    """Descartar (F10 parte 2): registra feedback NEGATIVO y oculta el match
+    del feed (reversible vía /descartadas). Distinto de archivar (solo aplica
+    a seguidas)."""
+    check_csrf(request, csrf_token)
+    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
+        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    marcar_descarte(session, user.id, fuente, codigo)
+    session.commit()
+    if _es_htmx(request):
+        # 200 con cuerpo vacío, no 204: htmx no swapea en absoluto ante un 204.
+        return HTMLResponse(content="", status_code=200)
+    return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/deshacer-descarte", response_model=None)
+async def oportunidad_deshacer_descarte(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    check_csrf(request, csrf_token)
+    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
+        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    if not deshacer_descarte(session, user.id, fuente, codigo):
+        raise HTTPException(status_code=404, detail="Descarte no encontrado")
+    session.commit()
+    if _es_htmx(request):
+        return HTMLResponse(content="", status_code=200)
+    return RedirectResponse(url=_safe_next(next, "/descartadas"), status_code=303)
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/archivar")

@@ -9,9 +9,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles
+from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
-from app.matching.seguimiento import listar_seguidas
-from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad
+from app.matching.seguimiento import listar_seguidas, obtener_seguimiento
+from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, ValorFeedback
 from app.models.tables import (
     CompraAgil,
     InstitucionPAC,
@@ -47,6 +48,84 @@ def mostrar_ficha_oficial(estado: str | None) -> bool:
     return estado == EstadoOportunidad.PUBLICADA.value
 
 
+def _construir_item(
+    m: OportunidadMatch,
+    op: Licitacion | CompraAgil,
+    *,
+    feedback_valor: str | None,
+    siguiendo: bool,
+    ahora: datetime,
+) -> dict[str, Any]:
+    """Arma el dict de presentación de una oportunidad para el feed o una
+    tarjeta individual (re-render HTMX tras seguir/me-sirve)."""
+    dias: float | None = None
+    if op.fecha_cierre is not None:
+        delta = op.fecha_cierre - ahora
+        dias = max(0.0, delta.total_seconds() / 86400)
+
+    monto: float | None = None
+    organismo: str | None = None
+    reg: int | None = None
+    if isinstance(op, Licitacion):
+        monto = op.monto_clp
+        organismo = op.codigo_organismo
+    else:
+        monto = op.monto_disponible_clp
+        organismo = op.organismo_nombre
+        reg = op.region
+
+    return {
+        "match": m,
+        "oportunidad": op,
+        "nombre": op.nombre,
+        "estado": op.estado,
+        "fecha_cierre": op.fecha_cierre,
+        "dias_al_cierre": dias,
+        "monto": monto,
+        "organismo": organismo,
+        "region": reg,
+        "region_nombre": nombre_region(reg),
+        "razones": razones_legibles(m.razones),
+        "url_ficha": _url_ficha(m.fuente, m.codigo_oportunidad),
+        "mostrar_ficha": mostrar_ficha_oficial(op.estado),
+        "siguiendo": siguiendo,
+        "feedback": feedback_valor,
+    }
+
+
+def get_item_oportunidad(
+    session: Session,
+    user_id: int,
+    fuente: str,
+    codigo: str,
+) -> dict[str, Any] | None:
+    """Arma el mismo dict que `get_oportunidades_usuario` para UNA oportunidad,
+    usado para re-renderizar su tarjeta tras una acción HTMX (seguir/me-sirve).
+
+    None si el usuario no tiene acceso (ownership, regla 17) o la oportunidad
+    subyacente ya no existe.
+    """
+    m = check_oportunidad_access(session, user_id, fuente, codigo)
+    if m is None:
+        return None
+
+    op: Licitacion | CompraAgil | None
+    op = session.get(Licitacion, codigo) if fuente == "licitaciones" else session.get(CompraAgil, codigo)
+    if op is None:
+        return None
+
+    feedback = obtener_feedback(session, user_id, fuente, codigo)
+    siguiendo = obtener_seguimiento(session, user_id, fuente, codigo) is not None
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+    return _construir_item(
+        m,
+        op,
+        feedback_valor=feedback.valor if feedback is not None else None,
+        siguiendo=siguiendo,
+        ahora=ahora,
+    )
+
+
 def get_oportunidades_usuario(
     session: Session,
     user_id: int,
@@ -54,13 +133,18 @@ def get_oportunidades_usuario(
     region: int | None = None,
     texto: str | None = None,
     perfil_id: int | None = None,
+    orden: str = "score",
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     """Retorna (items, total) de oportunidades_match para los perfiles activos del usuario.
 
     Aplica filtros opcionales en Python (texto, region) después de cargar matches.
-    Paginación correcta después de aplicar todos los filtros.
+    Excluye las oportunidades que el usuario descartó (feedback F10 parte 2) — esas
+    solo se ven en la vista "ver descartadas" (`listar_descartadas_detalle`).
+    `orden`: "score" (default, mejor match primero) o "cierre" (cierran antes
+    primero, sin fecha al final). Paginación correcta después de aplicar todos
+    los filtros y el orden.
     """
     perfiles = listar_perfiles(session, user_id)
     if not perfiles:
@@ -79,6 +163,9 @@ def get_oportunidades_usuario(
 
     stmt = stmt.order_by(OportunidadMatch.score.desc())
     matches = list(session.execute(stmt).scalars())
+
+    feedback_map = listar_feedback_usuario(session, user_id)
+    siguiendo_set = {(s.fuente, s.codigo_oportunidad) for s in listar_seguidas(session, user_id)}
 
     # Batch-load oportunidades
     lic_codigos = [m.codigo_oportunidad for m in matches if m.fuente == "licitaciones"]
@@ -119,37 +206,24 @@ def get_oportunidades_usuario(
         if texto and texto.lower() not in op.nombre.lower():
             continue
 
-        dias: float | None = None
-        if op.fecha_cierre is not None:
-            delta = op.fecha_cierre - ahora
-            dias = max(0.0, delta.total_seconds() / 86400)
+        feedback = feedback_map.get((m.fuente, m.codigo_oportunidad))
+        if feedback is not None and feedback.valor == ValorFeedback.DESCARTE.value:
+            continue
 
-        monto: float | None = None
-        organismo: str | None = None
-        reg: int | None = None
-        if isinstance(op, Licitacion):
-            monto = op.monto_clp
-            organismo = op.codigo_organismo
-        else:
-            monto = op.monto_disponible_clp
-            organismo = op.organismo_nombre
-            reg = op.region
+        result.append(
+            _construir_item(
+                m,
+                op,
+                feedback_valor=feedback.valor if feedback is not None else None,
+                siguiendo=(m.fuente, m.codigo_oportunidad) in siguiendo_set,
+                ahora=ahora,
+            )
+        )
 
-        result.append({
-            "match": m,
-            "oportunidad": op,
-            "nombre": op.nombre,
-            "estado": op.estado,
-            "fecha_cierre": op.fecha_cierre,
-            "dias_al_cierre": dias,
-            "monto": monto,
-            "organismo": organismo,
-            "region": reg,
-            "region_nombre": nombre_region(reg),
-            "razones": razones_legibles(m.razones),
-            "url_ficha": _url_ficha(m.fuente, m.codigo_oportunidad),
-            "mostrar_ficha": mostrar_ficha_oficial(op.estado),
-        })
+    if orden == "cierre":
+        result.sort(key=lambda r: (r["dias_al_cierre"] is None, r["dias_al_cierre"]))
+    else:
+        result.sort(key=lambda r: r["match"].score, reverse=True)
 
     total = len(result)
     return result[offset : offset + limit], total
@@ -199,6 +273,47 @@ def listar_seguidas_detalle(
             "estado": op.estado if op is not None else s.estado_visto,
             "fecha_cierre": op.fecha_cierre if op is not None else None,
             "url_ficha_app": f"/oportunidad/{s.fuente}/{s.codigo_oportunidad}",
+        })
+    return result
+
+
+def listar_descartadas_detalle(session: Session, user_id: int) -> list[dict[str, Any]]:
+    """Oportunidades descartadas del usuario (F10 parte 2), enriquecidas con
+    el nombre/estado actuales — mismo patrón que `listar_seguidas_detalle`.
+
+    Si la oportunidad subyacente ya no existe, degrada al código crudo en vez
+    de romper el render (regla 6)."""
+    descartadas = listar_descartadas(session, user_id)
+
+    lic_codigos = [d.codigo_oportunidad for d in descartadas if d.fuente == "licitaciones"]
+    ca_codigos = [d.codigo_oportunidad for d in descartadas if d.fuente == "compras_agiles"]
+
+    lics: dict[str, Licitacion] = {}
+    if lic_codigos:
+        for lic in session.execute(
+            select(Licitacion).where(Licitacion.codigo.in_(lic_codigos))
+        ).scalars():
+            lics[lic.codigo] = lic
+
+    cas: dict[str, CompraAgil] = {}
+    if ca_codigos:
+        for c in session.execute(
+            select(CompraAgil).where(CompraAgil.codigo.in_(ca_codigos))
+        ).scalars():
+            cas[c.codigo] = c
+
+    result: list[dict[str, Any]] = []
+    for d in descartadas:
+        op: Licitacion | CompraAgil | None
+        if d.fuente == "licitaciones":
+            op = lics.get(d.codigo_oportunidad)
+        else:
+            op = cas.get(d.codigo_oportunidad)
+
+        result.append({
+            "feedback": d,
+            "nombre": op.nombre if op is not None else d.codigo_oportunidad,
+            "estado": op.estado if op is not None else None,
         })
     return result
 

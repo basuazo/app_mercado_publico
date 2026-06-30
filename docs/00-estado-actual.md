@@ -19,14 +19,20 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   (análisis de competencia al adjudicarse), **F-plan** (consulta del Plan Anual de Compra,
   pestaña separada, on-demand), **F-datos** (clasificación de organismos por sector,
   datos abiertos sin ticket — alcance acotado, ver roadmap), **F10 (parcial)** (formulario
-  de `/perfiles` rediseñado: rubros en acordeón, organismos en multi-select por sector —
-  dashboard/ficha/mail de F10 siguen pendientes), F-deploy.
-- Suite: 439 tests verdes (21 skipped) en el run "plano".
-- F10/perfiles: verificado server-side (TestClient + servidor local real con login y
-  catálogo sincronizado en vivo contra datos abiertos), **no** con un navegador real
-  (sin herramienta de automatización disponible sin instalar dependencia nueva fuera del
-  stack) — recomendado un vistazo manual a la interactividad JS (acordeón/chips/buscador)
-  antes de dar el look final por cerrado.
+  de `/perfiles` rediseñado: rubros en acordeón, organismos en multi-select por sector;
+  **dashboard rediseñado** con tarjetas escaneables, orden score/cierre, **descartar +
+  registro de feedback** "me sirve"/"descarte" — señal para F11; ficha/mail de F10 siguen
+  pendientes), F-deploy.
+- Suite: 458 tests verdes (21 skipped) en el run "plano".
+- F10/perfiles y F10/dashboard: verificados server-side (TestClient con ciclo ASGI completo
+  + servidor local real con login), **no** con un navegador real (sin herramienta de
+  automatización disponible sin instalar dependencia nueva fuera del stack) — recomendado un
+  vistazo manual a la interactividad JS/HTMX antes de dar el look final por cerrado.
+- **Pendiente operativo:** la migración `e1f4a7c9b2d6` (tabla `match_feedback`, F10 parte 2)
+  solo se verificó offline (`alembic ... --sql`); falta correr `alembic upgrade head` contra
+  la branch `dev` y luego `production`. La branch `dev` ya estaba **3 migraciones detrás**
+  del head antes de esta fase (deuda preexistente, no introducida aquí) — conviene revisar
+  el historial completo de `alembic current` vs `alembic heads` antes del próximo upgrade.
 
 ## Qué hace hoy
 Descubrir oportunidades por keyword/región/**rubro UNSPSC**/organismo; ver ficha
@@ -71,10 +77,11 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
 - `test_jobs_run_job_ca`: skip (pega a la API real sin mock); migrar a respx.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
-- **F10 UX (resto):** rediseño de dashboard y ficha de detalle, y fix del mail de match
-  (enlazar a la ficha de la app vía `APP_BASE_URL`). El formulario de `/perfiles` ya quedó
-  hecho (rubros en acordeón, organismos en multi-select por sector).
-- **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM).
+- **F10 UX (resto):** rediseño de la ficha de detalle, y fix del mail de match (enlazar a la
+  ficha de la app vía `APP_BASE_URL`). El formulario de `/perfiles` y el dashboard
+  (tarjetas + descartar + feedback) ya quedaron hechos.
+- **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM) —
+  la señal ya se registra en `MatchFeedback` (F10 parte 2), falta el modelo que la consuma.
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.
 
 ## Mapa de documentos

@@ -1,0 +1,84 @@
+{% macro card_oportunidad(item, csrf_token) %}
+{% set fuente = item.match.fuente %}
+{% set codigo = item.match.codigo_oportunidad %}
+{% set card_id = "card-" ~ fuente ~ "-" ~ codigo %}
+<div class="list-group-item" id="{{ card_id }}">
+  <div class="d-flex align-items-start gap-3">
+    <div class="text-center" style="min-width: 3.5rem;">
+      {% if item.match.score >= 80 %}
+      <span class="badge bg-success fs-6">{{ item.match.score | round(0) | int }}</span>
+      {% elif item.match.score >= 50 %}
+      <span class="badge bg-warning text-dark fs-6">{{ item.match.score | round(0) | int }}</span>
+      {% else %}
+      <span class="badge bg-secondary fs-6">{{ item.match.score | round(0) | int }}</span>
+      {% endif %}
+      <div class="small text-muted">score</div>
+    </div>
+    <div class="flex-grow-1">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <a href="/oportunidad/{{ fuente }}/{{ codigo }}"><strong>{{ item.nombre }}</strong></a>
+          {% if item.dias_al_cierre is not none %}
+            {% if item.dias_al_cierre <= 3 %}
+            <span class="badge bg-danger ms-1">cierra en {{ item.dias_al_cierre | round(0) | int }}d</span>
+            {% elif item.dias_al_cierre <= 7 %}
+            <span class="badge bg-warning text-dark ms-1">cierra en {{ item.dias_al_cierre | round(0) | int }}d</span>
+            {% else %}
+            <span class="badge bg-light text-dark border ms-1">cierra en {{ item.dias_al_cierre | round(0) | int }}d</span>
+            {% endif %}
+          {% endif %}
+        </div>
+        {% if item.monto %}
+        <span class="text-nowrap fw-semibold">${{ '{:,.0f}'.format(item.monto) }}</span>
+        {% endif %}
+      </div>
+      <small class="text-muted d-block">
+        {{ item.organismo or "—" }} · {{ item.region_nombre or "Nacional" }} · {{ fuente }}
+      </small>
+      {% if item.razones %}
+      <div class="mt-1">
+        {% for r in item.razones %}
+        <span class="badge bg-light text-dark border me-1 fw-normal">{{ r }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
+        <a href="/oportunidad/{{ fuente }}/{{ codigo }}" class="btn btn-sm btn-outline-primary">Ver ficha</a>
+
+        <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
+              hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
+              hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next" value="/">
+          {% if item.siguiendo %}
+          <button type="submit" class="btn btn-sm btn-success">Siguiendo</button>
+          {% else %}
+          <button type="submit" class="btn btn-sm btn-outline-secondary">Seguir</button>
+          {% endif %}
+        </form>
+
+        <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+              hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+              hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next" value="/">
+          {% if item.feedback == "sirve" %}
+          <button type="submit" class="btn btn-sm btn-success">Me sirve</button>
+          {% else %}
+          <button type="submit" class="btn btn-sm btn-outline-success">Me sirve</button>
+          {% endif %}
+        </form>
+
+        <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+              hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+              hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next" value="/">
+          <button type="submit" class="btn btn-sm btn-outline-danger">Descartar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

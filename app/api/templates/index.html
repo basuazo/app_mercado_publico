@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_card_oportunidad.html" import card_oportunidad %}
 {% block title %}Dashboard — MP Oportunidades{% endblock %}
 {% block content %}
 <h2 class="mb-4">Oportunidades</h2>
 
-<form class="row g-2 mb-4" method="get" action="/">
+<form class="row g-2 mb-2" method="get" action="/">
   <div class="col-md-3">
     <select name="fuente" class="form-select">
       <option value="">Todas las fuentes</option>
@@ -15,7 +16,7 @@
     <select name="perfil_id" class="form-select">
       <option value="">Todos los perfiles</option>
       {% for p in perfiles %}
-      <option value="{{ p.id }}" {% if perfil_id == p.id %}selected{% endif %}>{{ p.nombre }}</option>
+      <option value="{{ p.id }}" {% if perfil_id == p.id|string %}selected{% endif %}>{{ p.nombre }}</option>
       {% endfor %}
     </select>
   </div>
@@ -27,44 +28,23 @@
   </div>
 </form>
 
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div class="btn-group btn-group-sm" role="group">
+    <a href="?orden=score&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+       class="btn {% if orden == 'score' %}btn-primary{% else %}btn-outline-primary{% endif %}">Mejor match</a>
+    <a href="?orden=cierre&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+       class="btn {% if orden == 'cierre' %}btn-primary{% else %}btn-outline-primary{% endif %}">Cierran pronto</a>
+  </div>
+  {% if n_descartadas %}
+  <a href="/descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
+  {% endif %}
+</div>
+
 {% if items %}
 <p class="text-muted small">{{ total }} resultado(s) — página {{ pagina }}/{{ total_paginas }}</p>
 <div class="list-group">
   {% for item in items %}
-  <a href="/oportunidad/{{ item.match.fuente }}/{{ item.match.codigo_oportunidad }}"
-     class="list-group-item list-group-item-action">
-    <div class="d-flex justify-content-between align-items-start">
-      <div>
-        <strong>{{ item.nombre }}</strong>
-        <span class="badge bg-secondary ms-2">{{ item.match.fuente }}</span>
-        {% if item.match.score >= 80 %}
-          <span class="badge bg-success ms-1">{{ item.match.score }}</span>
-        {% elif item.match.score >= 50 %}
-          <span class="badge bg-warning text-dark ms-1">{{ item.match.score }}</span>
-        {% else %}
-          <span class="badge bg-secondary ms-1">{{ item.match.score }}</span>
-        {% endif %}
-      </div>
-      <small class="text-muted">
-        {% if item.dias_al_cierre is not none %}
-          {{ item.dias_al_cierre | round(0) | int }}d
-        {% endif %}
-      </small>
-    </div>
-    <small class="text-muted d-block">
-      {{ item.organismo }}
-      {% if item.region_nombre %} — {{ item.region_nombre }}{% endif %}
-      {% if item.monto %} — ${{ '{:,.0f}'.format(item.monto) }}{% endif %}
-      {% if item.estado %} — {{ item.estado }}{% endif %}
-    </small>
-    {% if item.razones %}
-    <div class="mt-1">
-      {% for r in item.razones %}
-      <span class="badge bg-light text-dark border me-1 fw-normal">{{ r }}</span>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </a>
+  {{ card_oportunidad(item, csrf_token) }}
   {% endfor %}
 </div>
 
@@ -72,12 +52,12 @@
   <ul class="pagination pagination-sm">
     {% if pagina > 1 %}
     <li class="page-item">
-      <a class="page-link" href="?pagina={{ pagina - 1 }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Anterior</a>
+      <a class="page-link" href="?pagina={{ pagina - 1 }}&fuente={{ fuente }}&texto={{ texto }}&orden={{ orden }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Anterior</a>
     </li>
     {% endif %}
     {% if pagina < total_paginas %}
     <li class="page-item">
-      <a class="page-link" href="?pagina={{ pagina + 1 }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Siguiente</a>
+      <a class="page-link" href="?pagina={{ pagina + 1 }}&fuente={{ fuente }}&texto={{ texto }}&orden={{ orden }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Siguiente</a>
     </li>
     {% endif %}
   </ul>

@@ -175,3 +175,14 @@ def normalizar_sector(id_sector: object, sector: object) -> tuple[int, str]:
         return ID_SECTOR_SIN_CLASIFICACION, SECTOR_SIN_CLASIFICACION
     nombre = sector.strip() if isinstance(sector, str) and sector.strip() else SECTOR_SIN_CLASIFICACION
     return id_sector_int, nombre
+
+
+class ValorFeedback(enum.StrEnum):
+    """Feedback explícito del usuario sobre un match (F10 parte 2 / F11).
+
+    Solo se REGISTRA aquí; F11 es quien la consumirá como señal de
+    entrenamiento para reponderar el matching — este módulo no reordena nada.
+    """
+
+    SIRVE = "sirve"
+    DESCARTE = "descarte"

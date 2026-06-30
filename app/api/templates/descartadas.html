@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Descartadas — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Oportunidades descartadas</h2>
+
+<div class="mb-3">
+  <a href="/" class="btn btn-sm btn-outline-secondary">Volver al dashboard</a>
+</div>
+
+{% if items %}
+<div class="list-group">
+  {% for item in items %}
+  <div class="list-group-item" id="descarte-{{ item.feedback.fuente }}-{{ item.feedback.codigo_oportunidad }}">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <a href="/oportunidad/{{ item.feedback.fuente }}/{{ item.feedback.codigo_oportunidad }}"><strong>{{ item.nombre }}</strong></a>
+        <span class="badge bg-secondary ms-2">{{ item.feedback.fuente }}</span>
+      </div>
+    </div>
+    {% if item.estado %}
+    <small class="text-muted d-block">Estado: {{ item.estado }}</small>
+    {% endif %}
+
+    <div class="mt-2">
+      <form method="post" action="/oportunidad/{{ item.feedback.fuente }}/{{ item.feedback.codigo_oportunidad }}/deshacer-descarte" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="/descartadas">
+        <button type="submit" class="btn btn-sm btn-outline-success">Restaurar</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">No tienes oportunidades descartadas.</div>
+{% endif %}
+{% endblock %}
