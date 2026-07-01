@@ -134,21 +134,28 @@ def get_oportunidades_usuario(
     texto: str | None = None,
     perfil_id: int | None = None,
     orden: str = "score",
+    min_score: int = 0,
     limit: int = 50,
     offset: int = 0,
-) -> tuple[list[dict[str, Any]], int]:
-    """Retorna (items, total) de oportunidades_match para los perfiles activos del usuario.
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Retorna (items, total, total_sin_filtro_relevancia) de oportunidades_match
+    para los perfiles activos del usuario.
 
-    Aplica filtros opcionales en Python (texto, region) después de cargar matches.
-    Excluye las oportunidades que el usuario descartó (feedback F10 parte 2) — esas
-    solo se ven en la vista "ver descartadas" (`listar_descartadas_detalle`).
+    Aplica filtros opcionales en Python (texto, region, min_score) después de
+    cargar matches. Excluye las oportunidades que el usuario descartó (feedback
+    F10 parte 2) — esas solo se ven en la vista "ver descartadas"
+    (`listar_descartadas_detalle`).
     `orden`: "score" (default, mejor match primero) o "cierre" (cierran antes
     primero, sin fecha al final). Paginación correcta después de aplicar todos
     los filtros y el orden.
+    `min_score`: piso de `OportunidadMatch.score` (umbral de relevancia del
+    feed); 0 = sin piso, muestra todo. `total_sin_filtro_relevancia` es el total
+    que habría sin aplicar `min_score` (mismos filtros de fuente/perfil/texto/
+    región/descartadas), para poder mostrar "N ocultas por baja relevancia".
     """
     perfiles = listar_perfiles(session, user_id)
     if not perfiles:
-        return [], 0
+        return [], 0, 0
 
     perfil_ids = [p.id for p in perfiles]
 
@@ -158,7 +165,7 @@ def get_oportunidades_usuario(
         stmt = stmt.where(OportunidadMatch.fuente == fuente)
     if perfil_id is not None:
         if perfil_id not in perfil_ids:
-            return [], 0
+            return [], 0, 0
         stmt = stmt.where(OportunidadMatch.perfil_id == perfil_id)
 
     stmt = stmt.order_by(OportunidadMatch.score.desc())
@@ -225,8 +232,12 @@ def get_oportunidades_usuario(
     else:
         result.sort(key=lambda r: r["match"].score, reverse=True)
 
+    total_sin_filtro = len(result)
+    if min_score > 0:
+        result = [r for r in result if r["match"].score >= min_score]
+
     total = len(result)
-    return result[offset : offset + limit], total
+    return result[offset : offset + limit], total, total_sin_filtro
 
 
 def listar_seguidas_detalle(

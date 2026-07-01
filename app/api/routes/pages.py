@@ -88,6 +88,11 @@ def _es_htmx(request: Request) -> bool:
 
 _ORDENES_VALIDOS = {"score", "cierre"}
 
+# Preset "Alta relevancia" del control de umbral del feed (F-feed-umbral).
+# "Media" usa settings.feed_min_score_default (configurable por env);
+# "Todas" es 0 (sin piso) — ver `index`.
+_RELEVANCIA_ALTA = 60
+
 
 # ---------------------------------------------------------------------------
 # Dashboard principal
@@ -101,6 +106,7 @@ async def index(
     texto: str = "",
     perfil_id: str = "",
     orden: str = "score",
+    min_score: int | None = None,
     pagina: int = 1,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -109,13 +115,16 @@ async def index(
     offset = (pagina - 1) * limit
     perfil_id_int: int | None = int(perfil_id) if perfil_id.strip().isdigit() else None
     orden = orden if orden in _ORDENES_VALIDOS else "score"
-    items, total = get_oportunidades_usuario(
+    settings = request.app.state.settings
+    min_score_efectivo = min_score if min_score is not None and min_score >= 0 else settings.feed_min_score_default
+    items, total, total_sin_relevancia = get_oportunidades_usuario(
         session,
         user.id,
         fuente=fuente or None,
         texto=texto or None,
         perfil_id=perfil_id_int,
         orden=orden,
+        min_score=min_score_efectivo,
         limit=limit,
         offset=offset,
     )
@@ -136,6 +145,10 @@ async def index(
             texto=texto,
             perfil_id=perfil_id,
             orden=orden,
+            min_score=min_score_efectivo,
+            n_ocultas_relevancia=total_sin_relevancia - total,
+            relevancia_alta=_RELEVANCIA_ALTA,
+            relevancia_media=settings.feed_min_score_default,
             n_descartadas=n_descartadas,
             perfiles=perfiles,
         ),

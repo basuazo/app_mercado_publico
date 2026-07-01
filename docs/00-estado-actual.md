@@ -24,8 +24,30 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   registro de feedback** "me sirve"/"descarte" — señal para F11; **ficha de detalle
   rediseñada** con cabecera escaneable, competencia con oferentes que NO ganaron, rubro en
   ítems, y los mismos botones de feedback; **mail de match enlaza a la ficha de la app**
-  (ya no a la URL no autorizada de MP) — **F10 COMPLETA**), F-deploy.
-- Suite: 476 tests verdes (21 skipped) en el run "plano".
+  (ya no a la URL no autorizada de MP) — **F10 COMPLETA**), Fix Compra Ágil 500 en frío,
+  **F-feed-umbral** (umbral de relevancia en el dashboard: control Alta/Media/Todas +
+  línea "N ocultas por baja relevancia — ver todas", ver detalle abajo), F-deploy.
+- Suite: 499 tests verdes (1 skipped); persisten 1 falla + 4 errores preexistentes
+  (`test_match_todos_procesa_todos_perfiles` no aislado, `pg_session` con
+  `Session(connection=...)` — ver "Deudas conocidas", ninguno introducido en esta fase).
+- **F-feed-umbral — umbral de relevancia del feed (este commit):** `get_oportunidades_usuario`
+  (`app/api/query.py`) suma un parámetro `min_score` (default `0` = sin piso, para no romper
+  a quien llama la función directo — p. ej. la API REST `/api/oportunidades`, fuera de
+  alcance de esta fase) y retorna un tercer valor `total_sin_filtro_relevancia` para poder
+  mostrar cuántos matches quedan ocultos. La ruta `GET /` (dashboard) sí aplica un piso por
+  defecto — `settings.feed_min_score_default` (nuevo, **`40`**) — salvo que la request pase
+  `?min_score=`. Control en `index.html`: presets "Alta relevancia" (`60`, fijo), "Media"
+  (el default configurable) y "Todas" (`0`), más la línea "Mostrando N · M oculta(s) por baja
+  relevancia — ver todas" (también cuando el filtro esconde absolutamente todo).
+  **Confianza del default (regla 20/23):** la branch `dev` de Neon solo tenía **10** filas en
+  `oportunidades_match` al momento de calibrar (rango de score 23–53) — muestra insuficiente
+  para una distribución robusta; no se consultó `production` (fuera del alcance autorizado
+  de esta sesión). El valor `40` es **INFERIDO** de la fórmula de scoring
+  (`app/matching/engine.py`: `score_texto` 0–60 solo si hay keyword-hit real, más
+  `score_urgencia`/`score_competencia`/`score_estructural` 0–35 sin necesidad de texto) más
+  el patrón visto en los 10 matches de dev, no de una distribución grande verificada. Queda
+  como env var ajustable sin re-deploy (`FEED_MIN_SCORE_DEFAULT`) — **recalibrar con datos
+  reales de producción** en cuanto haya volumen para confirmarlo o corregirlo.
 - F10/perfiles, F10/dashboard y F10/ficha: verificados server-side (TestClient con ciclo ASGI
   completo + servidor local real con login), **no** con un navegador real (sin herramienta de
   automatización disponible sin instalar dependencia nueva fuera del stack) — recomendado un

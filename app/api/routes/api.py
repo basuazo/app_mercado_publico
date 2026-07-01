@@ -77,7 +77,7 @@ async def listar_oportunidades(
 ) -> dict[str, Any]:
     limit = 50
     offset = (pagina - 1) * limit
-    items, total = get_oportunidades_usuario(
+    items, total, _ = get_oportunidades_usuario(
         session,
         user.id,
         fuente=fuente or None,

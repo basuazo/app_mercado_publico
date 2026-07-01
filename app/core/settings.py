@@ -96,6 +96,16 @@ class Settings(BaseSettings):
         description="Primer año con PAC publicado en datos abiertos (verificado en el spike)",
     )
 
+    # --- Umbral de relevancia del feed (F-feed-umbral) ---
+    feed_min_score_default: int = Field(
+        default=40,
+        description=(
+            "Piso de OportunidadMatch.score por defecto en el feed del dashboard "
+            "(preset 'Media'). 0 = sin piso ('Todas'). Ajustable sin re-deploy vía "
+            "?min_score en la request."
+        ),
+    )
+
 
 def get_settings() -> "Settings":
     return Settings()  # type: ignore[call-arg]

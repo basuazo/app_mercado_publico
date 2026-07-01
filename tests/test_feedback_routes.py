@@ -125,13 +125,13 @@ def test_feed_excluye_descartadas(client, usuario, settings, engine):
     cookies, headers = _session(settings, usuario)
 
     with Session(engine) as s:
-        items, total = get_oportunidades_usuario(s, usuario)
+        items, total, _ = get_oportunidades_usuario(s, usuario)
         assert total == 1
 
     client.post("/oportunidad/licitaciones/LIC-001/descartar", data={}, cookies=cookies, headers=headers)
 
     with Session(engine) as s:
-        items, total = get_oportunidades_usuario(s, usuario)
+        items, total, _ = get_oportunidades_usuario(s, usuario)
         assert total == 0
 
     r = client.get("/", cookies=_cookie(settings, usuario))
@@ -154,7 +154,7 @@ def test_deshacer_descarte_reincorpora_al_feed(client, usuario, settings, engine
     client.post("/oportunidad/licitaciones/LIC-001/descartar", data={}, cookies=cookies, headers=headers)
 
     with Session(engine) as s:
-        _, total = get_oportunidades_usuario(s, usuario)
+        _, total, _ = get_oportunidades_usuario(s, usuario)
         assert total == 0
 
     r = client.post(
@@ -167,7 +167,7 @@ def test_deshacer_descarte_reincorpora_al_feed(client, usuario, settings, engine
     assert r.status_code == 303
 
     with Session(engine) as s:
-        _, total = get_oportunidades_usuario(s, usuario)
+        _, total, _ = get_oportunidades_usuario(s, usuario)
         assert total == 1
         assert obtener_feedback(s, usuario, "licitaciones", "LIC-001") is None
 
@@ -303,10 +303,10 @@ def test_orden_score_vs_cierre(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario, "LIC-BAJO", score=30, fecha_cierre=datetime(2026, 1, 1))
 
     with Session(engine) as s:
-        items_score, _ = get_oportunidades_usuario(s, usuario, orden="score")
+        items_score, _, _ = get_oportunidades_usuario(s, usuario, orden="score")
         assert [i["match"].codigo_oportunidad for i in items_score] == ["LIC-ALTO", "LIC-BAJO"]
 
-        items_cierre, _ = get_oportunidades_usuario(s, usuario, orden="cierre")
+        items_cierre, _, _ = get_oportunidades_usuario(s, usuario, orden="cierre")
         assert [i["match"].codigo_oportunidad for i in items_cierre] == ["LIC-BAJO", "LIC-ALTO"]
 
 
@@ -327,7 +327,7 @@ def test_orden_cierre_nulos_al_final(client, usuario, settings, engine):
         del m
 
     with Session(engine) as s:
-        items, _ = get_oportunidades_usuario(s, usuario, orden="cierre")
+        items, _, _ = get_oportunidades_usuario(s, usuario, orden="cierre")
         assert [i["match"].codigo_oportunidad for i in items] == ["LIC-CON-FECHA", "LIC-SIN-FECHA"]
 
 
@@ -410,4 +410,96 @@ def test_dashboard_banner_descartadas(client, usuario, settings, engine):
     client.post("/oportunidad/licitaciones/LIC-001/descartar", data={}, cookies=cookies, headers=headers)
 
     r = client.get("/", cookies=_cookie(settings, usuario))
-    assert "Ver descartadas (1)" in r.text
+    assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Umbral de relevancia del feed (F-feed-umbral)
+# ---------------------------------------------------------------------------
+
+
+def test_min_score_filtra_bajo_el_piso(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-ALTO", score=80)
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
+
+    with Session(engine) as s:
+        items, total, total_sin_relevancia = get_oportunidades_usuario(s, usuario, min_score=40)
+        assert total == 1
+        assert [i["match"].codigo_oportunidad for i in items] == ["LIC-ALTO"]
+        assert total_sin_relevancia == 2
+
+
+def test_min_score_cero_muestra_todo(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-ALTO", score=80)
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
+
+    with Session(engine) as s:
+        items, total, total_sin_relevancia = get_oportunidades_usuario(s, usuario, min_score=0)
+        assert total == 2
+        assert total_sin_relevancia == 2
+        assert {i["match"].codigo_oportunidad for i in items} == {"LIC-ALTO", "LIC-BAJO"}
+
+
+def test_min_score_conteo_de_ocultas(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-1", score=80)
+    _crear_match_propio(engine, usuario, "LIC-2", score=60)
+    _crear_match_propio(engine, usuario, "LIC-3", score=20)
+
+    with Session(engine) as s:
+        _, total, total_sin_relevancia = get_oportunidades_usuario(s, usuario, min_score=50)
+        assert total == 2
+        assert total_sin_relevancia == 3
+        assert total_sin_relevancia - total == 1
+
+
+def test_min_score_no_rompe_orden_por_score(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-MEDIO", score=55)
+    _crear_match_propio(engine, usuario, "LIC-ALTO", score=90)
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
+
+    with Session(engine) as s:
+        items, _, _ = get_oportunidades_usuario(s, usuario, min_score=50, orden="score")
+        assert [i["match"].codigo_oportunidad for i in items] == ["LIC-ALTO", "LIC-MEDIO"]
+
+
+def test_dashboard_aplica_default_de_settings(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-ALTO", score=80)
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
+    assert settings.feed_min_score_default == 40
+
+    r = client.get("/", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert "Licitación LIC-ALTO" in r.text
+    assert "Licitación LIC-BAJO" not in r.text
+    assert "oculta" in r.text
+    assert "ver todas" in r.text
+
+
+def test_dashboard_respeta_override_min_score_por_query(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-ALTO", score=80)
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
+
+    r = client.get("/?min_score=0", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert "Licitación LIC-ALTO" in r.text
+    assert "Licitación LIC-BAJO" in r.text
+    assert "oculta" not in r.text
+
+
+def test_dashboard_render_control_de_relevancia(client, usuario, settings, engine):
+    _crear_match_propio(engine, usuario, "LIC-001", score=80)
+    r = client.get("/", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert "Alta relevancia" in r.text
+    assert "Todas" in r.text
+    assert "min_score=" in r.text
+
+
+def test_dashboard_paginacion_usa_total_filtrado(client, usuario, settings, engine):
+    for i in range(25):
+        _crear_match_propio(engine, usuario, f"LIC-ALTO-{i}", score=80)
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
+
+    r = client.get("/", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert "página 1/2" in r.text

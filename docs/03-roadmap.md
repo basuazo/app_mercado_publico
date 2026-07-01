@@ -283,6 +283,43 @@ El filtro local de estado se mantiene como defensa adicional. Mejora chica en
 de `MPServerError`) el cuerpo crudo de la respuesta, truncado a 500 caracteres — acelera
 el próximo diagnóstico similar. Sin migración.
 
+## F-feed-umbral — Umbral de relevancia en el feed — HECHO
+Causa: `match_perfil` persiste un match por cada candidato que pasa región/monto sin piso
+de score, y `buscar_oportunidades`/`get_oportunidades_usuario` (`app/api/query.py`) no
+filtraba por score → el feed mostraba todo (decenas de páginas de ruido rubro/organismo-only
+sin relevancia textual real).
+- `get_oportunidades_usuario` suma `min_score` (default de la **función** `0` = sin piso,
+  para no romper a quien la llama directo, p. ej. `/api/oportunidades` — fuera de alcance)
+  y retorna un tercer valor, `total_sin_filtro_relevancia`, para poder mostrar cuántos
+  matches quedan ocultos por el piso.
+- `GET /` (dashboard) sí aplica un piso por defecto: nuevo setting
+  `feed_min_score_default` (env `FEED_MIN_SCORE_DEFAULT`, default **`40`**), salvo que la
+  request pase `?min_score=`. Preserva el resto de filtros/orden/paginación de F10 (la
+  paginación ya usaba el total filtrado, ahora ese total refleja también el piso).
+- UI (`index.html`): control con presets "Alta relevancia" (`60`, fijo), "Media" (el
+  default configurable) y "Todas" (`0`), y la línea "Mostrando N · M oculta(s) por baja
+  relevancia — ver todas" (también cuando el piso esconde absolutamente todo, en vez del
+  mensaje genérico de "sin resultados").
+- **Calibración del default (regla 20/23):** se consultó la distribución real de
+  `OportunidadMatch.score` en la branch `dev` de Neon antes de fijar el valor (regla 20 —
+  no inventar el número). Resultado: solo **10** filas existían en `oportunidades_match`
+  (rango 23–53) — muestra demasiado chica para una distribución confiable, y no se consultó
+  `production` (la sesión no estaba autorizada a leer esa branch). El valor `40` combina esa
+  muestra con la estructura de la fórmula de scoring (`app/matching/engine.py`): un match
+  sin keyword-hit real (`score_texto=0`) topea en ~35 (`score_estructural` rubro+organismo)
+  más urgencia/competencia — por debajo de `40` caen casi exclusivamente los matches
+  rubro/organismo-only sin relevancia textual, que son el ruido reportado. Es **INFERIDO**,
+  no un corte estadístico verificado a gran escala — queda como env var ajustable sin
+  re-deploy y **debe recalibrarse** cuando haya volumen real de producción para
+  confirmarlo o corregirlo.
+- Sin migración (no se persiste nada nuevo; es filtro de display).
+- Tests: filtro por `min_score`, `min_score=0` sin piso, conteo de ocultas, orden por score
+  intacto con el filtro aplicado, default de settings aplicado en la ruta, override por
+  query param, paginación sobre el total filtrado, y render del control + línea de ocultas
+  (`tests/test_feedback_routes.py`).
+- Alcance: solo el feed del dashboard. **Follow-up anotado, no hecho aquí:** las alertas/
+  digest no aplican ningún piso de score — evaluar si deberían.
+
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
 `app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:
