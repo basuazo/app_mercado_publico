@@ -28,7 +28,8 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   **F-feed-umbral** (umbral de relevancia en el dashboard: control Alta/Media/Todas +
   línea "N ocultas por baja relevancia — ver todas"), **F-feed-agrupado** (el dashboard
   reemplaza la lista plana por una vista agrupada por categorías: motivo/región/fuente),
-  **deuda técnica — suite 100% verde** (ver detalle abajo), F-deploy.
+  **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
+  oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
 - **Suite: 522 tests verdes, 0 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
   contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
 - **Deuda técnica — suite 100% verde (este commit):**
@@ -72,6 +73,20 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
     `dev`), la hace Boris; investigar por qué las adjudicadas quedan con
     `fecha_publicacion`/`fecha_cierre` NULL es una investigación aparte del refresh de
     estados terminales, no mezclar con esta limpieza de tests.
+- **Fix — enlace "Ver ficha oficial en MP" no abría (este commit):** spike previo en
+  `docs/10-enlace-ficha.md` (veredicto cerrado). Causa: el parámetro `qs` de
+  `DetailsAcquisition.aspx` espera un token interno ENCRIPTADO, no el `CodigoExterno` en
+  texto plano — ninguna API oficial (v1 ni v2) lo entrega. Fix: `_url_ficha`
+  (`app/api/query.py`) para licitaciones ahora arma
+  `.../DetailsAcquisition.aspx?idlicitacion={codigo}` en vez de `?qs={codigo}` —
+  Mercado Público resuelve `idlicitacion=<CodigoExterno>` y redirige al `qs` correcto
+  (verificado: reproduce byte a byte el token real para la licitación de prueba
+  `1300-31-LE26`). `mostrar_ficha_oficial` (gate a solo procesos `PUBLICADA`) **sin
+  cambios** — es un problema distinto (MP igual bloquea la ficha a no-dueños en procesos
+  cerrados). Compra Ágil sin cambios (sigue al buscador genérico). Tests nuevos:
+  `tests/test_query.py` (`_url_ficha`/`mostrar_ficha_oficial` puros, sin DB) +
+  `tests/test_ficha_routes.py` (render end-to-end: licitación publicada usa
+  `idlicitacion=`, cerrada no muestra el enlace). Sin migración.
 - **F-feed-agrupado — feed agrupado por categorías (este commit):** el dashboard (`GET /`)
   ya NO es una lista plana paginada — siempre agrupa. `app/api/query.py::agrupar_oportunidades`
   recibe el conjunto YA filtrado por relevancia y ordenado (score/cierre) de

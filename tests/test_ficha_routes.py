@@ -84,9 +84,9 @@ def _session(settings: Settings, user_id: int) -> tuple[dict[str, str], dict[str
     return cookies, headers
 
 
-def _crear_match_lic_con_items(engine, owner_id: int, codigo: str = "LIC-001") -> None:
+def _crear_match_lic_con_items(engine, owner_id: int, codigo: str = "LIC-001", estado: str = "publicada") -> None:
     with Session(engine) as s:
-        lic = Licitacion(codigo=codigo, nombre="Licitación test", descripcion="", estado="publicada")
+        lic = Licitacion(codigo=codigo, nombre="Licitación test", descripcion="", estado=estado)
         s.add(lic)
         s.add(
             LicitacionItem(
@@ -168,6 +168,32 @@ def test_ficha_render_compra_agil_no_se_rompe(client, usuario, settings, engine)
     r = client.get("/oportunidad/compras_agiles/CA-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Producto sin UNSPSC" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Enlace "Ver ficha oficial en MP" (fix: idlicitacion en vez de qs, ver
+# docs/10-enlace-ficha.md)
+# ---------------------------------------------------------------------------
+
+
+def test_ficha_publicada_enlace_usa_idlicitacion(client, usuario, settings, engine):
+    """La licitación de prueba está 'publicada' (proceso abierto) — el botón
+    "Ver ficha oficial" debe apuntar a idlicitacion=<codigo>, no a qs=<codigo>
+    (qs=<codigo> no abre; ver docs/10-enlace-ficha.md)."""
+    _crear_match_lic_con_items(engine, usuario)
+    r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert "DetailsAcquisition.aspx?idlicitacion=LIC-001" in r.text
+    assert "qs=LIC-001" not in r.text
+
+
+def test_ficha_cerrada_no_muestra_enlace_oficial(client, usuario, settings, engine):
+    """mostrar_ficha_oficial sigue restringiendo a procesos abiertos — el fix
+    de idlicitacion no cambia ese gate (ver docs/10-enlace-ficha.md §1)."""
+    _crear_match_lic_con_items(engine, usuario, estado="cerrada")
+    r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert "DetailsAcquisition.aspx" not in r.text
 
 
 # ---------------------------------------------------------------------------

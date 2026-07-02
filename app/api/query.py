@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -27,14 +28,18 @@ def _url_ficha(fuente: str, codigo: str) -> str:
     """URL de la ficha oficial en Mercado Público.
 
     Para licitaciones es la ficha estándar (DetailsAcquisition): accesible para
-    proveedores con sesión iniciada en procesos abiertos. Para Compra Ágil se
-    apunta al buscador público vigente. Ver `mostrar_ficha_oficial` para cuándo
-    conviene exponer este enlace en la UI.
+    proveedores con sesión iniciada en procesos abiertos. El parámetro
+    `qs` de esa página espera un token interno ENCRIPTADO (no el
+    `CodigoExterno`); en cambio `idlicitacion=<CodigoExterno>` hace que el
+    propio Mercado Público resuelva y redirija al `qs` correcto — verificado
+    en `docs/10-enlace-ficha.md` (reproduce byte a byte el token real). Para
+    Compra Ágil se apunta al buscador público vigente. Ver
+    `mostrar_ficha_oficial` para cuándo conviene exponer este enlace en la UI.
     """
     if fuente == "licitaciones":
         return (
             "https://www.mercadopublico.cl/Procurement/Modules/RFB/"
-            f"DetailsAcquisition.aspx?qs={codigo}"
+            f"DetailsAcquisition.aspx?idlicitacion={quote(codigo, safe='')}"
         )
     return "https://buscador.mercadopublico.cl/compra-agil"
 

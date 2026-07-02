@@ -437,6 +437,33 @@ hallazgo que quedaba oculto detrás de una de ellas. Sin migración de esquema.
   `fecha_publicacion`/`fecha_cierre` NULL es una investigación aparte del refresh de estados
   terminales, no se mezcla con esta limpieza de tests.
 
+## Fix — Enlace "Ver ficha oficial en MP" no abría (licitaciones) — HECHO
+Spike + causa raíz en `docs/10-enlace-ficha.md` (veredicto cerrado). El parámetro `qs` de
+`DetailsAcquisition.aspx` espera un token interno ENCRIPTADO (16 bytes, base64) — no el
+`CodigoExterno` en texto plano que la app armaba (`qs={codigo}`, reportado roto por Boris
+con la licitación real `1300-31-LE26`). Ninguna API oficial (v1 ni v2; v2 no aplica a
+licitaciones) entrega ese token ni un id interno que permita derivarlo — se revisaron las
+89 claves hoja del detalle v1 real, ninguna sirve.
+Fix en `app/api/query.py::_url_ficha`: para licitaciones, cambia de `?qs={codigo}` a
+`?idlicitacion={quote(codigo, safe='')}` — Mercado Público resuelve `idlicitacion=
+<CodigoExterno>` internamente y redirige al `qs` encriptado correcto (verificado en el
+spike: reproduce **byte a byte** el token real que Boris confirmó que abre, y de nuevo
+para 2 licitaciones adicionales reales). `mostrar_ficha_oficial` (gate a solo procesos
+`PUBLICADA`) **sin cambios** — es un problema distinto (MP igual bloquea la ficha a
+quien no es la unidad dueña en procesos cerrados, independiente del parámetro usado para
+llegar). La rama de Compra Ágil de `_url_ficha` (buscador genérico) tampoco cambia — Boris
+no reportó problema ahí.
+Tests nuevos: `tests/test_query.py` (`_url_ficha`/`mostrar_ficha_oficial` puros, sin DB:
+usa `idlicitacion`, no `qs`; escapa el código; Compra Ágil intacto; gate por estado) +
+`tests/test_ficha_routes.py` (render end-to-end vía `TestClient`: licitación `publicada`
+muestra el enlace con `idlicitacion=`, `cerrada` no muestra el enlace en absoluto). Sin
+tests de red real (regla CLAUDE.md). Sin migración.
+**Pendiente anotado (no bloqueante, ver `docs/10-enlace-ficha.md` §6):** no se abrió un
+navegador real para confirmar visualmente el render final tras el redirect (la
+verificación se apoyó en la coincidencia exacta de string contra el token que Boris ya
+validó manualmente); tampoco se probó el patrón con códigos que tengan caracteres
+URL-especiales (todos los vistos hasta ahora son solo dígitos/letras/guion).
+
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
 `app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:

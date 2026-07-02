@@ -1,5 +1,10 @@
 # Spike — El enlace "Ver ficha oficial en MP" no abre (licitaciones)
 
+> **Estado: HECHO — fix implementado.** `_url_ficha` (`app/api/query.py`) ya usa
+> `idlicitacion={codigo}` en vez de `qs={codigo}` (ver `docs/03-roadmap.md`, sección
+> "Fix — Enlace 'Ver ficha oficial en MP' no abría"). Este documento queda como el spike
+> que encontró la causa y verificó el fix antes de escribirlo.
+
 > Spike de investigación. NO se tocó código de la app. Objetivo: entender por qué
 > `_url_ficha` (`app/api/query.py`) arma un enlace que Mercado Público rechaza, y
 > encontrar (o descartar) una forma de construir el enlace que sí abre.
