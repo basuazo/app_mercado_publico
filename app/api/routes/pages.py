@@ -22,6 +22,8 @@ from app.api.deps import (
     html_require_user,
 )
 from app.api.query import (
+    AGRUPAR_POR_VALIDOS,
+    agrupar_oportunidades,
     buscar_instituciones_pac,
     check_oportunidad_access,
     detalle_competencia,
@@ -93,6 +95,12 @@ _ORDENES_VALIDOS = {"score", "cierre"}
 # "Todas" es 0 (sin piso) — ver `index`.
 _RELEVANCIA_ALTA = 60
 
+# Tope de matches traídos para agrupar (F-feed-agrupado): el feed agrupado ya
+# no pagina globalmente (cada grupo se capa por separado, con "ver más en
+# este grupo"), así que se pide "todo" de una vez. Generoso para la escala
+# real de un equipo de 3-10 usuarios (regla de free tier); no es paginación.
+_LIMITE_AGRUPADO = 2000
+
 
 # ---------------------------------------------------------------------------
 # Dashboard principal
@@ -107,14 +115,14 @@ async def index(
     perfil_id: str = "",
     orden: str = "score",
     min_score: int | None = None,
-    pagina: int = 1,
+    agrupar_por: str = "motivo",
+    grupo_expandido: str = "",
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    limit = 20
-    offset = (pagina - 1) * limit
     perfil_id_int: int | None = int(perfil_id) if perfil_id.strip().isdigit() else None
     orden = orden if orden in _ORDENES_VALIDOS else "score"
+    agrupar_por = agrupar_por if agrupar_por in AGRUPAR_POR_VALIDOS else "motivo"
     settings = request.app.state.settings
     min_score_efectivo = min_score if min_score is not None and min_score >= 0 else settings.feed_min_score_default
     items, total, total_sin_relevancia = get_oportunidades_usuario(
@@ -125,11 +133,13 @@ async def index(
         perfil_id=perfil_id_int,
         orden=orden,
         min_score=min_score_efectivo,
-        limit=limit,
-        offset=offset,
+        limit=_LIMITE_AGRUPADO,
+        offset=0,
+    )
+    grupos, total_unico, total_apariciones = agrupar_oportunidades(
+        items, agrupar_por, grupo_expandido=grupo_expandido or None
     )
     perfiles = listar_perfiles(session, user.id)
-    total_paginas = max(1, (total + limit - 1) // limit)
     n_descartadas = len(listar_descartadas(session, user.id))
     return _TEMPLATES.TemplateResponse(
         request,
@@ -137,15 +147,15 @@ async def index(
         _ctx(
             request,
             user,
-            items=items,
-            total=total,
-            pagina=pagina,
-            total_paginas=total_paginas,
+            grupos=grupos,
+            total_unico=total_unico,
+            total_apariciones=total_apariciones,
             fuente=fuente,
             texto=texto,
             perfil_id=perfil_id,
             orden=orden,
             min_score=min_score_efectivo,
+            agrupar_por=agrupar_por,
             n_ocultas_relevancia=total_sin_relevancia - total,
             relevancia_alta=_RELEVANCIA_ALTA,
             relevancia_media=settings.feed_min_score_default,

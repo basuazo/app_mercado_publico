@@ -26,23 +26,36 @@
   <div class="col-md-2">
     <button type="submit" class="btn btn-primary w-100">Filtrar</button>
   </div>
+  <input type="hidden" name="orden" value="{{ orden }}">
+  <input type="hidden" name="min_score" value="{{ min_score }}">
+  <input type="hidden" name="agrupar_por" value="{{ agrupar_por }}">
 </form>
+
+{% set filtros_qs = "fuente=" ~ fuente ~ "&texto=" ~ texto ~ (("&perfil_id=" ~ perfil_id) if perfil_id else "") %}
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex flex-wrap gap-2">
-    <div class="btn-group btn-group-sm" role="group">
-      <a href="?orden=score&fuente={{ fuente }}&texto={{ texto }}&min_score={{ min_score }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+    <div class="btn-group btn-group-sm" role="group" aria-label="Orden">
+      <a href="?orden=score&min_score={{ min_score }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
          class="btn {% if orden == 'score' %}btn-primary{% else %}btn-outline-primary{% endif %}">Mejor match</a>
-      <a href="?orden=cierre&fuente={{ fuente }}&texto={{ texto }}&min_score={{ min_score }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+      <a href="?orden=cierre&min_score={{ min_score }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
          class="btn {% if orden == 'cierre' %}btn-primary{% else %}btn-outline-primary{% endif %}">Cierran pronto</a>
     </div>
     <div class="btn-group btn-group-sm" role="group" aria-label="Umbral de relevancia">
-      <a href="?min_score={{ relevancia_alta }}&orden={{ orden }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+      <a href="?min_score={{ relevancia_alta }}&orden={{ orden }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
          class="btn {% if min_score == relevancia_alta %}btn-primary{% else %}btn-outline-secondary{% endif %}">Alta relevancia</a>
-      <a href="?min_score={{ relevancia_media }}&orden={{ orden }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+      <a href="?min_score={{ relevancia_media }}&orden={{ orden }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
          class="btn {% if min_score == relevancia_media %}btn-primary{% else %}btn-outline-secondary{% endif %}">Media</a>
-      <a href="?min_score=0&orden={{ orden }}&fuente={{ fuente }}&texto={{ texto }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}"
+      <a href="?min_score=0&orden={{ orden }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
          class="btn {% if min_score == 0 %}btn-primary{% else %}btn-outline-secondary{% endif %}">Todas</a>
+    </div>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Agrupar por">
+      <a href="?agrupar_por=motivo&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}"
+         class="btn {% if agrupar_por == 'motivo' %}btn-primary{% else %}btn-outline-dark{% endif %}">Agrupar: motivo</a>
+      <a href="?agrupar_por=region&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}"
+         class="btn {% if agrupar_por == 'region' %}btn-primary{% else %}btn-outline-dark{% endif %}">Región</a>
+      <a href="?agrupar_por=fuente&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}"
+         class="btn {% if agrupar_por == 'fuente' %}btn-primary{% else %}btn-outline-dark{% endif %}">Fuente</a>
     </div>
   </div>
   {% if n_descartadas %}
@@ -50,33 +63,45 @@
   {% endif %}
 </div>
 
-{% set ver_todas_href = "?min_score=0&orden=" ~ orden ~ "&fuente=" ~ fuente ~ "&texto=" ~ texto ~ (("&perfil_id=" ~ perfil_id) if perfil_id else "") %}
-{% if items %}
+{% set ver_todas_href = "?min_score=0&orden=" ~ orden ~ "&agrupar_por=" ~ agrupar_por ~ "&" ~ filtros_qs %}
+{% if grupos %}
 <p class="text-muted small">
-  Mostrando {{ total }} resultado(s)
+  Mostrando {{ total_unico }} oportunidad(es) · {{ total_apariciones }} aparición(es) en {{ grupos|length }} grupo(s)
   {%- if n_ocultas_relevancia > 0 %} · {{ n_ocultas_relevancia }} oculta(s) por baja relevancia —
-  <a href="{{ ver_todas_href }}">ver todas</a>{% endif %} — página {{ pagina }}/{{ total_paginas }}
+  <a href="{{ ver_todas_href }}">ver todas</a>{% endif %}
 </p>
-<div class="list-group">
-  {% for item in items %}
-  {{ card_oportunidad(item, csrf_token) }}
+
+<div class="accordion" id="feed-agrupado">
+  {% for grupo in grupos %}
+  {% set gidx = loop.index0 %}
+  {% set gid = "grupo-" ~ gidx %}
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="{{ gid }}-heading">
+      <button class="accordion-button" type="button" data-bs-toggle="collapse"
+              data-bs-target="#{{ gid }}-body" aria-expanded="true" aria-controls="{{ gid }}-body">
+        {{ grupo.label }} <span class="badge bg-secondary ms-2">{{ grupo.count }}</span>
+      </button>
+    </h2>
+    <div id="{{ gid }}-body" class="accordion-collapse collapse show" aria-labelledby="{{ gid }}-heading">
+      <div class="accordion-body">
+        <div class="list-group">
+          {% for item in grupo['items'] %}
+          {{ card_oportunidad(item, csrf_token, idx=gidx) }}
+          {% endfor %}
+        </div>
+        {% if grupo.count > grupo['items']|length %}
+        <div class="mt-2">
+          <a class="btn btn-sm btn-outline-secondary"
+             href="?grupo_expandido={{ grupo.key | urlencode }}&agrupar_por={{ agrupar_por }}&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}#{{ gid }}-body">
+            Ver más en este grupo ({{ grupo['items']|length }} de {{ grupo.count }})
+          </a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
   {% endfor %}
 </div>
-
-<nav class="mt-3">
-  <ul class="pagination pagination-sm">
-    {% if pagina > 1 %}
-    <li class="page-item">
-      <a class="page-link" href="?pagina={{ pagina - 1 }}&fuente={{ fuente }}&texto={{ texto }}&orden={{ orden }}&min_score={{ min_score }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Anterior</a>
-    </li>
-    {% endif %}
-    {% if pagina < total_paginas %}
-    <li class="page-item">
-      <a class="page-link" href="?pagina={{ pagina + 1 }}&fuente={{ fuente }}&texto={{ texto }}&orden={{ orden }}&min_score={{ min_score }}{% if perfil_id %}&perfil_id={{ perfil_id }}{% endif %}">Siguiente</a>
-    </li>
-    {% endif %}
-  </ul>
-</nav>
 {% elif n_ocultas_relevancia > 0 %}
 <div class="alert alert-info">
   {{ n_ocultas_relevancia }} oportunidad(es) oculta(s) por baja relevancia —
@@ -85,4 +110,17 @@
 {% else %}
 <div class="alert alert-info">No hay oportunidades que coincidan con tus perfiles.</div>
 {% endif %}
+
+<script>
+  document.body.addEventListener("htmx:afterRequest", function (evt) {
+    if (!evt.detail.successful) return;
+    var path = evt.detail.pathInfo && evt.detail.pathInfo.requestPath;
+    var m = path && path.match(/^\/oportunidad\/([^/]+)\/([^/]+)\/descartar$/);
+    if (!m) return;
+    var key = m[1] + ":" + m[2];
+    document.querySelectorAll('[data-oportunidad-key="' + key + '"]').forEach(function (card) {
+      card.remove();
+    });
+  });
+</script>
 {% endblock %}

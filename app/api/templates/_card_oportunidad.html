@@ -1,8 +1,9 @@
-{% macro card_oportunidad(item, csrf_token) %}
+{% macro card_oportunidad(item, csrf_token, idx="") %}
 {% set fuente = item.match.fuente %}
 {% set codigo = item.match.codigo_oportunidad %}
-{% set card_id = "card-" ~ fuente ~ "-" ~ codigo %}
-<div class="list-group-item" id="{{ card_id }}">
+{% set card_id = "card-" ~ (idx ~ "-" if idx != "" else "") ~ fuente ~ "-" ~ codigo %}
+{% set oportunidad_key = fuente ~ ":" ~ codigo %}
+<div class="list-group-item" id="{{ card_id }}" data-oportunidad-key="{{ oportunidad_key }}">
   <div class="d-flex align-items-start gap-3">
     <div class="text-center" style="min-width: 3.5rem;">
       {% if item.match.score >= 80 %}

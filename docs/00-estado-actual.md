@@ -26,10 +26,44 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   ítems, y los mismos botones de feedback; **mail de match enlaza a la ficha de la app**
   (ya no a la URL no autorizada de MP) — **F10 COMPLETA**), Fix Compra Ágil 500 en frío,
   **F-feed-umbral** (umbral de relevancia en el dashboard: control Alta/Media/Todas +
-  línea "N ocultas por baja relevancia — ver todas", ver detalle abajo), F-deploy.
-- Suite: 499 tests verdes (1 skipped); persisten 1 falla + 4 errores preexistentes
+  línea "N ocultas por baja relevancia — ver todas"), **F-feed-agrupado** (el dashboard
+  reemplaza la lista plana por una vista agrupada por categorías: motivo/región/fuente,
+  ver detalle abajo), F-deploy.
+- Suite: 516 tests verdes (1 skipped); persisten 1 falla + 4 errores preexistentes
   (`test_match_todos_procesa_todos_perfiles` no aislado, `pg_session` con
   `Session(connection=...)` — ver "Deudas conocidas", ninguno introducido en esta fase).
+- **F-feed-agrupado — feed agrupado por categorías (este commit):** el dashboard (`GET /`)
+  ya NO es una lista plana paginada — siempre agrupa. `app/api/query.py::agrupar_oportunidades`
+  recibe el conjunto YA filtrado por relevancia y ordenado (score/cierre) de
+  `get_oportunidades_usuario` y arma grupos según `agrupar_por` (query param, default
+  `"motivo"`): "motivo" expande cada match en un grupo por rubro UNSPSC hit, uno por
+  keyword hit y uno si "organismo seguido" (repetición **intencional**: una oportunidad con
+  2 rubros + 1 keyword aparece en 3 grupos), "sin motivo" cae en "Otros"; "region" agrupa por
+  `region_nombre` ("Sin región" incluye TODAS las licitaciones, que nunca traen región);
+  "fuente" agrupa Licitaciones/Compra Ágil. **No se ofrece agrupar por organismo/sector**:
+  `codigo_organismo` viene vacío en licitaciones (`docs/08-datos-organismos.md` §3-bis d),
+  la mayoría de los grupos quedarían "sin organismo" — sin valor para el usuario.
+  Encabezado "Mostrando N oportunidad(es) · M aparición(es)" (M ≥ N cuando hay repetición).
+  Grupos ordenados por su mejor score (desc); orden de items dentro de cada grupo intacto
+  (el que ya traía `get_oportunidades_usuario`). Cada grupo se capa a 10 items
+  (`CAP_GRUPO_DEFAULT`) con "ver más en este grupo" (`?grupo_expandido=<key>`, sin reordenar
+  el resto). La paginación global (`pagina`/`total_paginas`) del feed **se elimina** — la
+  reemplaza el cap por grupo.
+  UI: acordeón Bootstrap (colapsable, expandido por defecto — chevron nativo del componente,
+  sin JS propio para eso) + control "Agrupar por: Motivo/Región/Fuente" junto a los controles
+  existentes de orden y relevancia. Descartar/seguir/feedback son por oportunidad y ya se
+  reflejan en **todas** sus apariciones en la próxima carga (la query excluye descartadas
+  ANTES de agrupar, así que ninguna reaparece en ningún grupo); además, cada tarjeta lleva
+  `data-oportunidad-key="fuente:codigo"` y un pequeño script (inline, sin librería nueva)
+  escucha `htmx:afterRequest` sobre `.../descartar` y remueve del DOM **todas** las
+  apariciones al instante (sin esperar un reload), para que no quede una copia obsoleta
+  visible en otro grupo tras descartar desde uno.
+  Gotcha de implementación: en Jinja, `dict.items` colisiona con el método builtin
+  `dict.items()` cuando se accede por punto (`grupo.items` devuelve el método, no la lista) —
+  la plantilla usa `grupo['items']` (bracket) en vez de `grupo.items` para ese campo.
+  Sin migración (agrupar es lógica de query/plantilla; las razones ya vivían en
+  `OportunidadMatch.razones`). Tests: `tests/test_feed_agrupado.py` (unit de
+  `agrupar_oportunidades` sin DB + integración de la ruta).
 - **F-feed-umbral — umbral de relevancia del feed (este commit):** `get_oportunidades_usuario`
   (`app/api/query.py`) suma un parámetro `min_score` (default `0` = sin piso, para no romper
   a quien llama la función directo — p. ej. la API REST `/api/oportunidades`, fuera de

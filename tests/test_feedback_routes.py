@@ -495,11 +495,12 @@ def test_dashboard_render_control_de_relevancia(client, usuario, settings, engin
     assert "min_score=" in r.text
 
 
-def test_dashboard_paginacion_usa_total_filtrado(client, usuario, settings, engine):
+def test_dashboard_usa_total_filtrado_por_relevancia(client, usuario, settings, engine):
     for i in range(25):
         _crear_match_propio(engine, usuario, f"LIC-ALTO-{i}", score=80)
     _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
 
     r = client.get("/", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "página 1/2" in r.text
+    assert "Mostrando 25 oportunidad(es)" in r.text
+    assert "1 oculta(s) por baja relevancia" in r.text

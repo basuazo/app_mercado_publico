@@ -320,6 +320,72 @@ sin relevancia textual real).
 - Alcance: solo el feed del dashboard. **Follow-up anotado, no hecho aquí:** las alertas/
   digest no aplican ningún piso de score — evaluar si deberían.
 
+## F-feed-agrupado — Vista agrupada por categorías (reemplaza la lista plana) — HECHO
+Decisión (con Boris): el dashboard pasa a ser **siempre** agrupado — se elimina la lista
+plana y su paginación global. Una oportunidad que matchea por varios motivos aparece en
+CADA grupo que le corresponde (repetición intencional); encabezado "N oportunidades ·
+M apariciones" (M ≥ N) para no confundir.
+- `app/api/query.py::agrupar_oportunidades(items, agrupar_por, *, cap_por_grupo=10,
+  grupo_expandido=None)`: opera sobre el resultado YA filtrado por relevancia (`min_score`,
+  F-feed-umbral) y ordenado (score/cierre) de `get_oportunidades_usuario` — no reordena
+  dentro de cada grupo, solo agrupa. Retorna `(grupos, total_único, total_apariciones)`;
+  cada grupo es `{key, tipo, label, items, count, mejor_score}`, ordenados por
+  `mejor_score` desc. Cap de `cap_por_grupo` items por grupo (control "ver más en este
+  grupo" vía `grupo_expandido=<key>`, que levanta el cap solo para ese grupo).
+- `agrupar_por` (query param, default `"motivo"`):
+  - **"motivo"**: expande por cada rubro de `razones["categorias_hit"]` (código UNSPSC →
+    nombre legible vía `app.catalogos.unspsc.nombre_rubro`, o el código crudo si no
+    resuelve), cada keyword de `razones["keywords_hit"]`, y `"Organismo seguido"` si
+    `razones["organismo_seguido"]`; sin motivo → `"Otros"`.
+  - **"region"**: por `region_nombre` del item; licitaciones (que nunca traen región en
+    nuestro modelo) y CA sin región caen en `"Sin región"`.
+  - **"fuente"**: Licitaciones / Compra Ágil.
+  - **NO se ofrece agrupar por organismo/sector**: `codigo_organismo` viene vacío en
+    licitaciones (`docs/08-datos-organismos.md` §3-bis d) — la mayoría de los grupos
+    quedarían "sin organismo", sin valor.
+- `GET /` (`app/api/routes/pages.py::index`): pide "todo" lo filtrado/ordenado de una vez
+  (`limit=2000`, sin offset — `_LIMITE_AGRUPADO`, generoso para la escala real de 3-10
+  usuarios) en vez de paginar, y agrupa. **Se elimina el parámetro `pagina`/`total_paginas`
+  del dashboard** (reemplazado por el cap por grupo). Nuevo query param `grupo_expandido`
+  (string, la `key` del grupo a des-capar). Preserva `fuente`/`texto`/`perfil_id`/`orden`/
+  `min_score` de F10/F-feed-umbral.
+- UI (`index.html`): acordeón Bootstrap (`accordion`/`accordion-collapse`, expandido por
+  defecto — el chevron es nativo del componente, sin JS propio para eso) con encabezado
+  label + badge de conteo; control "Agrupar por: Motivo/Región/Fuente" junto a los
+  controles existentes de orden y relevancia (F-feed-umbral). El formulario de filtros
+  ahora lleva `orden`/`min_score`/`agrupar_por` como campos ocultos para no perder ese
+  estado al filtrar por fuente/perfil/texto (gap preexistente de F-feed-umbral, corregido
+  de paso).
+- **Descartar oculta TODAS las apariciones:** a nivel de datos, ya funciona solo —
+  `get_oportunidades_usuario` excluye las oportunidades descartadas ANTES de agrupar, así
+  que en la próxima carga ninguna reaparece en ningún grupo. Para que desaparezcan también
+  **al instante** (sin esperar un reload) cuando el usuario descarta desde un grupo
+  mientras la misma oportunidad sigue visible en otro: cada tarjeta lleva
+  `data-oportunidad-key="fuente:codigo"` (macro `card_oportunidad`, ahora con un
+  parámetro `idx` para que el `id` del wrapper sea único por aparición — antes era
+  `card-{fuente}-{codigo}`, colisionaba si la misma oportunidad se renderizaba dos veces)
+  y un script inline (sin librería nueva) escucha `htmx:afterRequest`, detecta
+  `.../descartar` exitoso por el path de la request y remueve del DOM todos los elementos
+  con esa `data-oportunidad-key`. Seguir/Me sirve/Descartar siguen usando las rutas
+  existentes de F10 sin cambios.
+- **Gotcha Jinja (anotado para no repetir):** un grupo es un `dict` con clave `"items"`;
+  `grupo.items` en la plantilla resuelve al método builtin `dict.items()` (no a la lista),
+  porque el operador `.` de Jinja intenta `getattr` antes que `__getitem__`. Fix: acceder
+  como `grupo['items']` (bracket) en vez de `grupo.items` en todo `index.html`.
+  `grupo.label`/`grupo.count`/`grupo.key` sí funcionan por punto porque esos nombres no
+  colisionan con métodos de `dict`.
+  Sin migración (agrupar es lógica de query/plantilla; las razones ya vivían en
+  `OportunidadMatch.razones`, sin cambios de esquema).
+- Tests: `tests/test_feed_agrupado.py` — unit de `agrupar_oportunidades` sin DB (expansión
+  motivo en 3 grupos, grupo "Otros", "Organismo seguido", agrupar por región/fuente, orden
+  de grupos por mejor score, orden de items intacto dentro del grupo, cap + "ver más")
+  más integración de la ruta (umbral aplica antes de agrupar, descartar oculta todas las
+  apariciones en la siguiente carga, render con/sin resultados, agrupar por región/fuente
+  vía query, cap visible en el dashboard real). Ajustado un test preexistente de
+  F-feed-umbral que verificaba paginación (`tests/test_feedback_routes.py`, ya no aplica).
+- Alcance: solo el feed del dashboard (no toca `/descartadas`, `/seguidas` ni
+  `/api/oportunidades`).
+
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
 `app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:

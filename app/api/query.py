@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles
+from app.catalogos.unspsc import nombre_rubro
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas, obtener_seguimiento
@@ -238,6 +239,84 @@ def get_oportunidades_usuario(
 
     total = len(result)
     return result[offset : offset + limit], total, total_sin_filtro
+
+
+# Tope de items visibles por grupo antes de "ver más en este grupo" (evita
+# explotar el DOM cuando el umbral de relevancia está en "Todas").
+CAP_GRUPO_DEFAULT = 10
+
+AGRUPAR_POR_VALIDOS = {"motivo", "region", "fuente"}
+
+
+def _claves_grupo(item: dict[str, Any], agrupar_por: str) -> list[tuple[str, str]]:
+    """Las claves (tipo, label) de grupo a las que pertenece un item.
+
+    "motivo" puede devolver VARIAS claves (repetición intencional: una
+    oportunidad que matchea por 2 rubros + 1 keyword aparece en 3 grupos).
+    "region"/"fuente" son categorizaciones únicas — siempre devuelven 1 clave.
+    No se ofrece agrupar por organismo/sector: `codigo_organismo` viene vacío
+    en licitaciones (ver docs/08-datos-organismos.md §3-bis d) — la mayoría de
+    los grupos quedarían "sin organismo", sin valor para el usuario.
+    """
+    if agrupar_por == "region":
+        return [("region", item["region_nombre"] or "Sin región")]
+    if agrupar_por == "fuente":
+        nombre = "Licitaciones" if item["match"].fuente == "licitaciones" else "Compra Ágil"
+        return [("fuente", nombre)]
+
+    # "motivo" (default)
+    razones = item["match"].razones or {}
+    motivos: list[tuple[str, str]] = []
+    for codigo in razones.get("categorias_hit") or []:
+        motivos.append(("rubro", nombre_rubro(str(codigo)) or str(codigo)))
+    for kw in razones.get("keywords_hit") or []:
+        motivos.append(("keyword", str(kw)))
+    if razones.get("organismo_seguido"):
+        motivos.append(("organismo_seguido", "Organismo seguido"))
+    if not motivos:
+        motivos.append(("otros", "Otros"))
+    return motivos
+
+
+def agrupar_oportunidades(
+    items: list[dict[str, Any]],
+    agrupar_por: str = "motivo",
+    *,
+    cap_por_grupo: int = CAP_GRUPO_DEFAULT,
+    grupo_expandido: str | None = None,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Agrupa items YA filtrados por relevancia y ordenados (score/cierre) por
+    `get_oportunidades_usuario`. Retorna (grupos, total_unico, total_apariciones).
+
+    `agrupar_por`: "motivo" (default, con repetición intencional entre
+    grupos), "region" o "fuente" (categorización única). El orden de los
+    items dentro de cada grupo respeta el orden de `items` de entrada (no se
+    reordena). Los grupos se ordenan por su mejor score (desc). Cada grupo se
+    capa a `cap_por_grupo` items salvo que `grupo_expandido` sea su `key`
+    (control "ver más en este grupo", sin reordenar todo el feed).
+    """
+    grupos_map: dict[str, dict[str, Any]] = {}
+
+    for item in items:
+        for tipo, label in _claves_grupo(item, agrupar_por):
+            key = f"{tipo}:{label}"
+            grupo = grupos_map.setdefault(
+                key,
+                {"key": key, "tipo": tipo, "label": label, "items": [], "count": 0, "mejor_score": 0.0},
+            )
+            grupo["items"].append(item)
+            grupo["count"] += 1
+            grupo["mejor_score"] = max(grupo["mejor_score"], item["match"].score)
+
+    total_apariciones = sum(g["count"] for g in grupos_map.values())
+    total_unico = len({(i["match"].fuente, i["match"].codigo_oportunidad) for i in items})
+
+    grupos = sorted(grupos_map.values(), key=lambda g: g["mejor_score"], reverse=True)
+    for grupo in grupos:
+        if grupo["key"] != grupo_expandido and len(grupo["items"]) > cap_por_grupo:
+            grupo["items"] = grupo["items"][:cap_por_grupo]
+
+    return grupos, total_unico, total_apariciones
 
 
 def listar_seguidas_detalle(
