@@ -561,9 +561,29 @@ class TestMatchFTS:
         assert all(m.perfil_id == perfil_b1.id for m in matches_b1)
 
     def test_match_todos_procesa_todos_perfiles(self, pg_session, ds):
-        """match_todos corre para los 4 perfiles activos del dataset."""
+        """match_todos corre para TODOS los perfiles activos de usuarios activos
+        — no asume una BD vacía (la branch dev puede traer perfiles de otras
+        pruebas/uso manual). Se aísla comparando un delta: los perfiles ajenos
+        activos (los que había ANTES de sumar el dataset) más los 4 que crea
+        el propio dataset, en vez de un total absoluto."""
+        from app.models.tables import PerfilBusqueda
+
+        ids_dataset = {p.id for p in ds["perfiles"].values()}
+        otros_activos_antes = list(
+            pg_session.execute(
+                select(PerfilBusqueda)
+                .join(PerfilBusqueda.owner)
+                .where(
+                    PerfilBusqueda.activo.is_(True),
+                    Usuario.activo.is_(True),
+                    PerfilBusqueda.id.notin_(ids_dataset),
+                )
+            ).scalars()
+        )
+
         result = match_todos(pg_session, ahora=AHORA)
-        assert result["perfiles_procesados"] == 4
+
+        assert result["perfiles_procesados"] == len(otros_activos_antes) + len(ids_dataset)
 
     def test_match_upsert_idempotente(self, pg_session, ds):
         """Ejecutar match_perfil dos veces no duplica matches."""

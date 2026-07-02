@@ -386,6 +386,57 @@ M apariciones" (M ≥ N) para no confundir.
 - Alcance: solo el feed del dashboard (no toca `/descartadas`, `/seguidas` ni
   `/api/oportunidades`).
 
+## Deuda técnica — suite 100% verde (incl. @needs_postgres, sin red real) — HECHO
+Cierra 3 de las deudas anotadas en "Deudas conocidas" (`docs/00-estado-actual.md`) más un
+hallazgo que quedaba oculto detrás de una de ellas. Sin migración de esquema.
+- **`pg_session` (`tests/test_models.py`):** `Session(connection=conn)` no es un kwarg válido
+  de `Session()` en la versión de SQLAlchemy 2 instalada (daba `TypeError`, 4 errors bajo
+  `@needs_postgres`) → `Session(bind=conn)` (participa igual en la transacción ya abierta
+  sobre `conn`; se pudo quitar el `type: ignore[call-arg]` que lo acompañaba).
+- **Hallazgo al desbloquear ese fix:** con el fixture ya no rompiendo antes de tiempo,
+  `test_fts_encuentra_sin_tilde`/`test_fts_compra_agil` (mismo archivo) quedaron expuestos:
+  su `SELECT codigo FROM licitaciones/compras_agiles WHERE tsv @@ ...` no filtraba por el
+  código que el propio test acababa de insertar, así que con cualquier dato preexistente en
+  la branch `dev` que también matcheara el FTS, `.fetchone()` podía devolver OTRA fila —
+  exactamente el mismo patrón de "asume BD exclusiva" que el fix de `match_todos` de abajo.
+  Fix: agregar `AND codigo = '<código del test>'` a ambas queries (sigue verificando que el
+  FTS encuentra esa fila específica; si la condición FTS fuera falsa para ella, el `AND`
+  igual no devuelve nada y el test falla como corresponde).
+- **`test_match_todos_procesa_todos_perfiles` (`tests/test_matching.py`):** asumía un total
+  absoluto de 4 perfiles activos en TODA la base — se rompía si `dev` traía otros perfiles
+  (p. ej. los ids ~49–52 de pruebas anteriores, ver deuda pendiente de limpieza de datos).
+  Fix: cuenta los perfiles activos ajenos al dataset del propio test ANTES de llamar
+  `match_todos`, y afirma `perfiles_procesados == ajenos_antes + len(dataset)` — depende
+  solo de lo que el test crea, sea cual sea el resto de la BD.
+- **`test_jobs_run_job_ca` (`tests/test_api.py`):** estaba con `@pytest.mark.skip` porque
+  `BackgroundTasks` corre el job dentro del mismo ciclo síncrono del `TestClient`, y
+  `run_sync_ca` terminaba pegándole a la API real de Compra Ágil (`api2.mercadopublico.cl`).
+  Migrado a `respx` — mock de `GET /v2/compra-agil` con un listado vacío (`Listado`/
+  `convocatorias: []`), suficiente para que `sync_incremental` complete sin tocar red y sin
+  necesitar parsear datos reales — y se quitó el skip.
+- **Hallazgo adicional (mismo criterio "tests de red SIEMPRE mockeados", no estaba en el
+  pedido explícito pero aplica igual):** `test_jobs_run_token_correcto` (`job="all"`, el
+  default de la ruta) también pegaba a la red real — confirmado corriendo el test con
+  `--log-cli-level=DEBUG` y viendo las conexiones TCP reales en el log. Con la BD de test
+  vacía, el ciclo completo (`_full_cycle`) alcanza a golpear
+  `GET api.mercadopublico.cl/servicios/v1/publico/licitaciones.json` (activas, vía
+  `run_sync_activas`) y `HEAD transparenciachc.blob.core.windows.net/lic-da/<año>-<mes>.zip`
+  (vía `run_datos_abiertos`/`sync_items_datos_abiertos`) antes de quedarse sin más trabajo (0
+  licitaciones sincronizadas → `run_detalles`/`run_lifecycle`/`run_competencia`/`run_alerts`
+  no-opean sobre una BD vacía). Se mockearon ambos endpoints con `respx`; el del blob usa
+  `url__regex` porque la URL depende del mes vigente (`_mes_actual_chile()`), no es fija.
+- **Verificación real:** corrido contra Postgres real (branch `dev` de Neon,
+  `alembic current=9a1e6b2c5d7f`, **sigue** detrás del head `e1f4a7c9b2d6` — la migración de
+  `MatchFeedback` no se aplicó en esta fase, sigue pendiente de que Boris corra
+  `alembic upgrade head` — no aplica el asistente). No hizo falta aplicarla para esta
+  verificación: ninguno de los tests `@needs_postgres` toca `MatchFeedback`. Suite completa:
+  **522 passed, 0 skipped, 0 failed, 0 errors** (antes: 1 failed + 4 errors + 1 skipped).
+- **Fuera de alcance (anotado, no hecho aquí):** limpiar la branch `dev` de Neon
+  (perfiles/seguimientos/matches de prueba ids ~49–52) es tarea de DATOS (SQL en `dev`), la
+  hace Boris — no es cambio de código. Investigar por qué las adjudicadas quedan con
+  `fecha_publicacion`/`fecha_cierre` NULL es una investigación aparte del refresh de estados
+  terminales, no se mezcla con esta limpieza de tests.
+
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
 `app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:

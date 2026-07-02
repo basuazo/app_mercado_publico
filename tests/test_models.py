@@ -86,7 +86,7 @@ def pg_session(pg_engine):
     """Sesión Postgres con rollback al finalizar (SQLAlchemy 2.x)."""
     with pg_engine.connect() as conn:
         trans = conn.begin()
-        session = Session(connection=conn)  # type: ignore[call-arg]
+        session = Session(bind=conn)
         yield session
         session.close()
         trans.rollback()
@@ -505,7 +505,8 @@ def test_fts_encuentra_sin_tilde(pg_session):
     row = pg_session.execute(
         text("""
             SELECT codigo FROM licitaciones
-            WHERE tsv @@ websearch_to_tsquery('spanish', inmutable_unaccent('electricos'))
+            WHERE codigo = 'FTS-TEST-001'
+              AND tsv @@ websearch_to_tsquery('spanish', inmutable_unaccent('electricos'))
         """)
     ).fetchone()
     assert row is not None, "FTS no encontró 'electricos' en 'Eléctricos'"
@@ -532,7 +533,8 @@ def test_fts_compra_agil(pg_session):
     row = pg_session.execute(
         text("""
             SELECT codigo FROM compras_agiles
-            WHERE tsv @@ websearch_to_tsquery('spanish', inmutable_unaccent('ergonomicas'))
+            WHERE codigo = 'FTS-CA-001'
+              AND tsv @@ websearch_to_tsquery('spanish', inmutable_unaccent('ergonomicas'))
         """)
     ).fetchone()
     assert row is not None

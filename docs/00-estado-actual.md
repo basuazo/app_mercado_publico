@@ -27,11 +27,51 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   (ya no a la URL no autorizada de MP) — **F10 COMPLETA**), Fix Compra Ágil 500 en frío,
   **F-feed-umbral** (umbral de relevancia en el dashboard: control Alta/Media/Todas +
   línea "N ocultas por baja relevancia — ver todas"), **F-feed-agrupado** (el dashboard
-  reemplaza la lista plana por una vista agrupada por categorías: motivo/región/fuente,
-  ver detalle abajo), F-deploy.
-- Suite: 516 tests verdes (1 skipped); persisten 1 falla + 4 errores preexistentes
-  (`test_match_todos_procesa_todos_perfiles` no aislado, `pg_session` con
-  `Session(connection=...)` — ver "Deudas conocidas", ninguno introducido en esta fase).
+  reemplaza la lista plana por una vista agrupada por categorías: motivo/región/fuente),
+  **deuda técnica — suite 100% verde** (ver detalle abajo), F-deploy.
+- **Suite: 522 tests verdes, 0 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
+  contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
+- **Deuda técnica — suite 100% verde (este commit):**
+  - `tests/test_models.py::pg_session`: `Session(connection=conn)` no es un kwarg válido en
+    esta versión de SQLAlchemy 2 (daba 4 errors bajo `@needs_postgres`) → `Session(bind=conn)`
+    (participa igual en la transacción ya abierta sobre `conn`; se pudo quitar el
+    `type: ignore[call-arg]`).
+  - Ese fix desenmascaró un bug de aislamiento que antes quedaba oculto porque el fixture
+    fallaba ANTES de llegar a la aserción: `test_fts_encuentra_sin_tilde`/`test_fts_compra_agil`
+    hacían `SELECT codigo FROM licitaciones WHERE tsv @@ ...` **sin filtrar por el código que
+    el propio test insertó** — con datos preexistentes en `dev` (real o de otras pruebas),
+    Postgres podía devolver CUALQUIER fila que matcheara el FTS, no necesariamente la del
+    test. Fix: agregar `AND codigo = '<código del test>'` a ambas queries — sigue verificando
+    que el FTS encuentra esa fila (si la condición FTS fuera falsa para ella, el `AND` no
+    devuelve nada y el test igual falla), pero ya no depende de qué más haya en la tabla.
+  - `test_match_todos_procesa_todos_perfiles` (`tests/test_matching.py`) asumía un total
+    absoluto de 4 perfiles activos en toda la BD → se rompía si `dev` traía otros (p. ej. los
+    ids ~49–52 de pruebas anteriores). Fix: cuenta los perfiles activos AJENOS al dataset
+    ANTES de correr `match_todos` y afirma `perfiles_procesados == ajenos_antes + 4` (delta,
+    no total absoluto) — ya no asume una BD exclusiva/vacía.
+  - `test_jobs_run_job_ca` (`tests/test_api.py`) estaba con `@pytest.mark.skip` porque
+    `BackgroundTasks` corre el job dentro del mismo ciclo del `TestClient` y `run_sync_ca`
+    pegaba a la API real de Compra Ágil. Se migró a `respx` (mock de
+    `GET https://api2.mercadopublico.cl/v2/compra-agil` con un listado vacío) y se quitó el
+    skip — corre determinístico, sin red real.
+  - **Hallazgo adicional (mismo criterio, no estaba en el pedido explícito):**
+    `test_jobs_run_token_correcto` (`job="all"`, el default) también pegaba a la red real —
+    confirmado con `--log-cli-level=DEBUG`: con la BD de test vacía, el ciclo completo
+    alcanza a golpear `api.mercadopublico.cl/servicios/v1/publico/licitaciones.json` (activas)
+    y hace `HEAD` al blob de datos abiertos (`transparenciachc.blob.core.windows.net/lic-da/`)
+    antes de quedarse sin más trabajo (0 licitaciones → el resto de los jobs no-opean). Se
+    mockearon ambos con `respx` (el del blob con `url__regex` porque la URL depende del
+    mes vigente, no es fija).
+  - **Verificado con Postgres real** (branch `dev`, `alembic current=9a1e6b2c5d7f` — SIGUE
+    detrás del head `e1f4a7c9b2d6`; la migración pendiente de `MatchFeedback` no afecta a
+    ninguno de los tests `@needs_postgres` tocados aquí, así que no fue necesario aplicarla
+    para verificar esta fase). **No se corrió `alembic upgrade head`** — sigue siendo tarea
+    del humano (ver "Migración workflow" — el asistente no aplica migraciones).
+  - **Fuera de alcance, anotado para después (no tocado aquí):** limpiar la branch `dev` de
+    Neon (perfiles/seguimientos/matches de prueba ids ~49–52) es una tarea de DATOS (SQL en
+    `dev`), la hace Boris; investigar por qué las adjudicadas quedan con
+    `fecha_publicacion`/`fecha_cierre` NULL es una investigación aparte del refresh de
+    estados terminales, no mezclar con esta limpieza de tests.
 - **F-feed-agrupado — feed agrupado por categorías (este commit):** el dashboard (`GET /`)
   ya NO es una lista plana paginada — siempre agrupa. `app/api/query.py::agrupar_oportunidades`
   recibe el conjunto YA filtrado por relevancia y ordenado (score/cierre) de
@@ -129,17 +169,29 @@ enriquecida con razones legibles del match; **seguir/archivar** licitaciones y r
   (HEAD estaba intacto). Si vuelve a pasar: `git restore .` recupera todo desde el commit.
 
 ## Deudas conocidas (pendientes de calidad; ninguna bloquea prod)
-- `tests/test_models.py`: el fixture `pg_session` usa `Session(connection=conn)` → debe
-  ser `Session(bind=conn)` (da 4 errors al correr `@needs_postgres`).
-- `test_match_todos_procesa_todos_perfiles` no se aísla (cuenta perfiles globales de la BD).
-- Branch `dev` tiene perfiles/seguimientos/matches de prueba (ids ~49–52) de la validación → limpiar.
+- ~~`tests/test_models.py`: el fixture `pg_session` usa `Session(connection=conn)` → debe
+  ser `Session(bind=conn)`~~ — **resuelto** (deuda técnica — suite 100% verde, ver arriba).
+- ~~`test_match_todos_procesa_todos_perfiles` no se aísla~~ — **resuelto**: ahora compara un
+  delta (perfiles ajenos activos antes + los 4 del dataset), no un total absoluto.
+- ~~`test_jobs_run_job_ca`: skip (pega a la API real sin mock)~~ — **resuelto**: migrado a
+  `respx`, ya no hay skip; de paso se detectó y mockeó otro test (`test_jobs_run_token_correcto`,
+  `job="all"`) que también pegaba a la red real.
+- ~~`test_fts_encuentra_sin_tilde`/`test_fts_compra_agil` sin filtro por código propio~~ —
+  **resuelto** (hallazgo de esta misma fase, quedaba oculto detrás del bug de `pg_session`).
+- Branch `dev` tiene perfiles/seguimientos/matches de prueba (ids ~49–52) de la validación →
+  limpiar (tarea de DATOS/SQL en `dev`, la hace Boris — no es cambio de código, fuera de
+  alcance de la fase de deuda técnica de tests).
 - ~~Análisis de competencia: badge "Adjudicatario" en todas las filas; resumen solo lista
   ganadores~~ — **resuelto en F10 parte 3**: `resumen_competencia` ahora incluye también a
   quienes ofertaron y no ganaron (`items_ofertados`/`items_ganados`/`total_adjudicado` por
   proveedor), y el badge "Ganó" solo aparece en la(s) fila(s) ganadora(s).
 - Adjudicadas en BD con `fecha_publicacion`/`fecha_cierre` NULL (calidad de datos; revisar
-  el refresh de estados terminales).
-- `test_jobs_run_job_ca`: skip (pega a la API real sin mock); migrar a respx.
+  el refresh de estados terminales — investigación aparte, no mezclar con la limpieza de
+  tests de esta fase).
+- Migración `e1f4a7c9b2d6` (`MatchFeedback`) sigue sin aplicarse en `dev` (`alembic current`
+  = `9a1e6b2c5d7f`, detrás del head) — pendiente que Boris corra `alembic upgrade head`; no
+  bloqueó la verificación `@needs_postgres` de esta fase porque ninguno de esos tests toca
+  `MatchFeedback`.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
 - **F10 UX:** COMPLETA (perfiles, dashboard, ficha y mail).

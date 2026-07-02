@@ -345,7 +345,21 @@ def test_ping_publico(client):
 # ---------------------------------------------------------------------------
 
 
+@respx.mock
 def test_jobs_run_token_correcto(client):
+    """job="all" (default) corre el ciclo completo dentro del mismo ciclo del
+    TestClient (BackgroundTasks) — con la BD de test vacía toca dos hosts
+    reales (v1 licitaciones activas + HEAD del blob de datos abiertos, ver
+    `run_sync_activas`/`sync_items_datos_abiertos`); se mockean ambos con
+    respx (regla CLAUDE.md: tests de red SIEMPRE mockeados)."""
+    respx.get(url__regex=r"https://api\.mercadopublico\.cl/servicios/v1/publico/licitaciones\.json.*").mock(
+        return_value=httpx.Response(200, json={"Listado": []})
+    )
+    respx.route(
+        method="HEAD",
+        url__regex=r"https://transparenciachc\.blob\.core\.windows\.net/lic-da/.*\.zip",
+    ).mock(return_value=httpx.Response(200, headers={"Last-Modified": "Wed, 01 Jul 2026 12:30:24 GMT"}))
+
     r = client.post("/api/jobs/run", headers={"X-Jobs-Token": "jobs-token-secreto"})
     assert r.status_code == 200
     assert r.json()["queued"] is True
@@ -359,12 +373,29 @@ def test_jobs_run_job_invalido(client):
     assert r.status_code == 400
 
 
-@pytest.mark.skip(
-    reason="BackgroundTasks corre el job dentro del mismo ciclo del TestClient: "
-    "run_sync_ca pega a la API real de Mercado Público y requiere ticket válido. "
-    "Tests de red SIEMPRE mockeados (regla CLAUDE.md) — pendiente migrar a respx."
-)
+_LISTADO_CA_VACIO = {
+    "success": "OK",
+    "payload": {
+        "convocatorias": [],
+        "paginacion": {
+            "total_paginas": 1,
+            "total_resultados": 0,
+            "numero_pagina": 1,
+            "tamano_pagina": 50,
+        },
+    },
+    "errors": [],
+}
+
+
+@respx.mock
 def test_jobs_run_job_ca(client):
+    """BackgroundTasks corre el job dentro del mismo ciclo del TestClient, así
+    que `run_sync_ca` llega a pegarle a `httpx.Client` real — se mockea con
+    respx (regla CLAUDE.md: tests de red SIEMPRE mockeados) en vez de saltarlo."""
+    respx.get("https://api2.mercadopublico.cl/v2/compra-agil").mock(
+        return_value=httpx.Response(200, json=_LISTADO_CA_VACIO)
+    )
     r = client.post(
         "/api/jobs/run?job=ca", headers={"X-Jobs-Token": "jobs-token-secreto"}
     )
