@@ -306,6 +306,8 @@ class OportunidadMatch(Base):
     codigo_oportunidad: Mapped[str] = mapped_column(String(50), nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     razones: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # Primera vez que el perfil matcheó esta oportunidad. Inmutable ante re-match:
+    # el resumen consolidado la usa para no re-reportar oportunidades viejas.
     fecha_match: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
 
     perfil: Mapped[PerfilBusqueda] = relationship("PerfilBusqueda", back_populates="matches")

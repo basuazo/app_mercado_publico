@@ -15,6 +15,7 @@ from app.alerts.detector import (
     detectar_recordatorio_cierre_seguidas,
 )
 from app.alerts.email import EmailCounter, _jinja, enviar_pendientes_inmediatas, enviar_resumen
+from app.matching.engine import _upsert_match
 from app.models.tables import (
     Alerta,
     CompraAgil,
@@ -276,6 +277,39 @@ class TestResumenConsolidado:
 
         assert result["resumenes_enviados"] == 0
         assert result["resumenes_no_elegibles"] == 1
+
+    def test_resumen_no_recuenta_match_viejo_rescoreado(self, session: Session, monkeypatch):
+        spy = _MailSpy()
+        monkeypatch.setattr("app.alerts.email._smtp_send", spy)
+        ultimo = _AHORA - timedelta(days=4)
+        fecha_original = _AHORA - timedelta(days=5)
+        u = _user(session, ultimo_resumen_en=ultimo)
+        p = _perfil(session, u)
+        _lic(session, "LIC-VIEJA")
+        _match(session, p, "LIC-VIEJA", score=40, fecha_match=fecha_original)
+
+        es_nuevo = _upsert_match(
+            session,
+            p.id,
+            "licitaciones",
+            "LIC-VIEJA",
+            95,
+            {"rescore": True},
+            _AHORA - timedelta(hours=1),
+        )
+        session.flush()
+
+        result = enviar_resumen(session, _fake_settings(), ahora=_AHORA)
+        match = session.execute(
+            select(OportunidadMatch).where(OportunidadMatch.codigo_oportunidad == "LIC-VIEJA")
+        ).scalar_one()
+
+        assert es_nuevo is False
+        assert match.score == 95
+        assert match.fecha_match == fecha_original
+        assert result["resumenes_enviados"] == 0
+        assert result["resumenes_sin_nuevos"] == 1
+        assert spy.sent == []
 
 
 class TestInmediatasSoloSeguidas:

@@ -365,7 +365,13 @@ def _upsert_match(
     razones: dict[str, Any],
     ahora: datetime,
 ) -> bool:
-    """Upsert de OportunidadMatch. Retorna True si es nuevo."""
+    """Upsert de OportunidadMatch. Retorna True si es nuevo.
+
+    `fecha_match` significa "primera vez que este perfil matcheó esta
+    oportunidad". Por eso solo se setea en INSERT; los re-matches actualizan
+    score/razones, pero no re-tocan la fecha. El resumen de descubrimiento usa
+    esa fecha para decidir qué oportunidades son realmente nuevas.
+    """
     existing = session.execute(
         select(OportunidadMatch).where(
             OportunidadMatch.perfil_id == perfil_id,
@@ -389,7 +395,6 @@ def _upsert_match(
 
     existing.score = score
     existing.razones = razones
-    existing.fecha_match = ahora
     return False
 
 

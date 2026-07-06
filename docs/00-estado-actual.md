@@ -35,7 +35,7 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   para oportunidades con alertas activas),
   **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
   oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
-- **Suite: 498 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
+- **Suite: 499 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
   contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
 - **Deuda técnica — suite 100% verde (este commit):**
   - `tests/test_models.py::pg_session`: `Session(connection=conn)` no es un kwarg válido en
@@ -105,7 +105,8 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   se elimina el spam de “un correo por match”. Los matches nuevos ya no crean `Alerta`; en su
   lugar, `run_resumen`/`enviar_resumen` evalúa por usuario activo `dias_resumen` (3, 7 o 0 =
   nunca) y `ultimo_resumen_en`, cuenta los `OportunidadMatch.fecha_match` nuevos de perfiles
-  activos, y solo si hay >0 envía un correo consolidado con top 5 por score + link a la app.
+  activos (`fecha_match` es inmutable: primera vez que esa oportunidad matcheó ese perfil, no
+  se re-toca por re-score), y solo si hay >0 envía un correo consolidado con top 5 por score + link a la app.
   Si no hay nuevos no envía y no mueve `ultimo_resumen_en`, para acumular ventana. Las
   inmediatas quedan limitadas a oportunidades con alertas activas (`OportunidadSeguida`):
   cambio de estado (`seguimiento_estado:*`) y cierre ≤48h (`seguimiento_cierre`). Job diario

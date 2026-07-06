@@ -833,13 +833,19 @@ class TestUpsertMatch:
         session.add(p)
         session.flush()
 
-        _upsert_match(session, p.id, "licitaciones", "LIC-UPD", 70.0, {}, _AHORA_LOCAL)
+        primera_fecha = _AHORA_LOCAL - timedelta(days=10)
+        segunda_fecha = _AHORA_LOCAL
+        _upsert_match(session, p.id, "licitaciones", "LIC-UPD", 70.0, {}, primera_fecha)
         session.flush()
-        es_nuevo = _upsert_match(session, p.id, "licitaciones", "LIC-UPD", 90.0, {"nuevo": True}, _AHORA_LOCAL)
+        es_nuevo = _upsert_match(
+            session, p.id, "licitaciones", "LIC-UPD", 90.0, {"nuevo": True}, segunda_fecha
+        )
         assert es_nuevo is False
 
         match = session.execute(select(OportunidadMatch).where(OportunidadMatch.perfil_id == p.id)).scalar_one()
         assert match.score == 90.0
+        assert match.razones == {"nuevo": True}
+        assert match.fecha_match == primera_fecha
 
 
 class TestMatchPerfilMockedCandidatos:
