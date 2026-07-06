@@ -58,7 +58,7 @@ from app.matching.seguimiento import (
     obtener_seguimiento,
     seguir_oportunidad,
 )
-from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
+from app.models.enums import EstadoOportunidad, RolUsuario
 from app.models.seeds import REGIONES
 from app.models.tables import (
     CaProducto,
@@ -117,6 +117,7 @@ _RELEVANCIA_ALTA = 60
 # real de un equipo de 3-10 usuarios (regla de free tier); no es paginación.
 _LIMITE_AGRUPADO = 2000
 _PASSWORD_MIN_LEN = 8
+_DIAS_RESUMEN_VALIDOS = {0, 3, 7}
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +589,6 @@ async def perfiles_get(
             request,
             user,
             perfiles=perfiles,
-            frecuencias=list(FrecuenciaAlerta),
             regiones_disponibles=REGIONES,
             rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
             rubros_por_perfil=rubros_por_perfil,
@@ -614,6 +614,29 @@ async def perfil_rut_proveedor(
     user.rut_proveedor = rut_proveedor.strip() or None
     session.commit()
     return RedirectResponse(url="/perfiles?mensaje=RUT+de+proveedor+actualizado", status_code=303)
+
+
+@router.post("/cuenta/resumen")
+async def cuenta_resumen_configurar(
+    request: Request,
+    dias_resumen: str = Form("3"),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    try:
+        dias = int(dias_resumen)
+    except ValueError:
+        dias = -1
+    if dias not in _DIAS_RESUMEN_VALIDOS:
+        return RedirectResponse(
+            url=f"/perfiles?error={quote('Cadencia de resumen inválida')}",
+            status_code=303,
+        )
+    user.dias_resumen = dias
+    session.commit()
+    return RedirectResponse(url="/perfiles?mensaje=Preferencia+de+resumen+actualizada", status_code=303)
 
 
 @router.post("/cuenta/password")
@@ -660,7 +683,6 @@ async def perfil_crear(
     monto_max_clp: str = Form(""),
     categorias_unspsc: list[str] = Form(default=[]),
     organismos_seguidos: str = Form(""),
-    frecuencia_alerta: str = Form("inmediata"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -690,7 +712,6 @@ async def perfil_crear(
             categorias_unspsc=categorias_list,
             organismos_seguidos=organismos_list,
             fuentes=fuentes_list,
-            frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
         )
     except PerfilInvalido as exc:
         return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
@@ -730,7 +751,6 @@ async def perfil_editar(
     monto_max_clp: str = Form(""),
     categorias_unspsc: list[str] = Form(default=[]),
     organismos_seguidos: str = Form(""),
-    frecuencia_alerta: str = Form("inmediata"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -764,7 +784,6 @@ async def perfil_editar(
             categorias_unspsc=categorias_list,
             organismos_seguidos=organismos_list,
             fuentes=fuentes_list,
-            frecuencia_alerta=FrecuenciaAlerta(frecuencia_alerta),
         )
     except PerfilInvalido as exc:
         return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)

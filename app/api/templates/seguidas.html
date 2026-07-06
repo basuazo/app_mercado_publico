@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Seguidas — MP Oportunidades{% endblock %}
+{% block title %}Alertas activas — MP Oportunidades{% endblock %}
 {% block content %}
-<h2 class="mb-4">Oportunidades seguidas</h2>
+<h2 class="mb-4">Oportunidades con alertas activas</h2>
 
 <div class="mb-3">
   {% if incluir_archivadas %}
@@ -46,7 +46,7 @@
       <form method="post" action="/oportunidad/{{ item.seguimiento.fuente }}/{{ item.seguimiento.codigo_oportunidad }}/dejar-de-seguir" class="d-inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="/seguidas{% if incluir_archivadas %}?archivadas=1{% endif %}">
-        <button type="submit" class="btn btn-sm btn-outline-secondary">Dejar de seguir</button>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Desactivar alertas</button>
       </form>
     </div>
   </div>
@@ -54,7 +54,7 @@
 </div>
 {% else %}
 <div class="alert alert-info">
-  {% if incluir_archivadas %}No tienes oportunidades seguidas.{% else %}No tienes oportunidades seguidas activas.{% endif %}
+  {% if incluir_archivadas %}No tienes oportunidades con alertas.{% else %}No tienes alertas activas.{% endif %}
 </div>
 {% endif %}
 {% endblock %}

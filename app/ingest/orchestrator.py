@@ -179,40 +179,34 @@ def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
 
 
 def run_alerts(settings: Settings, engine: Engine) -> dict[str, Any]:
-    """Detecta eventos y envía alertas inmediatas pendientes."""
+    """Detecta eventos de seguidas y envía alertas inmediatas pendientes."""
     from app.alerts.detector import (
-        detectar_cambio_estado,
         detectar_cambio_estado_seguidas,
-        detectar_nuevo_match,
-        detectar_recordatorios,
+        detectar_recordatorio_cierre_seguidas,
     )
     from app.alerts.email import enviar_pendientes_inmediatas
 
     with Session(engine) as session:
-        n1 = detectar_nuevo_match(session)
-        n2 = detectar_cambio_estado(session)
-        n3 = detectar_recordatorios(session)
-        n4 = detectar_cambio_estado_seguidas(session)
+        n_estado = detectar_cambio_estado_seguidas(session)
+        n_cierre = detectar_recordatorio_cierre_seguidas(session)
         session.commit()
 
     with Session(engine) as session:
         result = enviar_pendientes_inmediatas(session, settings)
 
     return {
-        "detectados_nuevo": n1,
-        "detectados_cambio": n2,
-        "detectados_recordatorio": n3,
-        "detectados_seguimiento": n4,
+        "detectados_seguimiento_estado": n_estado,
+        "detectados_seguimiento_cierre": n_cierre,
         **result,
     }
 
 
-def run_digest(settings: Settings, engine: Engine) -> dict[str, Any]:
-    """Envía el digest agrupado por usuario para alertas en modo 'digest'."""
-    from app.alerts.email import enviar_digest
+def run_resumen(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Envía el resumen consolidado por usuario elegible."""
+    from app.alerts.email import enviar_resumen
 
     with Session(engine) as session:
-        return enviar_digest(session, settings)
+        return enviar_resumen(session, settings)
 
 
 def run_backfill_fecha(settings: Settings, engine: Engine, fecha: date) -> dict[str, int]:
@@ -347,14 +341,14 @@ def build_scheduler(
         id="nocturno",
     )
 
-    # Diario: digest agrupado por usuario
+    # Diario: resumen consolidado por usuario elegible
     sched.add_job(
-        lambda: _run_with_lock("digest", lambda: run_digest(settings, engine), engine),
+        lambda: _run_with_lock("resumen", lambda: run_resumen(settings, engine), engine),
         "cron",
         hour=settings.digest_hour,
         minute=5,
         timezone="America/Santiago",
-        id="digest",
+        id="resumen",
     )
 
     # Diario: purga de retención (03:00)

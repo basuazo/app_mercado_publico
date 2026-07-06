@@ -932,12 +932,12 @@ class TestOrchestratorRunners:
             result = run_backfill_fecha(settings, engine, date(2026, 6, 10))
         assert "nuevas" in result
 
-    def test_run_digest(self, settings, engine):
-        from app.ingest.orchestrator import run_digest
+    def test_run_resumen(self, settings, engine):
+        from app.ingest.orchestrator import run_resumen
 
-        with patch("app.alerts.email.enviar_digest", return_value={"enviados": 0}):
-            result = run_digest(settings, engine)
-        assert "enviados" in result
+        with patch("app.alerts.email.enviar_resumen", return_value={"resumenes_enviados": 0}):
+            result = run_resumen(settings, engine)
+        assert "resumenes_enviados" in result
 
     def test_run_match_con_sin_detalle(self, settings, engine):
         from app.ingest.orchestrator import run_match
@@ -1001,7 +1001,7 @@ class TestOrchestratorRunners:
         job_ids = {j.id for j in sched.get_jobs()}
         assert "ca_incremental" in job_ids
         assert "nocturno" in job_ids
-        assert "digest" in job_ids
+        assert "resumen" in job_ids
 
     def test_run_scheduler_llama_start(self, settings, engine):
         from app.ingest.orchestrator import run_scheduler

@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models.enums import FrecuenciaAlerta
 from app.models.tables import PerfilBusqueda
 
 _log = get_logger(__name__)
@@ -53,7 +52,6 @@ def crear_perfil(
     categorias_unspsc: list[str] | None = None,
     organismos_seguidos: list[str] | None = None,
     fuentes: list[str] | None = None,
-    frecuencia_alerta: FrecuenciaAlerta | None = None,
 ) -> PerfilBusqueda:
     """Crea un perfil de búsqueda. Lanza PerfilInvalido si no cumple mínimo."""
     kw = list(keywords or [])
@@ -76,7 +74,6 @@ def crear_perfil(
         categorias_unspsc=cats,
         organismos_seguidos=orgs,
         fuentes=fuentes_list,
-        frecuencia_alerta=frecuencia_alerta or FrecuenciaAlerta.DIGEST,
         activo=True,
     )
     session.add(perfil)

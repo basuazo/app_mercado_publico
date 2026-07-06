@@ -14,9 +14,9 @@ def _build_jobs_dict(settings, engine):
     from app.ingest.orchestrator import (
         run_alerts,
         run_detalles,
-        run_digest,
         run_lifecycle,
         run_match,
+        run_resumen,
         run_sync_activas,
         run_sync_ca,
     )
@@ -28,7 +28,7 @@ def _build_jobs_dict(settings, engine):
         "lifecycle": lambda: run_lifecycle(settings, engine),
         "match":     lambda: run_match(settings, engine),
         "alerts":    lambda: run_alerts(settings, engine),
-        "digest":    lambda: run_digest(settings, engine),
+        "resumen":   lambda: run_resumen(settings, engine),
     }
 
 

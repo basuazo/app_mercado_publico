@@ -26,7 +26,6 @@ from app.models.enums import (
     EstadoAlerta,
     EstadoOportunidad,
     EstadoPlanificacionPAC,
-    FrecuenciaAlerta,
     RolUsuario,
 )
 
@@ -55,6 +54,8 @@ class Usuario(Base):
     rol: Mapped[RolUsuario] = mapped_column(String(20), nullable=False, default=RolUsuario.USUARIO)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     rut_proveedor: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    dias_resumen: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    ultimo_resumen_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
@@ -246,9 +247,6 @@ class PerfilBusqueda(Base):
     organismos_seguidos: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=list)
     fuentes: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=lambda: ["licitaciones", "compras_agiles"]
-    )
-    frecuencia_alerta: Mapped[FrecuenciaAlerta] = mapped_column(
-        String(20), nullable=False, default=FrecuenciaAlerta.DIGEST
     )
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 

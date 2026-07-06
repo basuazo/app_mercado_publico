@@ -1,0 +1,15 @@
+Encontramos {{ total }} oportunidades para tu perfil en Mercado Público
+
+Estas son las oportunidades más relevantes desde tu último resumen:
+
+{% for item in items -%}
+- {{ item.nombre }}
+  Perfil: {{ item.perfil_nombre }} · Score: {{ "%.0f"|format(item.score) }}
+  Organismo: {{ item.organismo or "No informado" }}
+  Monto: {{ item.monto }} · Cierre: {{ item.fecha_cierre }}
+  Ver ficha: {{ item.url }}
+
+{% endfor -%}
+Ver dashboard: {{ url_app }}
+
+Fuente: Dirección ChileCompra

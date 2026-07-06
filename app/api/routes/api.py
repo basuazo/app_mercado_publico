@@ -24,7 +24,6 @@ from app.matching.perfiles import (
     listar_perfiles,
     obtener_perfil,
 )
-from app.models.enums import FrecuenciaAlerta
 from app.models.tables import Usuario
 
 router = APIRouter(prefix="/api")
@@ -117,7 +116,6 @@ class PerfilIn(BaseModel):
     keywords: list[str] = []
     keywords_excluir: list[str] = []
     fuentes: list[str] = ["licitaciones", "compras_agiles"]
-    frecuencia_alerta: str = "inmediata"
 
 
 @router.get("/perfiles")
@@ -134,7 +132,6 @@ async def api_listar_perfiles(
             "keywords": p.keywords,
             "keywords_excluir": p.keywords_excluir,
             "fuentes": p.fuentes,
-            "frecuencia_alerta": p.frecuencia_alerta,
             "activo": p.activo,
         }
         for p in perfiles
@@ -156,7 +153,6 @@ async def api_crear_perfil(
         keywords=body.keywords,
         keywords_excluir=body.keywords_excluir,
         fuentes=body.fuentes,
-        frecuencia_alerta=FrecuenciaAlerta(body.frecuencia_alerta),
     )
     session.commit()
     return {"id": nuevo.id, "nombre": nuevo.nombre}
@@ -181,7 +177,6 @@ async def api_actualizar_perfil(
         keywords=body.keywords,
         keywords_excluir=body.keywords_excluir,
         fuentes=body.fuentes,
-        frecuencia_alerta=FrecuenciaAlerta(body.frecuencia_alerta),
     )
     session.commit()
     return {"id": perfil_id, "nombre": body.nombre}
@@ -223,9 +218,9 @@ async def jobs_run(
         run_competencia,
         run_datos_abiertos,
         run_detalles,
-        run_digest,
         run_lifecycle,
         run_match,
+        run_resumen,
         run_sync_activas,
         run_sync_ca,
     )
@@ -241,7 +236,7 @@ async def jobs_run(
         "match": lambda: run_match(settings, engine),
         "competencia": lambda: run_competencia(settings, engine),
         "alerts": lambda: run_alerts(settings, engine),
-        "digest": lambda: run_digest(settings, engine),
+        "resumen": lambda: run_resumen(settings, engine),
     }
 
     def _full_cycle() -> None:

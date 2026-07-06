@@ -186,7 +186,7 @@
     <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/dejar-de-seguir" class="d-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}">
-      <button type="submit" class="btn btn-outline-secondary">Dejar de seguir</button>
+      <button type="submit" class="btn btn-outline-secondary">Desactivar alertas</button>
     </form>
     {% elif seguimiento and seguimiento.archivada %}
     <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/desarchivar" class="d-inline">
@@ -198,7 +198,7 @@
     <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/seguir" class="d-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}">
-      <button type="submit" class="btn btn-success">Seguir</button>
+      <button type="submit" class="btn btn-success">Activar alertas</button>
     </form>
     {% endif %}
   </span>

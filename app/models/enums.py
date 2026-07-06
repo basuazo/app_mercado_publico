@@ -1,4 +1,4 @@
-"""Enums del dominio — EstadoOportunidad unificado, roles y frecuencias."""
+"""Enums del dominio — EstadoOportunidad unificado y roles."""
 
 from __future__ import annotations
 
@@ -12,11 +12,6 @@ _log = get_logger(__name__)
 class RolUsuario(enum.StrEnum):
     ADMIN = "admin"
     USUARIO = "usuario"
-
-
-class FrecuenciaAlerta(enum.StrEnum):
-    INMEDIATA = "inmediata"
-    DIGEST = "digest"
 
 
 class EstadoAlerta(enum.StrEnum):

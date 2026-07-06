@@ -245,7 +245,6 @@ def test_unique_match(sqlite_session):
         keywords_excluir=[],
         regiones=[],
         fuentes=["licitaciones"],
-        frecuencia_alerta="digest",
         activo=True,
     )
     sqlite_session.add(perfil)
@@ -408,7 +407,6 @@ def test_retencion_respeta_alertas_pendientes(sqlite_session):
         keywords_excluir=[],
         regiones=[],
         fuentes=["compras_agiles"],
-        frecuencia_alerta="digest",
         activo=True,
     )
     sqlite_session.add(perfil)

@@ -1,9 +1,9 @@
-"""Envío de alertas por correo electrónico.
+"""Envío de correos de Mercado Público.
 
 Reglas críticas:
 - Tope diario persistido en Postgres (SyncState fuente='alerts_email').
-- Proceso desechable: el contador vive en BD, no en memoria.
-- Correo va ÚNICAMENTE al dueño del perfil (nunca mezclar usuarios).
+- Solo las oportunidades seguidas generan correos inmediatos.
+- Los matches no seguidos se notifican por resumen consolidado por usuario.
 - Pie de TODAS las plantillas: "Fuente: Dirección ChileCompra" (regla 8).
 - smtp_host vacío → log warning, no error (entorno sin SMTP configurado).
 """
@@ -11,7 +11,7 @@ Reglas críticas:
 from __future__ import annotations
 
 import smtplib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
 from app.core.settings import Settings
-from app.models.enums import EstadoAlerta, FrecuenciaAlerta
+from app.models.enums import EstadoAlerta
 from app.models.tables import (
     Alerta,
     CompraAgil,
@@ -47,17 +47,8 @@ _jinja = Environment(
 )
 
 
-# ---------------------------------------------------------------------------
-# Contador de correos (persistido en Postgres via SyncState)
-# ---------------------------------------------------------------------------
-
-
 class EmailCounter:
-    """Lee y escribe el contador de correos diarios en Postgres.
-
-    Usa SyncState(fuente='alerts_email'). Si la fecha del contador no es
-    hoy en Chile, resetea a 0. Cada consume() hace commit inmediato.
-    """
+    """Contador diario de correos persistido en Postgres."""
 
     _FUENTE = "alerts_email"
 
@@ -98,11 +89,6 @@ class EmailCounter:
         self._session.commit()
 
 
-# ---------------------------------------------------------------------------
-# Helpers de formato y contexto
-# ---------------------------------------------------------------------------
-
-
 def _fmt_monto(monto: float | None) -> str:
     if monto is None:
         return "No informado"
@@ -120,8 +106,12 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
         lic = session.get(Licitacion, codigo)
         if lic is None:
             return {
-                "nombre": codigo, "organismo": "", "region": None,
-                "monto": None, "fecha_cierre": None, "estado": "",
+                "nombre": codigo,
+                "organismo": "",
+                "region": None,
+                "monto": None,
+                "fecha_cierre": None,
+                "estado": "",
             }
         return {
             "nombre": lic.nombre,
@@ -134,8 +124,12 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
     ca = session.get(CompraAgil, codigo)
     if ca is None:
         return {
-            "nombre": codigo, "organismo": "", "region": None,
-            "monto": None, "fecha_cierre": None, "estado": "",
+            "nombre": codigo,
+            "organismo": "",
+            "region": None,
+            "monto": None,
+            "fecha_cierre": None,
+            "estado": "",
         }
     return {
         "nombre": ca.nombre,
@@ -147,32 +141,6 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
     }
 
 
-def _ctx_alerta(alerta: Alerta, session: Session, settings: Settings) -> dict[str, Any]:
-    """Construye el contexto Jinja2 para una alerta individual de match."""
-    match = alerta.match
-    assert match is not None, "alerta de match sin match_id"
-    perfil = match.perfil
-    op = _datos_oportunidad(session, match.fuente, match.codigo_oportunidad)
-    return {
-        "perfil_nombre": perfil.nombre,
-        "tipo_alerta": alerta.tipo,
-        "nombre": op["nombre"],
-        "organismo": op["organismo"],
-        "region": op["region"],
-        "monto": _fmt_monto(op["monto"]),
-        "fecha_cierre": _fmt_fecha(op["fecha_cierre"]),
-        "estado": op["estado"],
-        "score": match.score,
-        "razones": match.razones,
-        "url": _url_ficha_app(settings, match.fuente, match.codigo_oportunidad),
-        "owner_email": perfil.owner.email,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Contexto de alertas de seguimiento (F-seguir)
-# ---------------------------------------------------------------------------
-
 _MENSAJES_SEGUIMIENTO: dict[str, str] = {
     "adjudicada": "Se adjudicó. Te recomendamos hacer pronto un análisis de competencia.",
     "cerrada": "El proceso cerró su etapa de recepción de ofertas.",
@@ -181,23 +149,20 @@ _MENSAJES_SEGUIMIENTO: dict[str, str] = {
 }
 
 
-def _mensaje_seguimiento(estado: str) -> str:
+def _mensaje_seguimiento(alerta: Alerta, estado: str) -> str:
+    if alerta.tipo == "seguimiento_cierre":
+        return "Esta oportunidad seguida cierra dentro de las próximas 48 horas."
     return _MENSAJES_SEGUIMIENTO.get(estado, "Cambió de estado.")
 
 
 def _url_ficha_app(settings: Settings, fuente: str, codigo: str) -> str:
-    """Enlace a la FICHA DE LA APP (no a Mercado Público) para alertas de seguimiento.
-
-    Sin APP_BASE_URL configurado degrada a ruta relativa — el correo se sigue
-    enviando igual, solo que el link no es absoluto (regla: nunca romper el envío).
-    """
+    """Enlace a la ficha de la app. Sin APP_BASE_URL degrada a ruta relativa."""
     ruta = f"/oportunidad/{fuente}/{codigo}"
     base = settings.app_base_url.strip().rstrip("/")
     return f"{base}{ruta}" if base else ruta
 
 
 def _ctx_alerta_seguimiento(alerta: Alerta, session: Session, settings: Settings) -> dict[str, Any]:
-    """Construye el contexto Jinja2 para una alerta de seguimiento individual."""
     seguimiento = alerta.seguimiento
     assert seguimiento is not None, "alerta de seguimiento sin seguimiento_id"
     op = _datos_oportunidad(session, seguimiento.fuente, seguimiento.codigo_oportunidad)
@@ -207,15 +172,25 @@ def _ctx_alerta_seguimiento(alerta: Alerta, session: Session, settings: Settings
         "organismo": op["organismo"],
         "estado": op["estado"],
         "fecha_cierre": _fmt_fecha(op["fecha_cierre"]),
-        "mensaje": _mensaje_seguimiento(op["estado"]),
+        "mensaje": _mensaje_seguimiento(alerta, op["estado"]),
         "url": _url_ficha_app(settings, seguimiento.fuente, seguimiento.codigo_oportunidad),
         "owner_email": seguimiento.owner.email,
     }
 
 
-# ---------------------------------------------------------------------------
-# Envío de correo (Brevo REST API preferido; SMTP como fallback local)
-# ---------------------------------------------------------------------------
+def _ctx_resumen_item(match: OportunidadMatch, session: Session, settings: Settings) -> dict[str, Any]:
+    op = _datos_oportunidad(session, match.fuente, match.codigo_oportunidad)
+    return {
+        "perfil_nombre": match.perfil.nombre,
+        "nombre": op["nombre"],
+        "organismo": op["organismo"],
+        "monto": _fmt_monto(op["monto"]),
+        "fecha_cierre": _fmt_fecha(op["fecha_cierre"]),
+        "estado": op["estado"],
+        "score": match.score,
+        "url": _url_ficha_app(settings, match.fuente, match.codigo_oportunidad),
+    }
+
 
 _BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
@@ -227,7 +202,6 @@ def _smtp_send(
     body_text: str,
     body_html: str,
 ) -> None:
-    """Envía un correo usando Brevo REST API o SMTP como fallback."""
     if settings.brevo_api_key:
         _brevo_send(settings, to_email, subject, body_text, body_html)
     elif settings.smtp_host:
@@ -287,31 +261,7 @@ def _now_utc() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _load_alertas_pendientes(session: Session, frecuencia: FrecuenciaAlerta) -> list[Alerta]:
-    return list(
-        session.execute(
-            select(Alerta)
-            .join(OportunidadMatch, Alerta.match_id == OportunidadMatch.id)
-            .join(PerfilBusqueda, OportunidadMatch.perfil_id == PerfilBusqueda.id)
-            .join(Usuario, PerfilBusqueda.owner_id == Usuario.id)
-            .where(
-                Alerta.estado == EstadoAlerta.PENDIENTE.value,
-                PerfilBusqueda.frecuencia_alerta == frecuencia.value,
-                PerfilBusqueda.activo.is_(True),
-                Usuario.activo.is_(True),
-            )
-            .options(
-                selectinload(Alerta.match)
-                .selectinload(OportunidadMatch.perfil)
-                .selectinload(PerfilBusqueda.owner)
-            )
-        ).scalars()
-    )
-
-
 def _load_alertas_seguimiento_pendientes(session: Session) -> list[Alerta]:
-    """Alertas de seguimiento pendientes. Sin frecuencia configurable: el usuario
-    siguió esa oportunidad puntual, así que siempre se envían como inmediatas."""
     return list(
         session.execute(
             select(Alerta)
@@ -326,11 +276,6 @@ def _load_alertas_seguimiento_pendientes(session: Session) -> list[Alerta]:
     )
 
 
-# ---------------------------------------------------------------------------
-# API pública
-# ---------------------------------------------------------------------------
-
-
 def _enviar_una(
     session: Session,
     settings: Settings,
@@ -341,12 +286,6 @@ def _enviar_una(
     template_base: str,
     ctx: dict[str, Any],
 ) -> bool:
-    """Envía un correo para una alerta puntual y actualiza su estado/reintentos.
-
-    Centraliza el manejo de éxito/fallo compartido entre alertas de match y de
-    seguimiento. Retorna True si se envió, False si falló (queda pendiente o
-    pasa a fallida según max_intentos).
-    """
     try:
         body_text = _jinja.get_template(f"{template_base}.txt").render(**ctx)
         body_html = _jinja.get_template(f"{template_base}.html").render(**ctx)
@@ -370,31 +309,12 @@ def _enviar_una(
 
 
 def enviar_pendientes_inmediatas(session: Session, settings: Settings) -> dict[str, int]:
-    """Envía alertas pendientes de perfiles con frecuencia 'inmediata' y todas
-    las alertas de seguimiento pendientes (estas no tienen frecuencia
-    configurable: seguir una oportunidad puntual implica avisar de inmediato).
-
-    Respeta el tope diario compartido. Si se alcanza, las restantes quedan en
-    'pendiente' y se registra en SyncState.notas.
-    """
+    """Envía solo alertas pendientes de oportunidades seguidas."""
     counter = EmailCounter(session, settings.email_daily_limit)
-    alertas_match = _load_alertas_pendientes(session, FrecuenciaAlerta.INMEDIATA)
-    alertas_seguimiento = _load_alertas_seguimiento_pendientes(session)
+    alertas = _load_alertas_seguimiento_pendientes(session)
 
     enviados = pospuestos = errores = 0
-
-    for alerta in alertas_match:
-        if counter.remaining() <= 0:
-            pospuestos += 1
-            continue
-        ctx = _ctx_alerta(alerta, session, settings)
-        subject = f"[MP] {ctx['tipo_alerta']}: {ctx['nombre'][:50]}"
-        if _enviar_una(session, settings, counter, alerta, ctx["owner_email"], subject, "alerta_inmediata", ctx):
-            enviados += 1
-        else:
-            errores += 1
-
-    for alerta in alertas_seguimiento:
+    for alerta in alertas:
         if counter.remaining() <= 0:
             pospuestos += 1
             continue
@@ -412,61 +332,86 @@ def enviar_pendientes_inmediatas(session: Session, settings: Settings) -> dict[s
     return {"enviados": enviados, "pospuestos": pospuestos, "errores": errores}
 
 
-def enviar_digest(session: Session, settings: Settings) -> dict[str, int]:
-    """Agrupa alertas pendientes de perfiles 'digest' por usuario y envía un correo por usuario.
+def _usuario_elegible_resumen(usuario: Usuario, ahora: datetime) -> bool:
+    if not usuario.activo or usuario.dias_resumen <= 0:
+        return False
+    return usuario.ultimo_resumen_en is None or ahora - usuario.ultimo_resumen_en >= timedelta(
+        days=usuario.dias_resumen
+    )
 
-    Respeta el tope diario. Un usuario nunca recibe alertas de perfiles ajenos.
-    """
+
+def _matches_nuevos_usuario(session: Session, usuario: Usuario) -> list[OportunidadMatch]:
+    stmt = (
+        select(OportunidadMatch)
+        .join(PerfilBusqueda, OportunidadMatch.perfil_id == PerfilBusqueda.id)
+        .where(
+            PerfilBusqueda.owner_id == usuario.id,
+            PerfilBusqueda.activo.is_(True),
+        )
+        .options(selectinload(OportunidadMatch.perfil))
+        .order_by(OportunidadMatch.score.desc(), OportunidadMatch.fecha_match.desc())
+    )
+    if usuario.ultimo_resumen_en is not None:
+        stmt = stmt.where(OportunidadMatch.fecha_match > usuario.ultimo_resumen_en)
+    return list(session.execute(stmt).scalars())
+
+
+def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None = None) -> dict[str, int]:
+    """Envía un resumen consolidado por usuario elegible si tiene matches nuevos."""
+    if ahora is None:
+        ahora = _now_utc()
     counter = EmailCounter(session, settings.email_daily_limit)
-    alertas = _load_alertas_pendientes(session, FrecuenciaAlerta.DIGEST)
+    usuarios = list(session.execute(select(Usuario).where(Usuario.activo.is_(True))).scalars())
 
-    # Agrupar por owner_id — NUNCA mezclar usuarios
-    by_owner: dict[int, tuple[str, list[Alerta]]] = {}
-    for a in alertas:
-        assert a.match is not None, "alerta de digest sin match_id"
-        uid = a.match.perfil.owner_id
-        email = a.match.perfil.owner.email
-        if uid not in by_owner:
-            by_owner[uid] = (email, [])
-        by_owner[uid][1].append(a)
-
-    enviados = pospuestos = errores = 0
-    for _uid, (owner_email, user_alertas) in by_owner.items():
+    enviados = sin_nuevos = no_elegibles = pospuestos = errores = 0
+    for usuario in usuarios:
+        if not _usuario_elegible_resumen(usuario, ahora):
+            no_elegibles += 1
+            continue
+        matches = _matches_nuevos_usuario(session, usuario)
+        if not matches:
+            sin_nuevos += 1
+            continue
         if counter.remaining() <= 0:
-            pospuestos += len(user_alertas)
+            pospuestos += 1
             continue
 
-        items = [_ctx_alerta(a, session, settings) for a in user_alertas]
-        n = len(items)
-        subject = f"[MP] Resumen: {n} oportunidad{'es' if n != 1 else ''}"
+        items = [_ctx_resumen_item(m, session, settings) for m in matches[:5]]
+        total = len(matches)
+        subject = f"[MP] Encontramos {total} oportunidades para tu perfil en Mercado Público"
+        ctx = {
+            "total": total,
+            "items": items,
+            "url_app": settings.app_base_url.strip().rstrip("/") or "/",
+        }
         try:
-            body_text = _jinja.get_template("digest.txt").render(items=items)
-            body_html = _jinja.get_template("digest.html").render(items=items)
-            _smtp_send(settings, owner_email, subject, body_text, body_html)
-            ahora = _now_utc()
-            for a in user_alertas:
-                a.estado = EstadoAlerta.ENVIADA.value
-                a.enviada_en = ahora
+            body_text = _jinja.get_template("resumen.txt").render(**ctx)
+            body_html = _jinja.get_template("resumen.html").render(**ctx)
+            _smtp_send(settings, usuario.email, subject, body_text, body_html)
+            usuario.ultimo_resumen_en = ahora
             session.commit()
             counter.consume()
             enviados += 1
         except Exception:
-            _log.error("Error enviando digest a %s", owner_email, exc_info=True)
+            _log.error("Error enviando resumen a %s", usuario.email, exc_info=True)
             session.rollback()
-            for a in user_alertas:
-                a.intentos_envio += 1
-                if a.intentos_envio >= a.max_intentos:
-                    a.estado = EstadoAlerta.FALLIDA.value
-                    _log.warning(
-                        "Alerta id=%d marcada fallida tras %d intentos",
-                        a.id,
-                        a.intentos_envio,
-                    )
-            session.commit()
             errores += 1
 
     if pospuestos > 0:
         counter.mark_tope_alcanzado()
 
-    _log.info("enviar_digest: enviados=%d pospuestos=%d errores=%d", enviados, pospuestos, errores)
-    return {"digests_enviados": enviados, "digests_pospuestos": pospuestos, "errores_digest": errores}
+    _log.info(
+        "enviar_resumen: enviados=%d sin_nuevos=%d no_elegibles=%d pospuestos=%d errores=%d",
+        enviados,
+        sin_nuevos,
+        no_elegibles,
+        pospuestos,
+        errores,
+    )
+    return {
+        "resumenes_enviados": enviados,
+        "resumenes_sin_nuevos": sin_nuevos,
+        "resumenes_no_elegibles": no_elegibles,
+        "resumenes_pospuestos": pospuestos,
+        "errores_resumen": errores,
+    }

@@ -16,7 +16,7 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.core.settings import Settings
 from app.models.base import Base
-from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
+from app.models.enums import EstadoOportunidad, RolUsuario
 from app.models.tables import (
     Licitacion,
     OfertaCompetencia,
@@ -107,7 +107,6 @@ def _crear_lic_con_match(
             keywords_excluir=[],
             regiones=[],
             fuentes=["licitaciones"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)

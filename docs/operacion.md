@@ -270,8 +270,8 @@ También se pueden disparar a mano con `POST /api/jobs/run?job=<nombre>`
 | `lifecycle` | 23:30 Chile (ciclo nocturno) | Refresca estados de oportunidades próximas a cierre o seguidas |
 | `match` | tras cada `activas`/`ca` | Recalcula matches contra perfiles activos |
 | `competencia` | 23:30 Chile (ciclo nocturno, después de `lifecycle`) | Captura ofertas (`lic-da`) de seguidas recién adjudicadas, $0 cuota — ver `docs/05-competencia.md` |
-| `alerts` | tras cada `match` | Detecta eventos y envía alertas inmediatas pendientes |
-| `digest` | diario, hora `DIGEST_HOUR` (default 8) | Envía el digest agrupado por usuario |
+| `alerts` | tras cada `match` | Detecta eventos de oportunidades con alertas activas y envía inmediatas pendientes |
+| `resumen` | diario, hora `DIGEST_HOUR` (default 8) | Envía el resumen consolidado por usuario elegible |
 | `retencion` | diario 03:00 Chile | Purga `raw_json`/filas terminales > 90 días |
 | `catalogos` | semanal, lunes 02:00 Chile | Refresca catálogo de organismos |
 

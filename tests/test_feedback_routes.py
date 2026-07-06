@@ -17,7 +17,7 @@ from app.auth.session import COOKIE_NAME, create_session_token, decode_session_t
 from app.core.settings import Settings
 from app.matching.feedback import obtener_feedback
 from app.models.base import Base
-from app.models.enums import FrecuenciaAlerta, RolUsuario, ValorFeedback
+from app.models.enums import RolUsuario, ValorFeedback
 from app.models.tables import Licitacion, MatchFeedback, OportunidadMatch, PerfilBusqueda, Usuario
 
 _PW = "contraseña-segura-test"
@@ -102,7 +102,6 @@ def _crear_match_propio(
             keywords_excluir=[],
             regiones=[],
             fuentes=["licitaciones"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)

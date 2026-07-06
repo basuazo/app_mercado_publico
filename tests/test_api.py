@@ -30,7 +30,7 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.core.settings import Settings
 from app.models.base import Base
-from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
+from app.models.enums import EstadoOportunidad, RolUsuario
 from app.models.tables import (
     CompraAgil,
     OportunidadMatch,
@@ -293,7 +293,6 @@ def test_oportunidad_ajena_404(engine, client, settings):
             keywords_excluir=[],
             regiones=[],
             fuentes=["licitaciones"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)
@@ -484,6 +483,67 @@ def test_cuenta_password_sin_csrf_403(client, usuario, settings):
             "password_nueva": "nueva-clave-segura",
             "password_confirmacion": "nueva-clave-segura",
         },
+        cookies=_cookie(settings, usuario),
+    )
+    assert r.status_code == 403
+
+
+def test_cuenta_resumen_guarda_config(engine, client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/resumen",
+        data={"dias_resumen": "7"},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        u = s.get(Usuario, usuario)
+        assert u is not None
+        assert u.dias_resumen == 7
+
+
+def test_cuenta_resumen_permite_nunca(engine, client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/resumen",
+        data={"dias_resumen": "0"},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        u = s.get(Usuario, usuario)
+        assert u is not None
+        assert u.dias_resumen == 0
+
+
+def test_cuenta_resumen_rechaza_valor_invalido(engine, client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/resumen",
+        data={"dias_resumen": "5"},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+    with Session(engine) as s:
+        u = s.get(Usuario, usuario)
+        assert u is not None
+        assert u.dias_resumen == 3
+
+
+def test_cuenta_resumen_sin_csrf_403(client, usuario, settings):
+    r = client.post(
+        "/cuenta/resumen",
+        data={"dias_resumen": "7"},
         cookies=_cookie(settings, usuario),
     )
     assert r.status_code == 403
@@ -684,7 +744,6 @@ def test_api_perfil_ajeno_404(engine, client, settings):
             keywords_excluir=[],
             regiones=[],
             fuentes=["licitaciones"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)

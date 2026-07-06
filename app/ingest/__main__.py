@@ -18,9 +18,9 @@ from app.ingest.orchestrator import (
     run_competencia,
     run_datos_abiertos,
     run_detalles,
-    run_digest,
     run_lifecycle,
     run_match,
+    run_resumen,
     run_retencion,
     run_scheduler,
     run_sync_activas,
@@ -36,7 +36,7 @@ _JOBS = (
     "retencion",
     "match",
     "alerts",
-    "digest",
+    "resumen",
     "datos-abiertos",
     "competencia",
 )
@@ -67,7 +67,7 @@ def cmd_run_once(
         "retencion": lambda: run_retencion(engine),
         "match": lambda: run_match(settings, engine),
         "alerts": lambda: run_alerts(settings, engine),
-        "digest": lambda: run_digest(settings, engine),
+        "resumen": lambda: run_resumen(settings, engine),
         "datos-abiertos": lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes),
         "competencia": lambda: run_competencia(settings, engine),
     }

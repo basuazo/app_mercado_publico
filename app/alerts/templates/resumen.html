@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Resumen Mercado Público</title></head>
+<body style="font-family: Arial, sans-serif; color: #1f2937">
+  <h2 style="color:#003366">Encontramos {{ total }} oportunidades para tu perfil en Mercado Público</h2>
+  <p>Estas son las oportunidades más relevantes desde tu último resumen:</p>
+  <ul>
+    {% for item in items %}
+    <li style="margin-bottom: 14px">
+      <a href="{{ item.url }}"><strong>{{ item.nombre }}</strong></a><br>
+      Perfil: {{ item.perfil_nombre }} · Score: {{ "%.0f"|format(item.score) }}<br>
+      Organismo: {{ item.organismo or "No informado" }}<br>
+      Monto: {{ item.monto }} · Cierre: {{ item.fecha_cierre }}
+    </li>
+    {% endfor %}
+  </ul>
+  <p><a href="{{ url_app }}" style="display:inline-block;background:#0d6efd;color:white;padding:10px 14px;text-decoration:none;border-radius:6px">Ver dashboard</a></p>
+  <p style="font-size:12px;color:#6b7280">Fuente: Dirección ChileCompra</p>
+</body>
+</html>

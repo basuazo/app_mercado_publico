@@ -30,8 +30,8 @@ flowchart TD
     end
 
     subgraph app/alerts
-        DET["detector.py\ndetectar_nuevo_match\ndetectar_cambio_estado\ndetectar_recordatorios"]
-        EMAIL["email.py\nenviar_pendientes_inmediatas\nenviar_digest"]
+        DET["detector.py\ndetectar_cambio_estado_seguidas\ndetectar_recordatorio_cierre_seguidas"]
+        EMAIL["email.py\nenviar_pendientes_inmediatas\nenviar_resumen"]
     end
 
     subgraph app/api

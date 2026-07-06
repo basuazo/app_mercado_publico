@@ -31,9 +31,11 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   **F-automatch** (crear/editar un perfil dispara matching inmediato de ese perfil en
   background, leyendo solo oportunidades ya en BD y sin consumir cuota API),
   **F-passwords** (cambio de contraseña propio y reseteo admin con CSRF),
+  **F-notificaciones** (resumen consolidado de descubrimiento por usuario + inmediatas solo
+  para oportunidades con alertas activas),
   **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
   oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
-- **Suite: 520 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
+- **Suite: 498 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
   contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
 - **Deuda técnica — suite 100% verde (este commit):**
   - `tests/test_models.py::pg_session`: `Session(connection=conn)` no es un kwarg válido en
@@ -99,6 +101,19 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   vía `POST /admin/usuarios/{uid}/password`, protegido por `html_require_admin` + CSRF y mínimo
   8 caracteres. El reset renderiza la nueva contraseña en el cuerpo de la respuesta una sola vez
   para que el admin la copie; no va en logs ni en query string. Sin migración.
+- **F-notificaciones — resumen consolidado + inmediatas solo para seguidas (este commit):**
+  se elimina el spam de “un correo por match”. Los matches nuevos ya no crean `Alerta`; en su
+  lugar, `run_resumen`/`enviar_resumen` evalúa por usuario activo `dias_resumen` (3, 7 o 0 =
+  nunca) y `ultimo_resumen_en`, cuenta los `OportunidadMatch.fecha_match` nuevos de perfiles
+  activos, y solo si hay >0 envía un correo consolidado con top 5 por score + link a la app.
+  Si no hay nuevos no envía y no mueve `ultimo_resumen_en`, para acumular ventana. Las
+  inmediatas quedan limitadas a oportunidades con alertas activas (`OportunidadSeguida`):
+  cambio de estado (`seguimiento_estado:*`) y cierre ≤48h (`seguimiento_cierre`). Job diario
+  `digest` reemplazado por `resumen`; plantillas `digest.*`/`alerta_inmediata.*` eliminadas y
+  nuevas `resumen.html`/`resumen.txt` con "Fuente: Dirección ChileCompra". Migración
+  `d2f8a6c1b9e0`: agrega `usuarios.dias_resumen`, `usuarios.ultimo_resumen_en` y elimina
+  `perfiles_busqueda.frecuencia_alerta`. **Operativo:** aplicar `alembic upgrade head` en
+  Neon dev y luego prod lo hace Boris.
 - **Fix — enlace "Ver ficha oficial en MP" no abría (este commit):** spike previo en
   `docs/10-enlace-ficha.md` (veredicto cerrado). Causa: el parámetro `qs` de
   `DetailsAcquisition.aspx` espera un token interno ENCRIPTADO, no el `CodigoExterno` en
@@ -175,8 +190,9 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
 
 ## Qué hace hoy
 Descubrir oportunidades por keyword/región/**rubro UNSPSC**/organismo; ver ficha
-enriquecida con razones legibles del match; **seguir/archivar** licitaciones y recibir
-**alertas cuando cambian de estado** (sobre todo adjudicada); y al adjudicarse, ver el
+enriquecida con razones legibles del match; recibir **resúmenes consolidados** de nuevas
+oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales y recibir
+**alertas inmediatas** cuando cambian de estado o están por cerrar; y al adjudicarse, ver el
 **análisis de competencia** (proveedores, montos, quién ganó) reconstruido desde datos abiertos.
 
 ## Flujo de trabajo (IMPORTANTE — así trabajamos)

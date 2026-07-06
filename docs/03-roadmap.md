@@ -79,6 +79,43 @@ no-admin 403, falta de CSRF 403 y longitud corta.
 
 ---
 
+## F-notificaciones — resumen consolidado + inmediatas solo para alertas activas — HECHO
+Decisión: terminar con el spam de un correo por match. Los matches no seguidos ya no crean
+alertas ni correos inmediatos; el descubrimiento se comunica mediante un resumen consolidado
+por usuario.
+
+Modelo/migración: `d2f8a6c1b9e0` agrega `usuarios.dias_resumen` (default 3; 0 = nunca) y
+`usuarios.ultimo_resumen_en`, y elimina `perfiles_busqueda.frecuencia_alerta`. Sin cambios en
+el mecanismo de perfiles/matching. Para ventana de resumen se usa `OportunidadMatch.fecha_match`
+(timestamp existente del match) como equivalente de “creado en”.
+
+Resumen: `run_resumen`/`enviar_resumen` corre diario; para cada usuario activo elegible
+(`dias_resumen > 0` y ventana cumplida), toma matches nuevos de perfiles activos, ordena por
+score desc y envía un solo correo con top 5 + link a la app. Si no hay nuevos, no envía y no
+toca `ultimo_resumen_en`.
+
+Inmediatas: `run_alerts` ahora llama solo detectores sobre `OportunidadSeguida`:
+`detectar_cambio_estado_seguidas` y `detectar_recordatorio_cierre_seguidas` (`seguimiento_cierre`,
+cierre ≤48h, idempotente). `enviar_pendientes_inmediatas` solo carga alertas con
+`seguimiento_id`.
+
+Jobs/UI: job `digest` reemplazado por `resumen` en scheduler, CLI y `/api/jobs/run`.
+`/perfiles` suma `POST /cuenta/resumen` con CSRF y valores válidos {0,3,7}. Textos visibles
+“Seguir/Seguidas” pasan a “Activar alertas/Alertas activas”; rutas backend se mantienen.
+
+Plantillas: eliminadas `alerta_inmediata.*` y `digest.*`; agregadas `resumen.html`/`.txt`.
+`alerta_seguimiento.*` se mantiene. Todos los correos incluyen "Fuente: Dirección ChileCompra".
+
+Validación Alembic: `alembic heads` → `d2f8a6c1b9e0 (head)`. `upgrade --sql` y `downgrade
+d2f8a6c1b9e0:e1f4a7c9b2d6 --sql` verificados offline con dialecto PostgreSQL. Nota: el modo
+offline con SQLite falla en migraciones antiguas por JSONB explícito (limitación preexistente
+del historial, no de esta migración).
+
+Recordatorio operativo: el humano aplica `alembic upgrade head` primero en Neon dev y luego en
+prod.
+
+---
+
 ## F9a — Exponer filtros existentes + validar cobertura UNSPSC
 **Estado: HECHO (commit 38a34ac).** Formulario expone regiones/montos, parseo
 defensivo, fix `p.excluir`→`p.keywords_excluir`. Script `scripts/validar_unspsc.py`
@@ -180,7 +217,8 @@ resalta el RUT propio si está configurado en `/perfiles`.
 plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el diseño visado.
 
 **Hecho — mail de match enlaza a la ficha de la app (parte 4/4, este commit):**
-- La alerta inmediata de match y el digest (`_ctx_alerta` en `app/alerts/email.py`) enlazaban
+- Nota histórica, reemplazada por F-notificaciones: la alerta inmediata de match y el digest
+  (`_ctx_alerta` en `app/alerts/email.py`) enlazaban
   a la URL OFICIAL de MP (`_url_ficha`: RFB `DetailsAcquisition.aspx` / buscador compra-agil),
   que da el error "No Pertenece a la unidad de la ficha" — la oficial exige sesión/unidad
   correcta. Ahora usan `_url_ficha_app(settings, fuente, codigo)`, el mismo helper que ya
@@ -195,6 +233,7 @@ plantillas Jinja (stack actual Bootstrap). No se toca código hasta tener el dis
 - Texto de `alerta_inmediata.html`: "Ver ficha en Mercado Público" → "Ver ficha" (ya no
   promete MP). `alerta_inmediata.txt`, `digest.html`, `digest.txt` y `alerta_seguimiento.*`
   ya decían "Ver ficha"/"Ver ficha en MP Oportunidades" genérico — sin cambio de texto.
+  Desde F-notificaciones, `alerta_inmediata.*` y `digest.*` fueron eliminadas.
 - Desde la ficha de la app el usuario sigue teniendo el botón condicional "Ver ficha oficial
   en MP" (F8) cuando corresponde, así que no se pierde el acceso a MP — el correo solo deja
   de mandarlos directo a una URL no autorizada/rota.
@@ -358,8 +397,8 @@ sin relevancia textual real).
   intacto con el filtro aplicado, default de settings aplicado en la ruta, override por
   query param, paginación sobre el total filtrado, y render del control + línea de ocultas
   (`tests/test_feedback_routes.py`).
-- Alcance: solo el feed del dashboard. **Follow-up anotado, no hecho aquí:** las alertas/
-  digest no aplican ningún piso de score — evaluar si deberían.
+- Alcance: solo el feed del dashboard. **Nota histórica:** el follow-up sobre alertas/digest
+  quedó obsoleto con F-notificaciones; el resumen consolidado usa top por score.
 
 ## F-feed-agrupado — Vista agrupada por categorías (reemplaza la lista plana) — HECHO
 Decisión (con Boris): el dashboard pasa a ser **siempre** agrupado — se elimina la lista

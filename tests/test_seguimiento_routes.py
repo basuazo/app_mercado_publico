@@ -15,7 +15,7 @@ from app.auth.session import COOKIE_NAME, create_session_token, decode_session_t
 from app.core.settings import Settings
 from app.matching.seguimiento import obtener_seguimiento
 from app.models.base import Base
-from app.models.enums import FrecuenciaAlerta, RolUsuario
+from app.models.enums import RolUsuario
 from app.models.tables import Licitacion, OportunidadMatch, PerfilBusqueda, Usuario
 
 _PW = "contraseña-segura-test"
@@ -87,7 +87,6 @@ def _crear_match_propio(engine, owner_id: int, codigo: str = "LIC-001") -> None:
             keywords_excluir=[],
             regiones=[],
             fuentes=["licitaciones"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)
@@ -269,7 +268,7 @@ def test_seguidas_get_oculta_archivadas_por_defecto(client, usuario, settings, e
     client.post("/oportunidad/licitaciones/LIC-001/archivar", data={}, cookies=cookies, headers=headers)
 
     r = client.get("/seguidas", cookies=_cookie(settings, usuario))
-    assert "No tienes oportunidades seguidas activas" in r.text
+    assert "No tienes alertas activas" in r.text
 
     r2 = client.get("/seguidas?archivadas=1", cookies=_cookie(settings, usuario))
     assert "Licitación test" in r2.text

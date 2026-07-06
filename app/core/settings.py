@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     smtp_from: str = Field(default="", description="Dirección remitente")
 
     # --- Alertas email ---
-    digest_hour: int = Field(default=8, description="Hora Chile para envío del digest diario (0–23)")
+    digest_hour: int = Field(default=8, description="Hora Chile para envío del resumen diario (0–23)")
 
     # --- Admin inicial (solo para seed; no usar en runtime) ---
     admin_email: str = Field(default="", description="Email del administrador inicial")

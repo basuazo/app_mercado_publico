@@ -16,7 +16,7 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.core.settings import Settings
 from app.models.base import Base
-from app.models.enums import FrecuenciaAlerta, RolUsuario
+from app.models.enums import RolUsuario
 from app.models.tables import (
     CaProducto,
     CompraAgil,
@@ -105,7 +105,6 @@ def _crear_match_lic_con_items(engine, owner_id: int, codigo: str = "LIC-001", e
             keywords_excluir=[],
             regiones=[],
             fuentes=["licitaciones"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)
@@ -130,7 +129,6 @@ def _crear_match_compra_agil(engine, owner_id: int, codigo: str = "CA-001") -> N
             keywords_excluir=[],
             regiones=[],
             fuentes=["compras_agiles"],
-            frecuencia_alerta=FrecuenciaAlerta.INMEDIATA,
             activo=True,
         )
         s.add(perfil)

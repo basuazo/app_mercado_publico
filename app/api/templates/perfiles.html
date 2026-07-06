@@ -91,6 +91,23 @@
         </form>
       </div>
       <div class="col-lg-7">
+        <form method="post" action="/cuenta/resumen" class="row g-2 align-items-end mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-md-6">
+            <label class="form-label">Resumen de oportunidades nuevas</label>
+            <select name="dias_resumen" class="form-select">
+              <option value="3" {% if current_user.dias_resumen == 3 %}selected{% endif %}>Cada 3 días</option>
+              <option value="7" {% if current_user.dias_resumen == 7 %}selected{% endif %}>Cada 7 días</option>
+              <option value="0" {% if current_user.dias_resumen == 0 %}selected{% endif %}>Nunca</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary">Guardar resumen</button>
+          </div>
+          <div class="col-12">
+            <span class="text-muted small">Te enviaremos un solo correo consolidado cuando haya oportunidades nuevas.</span>
+          </div>
+        </form>
         <form method="post" action="/cuenta/password" class="row g-2 align-items-end">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="col-md-4">
@@ -125,14 +142,6 @@
         <div class="col-md-4">
           <label class="form-label">Nombre</label>
           <input type="text" name="nombre" class="form-control" required>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Frecuencia de alerta</label>
-          <select name="frecuencia_alerta" class="form-select">
-            {% for f in frecuencias %}
-            <option value="{{ f.value }}">{{ f.value }}</option>
-            {% endfor %}
-          </select>
         </div>
         <div class="col-md-4">
           <label class="form-label">Fuentes</label>
@@ -192,7 +201,6 @@
     <div class="d-flex justify-content-between align-items-center">
       <div>
         <strong>{{ p.nombre }}</strong>
-        <span class="badge bg-secondary ms-2">{{ p.frecuencia_alerta }}</span>
       </div>
       <div class="d-flex gap-2">
         <button class="btn btn-sm btn-outline-secondary" type="button"
@@ -232,14 +240,6 @@
           <div class="col-md-4">
             <label class="form-label">Nombre</label>
             <input type="text" name="nombre" class="form-control" value="{{ p.nombre }}" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Frecuencia de alerta</label>
-            <select name="frecuencia_alerta" class="form-select">
-              {% for f in frecuencias %}
-              <option value="{{ f.value }}" {% if p.frecuencia_alerta == f %}selected{% endif %}>{{ f.value }}</option>
-              {% endfor %}
-            </select>
           </div>
           <div class="col-md-4">
             <label class="form-label">Fuentes</label>
