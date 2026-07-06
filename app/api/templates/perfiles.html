@@ -70,23 +70,48 @@
 <div class="card mb-4">
   <div class="card-header">Ajustes de tu cuenta</div>
   <div class="card-body">
-    <form method="post" action="/perfiles/rut-proveedor" class="row g-2 align-items-end">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="col-md-4">
-        <label class="form-label">Tu RUT de proveedor (opcional)</label>
-        <input type="text" name="rut_proveedor" class="form-control" placeholder="76.123.456-7"
-               value="{{ current_user.rut_proveedor or '' }}">
+    <div class="row g-4">
+      <div class="col-lg-5">
+        <form method="post" action="/perfiles/rut-proveedor" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-md-8">
+            <label class="form-label">Tu RUT de proveedor (opcional)</label>
+            <input type="text" name="rut_proveedor" class="form-control" placeholder="76.123.456-7"
+                   value="{{ current_user.rut_proveedor or '' }}">
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary">Guardar</button>
+          </div>
+          <div class="col-12">
+            <span class="text-muted small">
+              Solo si vendes al Estado. Cuando una licitación que sigues se adjudica, resaltamos
+              tu propia oferta en el análisis de competencia. No afecta tus búsquedas.
+            </span>
+          </div>
+        </form>
       </div>
-      <div class="col-auto">
-        <button type="submit" class="btn btn-outline-primary">Guardar</button>
+      <div class="col-lg-7">
+        <form method="post" action="/cuenta/password" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-md-4">
+            <label class="form-label">Contraseña actual</label>
+            <input type="password" name="password_actual" class="form-control" required autocomplete="current-password">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Nueva contraseña</label>
+            <input type="password" name="password_nueva" class="form-control" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Confirmar nueva</label>
+            <input type="password" name="password_confirmacion" class="form-control" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-outline-secondary">Cambiar contraseña</button>
+            <span class="text-muted small ms-2">Mínimo 8 caracteres.</span>
+          </div>
+        </form>
       </div>
-      <div class="col-12">
-        <span class="text-muted small">
-          Solo si vendes al Estado. Cuando una licitación que sigues se adjudica, resaltamos
-          tu propia oferta en el análisis de competencia. No afecta tus búsquedas.
-        </span>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
 

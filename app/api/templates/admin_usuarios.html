@@ -4,6 +4,13 @@
 <h2 class="mb-4">Usuarios</h2>
 
 {% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if password_reseteada %}
+<div class="alert alert-warning">
+  <div class="fw-semibold">Contraseña nueva para {{ password_reseteada.email }}</div>
+  <div class="font-monospace">{{ password_reseteada.password }}</div>
+  <div class="small">Se muestra solo en esta respuesta. Cópiala ahora y compártela por un canal seguro.</div>
+</div>
+{% endif %}
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
 <!-- Nuevo usuario -->
@@ -51,6 +58,14 @@
       <td><span class="badge {% if u.rol == 'admin' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ u.rol }}</span></td>
       <td>{% if u.activo %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}</td>
       <td>
+        {% if u.activo %}
+        <form method="post" action="/admin/usuarios/{{ u.id }}/password" class="d-flex gap-2 mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="password" name="password_nueva" class="form-control form-control-sm"
+                 placeholder="Nueva contraseña" required minlength="8" autocomplete="new-password">
+          <button class="btn btn-sm btn-outline-secondary">Resetear contraseña</button>
+        </form>
+        {% endif %}
         {% if u.activo and u.id != current_user.id %}
         <form method="post" action="/admin/usuarios/{{ u.id }}/desactivar"
               onsubmit="return confirm('¿Desactivar a ' + {{ u.email|tojson }} + '?')">

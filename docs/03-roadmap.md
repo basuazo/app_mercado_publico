@@ -59,6 +59,26 @@ queda pendiente diseñar limpieza segura en `match_perfil`/`match_todos`.
 
 ---
 
+## F-passwords — cambio propio + reseteo admin — HECHO
+Sin migración: se reutiliza `Usuario.password_hash` y los helpers existentes de passlib
+(`hash_password`/`verify_password`).
+
+Usuario final: en `/perfiles`, la tarjeta "Ajustes de tu cuenta" ahora permite cambiar la
+contraseña propia con actual + nueva + confirmación. `POST /cuenta/password` exige CSRF,
+verifica la contraseña actual, valida confirmación y mínimo 8 caracteres, y actualiza solo al
+usuario autenticado.
+
+Admin: `/admin/usuarios` suma por fila una acción "Resetear contraseña". `POST
+/admin/usuarios/{uid}/password` exige `html_require_admin`, CSRF y mínimo 8 caracteres; guarda
+el hash y muestra la nueva contraseña una sola vez en el cuerpo de la respuesta, sin meterla
+en query string ni logs.
+
+Tests sin red: cambio propio exitoso + login con nueva/vieja, errores por actual incorrecta,
+confirmación distinta, longitud corta y falta de CSRF; reset admin exitoso + login con nueva,
+no-admin 403, falta de CSRF 403 y longitud corta.
+
+---
+
 ## F9a — Exponer filtros existentes + validar cobertura UNSPSC
 **Estado: HECHO (commit 38a34ac).** Formulario expone regiones/montos, parseo
 defensivo, fix `p.excluir`→`p.keywords_excluir`. Script `scripts/validar_unspsc.py`

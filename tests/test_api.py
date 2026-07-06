@@ -327,6 +327,12 @@ def _crear_usuario_normal(session: Session, email: str) -> int:
     return u.id
 
 
+def _limpiar_rate_limit_testclient() -> None:
+    from app.auth.rate_limit import clear_attempts
+
+    clear_attempts("testclient")
+
+
 # ---------------------------------------------------------------------------
 # CSRF
 # ---------------------------------------------------------------------------
@@ -351,6 +357,204 @@ def test_crear_perfil_con_csrf_header_ok(client, usuario, settings):
         follow_redirects=False,
     )
     assert r.status_code == 303
+
+
+def test_cuenta_password_cambia_con_actual_correcta(client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    nueva = "nueva-clave-segura"
+
+    r = client.post(
+        "/cuenta/password",
+        data={
+            "password_actual": _PW,
+            "password_nueva": nueva,
+            "password_confirmacion": nueva,
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert "mensaje=Contrase" in r.headers["location"]
+    client.cookies.clear()
+    _limpiar_rate_limit_testclient()
+    r_old = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": _PW, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_old.status_code == 303
+    assert "error=" in r_old.headers["location"]
+    r_new = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": nueva, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_new.status_code == 303
+    assert r_new.headers["location"] == "/"
+
+
+def test_cuenta_password_falla_con_actual_incorrecta(client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/password",
+        data={
+            "password_actual": "incorrecta",
+            "password_nueva": "nueva-clave-segura",
+            "password_confirmacion": "nueva-clave-segura",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+    client.cookies.clear()
+    _limpiar_rate_limit_testclient()
+    r_login = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": _PW, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_login.status_code == 303
+    assert r_login.headers["location"] == "/"
+
+
+def test_cuenta_password_falla_si_confirmacion_no_coincide(client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/password",
+        data={
+            "password_actual": _PW,
+            "password_nueva": "nueva-clave-segura",
+            "password_confirmacion": "otra-clave-segura",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+    client.cookies.clear()
+    _limpiar_rate_limit_testclient()
+    r_login = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": _PW, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_login.status_code == 303
+    assert r_login.headers["location"] == "/"
+
+
+def test_cuenta_password_falla_si_nueva_es_corta(client, usuario, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/password",
+        data={
+            "password_actual": _PW,
+            "password_nueva": "corta",
+            "password_confirmacion": "corta",
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
+    client.cookies.clear()
+    _limpiar_rate_limit_testclient()
+    r_login = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": _PW, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_login.status_code == 303
+    assert r_login.headers["location"] == "/"
+
+
+def test_cuenta_password_sin_csrf_403(client, usuario, settings):
+    r = client.post(
+        "/cuenta/password",
+        data={
+            "password_actual": _PW,
+            "password_nueva": "nueva-clave-segura",
+            "password_confirmacion": "nueva-clave-segura",
+        },
+        cookies=_cookie(settings, usuario),
+    )
+    assert r.status_code == 403
+
+
+def test_admin_resetea_password_de_usuario(client, usuario, admin, settings):
+    cookies, headers = _session(settings, admin)
+    nueva = "reset-admin-seguro"
+
+    r = client.post(
+        f"/admin/usuarios/{usuario}/password",
+        data={"password_nueva": nueva},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 200
+    assert "Contraseña reseteada" in r.text
+    assert nueva in r.text
+    client.cookies.clear()
+    _limpiar_rate_limit_testclient()
+    r_old = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": _PW, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_old.status_code == 303
+    assert "error=" in r_old.headers["location"]
+    r_new = client.post(
+        "/login",
+        data={"email": "user@test.cl", "password": nueva, "next": "/"},
+        follow_redirects=False,
+    )
+    assert r_new.status_code == 303
+    assert r_new.headers["location"] == "/"
+
+
+def test_admin_reset_password_rechaza_no_admin(client, usuario, admin, settings):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        f"/admin/usuarios/{admin}/password",
+        data={"password_nueva": "reset-admin-seguro"},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+def test_admin_reset_password_sin_csrf_403(client, usuario, admin, settings):
+    r = client.post(
+        f"/admin/usuarios/{usuario}/password",
+        data={"password_nueva": "reset-admin-seguro"},
+        cookies=_cookie(settings, admin),
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+def test_admin_reset_password_rechaza_corta(client, usuario, admin, settings):
+    cookies, headers = _session(settings, admin)
+    r = client.post(
+        f"/admin/usuarios/{usuario}/password",
+        data={"password_nueva": "corta"},
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "error=" in r.headers["location"]
 
 
 # ---------------------------------------------------------------------------

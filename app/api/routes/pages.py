@@ -37,7 +37,7 @@ from app.api.query import (
 )
 from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
-from app.auth.password import hash_password
+from app.auth.password import hash_password, verify_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.core.logging import get_logger
 from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
@@ -116,6 +116,7 @@ _RELEVANCIA_ALTA = 60
 # este grupo"), así que se pide "todo" de una vez. Generoso para la escala
 # real de un equipo de 3-10 usuarios (regla de free tier); no es paginación.
 _LIMITE_AGRUPADO = 2000
+_PASSWORD_MIN_LEN = 8
 
 
 # ---------------------------------------------------------------------------
@@ -535,6 +536,10 @@ def _parse_organismos(valor: str) -> list[str]:
     return [o.strip() for o in valor.split(",") if o.strip()]
 
 
+def _password_valida(password: str) -> bool:
+    return len(password) >= _PASSWORD_MIN_LEN
+
+
 def _agrupar_familias_por_segmento(
     segmentos_list: list[tuple[str, str]], familias_list: list[tuple[str, str]]
 ) -> list[tuple[str, str, list[tuple[str, str]]]]:
@@ -609,6 +614,37 @@ async def perfil_rut_proveedor(
     user.rut_proveedor = rut_proveedor.strip() or None
     session.commit()
     return RedirectResponse(url="/perfiles?mensaje=RUT+de+proveedor+actualizado", status_code=303)
+
+
+@router.post("/cuenta/password")
+async def cuenta_password_cambiar(
+    request: Request,
+    password_actual: str = Form(""),
+    password_nueva: str = Form(""),
+    password_confirmacion: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    if not verify_password(password_actual, user.password_hash):
+        return RedirectResponse(
+            url=f"/perfiles?error={quote('Contraseña actual incorrecta')}",
+            status_code=303,
+        )
+    if password_nueva != password_confirmacion:
+        return RedirectResponse(
+            url=f"/perfiles?error={quote('La nueva contraseña y su confirmación no coinciden')}",
+            status_code=303,
+        )
+    if not _password_valida(password_nueva):
+        return RedirectResponse(
+            url=f"/perfiles?error={quote('La nueva contraseña debe tener al menos 8 caracteres')}",
+            status_code=303,
+        )
+    user.password_hash = hash_password(password_nueva)
+    session.commit()
+    return RedirectResponse(url="/perfiles?mensaje=Contraseña+actualizada", status_code=303)
 
 
 @router.post("/perfiles/nuevo")
@@ -785,6 +821,42 @@ async def admin_usuario_crear(
     session.add(nuevo)
     session.commit()
     return RedirectResponse(url="/admin/usuarios?mensaje=Usuario+creado", status_code=303)
+
+
+@router.post("/admin/usuarios/{uid}/password", response_model=None)
+async def admin_usuario_password_reset(
+    request: Request,
+    uid: int,
+    password_nueva: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    check_csrf(request, csrf_token)
+    target = session.get(Usuario, uid)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if not _password_valida(password_nueva):
+        return RedirectResponse(
+            url=f"/admin/usuarios?error={quote('La nueva contraseña debe tener al menos 8 caracteres')}",
+            status_code=303,
+        )
+
+    target.password_hash = hash_password(password_nueva)
+    session.commit()
+    usuarios = list(session.execute(select(Usuario).order_by(Usuario.id)).scalars())
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "admin_usuarios.html",
+        _ctx(
+            request,
+            user,
+            usuarios=usuarios,
+            mensaje="Contraseña reseteada",
+            error="",
+            password_reseteada={"email": target.email, "password": password_nueva},
+        ),
+    )
 
 
 @router.post("/admin/usuarios/{uid}/desactivar")

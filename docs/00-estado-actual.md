@@ -30,9 +30,10 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   reemplaza la lista plana por una vista agrupada por categorías: motivo/región/fuente),
   **F-automatch** (crear/editar un perfil dispara matching inmediato de ese perfil en
   background, leyendo solo oportunidades ya en BD y sin consumir cuota API),
+  **F-passwords** (cambio de contraseña propio y reseteo admin con CSRF),
   **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
   oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
-- **Suite: 511 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
+- **Suite: 520 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
   contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
 - **Deuda técnica — suite 100% verde (este commit):**
   - `tests/test_models.py::pg_session`: `Session(connection=conn)` no es un kwarg válido en
@@ -90,6 +91,14 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   - Deuda conocida, preexistente: si una edición vuelve el perfil más restrictivo, los matches
     antiguos que dejaron de aplicar no se borran en esta fase; el filtro de relevancia del feed
     mitiga el impacto, pero queda como limpieza futura de `match_perfil`/`match_todos`.
+- **F-passwords — cambio de contraseña y reseteo admin (este commit):** `/perfiles` suma en
+  "Ajustes de tu cuenta" un formulario para cambiar la contraseña propia vía
+  `POST /cuenta/password`: exige CSRF, contraseña actual correcta (`verify_password`), nueva
+  contraseña igual a confirmación y mínimo 8 caracteres; actualiza solo el `password_hash` del
+  usuario autenticado con `hash_password`. `/admin/usuarios` suma, por fila, reset de contraseña
+  vía `POST /admin/usuarios/{uid}/password`, protegido por `html_require_admin` + CSRF y mínimo
+  8 caracteres. El reset renderiza la nueva contraseña en el cuerpo de la respuesta una sola vez
+  para que el admin la copie; no va en logs ni en query string. Sin migración.
 - **Fix — enlace "Ver ficha oficial en MP" no abría (este commit):** spike previo en
   `docs/10-enlace-ficha.md` (veredicto cerrado). Causa: el parámetro `qs` de
   `DetailsAcquisition.aspx` espera un token interno ENCRIPTADO, no el `CodigoExterno` en
