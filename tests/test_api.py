@@ -14,7 +14,7 @@ Cobertura:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -30,8 +30,9 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.core.settings import Settings
 from app.models.base import Base
-from app.models.enums import FrecuenciaAlerta, RolUsuario
+from app.models.enums import EstadoOportunidad, FrecuenciaAlerta, RolUsuario
 from app.models.tables import (
+    CompraAgil,
     OportunidadMatch,
     PerfilBusqueda,
     SyncState,
@@ -140,6 +141,29 @@ def _session(settings: Settings, user_id: int) -> tuple[dict[str, str], dict[str
     cookies = {COOKIE_NAME: token}
     headers = {"X-CSRF-Token": generate_csrf_token(settings.secret_key, nonce)}
     return cookies, headers
+
+
+def _sembrar_compra_agil_publicada(
+    engine,
+    *,
+    codigo: str = "CA-AUTOMATCH-1",
+    region: int = 13,
+) -> None:
+    cierre = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=5)
+    with Session(engine) as s:
+        s.add(
+            CompraAgil(
+                codigo=codigo,
+                nombre="Compra ágil para automatch",
+                descripcion="Oportunidad sembrada sin red para pruebas",
+                estado=EstadoOportunidad.PUBLICADA.value,
+                fecha_cierre=cierre,
+                monto_disponible_clp=1_000_000,
+                organismo_nombre="Organismo de prueba",
+                region=region,
+            )
+        )
+        s.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -739,6 +763,111 @@ def test_perfil_editar_persiste_regiones_y_montos(engine, client, usuario, setti
         assert actualizado.regiones == [1, 2]
         assert actualizado.monto_min_clp == 200_000.0
         assert actualizado.monto_max_clp == 800_000.0
+
+
+def test_perfil_crear_dispara_automatch_on_demand_sin_cuota(
+    engine, client, usuario, settings
+):
+    _sembrar_compra_agil_publicada(engine, codigo="CA-AUTOMATCH-CREAR", region=13)
+    cookies, headers = _session(settings, usuario)
+
+    r = client.post(
+        "/perfiles/nuevo",
+        data={
+            "nombre": "Automatch crear",
+            "keywords": "",
+            "fuentes": ["compras_agiles"],
+            "regiones": ["13"],
+        },
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        perfil = s.execute(
+            select(PerfilBusqueda).where(PerfilBusqueda.nombre == "Automatch crear")
+        ).scalar_one()
+        matches = s.execute(
+            select(OportunidadMatch).where(
+                OportunidadMatch.perfil_id == perfil.id,
+                OportunidadMatch.fuente == "compras_agiles",
+                OportunidadMatch.codigo_oportunidad == "CA-AUTOMATCH-CREAR",
+            )
+        ).scalars().all()
+        assert len(matches) == 1
+
+
+def test_perfil_editar_dispara_automatch_on_demand_y_no_duplica(
+    engine, client, usuario, settings
+):
+    from app.matching.perfiles import crear_perfil
+
+    _sembrar_compra_agil_publicada(engine, codigo="CA-AUTOMATCH-EDITAR", region=13)
+    with Session(engine) as s:
+        perfil = crear_perfil(
+            s,
+            owner_id=usuario,
+            nombre="Automatch editar",
+            regiones=[5],
+            fuentes=["compras_agiles"],
+        )
+        s.commit()
+        perfil_id = perfil.id
+
+    cookies, headers = _session(settings, usuario)
+    for _ in range(2):
+        r = client.post(
+            f"/perfiles/{perfil_id}/editar",
+            data={
+                "nombre": "Automatch editar",
+                "keywords": "",
+                "fuentes": ["compras_agiles"],
+                "regiones": ["13"],
+            },
+            headers=headers,
+            cookies=cookies,
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+    with Session(engine) as s:
+        matches = s.execute(
+            select(OportunidadMatch).where(
+                OportunidadMatch.perfil_id == perfil_id,
+                OportunidadMatch.fuente == "compras_agiles",
+                OportunidadMatch.codigo_oportunidad == "CA-AUTOMATCH-EDITAR",
+            )
+        ).scalars().all()
+        assert len(matches) == 1
+
+
+def test_automatch_background_perfil_inexistente_o_inactivo_noop(engine, usuario):
+    from app.api.routes.pages import _match_perfil_background
+    from app.matching.perfiles import crear_perfil
+
+    _sembrar_compra_agil_publicada(engine, codigo="CA-AUTOMATCH-NOOP", region=13)
+    with Session(engine) as s:
+        perfil = crear_perfil(
+            s,
+            owner_id=usuario,
+            nombre="Automatch inactivo",
+            regiones=[13],
+            fuentes=["compras_agiles"],
+        )
+        perfil.activo = False
+        s.commit()
+        perfil_id = perfil.id
+
+    _match_perfil_background(engine, 999_999)
+    _match_perfil_background(engine, perfil_id)
+
+    with Session(engine) as s:
+        total = s.execute(
+            select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil_id)
+        ).scalars().all()
+        assert total == []
 
 
 def test_perfiles_get_muestra_regiones_disponibles(client, usuario, settings, engine):

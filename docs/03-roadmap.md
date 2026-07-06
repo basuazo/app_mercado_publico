@@ -38,6 +38,27 @@
 
 ---
 
+## F-automatch — crear/editar perfil dispara matching on-demand — HECHO
+Rutas HTML `perfil_crear` y `perfil_editar`: tras guardar exitosamente el perfil,
+encolan una `BackgroundTask` que ejecuta `match_perfil` solo para ese `perfil_id`.
+La tarea abre una `Session(engine)` nueva desde `request.app.state.engine`, recarga el
+perfil y hace no-op si no existe o está inactivo. No reutiliza la sesión de la request.
+
+No consume cuota: `match_perfil` no llama HTTP ni busca detalles/`raw_json`; solo lee
+oportunidades ya existentes en BD y hace upsert de `oportunidades_match`. El índice único
+`(perfil_id, fuente, codigo_oportunidad)` mantiene la idempotencia ante cron nocturno o
+ediciones repetidas.
+
+Tests sin red: create/edit vía `TestClient` verifican filas reales en
+`oportunidades_match`; edición repetida confirma que no duplica; perfil inexistente o
+inactivo confirma no-op sin error.
+
+Deuda conocida, no resuelta aquí: si un perfil editado queda más restrictivo, los matches
+viejos que ya no aplican no se eliminan. El filtro de relevancia del feed mitiga el ruido;
+queda pendiente diseñar limpieza segura en `match_perfil`/`match_todos`.
+
+---
+
 ## F9a — Exponer filtros existentes + validar cobertura UNSPSC
 **Estado: HECHO (commit 38a34ac).** Formulario expone regiones/montos, parseo
 defensivo, fix `p.excluir`→`p.keywords_excluir`. Script `scripts/validar_unspsc.py`

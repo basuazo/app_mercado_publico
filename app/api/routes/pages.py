@@ -9,10 +9,11 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -40,6 +41,7 @@ from app.auth.password import hash_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.core.logging import get_logger
 from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
+from app.matching.engine import match_perfil
 from app.matching.feedback import alternar_me_sirve, deshacer_descarte, listar_descartadas
 from app.matching.feedback import descartar as marcar_descarte
 from app.matching.perfiles import (
@@ -64,6 +66,7 @@ from app.models.tables import (
     InstitucionPAC,
     Licitacion,
     LicitacionItem,
+    PerfilBusqueda,
     PlanCompraLinea,
     Usuario,
 )
@@ -73,6 +76,19 @@ _log = get_logger(__name__)
 _TZ_CHILE = ZoneInfo("America/Santiago")
 _PAC_PAGE_SIZE = 100
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+
+def _match_perfil_background(engine: Engine, perfil_id: int) -> None:
+    """Genera matches desde la BD para un perfil, sin consumir la API externa."""
+    try:
+        with Session(engine) as session:
+            perfil = session.get(PerfilBusqueda, perfil_id)
+            if perfil is None or not perfil.activo:
+                return
+            match_perfil(perfil, session)
+    except Exception:
+        # La respuesta HTTP ya fue enviada: el fallo queda aislado y registrado.
+        _log.error("automatch: error en perfil_id=%d", perfil_id, exc_info=True)
 
 
 def _ctx(request: Request, user: Usuario, **extra: Any) -> dict[str, Any]:
@@ -598,6 +614,7 @@ async def perfil_rut_proveedor(
 @router.post("/perfiles/nuevo")
 async def perfil_crear(
     request: Request,
+    background_tasks: BackgroundTasks,
     nombre: str = Form(...),
     keywords: str = Form(""),
     excluir: str = Form(""),
@@ -625,7 +642,7 @@ async def perfil_crear(
         msg = quote("El monto mínimo no puede ser mayor al monto máximo")
         return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
     try:
-        crear_perfil(
+        perfil = crear_perfil(
             session,
             owner_id=user.id,
             nombre=nombre,
@@ -642,6 +659,7 @@ async def perfil_crear(
     except PerfilInvalido as exc:
         return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
     session.commit()
+    background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil.id)
     return RedirectResponse(url="/perfiles?mensaje=Perfil+creado", status_code=303)
 
 
@@ -666,6 +684,7 @@ async def perfil_eliminar(
 async def perfil_editar(
     request: Request,
     perfil_id: int,
+    background_tasks: BackgroundTasks,
     nombre: str = Form(...),
     keywords: str = Form(""),
     excluir: str = Form(""),
@@ -714,6 +733,7 @@ async def perfil_editar(
     except PerfilInvalido as exc:
         return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
     session.commit()
+    background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_id)
     return RedirectResponse(url="/perfiles?mensaje=Perfil+actualizado", status_code=303)
 
 

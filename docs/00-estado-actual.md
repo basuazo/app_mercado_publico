@@ -28,9 +28,11 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   **F-feed-umbral** (umbral de relevancia en el dashboard: control Alta/Media/Todas +
   línea "N ocultas por baja relevancia — ver todas"), **F-feed-agrupado** (el dashboard
   reemplaza la lista plana por una vista agrupada por categorías: motivo/región/fuente),
+  **F-automatch** (crear/editar un perfil dispara matching inmediato de ese perfil en
+  background, leyendo solo oportunidades ya en BD y sin consumir cuota API),
   **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
   oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
-- **Suite: 522 tests verdes, 0 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
+- **Suite: 511 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
   contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
 - **Deuda técnica — suite 100% verde (este commit):**
   - `tests/test_models.py::pg_session`: `Session(connection=conn)` no es un kwarg válido en
@@ -73,6 +75,21 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
     `dev`), la hace Boris; investigar por qué las adjudicadas quedan con
     `fecha_publicacion`/`fecha_cierre` NULL es una investigación aparte del refresh de
     estados terminales, no mezclar con esta limpieza de tests.
+- **F-automatch — crear/editar perfil dispara matching on-demand (este commit):** las rutas
+  HTML `POST /perfiles/nuevo` y `POST /perfiles/{id}/editar` encolan, tras el `commit`
+  exitoso, una `BackgroundTask` que ejecuta `match_perfil` solo para ese perfil. La tarea
+  abre una `Session(engine)` nueva usando `request.app.state.engine`, recarga el perfil por
+  id y hace no-op si no existe o quedó inactivo. No reusa la sesión de la request ni objetos
+  ORM atados a ella. `match_perfil` sigue siendo puro: no llama clientes HTTP, no busca
+  `raw_json` ni detalles, y por tanto no consume cuota API; solo lee oportunidades ya
+  presentes en la BD y hace upsert en `oportunidades_match`.
+  - Idempotencia: el upsert por `(perfil_id, fuente, codigo_oportunidad)` evita duplicados
+    aunque se solape con el cron nocturno o con ediciones repetidas.
+  - Aislamiento: cualquier excepción del matching queda logueada y no afecta la respuesta ya
+    enviada al usuario.
+  - Deuda conocida, preexistente: si una edición vuelve el perfil más restrictivo, los matches
+    antiguos que dejaron de aplicar no se borran en esta fase; el filtro de relevancia del feed
+    mitiga el impacto, pero queda como limpieza futura de `match_perfil`/`match_todos`.
 - **Fix — enlace "Ver ficha oficial en MP" no abría (este commit):** spike previo en
   `docs/10-enlace-ficha.md` (veredicto cerrado). Causa: el parámetro `qs` de
   `DetailsAcquisition.aspx` espera un token interno ENCRIPTADO, no el `CodigoExterno` en
