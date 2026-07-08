@@ -33,7 +33,8 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   **F-passwords** (cambio de contraseña propio y reseteo admin con CSRF),
   **F-notificaciones** (resumen consolidado de descubrimiento por usuario + inmediatas solo
   para oportunidades con alertas activas),
-  **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
+  **fix CA NULL cierre** (Compra Ágil `publicada` con `fecha_cierre` NULL vuelve a ser
+  candidata para matching), **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
   oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
 - **Suite: 499 tests verdes, 20 skipped, 0 failed, 0 errors** (incluye `@needs_postgres`
   contra la branch `dev` de Neon). Ya NO hay "1 failed + 4 errors" — ver detalle abajo.
@@ -246,6 +247,10 @@ oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales 
 - Adjudicadas en BD con `fecha_publicacion`/`fecha_cierre` NULL (calidad de datos; revisar
   el refresh de estados terminales — investigación aparte, no mezclar con la limpieza de
   tests de esta fase).
+- Compra Ágil: el listado v2 está dejando `fecha_publicacion`/`fecha_cierre` NULL en BD
+  para CA, incluidas `publicada`. Fix aplicado en matching: una CA `publicada` se considera
+  abierta aunque `fecha_cierre` sea NULL; deuda pendiente: investigar y corregir el parser/
+  captura de la fecha real de cierre de CA sin mezclarlo con este fix.
 - Migración `e1f4a7c9b2d6` (`MatchFeedback`) sigue sin aplicarse en `dev` (`alembic current`
   = `9a1e6b2c5d7f`, detrás del head) — pendiente que Boris corra `alembic upgrade head`; no
   bloqueó la verificación `@needs_postgres` de esta fase porque ninguno de esos tests toca

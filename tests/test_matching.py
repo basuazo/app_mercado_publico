@@ -1081,6 +1081,31 @@ class TestCandidatosRecallAditivo:
         )
         assert "CA-RECALL2" in [c.codigo for c in candidatos]
 
+    def test_candidatos_ca_publicada_sin_fecha_cierre_es_candidata(self, session: Session):
+        ca = _make_ca(session, "CA-RECALL-NULL-CIERRE")
+        ca.fecha_cierre = None
+        session.flush()
+
+        candidatos = _candidatos_ca(session, _AHORA_LOCAL, None, None)
+        assert "CA-RECALL-NULL-CIERRE" in [c.codigo for c in candidatos]
+
+    def test_candidatos_ca_cerrada_sin_fecha_cierre_no_es_candidata(self, session: Session):
+        ca = _make_ca(session, "CA-RECALL-CERRADA")
+        ca.estado = "cerrada"
+        ca.fecha_cierre = None
+        session.flush()
+
+        candidatos = _candidatos_ca(session, _AHORA_LOCAL, None, None)
+        assert "CA-RECALL-CERRADA" not in [c.codigo for c in candidatos]
+
+    def test_candidatos_ca_publicada_con_fecha_futura_sigue_siendo_candidata(
+        self, session: Session
+    ):
+        _make_ca(session, "CA-RECALL-FUTURA", cierre_dias=5)
+
+        candidatos = _candidatos_ca(session, _AHORA_LOCAL, None, None)
+        assert "CA-RECALL-FUTURA" in [c.codigo for c in candidatos]
+
     def test_candidatos_sin_criterios_devuelve_todo_como_antes(self, session: Session):
         """Sin keywords/rubros/organismos: comportamiento preexistente (sin filtro
         de inclusión, filtran región/monto localmente en match_perfil)."""
@@ -1150,4 +1175,35 @@ class TestMatchPerfilRecallAditivo:
             select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil.id)
         ).scalar_one()
         assert match.razones.get("organismo_seguido") is True
+        assert match.score > 0.0
+
+    def test_match_perfil_ca_publicada_sin_fecha_cierre_genera_match(self, session: Session):
+        from app.models.tables import PerfilBusqueda, Usuario
+
+        u = Usuario(email="recall-ca-null@test.cl", password_hash=_PW_HASH2, activo=True)
+        session.add(u)
+        session.flush()
+        perfil = PerfilBusqueda(
+            owner_id=u.id,
+            nombre="CA publicadas RM",
+            keywords=[],
+            regiones=[13],
+            fuentes=["compras_agiles"],
+            activo=True,
+        )
+        session.add(perfil)
+
+        ca = _make_ca(session, "CA-E2E-NULL-CIERRE", region=13)
+        ca.fecha_cierre = None
+        session.flush()
+
+        result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        assert result["nuevos"] == 1
+        match = session.execute(
+            select(OportunidadMatch).where(
+                OportunidadMatch.perfil_id == perfil.id,
+                OportunidadMatch.fuente == "compras_agiles",
+                OportunidadMatch.codigo_oportunidad == "CA-E2E-NULL-CIERRE",
+            )
+        ).scalar_one()
         assert match.score > 0.0

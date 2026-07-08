@@ -209,7 +209,7 @@ def _candidatos_ca(
         .options(selectinload(CompraAgil.productos))
         .where(
             CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
-            CompraAgil.fecha_cierre > ahora,
+            or_(CompraAgil.fecha_cierre.is_(None), CompraAgil.fecha_cierre > ahora),
         )
     )
     inclusion: list[Any] = []
