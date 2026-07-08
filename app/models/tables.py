@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -56,6 +57,10 @@ class Usuario(Base):
     rut_proveedor: Mapped[str | None] = mapped_column(String(20), nullable=True)
     dias_resumen: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     ultimo_resumen_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    tutorial_visto: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    novedades_visto_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(

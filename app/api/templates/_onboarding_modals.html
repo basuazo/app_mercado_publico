@@ -1,0 +1,169 @@
+<div id="onboarding-state"
+     data-mostrar-tutorial="{{ 'true' if mostrar_tutorial|default(false) else 'false' }}"
+     data-mostrar-novedades="{{ 'true' if mostrar_novedades|default(false) else 'false' }}">
+</div>
+
+<div class="modal fade" id="tutorialModal" tabindex="-1" aria-labelledby="tutorialModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="tutorialModalLabel">Primeros pasos</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <section class="mb-4">
+          <h2 class="h6">Qu&eacute; hace la app</h2>
+          <p class="mb-0">
+            Busca licitaciones y Compras &Aacute;giles de Mercado P&uacute;blico que calzan con lo que
+            ofreces, las ordena por relevancia y te avisa cuando aparecen oportunidades nuevas
+            o cuando activas alertas sobre una oportunidad puntual.
+          </p>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h6">C&oacute;mo crear un perfil</h2>
+          <dl class="row small mb-0">
+            <dt class="col-sm-4">Nombre</dt>
+            <dd class="col-sm-8">Una etiqueta interna para reconocer el perfil.</dd>
+            <dt class="col-sm-4">Palabras clave</dt>
+            <dd class="col-sm-8">T&eacute;rminos de lo que vendes o buscas encontrar.</dd>
+            <dt class="col-sm-4">Palabras a excluir</dt>
+            <dd class="col-sm-8">T&eacute;rminos que suelen traer ruido y quieres dejar fuera.</dd>
+            <dt class="col-sm-4">Rubros (UNSPSC)</dt>
+            <dd class="col-sm-8">Categor&iacute;as de productos o servicios que suman candidatos aunque no haya keyword exacta.</dd>
+            <dt class="col-sm-4">Regiones</dt>
+            <dd class="col-sm-8">Filtro local para Compra &Aacute;gil; vac&iacute;o significa todas.</dd>
+            <dt class="col-sm-4">Montos m&iacute;n/m&aacute;x</dt>
+            <dd class="col-sm-8">Rango opcional en CLP para esconder oportunidades fuera de tu tama&ntilde;o objetivo.</dd>
+            <dt class="col-sm-4">Organismos</dt>
+            <dd class="col-sm-8">Compradores que quieres seguir de cerca.</dd>
+            <dt class="col-sm-4">Fuentes</dt>
+            <dd class="col-sm-8">Licitaciones, Compra &Aacute;gil o ambas.</dd>
+            <dt class="col-sm-4">Frecuencia del resumen</dt>
+            <dd class="col-sm-8">Cada cu&aacute;ntos d&iacute;as quieres recibir el correo consolidado de oportunidades nuevas.</dd>
+          </dl>
+        </section>
+
+        <section>
+          <h2 class="h6">C&oacute;mo usar el feed</h2>
+          <p class="mb-2">
+            Ajusta la relevancia con Alta, Media o Todas; agrupa por motivo, regi&oacute;n o fuente;
+            y usa Activar alertas en las oportunidades que quieres seguir de cerca.
+          </p>
+          <p class="mb-0">
+            Me sirve refuerza que una oportunidad es buena se&ntilde;al para ti. Descartar la quita
+            del feed y la deja recuperable desde la vista de descartadas.
+          </p>
+        </section>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-primary js-marcar-tutorial-visto">Entendido</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="novedadesModal" tabindex="-1" aria-labelledby="novedadesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="novedadesModalLabel">Novedades</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        {% if changelog_entries %}
+        <div class="list-group list-group-flush">
+          {% for entrada in changelog_entries %}
+          <article class="list-group-item px-0">
+            <div class="text-muted small">{{ entrada.fecha.isoformat() }}</div>
+            <h2 class="h6 mb-1">{{ entrada.titulo }}</h2>
+            <p class="mb-0">{{ entrada.descripcion }}</p>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="mb-0 text-muted">Todav&iacute;a no hay novedades publicadas.</p>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary js-marcar-novedades-visto">Entendido</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  if (!window.bootstrap) return;
+
+  const state = document.getElementById("onboarding-state");
+  const tutorialEl = document.getElementById("tutorialModal");
+  const novedadesEl = document.getElementById("novedadesModal");
+  if (!state || !tutorialEl || !novedadesEl) return;
+
+  const csrfToken = document.body.getAttribute("hx-headers")
+    ? JSON.parse(document.body.getAttribute("hx-headers"))["X-CSRF-Token"]
+    : "";
+  const tutorialModal = window.bootstrap.Modal.getOrCreateInstance(tutorialEl);
+  const novedadesModal = window.bootstrap.Modal.getOrCreateInstance(novedadesEl);
+  const mostrarTutorial = state.dataset.mostrarTutorial === "true";
+  const mostrarNovedades = state.dataset.mostrarNovedades === "true";
+  let novedadesPendientesDespuesTutorial = false;
+
+  function postVisto(url) {
+    const body = new FormData();
+    body.append("csrf_token", csrfToken);
+    return fetch(url, {
+      method: "POST",
+      body: body,
+      headers: { "X-CSRF-Token": csrfToken },
+      credentials: "same-origin"
+    });
+  }
+
+  document.querySelectorAll("[data-open-tutorial]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      tutorialModal.show();
+    });
+  });
+
+  document.querySelectorAll("[data-open-novedades]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      novedadesModal.show();
+    });
+  });
+
+  const btnTutorial = tutorialEl.querySelector(".js-marcar-tutorial-visto");
+  if (btnTutorial) {
+    btnTutorial.addEventListener("click", function () {
+      postVisto("/cuenta/tutorial-visto").finally(function () {
+        tutorialModal.hide();
+      });
+    });
+  }
+
+  const btnNovedades = novedadesEl.querySelector(".js-marcar-novedades-visto");
+  if (btnNovedades) {
+    btnNovedades.addEventListener("click", function () {
+      postVisto("/cuenta/novedades-visto").finally(function () {
+        novedadesModal.hide();
+      });
+    });
+  }
+
+  tutorialEl.addEventListener("hidden.bs.modal", function () {
+    if (novedadesPendientesDespuesTutorial) {
+      novedadesPendientesDespuesTutorial = false;
+      novedadesModal.show();
+    }
+  });
+
+  if (mostrarTutorial) {
+    novedadesPendientesDespuesTutorial = mostrarNovedades;
+    tutorialModal.show();
+  } else if (mostrarNovedades) {
+    novedadesModal.show();
+  }
+});
+</script>

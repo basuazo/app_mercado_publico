@@ -544,6 +544,29 @@ verificación se apoyó en la coincidencia exacta de string contra el token que 
 validó manualmente); tampoco se probó el patrón con códigos que tengan caracteres
 URL-especiales (todos los vistos hasta ahora son solo dígitos/letras/guion).
 
+## F-onboarding — Tutorial de primera vez + novedades versionadas — HECHO
+Modelo/migracion: `f3a9b8c7d6e5` agrega `usuarios.tutorial_visto` (bool NOT NULL,
+default false) y `usuarios.novedades_visto_hasta` (date nullable). No hay migracion de datos
+manual; los usuarios existentes quedan con tutorial no visto y novedades pendientes por NULL.
+
+Changelog: `app/changelog.py` define entradas versionadas por git (`fecha`, `titulo`,
+`descripcion`), acumulativas y mostradas de mas nueva a mas antigua. Helper
+`fecha_ultima_novedad()` alimenta la comparacion contra `novedades_visto_hasta`.
+
+UI: partial compartido `_onboarding_modals.html`, incluido desde `base.html` para usuarios
+autenticados. `GET /` auto-abre el tutorial si `tutorial_visto = false`; auto-abre Novedades
+si hay entradas con fecha mayor a `novedades_visto_hasta` o si el valor es NULL. Si ambos
+aplican, el JS muestra tutorial primero y luego Novedades. `/perfiles` suma "Revisar tutorial"
+sin tocar el flag; la nav suma "Novedades" para reabrir el historial completo.
+
+Rutas: `POST /cuenta/tutorial-visto` y `POST /cuenta/novedades-visto`, ambas protegidas por
+`html_require_user` + CSRF y actualizando solo el usuario de la sesion.
+
+Tests sin red: flags server-side del home, POST con CSRF, falta de CSRF, aislamiento entre
+usuarios, render acumulativo del changelog, boton de tutorial en `/perfiles`, y migracion
+upgrade/downgrade a nivel de operaciones. Validacion local pendiente de entorno Python si
+`python`/venv no estan disponibles en la maquina.
+
 ## F11 — Matching con feedback (like/dislike)
 **Estado: pendiente — la señal ya se registra (F10 parte 2: tabla `MatchFeedback` +
 `app/matching/feedback.py`), falta el modelo que la consuma.** Enfoque elegido:

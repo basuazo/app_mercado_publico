@@ -25,6 +25,7 @@
       <a class="btn btn-sm btn-outline-light" href="/perfiles">Perfiles</a>
       <a class="btn btn-sm btn-outline-light" href="/seguidas">Alertas activas</a>
       <a class="btn btn-sm btn-outline-light" href="/plan-anual">Plan Anual</a>
+      <button type="button" class="btn btn-sm btn-outline-light" data-open-novedades>Novedades</button>
       <form method="post" action="/logout" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-sm btn-outline-danger">Salir</button>
@@ -37,6 +38,10 @@
 <div class="container py-4">
   {% block content %}{% endblock %}
 </div>
+
+{% if current_user is defined %}
+  {% include "_onboarding_modals.html" %}
+{% endif %}
 
 <footer class="text-center text-muted small py-3 border-top">
   Fuente: Dirección ChileCompra

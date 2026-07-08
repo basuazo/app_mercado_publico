@@ -14,7 +14,7 @@ Cobertura:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -547,6 +547,188 @@ def test_cuenta_resumen_sin_csrf_403(client, usuario, settings):
         cookies=_cookie(settings, usuario),
     )
     assert r.status_code == 403
+
+
+def test_home_marca_mostrar_tutorial_si_no_visto(client, usuario, settings):
+    cookies, _ = _session(settings, usuario)
+    r = client.get("/", cookies=cookies)
+
+    assert r.status_code == 200
+    assert 'data-mostrar-tutorial="true"' in r.text
+
+
+def test_tutorial_visto_post_actualiza_flag_y_home_no_autoabre(
+    engine, client, usuario, settings
+):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/tutorial-visto",
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        u = s.get(Usuario, usuario)
+        assert u is not None
+        assert u.tutorial_visto is True
+
+    r_home = client.get("/", cookies=cookies)
+    assert 'data-mostrar-tutorial="false"' in r_home.text
+
+
+def test_tutorial_visto_sin_csrf_403(client, usuario, settings):
+    r = client.post(
+        "/cuenta/tutorial-visto",
+        cookies=_cookie(settings, usuario),
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+def test_tutorial_visto_solo_afecta_usuario_autenticado(engine, client, usuario, settings):
+    with Session(engine) as s:
+        otro = Usuario(
+            email="otro-onboarding@test.cl",
+            password_hash=hash_password(_PW),
+            rol=RolUsuario.USUARIO,
+            activo=True,
+        )
+        s.add(otro)
+        s.commit()
+        otro_id = otro.id
+
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/tutorial-visto",
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        propio = s.get(Usuario, usuario)
+        ajeno = s.get(Usuario, otro_id)
+        assert propio is not None and propio.tutorial_visto is True
+        assert ajeno is not None and ajeno.tutorial_visto is False
+
+
+def test_novedades_null_o_fecha_antigua_autoabre_y_lista_changelog(
+    engine, client, usuario, settings
+):
+    cookies, _ = _session(settings, usuario)
+
+    r_null = client.get("/", cookies=cookies)
+    assert r_null.status_code == 200
+    assert 'data-mostrar-novedades="true"' in r_null.text
+    assert "Menos correos" in r_null.text
+    assert "Ahora ves las Compras" in r_null.text
+    assert "2026-07-07" in r_null.text
+
+    with Session(engine) as s:
+        u = s.get(Usuario, usuario)
+        assert u is not None
+        u.novedades_visto_hasta = date(2026, 7, 6)
+        s.commit()
+
+    r_antigua = client.get("/", cookies=cookies)
+    assert 'data-mostrar-novedades="true"' in r_antigua.text
+
+
+def test_novedades_visto_post_actualiza_fecha_y_home_no_autoabre(
+    engine, client, usuario, settings
+):
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/novedades-visto",
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        u = s.get(Usuario, usuario)
+        assert u is not None
+        assert u.novedades_visto_hasta == date(2026, 7, 7)
+
+    r_home = client.get("/", cookies=cookies)
+    assert 'data-mostrar-novedades="false"' in r_home.text
+
+
+def test_novedades_visto_sin_csrf_403(client, usuario, settings):
+    r = client.post(
+        "/cuenta/novedades-visto",
+        cookies=_cookie(settings, usuario),
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+def test_novedades_visto_solo_afecta_usuario_autenticado(engine, client, usuario, settings):
+    with Session(engine) as s:
+        otro = Usuario(
+            email="otro-novedades@test.cl",
+            password_hash=hash_password(_PW),
+            rol=RolUsuario.USUARIO,
+            activo=True,
+        )
+        s.add(otro)
+        s.commit()
+        otro_id = otro.id
+
+    cookies, headers = _session(settings, usuario)
+    r = client.post(
+        "/cuenta/novedades-visto",
+        headers=headers,
+        cookies=cookies,
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    with Session(engine) as s:
+        propio = s.get(Usuario, usuario)
+        ajeno = s.get(Usuario, otro_id)
+        assert propio is not None and propio.novedades_visto_hasta == date(2026, 7, 7)
+        assert ajeno is not None and ajeno.novedades_visto_hasta is None
+
+
+def test_perfiles_tiene_boton_revisar_tutorial(client, usuario, settings, engine):
+    _marcar_catalogo_organismos_fresco(engine)
+    cookies, _ = _session(settings, usuario)
+    r = client.get("/perfiles", cookies=cookies)
+
+    assert r.status_code == 200
+    assert "Revisar tutorial" in r.text
+    assert "data-open-tutorial" in r.text
+
+
+def test_migracion_onboarding_agrega_y_revierte_columnas(monkeypatch):
+    import importlib
+
+    migration = importlib.import_module(
+        "alembic.versions.f3a9b8c7d6e5_onboarding_usuario"
+    )
+    llamadas: list[tuple[str, str, str]] = []
+
+    class FakeOp:
+        def add_column(self, table: str, column: object) -> None:
+            llamadas.append(("add", table, column.name))  # type: ignore[attr-defined]
+
+        def drop_column(self, table: str, column_name: str) -> None:
+            llamadas.append(("drop", table, column_name))
+
+    monkeypatch.setattr(migration, "op", FakeOp())
+    migration.upgrade()
+    migration.downgrade()
+
+    assert migration.down_revision == "d2f8a6c1b9e0"
+    assert ("add", "usuarios", "tutorial_visto") in llamadas
+    assert ("add", "usuarios", "novedades_visto_hasta") in llamadas
+    assert ("drop", "usuarios", "novedades_visto_hasta") in llamadas
+    assert ("drop", "usuarios", "tutorial_visto") in llamadas
 
 
 def test_admin_resetea_password_de_usuario(client, usuario, admin, settings):

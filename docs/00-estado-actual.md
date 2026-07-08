@@ -33,6 +33,8 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   **F-passwords** (cambio de contraseña propio y reseteo admin con CSRF),
   **F-notificaciones** (resumen consolidado de descubrimiento por usuario + inmediatas solo
   para oportunidades con alertas activas),
+  **F-onboarding** (tutorial de primera vez + panel de novedades versionado por fecha,
+  ambos con estado visto por usuario),
   **fix CA NULL cierre** (Compra Ágil `publicada` con `fecha_cierre` NULL vuelve a ser
   candidata para matching), **deuda técnica — suite 100% verde**, **fix enlace ficha oficial** (el botón "Ver ficha
   oficial en MP" de licitaciones ahora abre — ver detalle abajo), F-deploy.
@@ -116,6 +118,16 @@ score → alertas email → dashboard con login. Costo objetivo: **$0** (Render 
   `d2f8a6c1b9e0`: agrega `usuarios.dias_resumen`, `usuarios.ultimo_resumen_en` y elimina
   `perfiles_busqueda.frecuencia_alerta`. **Operativo:** aplicar `alembic upgrade head` en
   Neon dev y luego prod lo hace Boris.
+- **F-onboarding — tutorial primera vez + novedades versionadas (este commit):**
+  agrega `app/changelog.py` con entradas acumulativas ordenadas por fecha y helper de ultima
+  novedad; `GET /` auto-abre el tutorial si `usuarios.tutorial_visto = false` y auto-abre
+  Novedades si hay entradas con fecha mayor a `usuarios.novedades_visto_hasta` (o NULL).
+  Si ambos aplican, el JS encola tutorial primero y Novedades despues. `/perfiles` suma
+  "Revisar tutorial" para abrirlo manualmente sin tocar el flag, y la nav suma "Novedades"
+  para ver el historial completo. Rutas nuevas con sesion + CSRF: `POST /cuenta/tutorial-visto`
+  y `POST /cuenta/novedades-visto`, ambas solo actualizan al usuario autenticado. Migracion
+  `f3a9b8c7d6e5`: agrega `usuarios.tutorial_visto` y `usuarios.novedades_visto_hasta`.
+  **Operativo:** aplicar `alembic upgrade head` en Neon dev y luego prod lo hace Boris.
 - **Fix — enlace "Ver ficha oficial en MP" no abría (este commit):** spike previo en
   `docs/10-enlace-ficha.md` (veredicto cerrado). Causa: el parámetro `qs` de
   `DetailsAcquisition.aspx` espera un token interno ENCRIPTADO, no el `CodigoExterno` en

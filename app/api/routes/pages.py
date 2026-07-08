@@ -39,6 +39,7 @@ from app.api.salud_data import get_salud_data
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password, verify_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
+from app.changelog import entradas_changelog, fecha_ultima_novedad
 from app.core.logging import get_logger
 from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
 from app.matching.engine import match_perfil
@@ -93,9 +94,12 @@ def _match_perfil_background(engine: Engine, perfil_id: int) -> None:
 
 def _ctx(request: Request, user: Usuario, **extra: Any) -> dict[str, Any]:
     settings = request.app.state.settings
+    ultima_novedad = fecha_ultima_novedad()
     return {
         "current_user": user,
         "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
+        "changelog_entries": entradas_changelog(),
+        "ultima_novedad_fecha": ultima_novedad,
         **extra,
     }
 
@@ -118,6 +122,13 @@ _RELEVANCIA_ALTA = 60
 _LIMITE_AGRUPADO = 2000
 _PASSWORD_MIN_LEN = 8
 _DIAS_RESUMEN_VALIDOS = {0, 3, 7}
+
+
+def _hay_novedades_pendientes(user: Usuario) -> bool:
+    ultima = fecha_ultima_novedad()
+    if ultima is None:
+        return False
+    return user.novedades_visto_hasta is None or user.novedades_visto_hasta < ultima
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +190,8 @@ async def index(
             relevancia_media=settings.feed_min_score_default,
             n_descartadas=n_descartadas,
             perfiles=perfiles,
+            mostrar_tutorial=not user.tutorial_visto,
+            mostrar_novedades=_hay_novedades_pendientes(user),
         ),
     )
 
@@ -637,6 +650,32 @@ async def cuenta_resumen_configurar(
     user.dias_resumen = dias
     session.commit()
     return RedirectResponse(url="/perfiles?mensaje=Preferencia+de+resumen+actualizada", status_code=303)
+
+
+@router.post("/cuenta/tutorial-visto")
+async def cuenta_tutorial_visto(
+    request: Request,
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    user.tutorial_visto = True
+    session.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@router.post("/cuenta/novedades-visto")
+async def cuenta_novedades_visto(
+    request: Request,
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    user.novedades_visto_hasta = fecha_ultima_novedad()
+    session.commit()
+    return RedirectResponse(url="/", status_code=303)
 
 
 @router.post("/cuenta/password")
