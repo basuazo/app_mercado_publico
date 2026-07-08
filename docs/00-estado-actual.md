@@ -238,6 +238,16 @@ oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales 
 - **EOL:** `.gitattributes` fuerza LF (`* text=auto eol=lf`). En esta sesión hubo un
   incidente de CRLF + archivos truncados en el working tree; se recuperó con `git restore .`
   (HEAD estaba intacto). Si vuelve a pasar: `git restore .` recupera todo desde el commit.
+- **Verificación local (venv):** los ejecutables `pytest.exe`/`mypy.exe` de
+  `.venv\Scripts\` dan "Acceso denegado" (shim bloqueado por antivirus). Correrlos
+  SIEMPRE como módulo: `python -m pytest`, `python -m mypy app`, `python -m alembic ...`.
+  Además, el sandbox del asistente que genera los prompts NO puede ejecutar el python del
+  venv → mypy/pytest/alembic los corre **Boris a mano** en su PowerShell (con
+  `$env:DATABASE_URL` apuntando a la branch `dev` de Neon para los tests `@needs_postgres`;
+  si la compute de Neon está suspendida, despertarla y reintentar). `ruff check .` sí corre.
+- **Changelog acumulativo:** cada fase futura agrega una entrada a `app/changelog.py`
+  (fecha, título, descripción en simple) en el MISMO commit — así el panel de novedades
+  del home crece solo. Ver F-onboarding.
 
 ## Deudas conocidas (pendientes de calidad; ninguna bloquea prod)
 - ~~`tests/test_models.py`: el fixture `pg_session` usa `Session(connection=conn)` → debe
