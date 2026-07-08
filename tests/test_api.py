@@ -706,11 +706,20 @@ def test_perfiles_tiene_boton_revisar_tutorial(client, usuario, settings, engine
 
 
 def test_migracion_onboarding_agrega_y_revierte_columnas(monkeypatch):
-    import importlib
+    import importlib.util
+    from pathlib import Path
 
-    migration = importlib.import_module(
-        "alembic.versions.f3a9b8c7d6e5_onboarding_usuario"
+    ruta = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "f3a9b8c7d6e5_onboarding_usuario.py"
     )
+    spec = importlib.util.spec_from_file_location("mig_f3a9b8c7d6e5", ruta)
+    assert spec is not None
+    assert spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
     llamadas: list[tuple[str, str, str]] = []
 
     class FakeOp:
