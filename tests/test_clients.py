@@ -817,6 +817,7 @@ def test_v1_licitacion_detalle_items_como_lista(settings_fake, mem_engine):
     assert detalle.items[0].nombre == "Producto Lista"
 
 
+@respx.mock
 def test_ticket_nunca_en_logs(settings_fake, mem_engine, caplog, monkeypatch):
     """El ticket NO debe aparecer en ningún mensaje de log (incluyendo httpx)."""
 

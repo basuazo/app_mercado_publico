@@ -28,6 +28,7 @@ from app.api.main import _normalizar_url_driver, create_app
 from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
+from app.changelog import fecha_ultima_novedad
 from app.core.settings import Settings
 from app.models.base import Base
 from app.models.enums import EstadoOportunidad, RolUsuario
@@ -640,6 +641,8 @@ def test_novedades_null_o_fecha_antigua_autoabre_y_lista_changelog(
 def test_novedades_visto_post_actualiza_fecha_y_home_no_autoabre(
     engine, client, usuario, settings
 ):
+    fecha_esperada = fecha_ultima_novedad()
+    assert fecha_esperada is not None
     cookies, headers = _session(settings, usuario)
     r = client.post(
         "/cuenta/novedades-visto",
@@ -652,7 +655,7 @@ def test_novedades_visto_post_actualiza_fecha_y_home_no_autoabre(
     with Session(engine) as s:
         u = s.get(Usuario, usuario)
         assert u is not None
-        assert u.novedades_visto_hasta == date(2026, 7, 7)
+        assert u.novedades_visto_hasta == fecha_esperada
 
     r_home = client.get("/", cookies=cookies)
     assert 'data-mostrar-novedades="false"' in r_home.text
@@ -668,6 +671,8 @@ def test_novedades_visto_sin_csrf_403(client, usuario, settings):
 
 
 def test_novedades_visto_solo_afecta_usuario_autenticado(engine, client, usuario, settings):
+    fecha_esperada = fecha_ultima_novedad()
+    assert fecha_esperada is not None
     with Session(engine) as s:
         otro = Usuario(
             email="otro-novedades@test.cl",
@@ -691,7 +696,7 @@ def test_novedades_visto_solo_afecta_usuario_autenticado(engine, client, usuario
     with Session(engine) as s:
         propio = s.get(Usuario, usuario)
         ajeno = s.get(Usuario, otro_id)
-        assert propio is not None and propio.novedades_visto_hasta == date(2026, 7, 7)
+        assert propio is not None and propio.novedades_visto_hasta == fecha_esperada
         assert ajeno is not None and ajeno.novedades_visto_hasta is None
 
 

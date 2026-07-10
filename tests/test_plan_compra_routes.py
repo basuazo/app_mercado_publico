@@ -222,7 +222,11 @@ def test_plan_anual_sin_plan_publicado_muestra_mensaje(client, usuario, settings
 
 def test_plan_anual_agno_invalido_usa_default_sin_error(client, usuario, settings, engine):
     _marcar_catalogo_instituciones_fresco(engine)
-    r = client.get("/plan-anual?codigo_entidad=224060&agno=no-es-un-anio", cookies=_cookie(settings, usuario))
+    with respx.mock:
+        respx.get(url__regex=r"https://pac-files\.da\.mercadopublico\.cl/\d{4}/pacorganismos_\d{4}_224060\.zip").mock(
+            return_value=httpx.Response(403)
+        )
+        r = client.get("/plan-anual?codigo_entidad=224060&agno=no-es-un-anio", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
 
 
