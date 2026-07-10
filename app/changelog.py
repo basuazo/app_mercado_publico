@@ -15,6 +15,15 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 7, 10),
+        titulo="Mejor detecci\u00f3n por rubro en licitaciones",
+        descripcion=(
+            "La carga de \u00edtems UNSPSC de licitaciones ahora revisa el mes vigente y "
+            "meses anteriores de datos abiertos. Esto mejora los resultados cuando una "
+            "licitaci\u00f3n sigue publicada pero fue creada en un mes anterior."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 7, 7),
         titulo="Menos correos, m\u00e1s \u00fatiles",
         descripcion=(

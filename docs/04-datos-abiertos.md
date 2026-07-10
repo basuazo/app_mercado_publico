@@ -161,6 +161,16 @@ API**, y es la fuente recomendada por sobre OCDS:
   (`Last-Modified` del blob vs. reprocesar el mes vigente completo cada vez, dado
   que se reescribe sin avisar cuáles filas cambiaron).
 
+## 7. Implementación posterior: ventana mensual para ítems UNSPSC
+
+**F-unspsc-lic (2026-07-10):** el primer sync productivo miraba solo el mes vigente.
+Eso era insuficiente para licitaciones que siguen `PUBLICADA` pero fueron publicadas en
+meses anteriores. La ingesta ahora revisa el mes vigente y `DATOS_ABIERTOS_MESES_ATRAS`
+anteriores (default 3), con cursor por mes en `SyncState`
+(`datos_abiertos_lic:{anio}-{mes}`), un `HEAD` antes de cada descarga y corte temprano
+cuando ya no quedan licitaciones objetivo sin ítems. El cursor legacy `datos_abiertos_lic`
+queda como resumen visible en `/salud`.
+
 ---
 
 *Fuente: Dirección ChileCompra — datos abiertos (https://datos-abiertos.chilecompra.cl/descargas).*

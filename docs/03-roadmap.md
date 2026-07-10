@@ -152,6 +152,38 @@ gastar cuota para los ítems. La API (detalle) queda solo para enriquecer matche
 Nota producción: cobertura se construye con el `activas` completo + job nocturno; en
 local quedó acotada por el `--limit 200` de prueba.
 
+## F-unspsc-lic — Ítems UNSPSC desde lic-da con ventana mensual — HECHO
+Diagnóstico (reglas 20-23):
+- **VERIFICADO en código:** `sync_items_datos_abiertos` usaba `_mes_actual_chile()` cuando
+  no se pasaba `anio/mes`, por lo que el job nocturno (`run_datos_abiertos`) solo revisaba
+  el ZIP del mes vigente.
+- **VERIFICADO en spike `docs/04-datos-abiertos.md`:** `lic-da/{yyyy}-{m}.zip` es un archivo
+  mensual, con `{m}` sin cero a la izquierda, y contiene filas enlazables por `CodigoExterno`.
+  El spike inspeccionó `lic-da/2026-5.zip` y reportó 7.159 licitaciones distintas de mayo
+  2026. No se hizo descarga masiva en esta sesión.
+- **VERIFICADO en fuente primaria:** un único `HEAD` a
+  `https://transparenciachc.blob.core.windows.net/lic-da/2026-7.zip` respondió `200 OK`,
+  `Content-Type: application/zip`, `Last-Modified: Wed, 08 Jul 2026 12:29:41 GMT` y
+  `Content-Length: 38083` (sin descargar el cuerpo).
+- **DESCARTADO por código:** el orquestador sigue llamando `run_datos_abiertos` dentro del
+  job nocturno `all`; `datos_abiertos_habilitado` solo corta si está en false; el set objetivo
+  son licitaciones `PUBLICADA` sin ítems, por lo que la nota `licitaciones=0 items=0` con ZIP
+  procesado es compatible con intersección vacía, no con falta de objetivo.
+- **INFERIDO:** las licitaciones objetivo vistas en producción estaban publicadas en meses
+  anteriores al vigente, por eso no aparecían en el ZIP mensual vigente.
+
+Fix: `sync_items_datos_abiertos` ahora escanea mes vigente + `DATOS_ABIERTOS_MESES_ATRAS`
+anteriores (default 3), con un `HEAD` antes de cada descarga y un ZIP a la vez en
+`TemporaryDirectory`. Cada mes guarda cursor independiente en
+`SyncState.fuente = datos_abiertos_lic:{anio}-{mes}`; el cursor legacy
+`datos_abiertos_lic` se usa como fallback del mes base para no re-descargar inmediatamente
+tras el deploy. El resumen legacy queda para `/salud` con meses visitados, meses realmente
+escaneados, descargados, licitaciones e ítems. Si todos los objetivos quedan poblados tras un
+mes, corta antes de tocar meses anteriores.
+
+Tests sin red real: objetivo publicado en mes anterior, cursores por mes sin colisión,
+corte temprano, y ajustes de expectativas de cursor/notas.
+
 ## F-datos — Compradores clasificados por sector (datos abiertos) — HECHO (alcance acotado)
 Spike en `docs/08-datos-organismos.md`. Fuente: bulk
 `GET https://mserv-datos-abiertos.chilecompra.cl/v1/elastic/organization/all` (datos
@@ -592,8 +624,9 @@ Detectados auditando la app con datos reales de prod. Ninguno bloquea la operaci
 - **Fecha real de CA:** `fecha_cierre`/`fecha_publicacion` vienen NULL del listado v2; el fix
   de matching trata `publicada`+NULL como abierta, pero falta capturar la fecha real (parser),
   lo que habilita urgencia y "cierra en X días" para CA. Verificar el campo real contra la API.
-- **Ítems UNSPSC de licitaciones en 0:** `datos_abiertos_lic: licitaciones=0 items=0` en
-  `/salud` — el recall por rubro de licitaciones no funciona. Investigar la ingesta del blob.
+- ~~**Ítems UNSPSC de licitaciones en 0:** `datos_abiertos_lic: licitaciones=0 items=0`
+  en `/salud` — el recall por rubro de licitaciones no funciona.~~ Resuelto en
+  F-unspsc-lic.
 - **Tasas de cambio:** UF/UTM/USD/EUR hardcodeadas en env, probablemente desactualizadas
   (afecta conversión y filtros de monto).
 

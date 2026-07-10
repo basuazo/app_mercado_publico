@@ -212,6 +212,7 @@ class TestSyncItemsDatosAbiertos:
             "items_insertados": 1,
             "no_unspsc": 0,
             "descargado": 1,
+            "meses_escaneados": 1,
         }
 
         items_a = session.execute(
@@ -298,7 +299,8 @@ class TestSyncItemsDatosAbiertos:
     def test_cursor_sin_cambios_no_descarga(self, session, settings):
         """Si Last-Modified == cursor guardado, ni siquiera intenta el GET del ZIP."""
         _licitacion(session, "LIC-A", EstadoOportunidad.PUBLICADA.value)
-        session.add(SyncState(fuente="datos_abiertos_lic", cursor="2026-04-01T00:00:00"))
+        settings = settings.model_copy(update={"datos_abiertos_meses_atras": 0})
+        session.add(SyncState(fuente="datos_abiertos_lic:2026-4", cursor="2026-04-01T00:00:00"))
         session.commit()
 
         url = url_lic_da(2026, 4, settings.datos_abiertos_base_url)
@@ -315,6 +317,7 @@ class TestSyncItemsDatosAbiertos:
             "items_insertados": 0,
             "no_unspsc": 0,
             "descargado": 0,
+            "meses_escaneados": 0,
         }
         items = session.execute(select(LicitacionItem)).scalars().all()
         assert items == []
@@ -324,17 +327,93 @@ class TestSyncItemsDatosAbiertos:
         _licitacion(session, "LIC-C", EstadoOportunidad.CERRADA.value)
         session.commit()
 
-        url = url_lic_da(2026, 6, settings.datos_abiertos_base_url)
         with respx.mock:
-            respx.head(url).mock(
-                return_value=httpx.Response(200, headers={"last-modified": "Mon, 01 Jun 2026 00:00:00 GMT"})
-            )
             result = sync_items_datos_abiertos(session, settings, anio=2026, mes=6)
 
         assert result["descargado"] == 0
         state = session.get(SyncState, "datos_abiertos_lic")
         assert state is not None
-        assert state.cursor == "2026-06-01T00:00:00"
+        assert state.notas == "sin licitaciones objetivo; meses_escaneados=0"
+
+    def test_licitacion_objetivo_mes_anterior_se_puebla(self, session, settings):
+        settings = settings.model_copy(update={"datos_abiertos_meses_atras": 1})
+        _licitacion(session, "LIC-MAY", EstadoOportunidad.PUBLICADA.value)
+        session.commit()
+
+        url_jun = url_lic_da(2026, 6, settings.datos_abiertos_base_url)
+        url_may = url_lic_da(2026, 5, settings.datos_abiertos_base_url)
+        csv_jun = _HEADER + _fila("LIC-OTRA", "ITEM-1", "11111111", "Prod otra", "Unidad", "1")
+        csv_may = _HEADER + _fila("LIC-MAY", "ITEM-1", "72102304", "Prod May", "Unidad", "1")
+
+        with respx.mock:
+            respx.head(url_jun).mock(
+                return_value=httpx.Response(200, headers={"last-modified": "Mon, 01 Jun 2026 00:00:00 GMT"})
+            )
+            respx.get(url_jun).mock(return_value=httpx.Response(200, content=_build_zip_bytes("lic_jun.csv", csv_jun)))
+            respx.head(url_may).mock(
+                return_value=httpx.Response(200, headers={"last-modified": "Fri, 01 May 2026 00:00:00 GMT"})
+            )
+            respx.get(url_may).mock(return_value=httpx.Response(200, content=_build_zip_bytes("lic_may.csv", csv_may)))
+            result = sync_items_datos_abiertos(session, settings, anio=2026, mes=6)
+
+        assert result["licitaciones_tocadas"] == 1
+        assert result["items_insertados"] == 1
+        assert result["descargado"] == 2
+        assert result["meses_escaneados"] == 2
+        item = session.execute(select(LicitacionItem)).scalars().one()
+        assert item.licitacion_codigo == "LIC-MAY"
+        assert session.get(SyncState, "datos_abiertos_lic:2026-6") is not None
+        assert session.get(SyncState, "datos_abiertos_lic:2026-5") is not None
+
+    def test_cursores_por_mes_no_colisionan(self, session, settings):
+        settings = settings.model_copy(update={"datos_abiertos_meses_atras": 1})
+        _licitacion(session, "LIC-MAY", EstadoOportunidad.PUBLICADA.value)
+        session.add(SyncState(fuente="datos_abiertos_lic:2026-6", cursor="2026-06-01T00:00:00"))
+        session.commit()
+
+        url_jun = url_lic_da(2026, 6, settings.datos_abiertos_base_url)
+        url_may = url_lic_da(2026, 5, settings.datos_abiertos_base_url)
+        csv_may = _HEADER + _fila("LIC-MAY", "ITEM-1", "72102304", "Prod May", "Unidad", "1")
+
+        with respx.mock:
+            respx.head(url_jun).mock(
+                return_value=httpx.Response(200, headers={"last-modified": "Mon, 01 Jun 2026 00:00:00 GMT"})
+            )
+            respx.head(url_may).mock(
+                return_value=httpx.Response(200, headers={"last-modified": "Fri, 01 May 2026 00:00:00 GMT"})
+            )
+            respx.get(url_may).mock(return_value=httpx.Response(200, content=_build_zip_bytes("lic_may.csv", csv_may)))
+            result = sync_items_datos_abiertos(session, settings, anio=2026, mes=6)
+
+        state_jun = session.get(SyncState, "datos_abiertos_lic:2026-6")
+        state_may = session.get(SyncState, "datos_abiertos_lic:2026-5")
+        assert result["descargado"] == 1
+        assert result["meses_escaneados"] == 1
+        assert state_jun is not None
+        assert state_jun.notas == "2026-6: sin cambios"
+        assert state_may is not None
+        assert state_may.cursor == "2026-05-01T00:00:00"
+        assert session.execute(select(LicitacionItem)).scalars().one().licitacion_codigo == "LIC-MAY"
+
+    def test_corte_temprano_no_descarga_meses_siguientes(self, session, settings):
+        settings = settings.model_copy(update={"datos_abiertos_meses_atras": 2})
+        _licitacion(session, "LIC-JUN", EstadoOportunidad.PUBLICADA.value)
+        session.commit()
+
+        url_jun = url_lic_da(2026, 6, settings.datos_abiertos_base_url)
+        csv_jun = _HEADER + _fila("LIC-JUN", "ITEM-1", "72102304", "Prod Jun", "Unidad", "1")
+
+        with respx.mock:
+            respx.head(url_jun).mock(
+                return_value=httpx.Response(200, headers={"last-modified": "Mon, 01 Jun 2026 00:00:00 GMT"})
+            )
+            respx.get(url_jun).mock(return_value=httpx.Response(200, content=_build_zip_bytes("lic_jun.csv", csv_jun)))
+            result = sync_items_datos_abiertos(session, settings, anio=2026, mes=6)
+
+        assert result["descargado"] == 1
+        assert result["meses_escaneados"] == 1
+        assert session.get(SyncState, "datos_abiertos_lic:2026-5") is None
+        assert session.execute(select(LicitacionItem)).scalars().one().licitacion_codigo == "LIC-JUN"
 
     def test_deshabilitado_no_hace_nada(self, session, settings, monkeypatch):
         monkeypatch.setenv("DATOS_ABIERTOS_HABILITADO", "false")
@@ -349,4 +428,5 @@ class TestSyncItemsDatosAbiertos:
             "items_insertados": 0,
             "no_unspsc": 0,
             "descargado": 0,
+            "meses_escaneados": 0,
         }

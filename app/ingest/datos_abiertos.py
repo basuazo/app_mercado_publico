@@ -49,6 +49,7 @@ _VACIO: dict[str, int] = {
     "items_insertados": 0,
     "no_unspsc": 0,
     "descargado": 0,
+    "meses_escaneados": 0,
 }
 
 _VACIO_COMPETENCIA: dict[str, int] = {
@@ -70,20 +71,36 @@ def _mes_actual_chile() -> tuple[int, int]:
     return ahora.year, ahora.month
 
 
-def _leer_cursor(session: Session) -> str | None:
-    state = session.get(SyncState, _FUENTE)
+def _fuente_mes(anio: int, mes: int) -> str:
+    return f"{_FUENTE}:{anio}-{mes}"
+
+
+def _leer_cursor(session: Session, fuente: str = _FUENTE, *, legacy_fallback: bool = False) -> str | None:
+    state = session.get(SyncState, fuente)
+    if state is None and legacy_fallback:
+        state = session.get(SyncState, _FUENTE)
     return state.cursor if state else None
 
 
-def _guardar_estado(session: Session, *, cursor: str | None, notas: str) -> None:
-    state = session.get(SyncState, _FUENTE)
+def _guardar_estado(session: Session, fuente: str = _FUENTE, *, cursor: str | None, notas: str) -> None:
+    state = session.get(SyncState, fuente)
     if state is None:
-        state = SyncState(fuente=_FUENTE)
+        state = SyncState(fuente=fuente)
         session.add(state)
     state.ultima_ejecucion = _ahora()
     if cursor is not None:
         state.cursor = cursor
         state.ultimo_ok = _ahora()
+    state.notas = notas
+
+
+def _guardar_resumen_legacy(session: Session, *, notas: str) -> None:
+    state = session.get(SyncState, _FUENTE)
+    if state is None:
+        state = SyncState(fuente=_FUENTE)
+        session.add(state)
+    state.ultima_ejecucion = _ahora()
+    state.ultimo_ok = _ahora()
     state.notas = notas
 
 
@@ -118,7 +135,7 @@ def _insertar_lote(session: Session, lote: list[ItemDA], contexto: str) -> bool:
     return commit_con_retry(session, _aplicar, contexto=contexto)
 
 
-def sync_items_datos_abiertos(
+def _sync_items_datos_abiertos_legacy(
     session: Session,
     settings: Settings,
     anio: int | None = None,
@@ -206,6 +223,127 @@ def sync_items_datos_abiertos(
         "items_insertados": items_insertados,
         "no_unspsc": no_unspsc,
         "descargado": 1,
+    }
+
+
+def sync_items_datos_abiertos(
+    session: Session,
+    settings: Settings,
+    anio: int | None = None,
+    mes: int | None = None,
+) -> dict[str, int]:
+    """Completa licitacion_items desde lic-da del mes base y meses anteriores."""
+    if not settings.datos_abiertos_habilitado:
+        return dict(_VACIO)
+
+    if anio is None or mes is None:
+        anio_def, mes_def = _mes_actual_chile()
+        anio = anio if anio is not None else anio_def
+        mes = mes if mes is not None else mes_def
+
+    objetivo = _codigos_objetivo(session)
+    if not objetivo:
+        _guardar_resumen_legacy(session, notas="sin licitaciones objetivo; meses_escaneados=0")
+        session.commit()
+        return dict(_VACIO)
+
+    licitaciones_tocadas: set[str] = set()
+    items_insertados = 0
+    no_unspsc = 0
+    batch_size = settings.ingest_batch_size
+    descargados = 0
+    meses_escaneados = 0
+    meses_visitados: list[str] = []
+    meses = _meses_anteriores(anio, mes, max(settings.datos_abiertos_meses_atras, 0) + 1)
+
+    with tempfile.TemporaryDirectory(prefix="mp_datos_abiertos_") as tmp_dir:
+        for idx, (anio_mes, mes_mes) in enumerate(meses):
+            if not objetivo:
+                break
+
+            etiqueta_mes = f"{anio_mes}-{mes_mes}"
+            meses_visitados.append(etiqueta_mes)
+            fuente_mes = _fuente_mes(anio_mes, mes_mes)
+            url = url_lic_da(anio_mes, mes_mes, settings.datos_abiertos_base_url)
+            last_modified = head_last_modified(url)
+            cursor_nuevo = last_modified.isoformat() if last_modified is not None else None
+            cursor_actual = _leer_cursor(session, fuente_mes, legacy_fallback=idx == 0)
+
+            if cursor_nuevo is not None and cursor_nuevo == cursor_actual:
+                nota_mes = f"{etiqueta_mes}: sin cambios"
+                _guardar_estado(session, fuente_mes, cursor=cursor_nuevo, notas=nota_mes)
+                session.commit()
+                continue
+
+            meses_escaneados += 1
+            tocadas_mes: set[str] = set()
+            items_mes = 0
+            no_unspsc_mes = 0
+            vistos: set[tuple[str, str]] = set()
+            lote: list[ItemDA] = []
+
+            zip_path = Path(tmp_dir) / f"lic-{anio_mes}-{mes_mes}.zip"
+            descargar_zip(url, str(zip_path))
+            descargados += 1
+
+            for item in stream_items(str(zip_path)):
+                if item.codigo_externo not in objetivo:
+                    continue
+                clave = (item.codigo_externo, item.codigo_item)
+                if clave in vistos:
+                    continue
+                vistos.add(clave)
+
+                if not _es_unspsc_estandar(item.codigo_producto):
+                    no_unspsc += 1
+                    no_unspsc_mes += 1
+
+                lote.append(item)
+                if len(lote) >= batch_size:
+                    if _insertar_lote(session, lote, "datos_abiertos lote items"):
+                        codigos_lote = {i.codigo_externo for i in lote}
+                        tocadas_mes.update(codigos_lote)
+                        licitaciones_tocadas.update(codigos_lote)
+                        items_insertados += len(lote)
+                        items_mes += len(lote)
+                    lote = []
+
+            if lote and _insertar_lote(session, lote, "datos_abiertos lote items"):
+                codigos_lote = {i.codigo_externo for i in lote}
+                tocadas_mes.update(codigos_lote)
+                licitaciones_tocadas.update(codigos_lote)
+                items_insertados += len(lote)
+                items_mes += len(lote)
+
+            objetivo.difference_update(tocadas_mes)
+            nota_mes = (
+                f"{etiqueta_mes}: licitaciones={len(tocadas_mes)} "
+                f"items={items_mes} no_unspsc={no_unspsc_mes}"
+            )
+            _guardar_estado(session, fuente_mes, cursor=cursor_nuevo, notas=nota_mes)
+            session.commit()
+
+    notas = (
+        f"meses={','.join(meses_visitados)} meses_escaneados={meses_escaneados} "
+        f"descargados={descargados} licitaciones={len(licitaciones_tocadas)} "
+        f"items={items_insertados} no_unspsc={no_unspsc}"
+    )
+    _guardar_resumen_legacy(session, notas=notas)
+    session.commit()
+
+    _log.info(
+        "sync_items_datos_abiertos: licitaciones=%d items=%d no_unspsc=%d descargados=%d",
+        len(licitaciones_tocadas),
+        items_insertados,
+        no_unspsc,
+        descargados,
+    )
+    return {
+        "licitaciones_tocadas": len(licitaciones_tocadas),
+        "items_insertados": items_insertados,
+        "no_unspsc": no_unspsc,
+        "descargado": descargados,
+        "meses_escaneados": meses_escaneados,
     }
 
 

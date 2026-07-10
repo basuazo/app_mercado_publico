@@ -288,8 +288,14 @@ oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales 
   de región del matching solo aplica a Compra Ágil (`_candidatos_ca`); las licitaciones lo
   ignoran (pasan todas). La región no viene en el listado `activas`. La UI debería aclarar que
   el filtro de región aplica solo a CA.
-- **Ítems UNSPSC de licitaciones en cero:** `/salud` mostró `datos_abiertos_lic: licitaciones=0
-  items=0` — el recall por rubro de licitaciones queda cojo. Investigar la ingesta del blob.
+- ~~**Ítems UNSPSC de licitaciones en cero:** `/salud` mostró `datos_abiertos_lic:
+  licitaciones=0 items=0` — el recall por rubro de licitaciones queda cojo.~~
+  **Resuelto en F-unspsc-lic.** Diagnóstico: el sync solo miraba el mes vigente, pero
+  `lic-da/{yyyy}-{m}.zip` es mensual; licitaciones aún PUBLICADA pueden haber sido
+  publicadas en meses anteriores, dejando intersección vacía. Fix: ventana configurable
+  mes vigente + `DATOS_ABIERTOS_MESES_ATRAS` anteriores (default 3), cursor por mes
+  `datos_abiertos_lic:{anio}-{mes}`, corte temprano cuando ya no quedan objetivos y
+  notas de `/salud` con meses escaneados/descargados.
 - **Watch de cuota API:** el 2026-07-07 los logs mostraron la cuota diaria (9000) agotada de
   madrugada por jobs de detalle v1 (backfill nocturno + `run_match` c/30 min piden detalle);
   en vivo estaba 201/9000. CA comparte el presupuesto. Si vuelve a agotarse: priorizar/reservar
@@ -315,7 +321,8 @@ oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales 
     restringir criterios (ahora visible porque editar dispara matching, F-automatch).
   - Recalibrar `feed_min_score_default` (hoy 40, INFERIDO) con la distribución real de prod.
   - Capturar la `fecha_cierre`/`fecha_publicacion` real de CA desde el v2 (parser) — hoy NULL.
-  - Ítems UNSPSC de licitaciones en 0 (ver Deudas) — arregla el recall por rubro.
+  - ~~Ítems UNSPSC de licitaciones en 0 (ver Deudas) — arregla el recall por rubro.~~
+    Resuelto en F-unspsc-lic con ventana mensual y cursores por mes.
   - Tasas de cambio hardcodeadas (UF/UTM/USD/EUR) probablemente desactualizadas.
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.
 

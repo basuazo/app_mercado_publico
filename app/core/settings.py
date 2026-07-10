@@ -74,6 +74,11 @@ class Settings(BaseSettings):
         description="Base URL del Azure Blob público de datos abiertos de ChileCompra",
     )
 
+    datos_abiertos_meses_atras: int = Field(
+        default=3,
+        description="Meses anteriores al vigente que se escanean en lic-da para items UNSPSC",
+    )
+
     # --- Plan Anual de Compra (F-plan): datos abiertos, sin ticket, sin cuota ---
     plan_compra_pac_base_url: str = Field(
         default="https://pac-files.da.mercadopublico.cl",

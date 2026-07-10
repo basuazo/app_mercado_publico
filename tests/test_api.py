@@ -834,10 +834,6 @@ def test_jobs_run_token_correcto(client):
     respx.get(url__regex=r"https://api\.mercadopublico\.cl/servicios/v1/publico/licitaciones\.json.*").mock(
         return_value=httpx.Response(200, json={"Listado": []})
     )
-    respx.route(
-        method="HEAD",
-        url__regex=r"https://transparenciachc\.blob\.core\.windows\.net/lic-da/.*\.zip",
-    ).mock(return_value=httpx.Response(200, headers={"Last-Modified": "Wed, 01 Jul 2026 12:30:24 GMT"}))
 
     r = client.post("/api/jobs/run", headers={"X-Jobs-Token": "jobs-token-secreto"})
     assert r.status_code == 200
