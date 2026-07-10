@@ -277,11 +277,46 @@ oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales 
   = `9a1e6b2c5d7f`, detrás del head) — pendiente que Boris corra `alembic upgrade head`; no
   bloqueó la verificación `@needs_postgres` de esta fase porque ninguno de esos tests toca
   `MatchFeedback`.
+- **dev (Neon) con credencial vencida:** el `DATABASE_URL` del `.env` (branch dev, endpoint
+  `ep-wandering-tooth-atx4f4q8`) da `password authentication failed for user 'neondb_owner'`.
+  Bloquea `alembic` y los `pytest @needs_postgres` locales. Refrescar la connstring desde
+  Neon (Branches → dev → Connection string) y reemplazar la línea `DATABASE_URL=` del `.env`.
+- **Tests `@needs_postgres` (incluidos los 3 nuevos de CA) sin correr contra Postgres real**
+  por lo anterior — se saltan (`20 skipped`). El resto de la suite verde (`512 passed`).
+  Correrlos cuando la credencial de dev esté al día.
+- **Región en licitaciones (limitación de diseño):** `Licitacion` no guarda región y el filtro
+  de región del matching solo aplica a Compra Ágil (`_candidatos_ca`); las licitaciones lo
+  ignoran (pasan todas). La región no viene en el listado `activas`. La UI debería aclarar que
+  el filtro de región aplica solo a CA.
+- **Ítems UNSPSC de licitaciones en cero:** `/salud` mostró `datos_abiertos_lic: licitaciones=0
+  items=0` — el recall por rubro de licitaciones queda cojo. Investigar la ingesta del blob.
+- **Watch de cuota API:** el 2026-07-07 los logs mostraron la cuota diaria (9000) agotada de
+  madrugada por jobs de detalle v1 (backfill nocturno + `run_match` c/30 min piden detalle);
+  en vivo estaba 201/9000. CA comparte el presupuesto. Si vuelve a agotarse: priorizar/reservar
+  cuota para CA y capar el backfill nocturno.
+
+## Cierre de sesión 2026-07-07
+- **En vivo en prod hoy:** F-automatch (crear/editar perfil dispara matching), F-passwords
+  (cambio/reseteo de contraseña), F-notificaciones (+fix `fecha_match` inmutable), fix CA
+  (candidatos incluye publicadas con `fecha_cierre` NULL).
+- **Pendiente de push:** `a8d81e0` (F-onboarding: tutorial + novedades), `8b00895` (docs),
+  `7fb3662` (fix test). Al pushear, prod aplica sola la migración additiva `f3a9b8c7d6e5`
+  (columnas `usuarios.tutorial_visto` y `usuarios.novedades_visto_hasta`). En dev queda
+  pendiente por la credencial vencida.
 
 ## Roadmap pendiente (detalle en docs/03-roadmap.md)
 - **F10 UX:** COMPLETA (perfiles, dashboard, ficha y mail).
 - **F11:** feedback like/dislike con reponderación ligera (regresión logística, sin LLM) —
   la señal ya se registra en `MatchFeedback` (F10 parte 2), falta el modelo que la consuma.
+- **Candidatos priorizados (sesión 2026-07-07):**
+  - Relevancia del correo-resumen: que el conteo "encontramos N" respete `min_score` y no
+    infle con ruido rubro/organismo-only.
+  - Matches obsoletos al editar un perfil: no se borran los que dejan de aplicar tras
+    restringir criterios (ahora visible porque editar dispara matching, F-automatch).
+  - Recalibrar `feed_min_score_default` (hoy 40, INFERIDO) con la distribución real de prod.
+  - Capturar la `fecha_cierre`/`fecha_publicacion` real de CA desde el v2 (parser) — hoy NULL.
+  - Ítems UNSPSC de licitaciones en 0 (ver Deudas) — arregla el recall por rubro.
+  - Tasas de cambio hardcodeadas (UF/UTM/USD/EUR) probablemente desactualizadas.
 - **Backlog:** worker offline de anexos en Raspberry Pi (OCR + embeddings), condicionado.
 
 ## Mapa de documentos

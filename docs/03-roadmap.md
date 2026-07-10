@@ -580,6 +580,23 @@ upgrade/downgrade a nivel de operaciones. Validacion local pendiente de entorno 
 
 ---
 
+## Candidatos priorizados (sesión 2026-07-07)
+Detectados auditando la app con datos reales de prod. Ninguno bloquea la operación.
+- **Relevancia del correo-resumen:** el conteo "encontramos N oportunidades" debería
+  respetar `min_score` para no inflarse con ruido rubro/organismo-only (mismo piso que el feed).
+- **Matches obsoletos al editar perfil:** al restringir criterios, los matches que dejan de
+  aplicar no se borran (`match_perfil` solo upsertea; ahora visible porque editar dispara
+  matching, F-automatch). Limpiar en el re-match.
+- **Recalibrar `feed_min_score_default`:** hoy 40, valor INFERIDO de 10 matches en dev.
+  Revisar la distribución real de `OportunidadMatch.score` en prod y ajustar.
+- **Fecha real de CA:** `fecha_cierre`/`fecha_publicacion` vienen NULL del listado v2; el fix
+  de matching trata `publicada`+NULL como abierta, pero falta capturar la fecha real (parser),
+  lo que habilita urgencia y "cierra en X días" para CA. Verificar el campo real contra la API.
+- **Ítems UNSPSC de licitaciones en 0:** `datos_abiertos_lic: licitaciones=0 items=0` en
+  `/salud` — el recall por rubro de licitaciones no funciona. Investigar la ingesta del blob.
+- **Tasas de cambio:** UF/UTM/USD/EUR hardcodeadas en env, probablemente desactualizadas
+  (afecta conversión y filtros de monto).
+
 ## Backlog (más adelante, condicionado)
 
 ### Worker offline de anexos en la Raspberry Pi
