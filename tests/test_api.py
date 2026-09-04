@@ -14,12 +14,16 @@ Cobertura:
 
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
 import respx
 from fastapi.testclient import TestClient
+from freezegun import freeze_time
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -30,6 +34,7 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.changelog import fecha_ultima_novedad
 from app.core.settings import Settings
+from app.ingest.orchestrator import _LOCK_KEY
 from app.models.base import Base
 from app.models.enums import EstadoOportunidad, RolUsuario
 from app.models.tables import (
@@ -828,60 +833,202 @@ def test_ping_publico(client):
 # /api/jobs/run — solo X-Jobs-Token
 # ---------------------------------------------------------------------------
 
+_JOBS_HEADERS = {"X-Jobs-Token": "jobs-token-secreto"}
+
+# job → runner del orchestrator que debe invocar (F-jobs-endpoint)
+_JOB_RUNNER = {
+    "ca": "run_sync_ca",
+    "activas": "run_sync_activas",
+    "detalles": "run_detalles",
+    "datos-abiertos": "run_datos_abiertos",
+    "lifecycle": "run_lifecycle",
+    "match": "run_match",
+    "competencia": "run_competencia",
+    "alerts": "run_alerts",
+    "resumen": "run_resumen",
+    "retencion": "run_retencion",
+    "catalogos": "run_catalogos",
+}
+
+_RUNNERS = (*_JOB_RUNNER.values(), "run_backfill_fecha")
+
+
+class _LockSpy:
+    """Doble de pg_advisory_lock con exclusión real, inyectado vía app.state.
+
+    Modela la semántica de `pg_try_advisory_lock`: si el lock ya está tomado, el
+    siguiente intento devuelve False. Eso permite detectar un doble-wrapping del
+    ciclo nocturno (tomar el lock por fuera *y* en cada paso interno), que en
+    producción volvería el ciclo entero un no-op silencioso.
+
+    Se inyecta por `try_lock_fn`/`unlock_fn` en vez de monkeypatchear el módulo;
+    hace falta porque el default (`_pg_try_lock`) usa SQL exclusivo de Postgres
+    y la app de test corre sobre SQLite.
+    """
+
+    def __init__(self, disponible: bool = True) -> None:
+        self.disponible = disponible
+        self.tomado = False
+        self.intentos: list[int] = []
+        self.liberados: list[int] = []
+
+    def try_lock(self, conn: Any, key: int) -> bool:
+        self.intentos.append(key)
+        if not self.disponible or self.tomado:
+            return False
+        self.tomado = True
+        return True
+
+    def unlock(self, conn: Any, key: int) -> None:
+        self.liberados.append(key)
+        self.tomado = False
+
+    def instalar(self, app: Any) -> _LockSpy:
+        app.state.try_lock_fn = self.try_lock
+        app.state.unlock_fn = self.unlock
+        return self
+
+
+@pytest.fixture()
+def lock_spy(client):
+    return _LockSpy().instalar(client.app)
+
+
+@contextmanager
+def _runners_mockeados():
+    """Reemplaza todos los runners del orchestrator por dobles que registran el
+    orden de invocación. Ningún job toca la red (regla CLAUDE.md)."""
+    llamadas: list[str] = []
+    with ExitStack() as stack:
+        for nombre in _RUNNERS:
+            stack.enter_context(
+                patch(
+                    f"app.ingest.orchestrator.{nombre}",
+                    side_effect=lambda *a, _n=nombre, **kw: (llamadas.append(_n), {})[1],
+                )
+            )
+        yield llamadas
+
 
 @respx.mock
-def test_jobs_run_token_correcto(client):
+def test_jobs_run_token_correcto(client, lock_spy):
     """job="all" (default) corre el ciclo completo dentro del mismo ciclo del
-    TestClient (BackgroundTasks) — con la BD de test vacía toca dos hosts
-    reales (v1 licitaciones activas + HEAD del blob de datos abiertos, ver
-    `run_sync_activas`/`sync_items_datos_abiertos`); se mockean ambos con
-    respx (regla CLAUDE.md: tests de red SIEMPRE mockeados)."""
-    respx.get(url__regex=r"https://api\.mercadopublico\.cl/servicios/v1/publico/licitaciones\.json.*").mock(
-        return_value=httpx.Response(200, json={"Listado": []})
-    )
-
-    r = client.post("/api/jobs/run", headers={"X-Jobs-Token": "jobs-token-secreto"})
+    TestClient (BackgroundTasks). `@respx.mock` sin rutas registradas actúa de
+    red de contención: si algún runner escapara a la red, el test falla."""
+    with _runners_mockeados():
+        r = client.post("/api/jobs/run", headers=_JOBS_HEADERS)
     assert r.status_code == 200
     assert r.json()["queued"] is True
     assert r.json()["job"] == "all"
 
 
 def test_jobs_run_job_invalido(client):
-    r = client.post(
-        "/api/jobs/run?job=xxx", headers={"X-Jobs-Token": "jobs-token-secreto"}
-    )
+    r = client.post("/api/jobs/run?job=xxx", headers=_JOBS_HEADERS)
     assert r.status_code == 400
 
 
-_LISTADO_CA_VACIO = {
-    "success": "OK",
-    "payload": {
-        "convocatorias": [],
-        "paginacion": {
-            "total_paginas": 1,
-            "total_resultados": 0,
-            "numero_pagina": 1,
-            "tamano_pagina": 50,
-        },
-    },
-    "errors": [],
-}
+@respx.mock
+@pytest.mark.parametrize("job", ["retencion", "catalogos", "nocturno"])
+def test_jobs_run_acepta_jobs_antes_inalcanzables(client, lock_spy, job):
+    """`retencion`, `catalogos` y `nocturno` solo corrían si el proceso estaba
+    despierto a su hora; ahora son disparables desde afuera (F-jobs-endpoint)."""
+    with _runners_mockeados():
+        r = client.post(f"/api/jobs/run?job={job}", headers=_JOBS_HEADERS)
+    assert r.status_code == 200
+    assert r.json() == {"queued": True, "job": job}
 
 
 @respx.mock
-def test_jobs_run_job_ca(client):
-    """BackgroundTasks corre el job dentro del mismo ciclo del TestClient, así
-    que `run_sync_ca` llega a pegarle a `httpx.Client` real — se mockea con
-    respx (regla CLAUDE.md: tests de red SIEMPRE mockeados) en vez de saltarlo."""
-    respx.get("https://api2.mercadopublico.cl/v2/compra-agil").mock(
-        return_value=httpx.Response(200, json=_LISTADO_CA_VACIO)
-    )
-    r = client.post(
-        "/api/jobs/run?job=ca", headers={"X-Jobs-Token": "jobs-token-secreto"}
-    )
+@pytest.mark.parametrize(("job", "runner"), sorted(_JOB_RUNNER.items()))
+def test_jobs_run_toma_advisory_lock(client, lock_spy, job, runner):
+    """Regla 13: cada camino del endpoint pasa por `_run_with_lock`, para que un
+    cron externo no se solape con el ciclo interno y duplique gasto de cuota."""
+    with _runners_mockeados() as llamadas:
+        r = client.post(f"/api/jobs/run?job={job}", headers=_JOBS_HEADERS)
+
     assert r.status_code == 200
-    assert r.json()["queued"] is True
-    assert r.json()["job"] == "ca"
+    assert llamadas == [runner]
+    assert lock_spy.intentos == [_LOCK_KEY]
+    assert lock_spy.liberados == [_LOCK_KEY]
+
+
+@respx.mock
+def test_jobs_run_lock_ocupado_omite_el_job_sin_error(client):
+    """Lock ocupado → el job no corre y el cliente HTTP no ve una excepción.
+    Saltarse el ciclo es el comportamiento correcto, no un error a reintentar."""
+    spy = _LockSpy(disponible=False).instalar(client.app)
+
+    with _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=ca", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert spy.intentos == [_LOCK_KEY]
+    assert llamadas == []
+    assert spy.liberados == []  # no se libera un lock que nunca se tomó
+
+
+@respx.mock
+def test_jobs_run_all_envia_el_resumen_al_final(client, lock_spy):
+    """`job=all` pasa a ser el mecanismo principal de disparo: si no incluyera
+    `run_resumen`, el correo-resumen no se enviaría nunca (F-jobs-endpoint)."""
+    with _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=all", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert llamadas == [
+        "run_sync_activas",
+        "run_detalles",
+        "run_datos_abiertos",
+        "run_lifecycle",
+        "run_match",
+        "run_competencia",
+        "run_alerts",
+        "run_resumen",
+    ]
+    # un lock por paso, tomado y liberado (igual que el scheduler interno)
+    assert lock_spy.intentos == [_LOCK_KEY] * 8
+    assert lock_spy.liberados == [_LOCK_KEY] * 8
+
+
+@respx.mock
+def test_jobs_run_nocturno_fuera_de_ventana_no_ejecuta_nada(client, lock_spy):
+    """Regla 5: el guard 22:00–07:00 America/Santiago se mantiene aunque el
+    disparo venga de un cron externo en UTC. 16:00 UTC ≈ 12/13:00 en Chile."""
+    with freeze_time("2026-06-13 16:00:00"), _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=nocturno", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert llamadas == []
+    assert lock_spy.intentos == []  # ni siquiera se intenta tomar el lock
+
+
+@respx.mock
+def test_jobs_run_nocturno_en_ventana_toma_un_lock_por_paso(client):
+    """En ventana (03:00 UTC ≈ 23/00 h en Chile) corre datos_abiertos →
+    lifecycle → competencia → backfill, cada uno con su propio lock.
+
+    `nocturno` es el único job que NO se envuelve en `_run_with_lock`: si lo
+    estuviera, el lock externo quedaría tomado y cada paso interno lo encontraría
+    ocupado → el ciclo entero sería un no-op silencioso. Aquí se afirma la forma
+    directamente: los nombres de lock son los 4 pasos, y "nocturno" no está entre
+    ellos. (Los pasos internos toman el lock con los defaults del orchestrator,
+    fuera del alcance de la inyección por `app.state`, así que se registra en el
+    propio `_run_with_lock`.)
+    """
+    locks: list[str] = []
+
+    def _fake_lock(job_name: str, fn: Any, eng: Any, **kw: Any) -> None:
+        locks.append(job_name)
+
+    with (
+        freeze_time("2026-06-14 03:00:00"),
+        patch("app.ingest.orchestrator._run_with_lock", side_effect=_fake_lock),
+    ):
+        r = client.post("/api/jobs/run?job=nocturno", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert locks == ["datos_abiertos", "lifecycle", "competencia", "backfill_ayer"]
+    assert "nocturno" not in locks
 
 
 def test_jobs_run_token_incorrecto(client):

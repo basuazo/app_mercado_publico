@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -214,39 +215,76 @@ async def jobs_run(
         raise HTTPException(status_code=401, detail="Token inválido")
 
     from app.ingest.orchestrator import (
+        _ciclo_nocturno,
+        _run_with_lock,
         run_alerts,
+        run_catalogos,
         run_competencia,
         run_datos_abiertos,
         run_detalles,
         run_lifecycle,
         run_match,
         run_resumen,
+        run_retencion,
         run_sync_activas,
         run_sync_ca,
     )
 
     engine = request.app.state.engine
 
+    # try_lock_fn/unlock_fn se pueden inyectar desde app.state (tests): el default
+    # es pg_try_advisory_lock, que solo existe en Postgres.
+    lock_kwargs: dict[str, Any] = {}
+    for _nombre_fn in ("try_lock_fn", "unlock_fn"):
+        _override = getattr(request.app.state, _nombre_fn, None)
+        if _override is not None:
+            lock_kwargs[_nombre_fn] = _override
+
+    def _locked(nombre: str, fn: Callable[[], Any]) -> Callable[[], Any]:
+        """Envuelve un runner en el pg_advisory_lock (regla 13 de CLAUDE.md).
+
+        Todo camino de disparo —scheduler interno, este endpoint y el CLI— toma
+        el mismo lock, para que un cron externo no se solape con el ciclo interno
+        y gaste la cuota de API dos veces sobre el mismo trabajo. Si el lock está
+        ocupado `_run_with_lock` devuelve None y el ciclo se omite: eso es el
+        comportamiento correcto, no un error que haya que reintentar.
+        """
+        return lambda: _run_with_lock(nombre, fn, engine, **lock_kwargs)
+
     _jobs: dict[str, Any] = {
-        "ca": lambda: run_sync_ca(settings, engine),
-        "activas": lambda: run_sync_activas(settings, engine),
-        "detalles": lambda: run_detalles(settings, engine),
-        "datos-abiertos": lambda: run_datos_abiertos(settings, engine),
-        "lifecycle": lambda: run_lifecycle(settings, engine),
-        "match": lambda: run_match(settings, engine),
-        "competencia": lambda: run_competencia(settings, engine),
-        "alerts": lambda: run_alerts(settings, engine),
-        "resumen": lambda: run_resumen(settings, engine),
+        "ca": _locked("ca", lambda: run_sync_ca(settings, engine)),
+        "activas": _locked("activas", lambda: run_sync_activas(settings, engine)),
+        "detalles": _locked("detalles", lambda: run_detalles(settings, engine)),
+        "datos-abiertos": _locked("datos-abiertos", lambda: run_datos_abiertos(settings, engine)),
+        "lifecycle": _locked("lifecycle", lambda: run_lifecycle(settings, engine)),
+        "match": _locked("match", lambda: run_match(settings, engine)),
+        "competencia": _locked("competencia", lambda: run_competencia(settings, engine)),
+        "alerts": _locked("alerts", lambda: run_alerts(settings, engine)),
+        "resumen": _locked("resumen", lambda: run_resumen(settings, engine)),
+        "retencion": _locked("retencion", lambda: run_retencion(engine)),
+        "catalogos": _locked("catalogos", lambda: run_catalogos(settings, engine)),
+        # NO se envuelve en _locked: _ciclo_nocturno ya toma el lock en cada paso
+        # interno. Tomarlo por fuera lo dejaría ocupado y cada paso encontraría el
+        # lock tomado → el ciclo entero se volvería un no-op silencioso.
+        # Su guard de ventana 22:00–07:00 (America/Santiago) queda intacto: los
+        # crons externos corren en UTC y no se les cree la hora (regla 5).
+        "nocturno": lambda: _ciclo_nocturno(settings, engine),
     }
 
+    _CICLO_COMPLETO = (
+        "activas",
+        "detalles",
+        "datos-abiertos",
+        "lifecycle",
+        "match",
+        "competencia",
+        "alerts",
+        "resumen",
+    )
+
     def _full_cycle() -> None:
-        run_sync_activas(settings, engine)
-        run_detalles(settings, engine)
-        run_datos_abiertos(settings, engine)
-        run_lifecycle(settings, engine)
-        run_match(settings, engine)
-        run_competencia(settings, engine)
-        run_alerts(settings, engine)
+        for nombre in _CICLO_COMPLETO:
+            _jobs[nombre]()
 
     if job == "all":
         background_tasks.add_task(_full_cycle)

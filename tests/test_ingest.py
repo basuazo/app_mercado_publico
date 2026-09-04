@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -1014,35 +1016,140 @@ class TestOrchestratorRunners:
 
 
 # ---------------------------------------------------------------------------
+# CLI (F-jobs-endpoint): el CLI es un camino de producción, no solo de dev
+# ---------------------------------------------------------------------------
+
+
+
+
+# ---------------------------------------------------------------------------
 # Tests del CLI (run-once --limit)
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
+def _cli_patched(settings, engine):
+    """Cede el módulo CLI con get_settings/_make_engine parchados, para no
+    construir un engine real ni leer el .env del entorno."""
+    from app.ingest import __main__ as cli
+
+    with (
+        patch.object(cli, "get_settings", return_value=settings),
+        patch.object(cli, "_make_engine", return_value=engine),
+    ):
+        yield cli
+
+
+def _lock_transparente(job_name: str, fn: Any, eng: Any, **kw: Any) -> Any:
+    """Doble de `_run_with_lock` que siempre concede el lock y ejecuta fn.
+
+    Hace falta porque el default (`_pg_try_lock`) usa SQL exclusivo de Postgres
+    y el CLI de test corre sobre SQLite.
+    """
+    return fn()
+
+
 class TestCliRunOnce:
-    def test_limit_se_pasa_a_run_sync_activas(self, monkeypatch):
-        from app.ingest.__main__ import cmd_run_once
+    _JOBS_CON_LOCK = (
+        "activas",
+        "ca",
+        "detalles",
+        "lifecycle",
+        "catalogos",
+        "retencion",
+        "match",
+        "alerts",
+        "resumen",
+        "datos-abiertos",
+        "competencia",
+    )
 
-        monkeypatch.setenv("MP_TICKET", "ticket-test-cli")
-        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
-        monkeypatch.setenv("SECRET_KEY", "clave-test-cli-32bytesxxxxxxxxxx")
-        monkeypatch.setenv("JOBS_TOKEN", "token-test-cli-jobs-xxxxxxxxxxx")
-
-        with patch("app.ingest.__main__.run_sync_activas") as mock_run:
+    def test_limit_se_pasa_a_run_sync_activas(self, settings, engine):
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", side_effect=_lock_transparente),
+            patch.object(cli, "run_sync_activas") as mock_run,
+        ):
             mock_run.return_value = {"nuevas": 0, "actualizadas": 0, "total": 0}
-            cmd_run_once("activas", limit=5)
+            cli.cmd_run_once("activas", limit=5)
 
         assert mock_run.call_args.kwargs.get("limit") == 5
 
-    def test_sin_limit_pasa_none(self, monkeypatch):
-        from app.ingest.__main__ import cmd_run_once
-
-        monkeypatch.setenv("MP_TICKET", "ticket-test-cli")
-        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
-        monkeypatch.setenv("SECRET_KEY", "clave-test-cli-32bytesxxxxxxxxxx")
-        monkeypatch.setenv("JOBS_TOKEN", "token-test-cli-jobs-xxxxxxxxxxx")
-
-        with patch("app.ingest.__main__.run_sync_activas") as mock_run:
+    def test_sin_limit_pasa_none(self, settings, engine):
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", side_effect=_lock_transparente),
+            patch.object(cli, "run_sync_activas") as mock_run,
+        ):
             mock_run.return_value = {"nuevas": 0, "actualizadas": 0, "total": 0}
-            cmd_run_once("activas")
+            cli.cmd_run_once("activas")
 
         assert mock_run.call_args.kwargs.get("limit") is None
+
+    @pytest.mark.parametrize("job", _JOBS_CON_LOCK)
+    def test_job_toma_el_advisory_lock(self, settings, engine, job):
+        """Regla 13: cada job del dispatch del CLI pasa por `_run_with_lock`.
+
+        El CLI es un camino de producción (cron externo), así que sin el lock un
+        disparo externo podría solaparse con el ciclo interno y gastar la cuota
+        de API dos veces sobre el mismo trabajo.
+        """
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", return_value={}) as lock,
+        ):
+            cli.cmd_run_once(job)
+
+        assert lock.call_count == 1, f"job={job} no pasó por _run_with_lock"
+        assert lock.call_args.args[0] == job
+
+    def test_nocturno_esta_expuesto(self):
+        """`nocturno` es el único camino de disparo a `run_backfill_fecha`."""
+        from app.ingest import __main__ as cli
+
+        assert "nocturno" in cli._JOBS
+
+    def test_nocturno_respeta_el_guard_horario(self, settings, engine):
+        """Regla 5: fuera de 22:00–07:00 Chile no ejecuta ningún paso, aunque el
+        cron externo (que corre en UTC) lo dispare. 16:00 UTC ≈ 12/13:00 Chile."""
+        llamadas: list[str] = []
+
+        def _fake_lock(job_name: str, fn: Any, eng: Any, **kw: Any) -> None:
+            llamadas.append(job_name)
+
+        with (
+            _cli_patched(settings, engine) as cli,
+            freeze_time("2026-06-13 16:00:00"),
+            patch("app.ingest.orchestrator._run_with_lock", side_effect=_fake_lock),
+        ):
+            cli.cmd_run_once("nocturno")
+
+        assert llamadas == []
+
+    def test_nocturno_en_ventana_no_toma_lock_por_fuera(self, settings, engine):
+        """En ventana corre los 4 pasos, cada uno con su propio lock. Si el CLI
+        envolviera `_ciclo_nocturno` en `_run_with_lock`, el lock externo dejaría
+        cada paso interno bloqueado y el ciclo sería un no-op silencioso."""
+        llamadas: list[str] = []
+
+        def _fake_lock(job_name: str, fn: Any, eng: Any, **kw: Any) -> None:
+            llamadas.append(job_name)
+
+        with (
+            _cli_patched(settings, engine) as cli,
+            freeze_time("2026-06-14 03:00:00"),
+            patch("app.ingest.orchestrator._run_with_lock", side_effect=_fake_lock),
+        ):
+            cli.cmd_run_once("nocturno")
+
+        assert llamadas == ["datos_abiertos", "lifecycle", "competencia", "backfill_ayer"]
+        assert "nocturno" not in llamadas
+
+    def test_job_desconocido_sale_con_error(self, settings, engine):
+        with (
+            _cli_patched(settings, engine) as cli,
+            pytest.raises(SystemExit) as exc,
+        ):
+            cli.cmd_run_once("inventado")
+
+        assert exc.value.code == 1

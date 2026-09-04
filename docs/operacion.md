@@ -152,7 +152,9 @@ Si la caída dura > 24 h, el cursor de CA puede quedar desactualizado. Al recupe
 
 ### Neon suspendida (idle)
 
-La base de datos free se suspende tras 5 minutos de inactividad. El pinger en `/api/salud/ping` la mantiene activa. Si el pinger falla, `_wait_for_db()` en el startup de Render reintenta 5 veces con back-off.
+La base de datos free se suspende tras 5 minutos de inactividad. El pinger de `/api/salud/ping` **no** la mantiene activa, y no debe hacerlo: ese endpoint devuelve un dict literal y no toca la base. Lo único que mantiene despierto es el proceso web de Render.
+
+> ⚠️ **No agregar una consulta a la base a `/api/salud/ping`.** Un ping que consultara Postgres cada pocos minutos mantendría Neon despierta 24/7 y agotaría las CU-horas del plan free. Que Neon se suspenda por idle es el comportamiento deseado: la despierta la primera consulta real, y si eso ocurre durante un arranque, `_wait_for_db()` en el startup de Render reintenta 5 veces con back-off.
 
 Síntoma: primera request después de idle tarda 2–5 s (wake-up de Neon). Es normal.
 
@@ -257,9 +259,15 @@ El archivo `render.yaml` ya define el prefijo correcto en los ejemplos de `docs/
 
 Todos corren automáticamente vía el scheduler interno (APScheduler, ver
 `app/ingest/orchestrator.py::build_scheduler`) mientras el proceso esté despierto.
-También se pueden disparar a mano con `POST /api/jobs/run?job=<nombre>`
-(`X-Jobs-Token` requerido) — útil para forzar un ciclo fuera de horario o tras un deploy
-(ver "heal post-deploy" en [despliegue.md](despliegue.md)).
+
+**Todos los jobs de la tabla son disparables desde afuera** con
+`POST /api/jobs/run?job=<nombre>` (`X-Jobs-Token` requerido) y con el CLI
+`python -m app.ingest run-once --job=<nombre>` — útil para forzar un ciclo fuera de
+horario o tras un deploy (ver "heal post-deploy" en [despliegue.md](despliegue.md)).
+Los tres caminos de disparo (scheduler interno, endpoint y CLI) toman el mismo
+`pg_advisory_lock`, así que un cron externo nunca se solapa con el ciclo interno ni
+duplica gasto de cuota de la API (regla 13 de CLAUDE.md). Si el lock está ocupado el
+ciclo se **omite** — eso es correcto, no hay que reintentarlo.
 
 | Job | Cadencia (scheduler interno) | Qué hace |
 |---|---|---|
@@ -274,10 +282,17 @@ También se pueden disparar a mano con `POST /api/jobs/run?job=<nombre>`
 | `resumen` | diario, hora `DIGEST_HOUR` (default 8) | Envía el resumen consolidado por usuario elegible |
 | `retencion` | diario 03:00 Chile | Purga `raw_json`/filas terminales > 90 días |
 | `catalogos` | semanal, lunes 02:00 Chile | Refresca catálogo de organismos |
+| `nocturno` | 23:30 Chile | Ciclo nocturno completo: `datos-abiertos` → `lifecycle` → `competencia` → backfill del día anterior |
+
+`nocturno` es el **único** camino de disparo a `run_backfill_fecha`. Valida por sí mismo
+la ventana 22:00–07:00 de `America/Santiago` con `ZoneInfo` (regla 5): fuera de esa
+ventana no ejecuta ningún paso y lo registra en el log. Los crons externos corren en
+UTC, así que hay que agendarlo por la hora UTC equivalente y **no** llamar sus pasos por
+separado, que saltearía el guard y dejaría fuera el backfill.
 
 `datos-abiertos` corre **antes** de `lifecycle`/`match` en el ciclo nocturno para que
 los ítems UNSPSC estén disponibles antes del próximo matching; `competencia` corre
 **después** de `lifecycle` porque depende de que los estados (incl. adjudicaciones de
 seguidas) estén al día. Ninguno de los dos gasta cuota de la API (regla 7 de CLAUDE.md).
 `POST /api/jobs/run` sin `job` (o `job=all`) ejecuta el ciclo completo en este orden:
-activas → detalles → datos-abiertos → lifecycle → match → competencia → alerts.
+activas → detalles → datos-abiertos → lifecycle → match → competencia → alerts → resumen.

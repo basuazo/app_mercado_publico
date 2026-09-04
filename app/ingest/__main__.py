@@ -13,6 +13,8 @@ from sqlalchemy.engine import Engine
 from app.core.logging import setup_logging
 from app.core.settings import Settings, get_settings
 from app.ingest.orchestrator import (
+    _ciclo_nocturno,
+    _run_with_lock,
     run_alerts,
     run_catalogos,
     run_competencia,
@@ -39,6 +41,7 @@ _JOBS = (
     "resumen",
     "datos-abiertos",
     "competencia",
+    "nocturno",
 )
 
 
@@ -58,18 +61,33 @@ def cmd_run_once(
     settings = get_settings()
     engine = _make_engine(settings)
 
+    def _locked(nombre: str, fn: Callable[[], Any]) -> Callable[[], Any]:
+        """Envuelve un runner en el pg_advisory_lock (regla 13 de CLAUDE.md).
+
+        El CLI es un camino de producción (cron externo), así que toma el mismo
+        lock que el scheduler interno y que POST /api/jobs/run. Lock ocupado →
+        `_run_with_lock` devuelve None y el ciclo se omite; no se reintenta.
+        """
+        return lambda: _run_with_lock(nombre, fn, engine)
+
     dispatch: dict[str, Callable[[], Any]] = {
-        "activas": lambda: run_sync_activas(settings, engine, limit=limit),
-        "ca": lambda: run_sync_ca(settings, engine),
-        "detalles": lambda: run_detalles(settings, engine),
-        "lifecycle": lambda: run_lifecycle(settings, engine),
-        "catalogos": lambda: run_catalogos(settings, engine),
-        "retencion": lambda: run_retencion(engine),
-        "match": lambda: run_match(settings, engine),
-        "alerts": lambda: run_alerts(settings, engine),
-        "resumen": lambda: run_resumen(settings, engine),
-        "datos-abiertos": lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes),
-        "competencia": lambda: run_competencia(settings, engine),
+        "activas": _locked("activas", lambda: run_sync_activas(settings, engine, limit=limit)),
+        "ca": _locked("ca", lambda: run_sync_ca(settings, engine)),
+        "detalles": _locked("detalles", lambda: run_detalles(settings, engine)),
+        "lifecycle": _locked("lifecycle", lambda: run_lifecycle(settings, engine)),
+        "catalogos": _locked("catalogos", lambda: run_catalogos(settings, engine)),
+        "retencion": _locked("retencion", lambda: run_retencion(engine)),
+        "match": _locked("match", lambda: run_match(settings, engine)),
+        "alerts": _locked("alerts", lambda: run_alerts(settings, engine)),
+        "resumen": _locked("resumen", lambda: run_resumen(settings, engine)),
+        "datos-abiertos": _locked(
+            "datos-abiertos", lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes)
+        ),
+        "competencia": _locked("competencia", lambda: run_competencia(settings, engine)),
+        # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
+        # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
+        # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.
+        "nocturno": lambda: _ciclo_nocturno(settings, engine),
     }
 
     if job not in dispatch:
