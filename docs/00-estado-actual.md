@@ -3,6 +3,90 @@
 > **Cómo retomar en una conversación nueva:** pídele al asistente que lea
 > `docs/00-estado-actual.md` y `docs/03-roadmap.md`. Con eso queda al día.
 
+---
+
+## Última sesión — 4-sep-2026 (leer esto primero)
+
+**Estado al cierre:** app arriba y sirviendo. `fd78ff0` (F-jobs-endpoint) + `9b3017d` (docs)
+pusheados y desplegados. Prod en alembic `f3a9b8c7d6e5` = head del repo. Base 88 MB de 500 (16,8%).
+Contraseña de admin rotada a mano en `/perfiles`.
+
+### Verificado — cambia decisiones
+
+**1. El `startCommand` de Render NO vive en `render.yaml`.** El servicio se creó a mano, así que
+manda el campo del dashboard y `render.yaml` es decorativo para ese valor. El dashboard corría
+`uvicorn app.api.main:app` (sin `--factory`), mientras `render.yaml`, `README.md:93` y
+`docs/despliegue.md:60` decían `--factory _make_app`. **Verificar siempre en el dashboard antes de
+tocar cualquier cosa del arranque.**
+
+**2. MEDIO-1 de `docs/11` estaba mal diagnosticado.** Decía que `_make_app()` corría dos veces y
+que la instancia de módulo "nunca sirve tráfico". Era al revés: como `--factory` nunca estuvo en
+el comando real, **esa instancia era la única que servía tráfico**. Borrarla (punto 5 de
+F-jobs-endpoint) no ahorró memoria: dejó el servicio sin app y tiró el deploy con
+`Error loading ASGI app. Attribute "app" not found`. Se arregló alineando el dashboard, no
+revirtiendo el código.
+
+**3. La ingesta estuvo muerta desde el 17-jul-2026**, no desde agosto. Al 4-sep,
+`licitaciones_activas`, `compra_agil` y `datos_abiertos_lic` seguían con fecha del 17 de julio.
+
+**4. La causa es que el pinger externo no está llegando.** Evidencia: el 4-sep a las 20:48 el
+servicio se apagó solo por inactividad, diez minutos después de la última visita, y en todo el log
+no hay una sola request a `/api/salud/ping` desde una IP externa. Con el pinger vivo ese apagado
+no puede ocurrir. Consecuencia: proceso dormido → APScheduler muerto con él → ningún job corre.
+**No hubo suspensión por cuota**, lo que además explica por qué los resets del 1-ago y el 1-sep no
+arreglaron nada. Queda por confirmar en cron-job.org POR QUÉ dejó de llegar (pausado, URL vieja, o
+el desafío de Cloudflare = hipótesis 3 de `docs/11` §2).
+
+**5. El pipeline y el `MP_TICKET` están sanos.** `job=activas` disparado a mano el 4-sep a las
+21:22 corrió y grabó `ultimo_ok`. Lo roto es el disparador, no la ingesta.
+
+**6. `detalles` recibe 429 en cadena — tres bugs encadenados.**
+- `app/ingest/licitaciones.py:246` atrapa `except Exception` y **sigue el loop**, así que se come
+  hasta 400 rechazos seguidos. Contradice el contrato del docstring de `orchestrator.py:7`. El
+  patrón correcto ya existe en `compra_agil.py:209`, que corta ante `MPRateLimitError`.
+- `app/clients/base.py`: `self._quota.consume()` corre **después** de `_handle_response()`, así que
+  un 429 nunca se contabiliza. Por eso `/api/salud` muestra `usadas_hoy: 10` de 9.000 mientras la
+  API rechaza todo. `check_budget()` es ciego a la cuota real.
+- `app/clients/base.py:189-193`: el 429 nunca lee el header `Retry-After`; siempre calcula
+  `_seconds_until_next_day_chile()`. El "Reintentar en 23782 s (00:01 Chile)" es una suposición de
+  la app impresa como si fuera dato de ChileCompra.
+
+**7. `errores_recientes` de `/api/salud` es cry-wolf.** Lista como error cualquier fila con campo
+`notas`, así que muestra ocho "errores" que dicen `"2026-7: sin cambios"`. Con la página gritando
+falsos positivos, un error real pasa desapercibido — probablemente parte de por qué el corte de
+julio no se notó.
+
+**8. A1 [CRÍTICO-1] es más chico de lo que decía.** Verificado: `.env` **nunca** estuvo rastreado
+en ninguna rama (`git log --all -- .env` vacío) y `audits/` está en `.gitignore:60`. Los siete
+secretos viven solo en `.env` y `audits/AUDIT-FINAL-A1-seguridad.md`, ambos locales.
+**No hay que reescribir historial de git.** La mitad del hallazgo ya estaba cerrada:
+`_SecretFilter._ENV_VARS` en `app/core/logging.py` ya enmascara los ocho. Falta el `repr=False`
+en `Settings` (cero ocurrencias hoy).
+
+### Abierto al cierre
+
+- **Sin verificar y decisivo:** si el 429 de `detalles` es tope diario o limitación por tasa.
+  Indicio a favor de lo segundo: `activas` corrió OK a las 21:22 y `detalles` rebotó a las 21:25 —
+  una cuota diaria no se apaga en tres minutos. **Test:** disparar `detalles` y ver si las primeras
+  requests pasan antes de empezar a 429. No se alcanzó a correr.
+- Historial de cron-job.org sin revisar (cierra el punto 4).
+- `licitaciones_detalles.ultimo_ok` sigue en `null`: nunca registró un éxito, ni en julio. Si tras
+  una corrida buena sigue nulo, es un bug de persistencia de estado de esa fuente.
+- `docs/prompt-F-secretos.md` escrito y sin commitear.
+
+### Gotchas nuevos
+
+- **PowerShell:** una URL con querystring necesita `${u}?job=x`, no `$u?job=x` — el `?` es carácter
+  válido en nombres de variable y PowerShell se come la URL entera.
+- **`job=all` ahora manda el correo-resumen al final** (`run_resumen` entró a `_full_cycle`). El
+  cron nocturno de las ~02:00 lo dispara a esa hora en vez de a `DIGEST_HOUR` (08:00), y como
+  mueve `ultimo_resumen_en`, el job de las 08:05 ya no envía. Decidir en F-actions.
+- El working tree en Windows y el mount del asistente comparten `.git`: un `git status` del
+  asistente puede dejar un `index.lock` huérfano que Windows no borra solo. Usar
+  `git --no-optional-locks` desde el asistente.
+
+---
+
 ## Qué es
 App de búsqueda de oportunidades en compras públicas chilenas (API Mercado Público /
 ChileCompra). Flujo: ingesta → Postgres (Neon) → perfiles por usuario → matching con

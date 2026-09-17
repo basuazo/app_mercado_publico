@@ -7,6 +7,10 @@ de las políticas vigentes de Render y Neon en su documentación oficial.
 **Precede a:** las auditorías A1 (seguridad, jun-2026) y A3 (calidad, jun-2026), que siguen
 válidas y no se repiten acá.
 
+> ⚠️ **Corregido el 4-sep-2026 con evidencia de producción. Dos partes de este informe eran
+> falsas: el §1 (a)/(c) sobre el consumo de horas y el [MEDIO-1] del §7. Ver las notas marcadas
+> «CORRECCIÓN» más abajo y `docs/00-estado-actual.md` §Última sesión.**
+
 > Convención de confianza (regla 23 de CLAUDE.md): **[V]** verificado en fuente primaria,
 > **[I]** inferido, **[?]** pendiente de que Boris lo confirme en un panel al que el
 > asistente no tiene acceso.
@@ -49,6 +53,13 @@ auto-suspend a los 5 minutos **no se puede desactivar**. El job `ca_incremental`
 Neon casi nunca alcanza a dormirse, y encima el free autoescala hasta 2 CU bajo carga, lo que
 quema CU-horas más rápido que la cuenta base. Al agotarse, **Neon suspende el compute del
 proyecto hasta el siguiente período de facturación**.
+
+> **CORRECCIÓN (4-sep-2026).** Nada de esto fue lo que pasó. El pinger dejó de llegar alrededor
+> del 17-jul-2026, así que el servicio **no** consumió 744 horas: durmió casi todo el tiempo y
+> nunca hubo suspensión por cuota — por eso los resets del 1-ago y el 1-sep no cambiaron nada.
+> La hipótesis correcta era la 3 o la 4 de la tabla de abajo, no la 1 ni la 2. El análisis de
+> horas sigue siendo válido como descripción de un pinger **vivo**, y como razón para no volver
+> a ese modelo; no como relato del incidente.
 
 Lo importante: **(a) y (c) se curan solos al cambiar el mes.** Un servicio suspendido por
 cuota se ve idéntico a un bug, y vuelve a funcionar sin que nadie arregle nada. Eso hace muy
@@ -245,6 +256,14 @@ un correo el mismo día".
 ---
 
 ## 7. Hallazgos menores, con archivo y línea
+
+> **CORRECCIÓN (4-sep-2026): este hallazgo era falso y aplicarlo tiró producción.** El
+> `startCommand` real no es el de `render.yaml` sino el del dashboard de Render (el servicio se
+> creó a mano), y ahí **no había `--factory`**: corría `uvicorn app.api.main:app`. O sea que la
+> instancia de módulo era la **única** que servía tráfico y no existía ninguna duplicación.
+> Borrarla dejó el deploy en `Error loading ASGI app. Attribute "app" not found`. Se resolvió
+> alineando el dashboard a `--factory _make_app`, no revirtiendo el código. Lección de método:
+> `render.yaml` no es fuente de verdad del arranque.
 
 **[MEDIO-1] `_make_app()` se ejecuta dos veces.**
 `app/api/main.py:133` crea una instancia de módulo (`app = _make_app()`) y `render.yaml`
