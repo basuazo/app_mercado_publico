@@ -5,6 +5,73 @@
 
 ---
 
+## Última sesión — 20-sep-2026 (leer esto primero)
+
+**Estado al cierre:** app arriba y **la ingesta volvió a correr y actualizarse** tras
+arreglar el disparador. El código no estaba roto; lo roto era el cron externo.
+
+### Verificado — cambia decisiones
+
+**1. Causa raíz del corte del 17-jul CONFIRMADA: el edge devolvía HTML al UA-bot de
+cron-job.org, no el JSON.** El `/api/salud/ping` devuelve 15 bytes (`{"status":"ok"}`,
+verificado con fetch externo a cliente genérico), así que la "salida demasiado grande" que
+cron-job.org marcó el 17-jul NO puede ser el JSON: recibió una página HTML (desafío
+anti-bot de Cloudflare —ya visto en navegador en `docs/11` §2— o la página de cold-start de
+Render) contra el User-Agent `Mozilla/4.0 (compatible; cron-job.org; .../abuse/)`. Cadena:
+ping falla "output too large" → cron-job.org **deshabilita** el pinger (17-jul) → sin
+keep-alive → Render free duerme a los 15 min → APScheduler (dentro del proceso web) muere
+con él → cero ingesta. El job-all nocturno pegaba después contra la instancia dormida →
+"error HTTP" → también quedó inactivo (12-ago). Cierra las hipótesis 3 y 4 de `docs/11` §2.
+
+**2. Capa 1 (arreglo operativo, sin código) aplicada y funcionando:** en cron-job.org se
+cambió el User-Agent del pinger/job-all a uno de navegador y se re-habilitaron. La ingesta
+está corriendo de nuevo (20-sep). El UA de navegador es requisito permanente para todo cron
+que le pegue a la app (Cloudflare delante de Render bloquea el UA-bot).
+
+**3. El endpoint ya está listo para el modelo invertido.** `POST /api/jobs/run` expone los
+12 jobs (`ca, activas, detalles, datos-abiertos, lifecycle, match, competencia, alerts,
+resumen, retencion, catalogos, nocturno`), todos con advisory lock; `_full_cycle` incluye
+`resumen`. Los 4 bloqueantes de código del §4 de `docs/11` se cerraron en `fd78ff0`. Falta
+solo sacar el APScheduler del proceso web y mover la cadencia al cron (Capa 2, fase aparte).
+
+### Decisiones tomadas
+- **Capa 2 en Claude Code, orden acordado: observabilidad PRIMERO, invertir el modelo
+  después.** La observabilidad es la red de seguridad y no toca el arranque (bajo riesgo);
+  invertir el modelo toca el startCommand/lifespan (sensible — ahí se cayó prod con el
+  `--factory` el 4-sep).
+
+### F-observabilidad — IMPLEMENTADA Y AUDITADA (commit `3ee78fe`)
+Verde: `ruff` limpio, `mypy app` limpio, `pytest` 569 passed / 20 skipped (los 20 son
+`@needs_postgres`, credencial dev vencida — deuda preexistente, no regresión). 21 tests
+nuevos offline (SQLite) en `tests/test_observabilidad.py`. Diseño tal cual el prompt:
+tabla `job_runs` + `_run_with_lock` graba una fila por corrida (ok/error/omitido, sesión
+propia, telemetría que no propaga) + `GET /api/salud/jobs` público 200/503 (watchlist con
+alias y umbrales 30–36 h) + `purgar_job_runs` (>90 d) en retención. Migración
+`b8d4e2a91c07` (`down_revision f3a9b8c7d6e5`, additiva) — NO aplicada aún a ninguna base.
+
+**Hallazgo verificado durante la fase (bug preexistente, no introducido):** `run_retencion`
+abría `Session(engine)` y retornaba **sin `commit()`**; como `purgar_terminales` solo hace
+`session.execute(delete/update…)` sin commit propio, el cierre de la sesión hacía rollback
+→ **la retención era un no-op silencioso en producción** (regla 11 nunca se aplicó). Fix: una
+línea (`session.commit()`) + test. Auditado y correcto. Consecuencia operativa: la PRIMERA
+corrida real de retención (03:00 vía scheduler, ahora que el keep-alive vive) purgará por
+primera vez `raw_json`/ítems de terminales >90 d y productos de CA — es lo diseñado, solo
+achica la base (hoy 88 MB/16,8%); no confundir el conteo alto ni la baja de tamaño con un bug.
+
+### Abierto al cierre
+- **Desplegar** para que corra la migración `b8d4e2a91c07` (el startCommand hace
+  `alembic upgrade head` antes de servir → la tabla existe antes de cualquier job). El commit
+  está local; falta push/deploy.
+- **Montar el monitor externo** apuntando a `/api/salud/jobs` (no-2xx → correo), cada 1–2 h,
+  con UA de navegador. Sin esto el dead-man's switch no avisa a nadie.
+- **ROTAR `JOBS_TOKEN`:** el token de producción se pegó en el chat (riesgo A1 [CRÍTICO-1],
+  aún abierto). Rotar en Render + `.env`.
+- **Commitear los docs** (quedaron fuera del commit de código): `docs/00-estado-actual.md`,
+  `docs/prompt-F-observabilidad.md` — un commit `docs:` aparte, según convención.
+- **Fase siguiente:** invertir el modelo (§3 de `docs/11`).
+
+---
+
 ## Última sesión — 4-sep-2026 (leer esto primero)
 
 **Estado al cierre:** app arriba y sirviendo. `fd78ff0` (F-jobs-endpoint) + `9b3017d` (docs)
