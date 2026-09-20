@@ -16,6 +16,16 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 20),
+        titulo="La b\u00fasqueda de oportunidades ya no depende de que la app est\u00e9 despierta",
+        descripcion=(
+            "Hasta ahora, las cargas de datos solo ocurr\u00edan mientras la app segu\u00eda "
+            "encendida, y bastaba que se apagara un rato para que dejaran de correr. "
+            "Ahora se disparan desde afuera en su horario, funcione o no la app en ese "
+            "momento. En la pr\u00e1ctica: menos cortes silenciosos y datos m\u00e1s al d\u00eda."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 20),
         titulo="Avisamos si la carga de datos se detiene",
         descripcion=(
             "Antes, si la b\u00fasqueda de nuevas oportunidades dejaba de funcionar, no se "

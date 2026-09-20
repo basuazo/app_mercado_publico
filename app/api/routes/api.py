@@ -357,6 +357,28 @@ async def jobs_run(
         "nocturno": lambda: _ciclo_nocturno(settings, engine),
     }
 
+    def _secuencia(*nombres: str) -> Callable[[], None]:
+        """Encadena entradas YA envueltas en `_locked`, sin volver a envolverlas.
+
+        Cada paso toma y suelta el advisory lock por su cuenta —igual que
+        `_full_cycle` y que el scheduler interno—. Como se reusan las entradas
+        existentes, job_runs sigue registrando cada paso con su nombre propio
+        ("ca", "match", …) y el watchlist de /api/salud/jobs no necesita saber
+        que existen estos jobs compuestos.
+        """
+
+        def _correr() -> None:
+            for nombre in nombres:
+                _jobs[nombre]()
+
+        return _correr
+
+    # Jobs compuestos: reproducen los grupos que el scheduler interno disparaba
+    # junto, para que el cron externo pida la secuencia con una sola llamada
+    # (F-invertir-modelo). No reemplazan a `all`: son la cadencia frecuente.
+    _jobs["ciclo-ca"] = _secuencia("ca", "match", "alerts")
+    _jobs["ciclo-activas"] = _secuencia("activas", "detalles", "match", "alerts")
+
     _CICLO_COMPLETO = (
         "activas",
         "detalles",

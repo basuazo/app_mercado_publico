@@ -50,7 +50,6 @@ def _wait_for_db(engine: Engine, intentos: int = 5, pausa: float = 2.0) -> None:
 
 
 def create_app(settings: Settings, engine: Engine) -> FastAPI:
-    from app.ingest.orchestrator import build_scheduler
     from app.models.seeds import seed_admin
 
     @asynccontextmanager
@@ -64,28 +63,43 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
                 seed_admin(session, settings.admin_email, settings.admin_password)
                 session.commit()
 
-        # Arrancar scheduler en background (APScheduler BackgroundScheduler)
-        sched = build_scheduler(settings, engine)
-        # build_scheduler devuelve BlockingScheduler; usar BackgroundScheduler en lugar
-        from apscheduler.schedulers.background import BackgroundScheduler as _BG
+        # Scheduler en proceso: APAGADO por defecto (F-invertir-modelo).
+        #
+        # Un BackgroundScheduler solo corre mientras el proceso web esté vivo, y
+        # en el free tier de Render eso obliga a mantenerlo despierto 24/7 con un
+        # pinger externo. Ese pinger fue el punto único de falla del corte de
+        # julio. Con la flag en False el proceso puede dormirse entre disparos y
+        # los jobs los dispara el cron externo contra POST /api/jobs/run, que ya
+        # toma el mismo advisory lock (regla 13).
+        #
+        # La flag sigue existiendo para desarrollo local y como vuelta atrás:
+        # build_scheduler y su cadencia quedan intactos.
+        bg_sched = None
+        if settings.scheduler_en_proceso:
+            from apscheduler.schedulers.background import BackgroundScheduler as _BG
 
-        bg_sched = _BG(timezone="America/Santiago")
-        # Copiar jobs del scheduler configurado al background scheduler
-        for job in sched.get_jobs():
-            bg_sched.add_job(
-                job.func,
-                trigger=job.trigger,
-                id=job.id,
-                name=job.name,
-                replace_existing=True,
-            )
-        bg_sched.start()
+            from app.ingest.orchestrator import build_scheduler
+
+            # build_scheduler devuelve BlockingScheduler; usar BackgroundScheduler en lugar
+            sched = build_scheduler(settings, engine)
+            bg_sched = _BG(timezone="America/Santiago")
+            # Copiar jobs del scheduler configurado al background scheduler
+            for job in sched.get_jobs():
+                bg_sched.add_job(
+                    job.func,
+                    trigger=job.trigger,
+                    id=job.id,
+                    name=job.name,
+                    replace_existing=True,
+                )
+            bg_sched.start()
         app.state.scheduler = bg_sched
 
         yield
 
         # Apagado limpio en SIGTERM (Render reinicia en deploys)
-        bg_sched.shutdown(wait=False)
+        if bg_sched is not None:
+            bg_sched.shutdown(wait=False)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 

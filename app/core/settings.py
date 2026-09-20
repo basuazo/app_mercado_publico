@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     # --- Branch production de Neon (solo referencia; la usa Render) ---
     database_url_prod: str = Field(default="", description="URL Neon branch production — solo para referencia, no se usa en runtime")
 
+    # --- Modelo de ejecución de jobs (F-invertir-modelo) ---
+    scheduler_en_proceso: bool = Field(
+        default=False,
+        description=(
+            "Arranca el APScheduler dentro del proceso web. En producción va en "
+            "False: los jobs los dispara el cron externo contra /api/jobs/run."
+        ),
+    )
+
     # --- Rate limit y presupuestos ---
     rate_limit_rps: float = Field(default=1.0, description="Solicitudes por segundo hacia la API")
     api_daily_budget: int = Field(default=9000, description="Presupuesto máximo de requests/día")

@@ -76,6 +76,18 @@ def settings():
 
 
 @pytest.fixture()
+def settings_con_scheduler():
+    """Settings con el APScheduler en proceso encendido (default: apagado)."""
+    return Settings(
+        mp_ticket="TICKET_TEST",
+        database_url="sqlite:///:memory:",
+        secret_key="secret-test-key-larga-32chars!!",
+        jobs_token="jobs-token-secreto",
+        scheduler_en_proceso=True,
+    )
+
+
+@pytest.fixture()
 def client(engine, settings):
     # Pass the same engine so the app uses the same DB as the test fixtures
     application = create_app(settings, engine)
@@ -1031,6 +1043,89 @@ def test_jobs_run_nocturno_en_ventana_toma_un_lock_por_paso(client):
     assert "nocturno" not in locks
 
 
+@respx.mock
+def test_jobs_run_ciclo_ca_corre_ca_match_alerts_en_orden(client, lock_spy):
+    """`ciclo-ca` reproduce el grupo que el scheduler disparaba cada 30 min, para
+    que el cron externo pida la secuencia con una sola llamada."""
+    with _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=ciclo-ca", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert r.json() == {"queued": True, "job": "ciclo-ca"}
+    assert llamadas == ["run_sync_ca", "run_match", "run_alerts"]
+    # Un lock por paso, tomado y liberado: los pasos reusan las entradas ya
+    # envueltas en `_locked`, no se re-envuelve el ciclo por fuera.
+    assert lock_spy.intentos == [_LOCK_KEY] * 3
+    assert lock_spy.liberados == [_LOCK_KEY] * 3
+
+
+@respx.mock
+def test_jobs_run_ciclo_activas_corre_los_cuatro_pasos_en_orden(client, lock_spy):
+    """`ciclo-activas` reproduce el grupo de las 8/13/18 h del scheduler."""
+    with _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=ciclo-activas", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert r.json() == {"queued": True, "job": "ciclo-activas"}
+    assert llamadas == ["run_sync_activas", "run_detalles", "run_match", "run_alerts"]
+    assert lock_spy.intentos == [_LOCK_KEY] * 4
+    assert lock_spy.liberados == [_LOCK_KEY] * 4
+
+
+@respx.mock
+@pytest.mark.parametrize("job", ["ciclo-ca", "ciclo-activas"])
+def test_jobs_compuestos_registran_cada_paso_con_su_nombre(client, job):
+    """job_runs (y con él /api/salud/jobs) ve los pasos, no el job compuesto.
+
+    Por eso el watchlist del dead-man's switch no necesita conocer estos jobs:
+    "ca" y "activas" siguen apareciendo con su propio nombre.
+    """
+    nombres: list[str] = []
+
+    def _fake_lock(job_name: str, fn: Any, eng: Any, **kw: Any) -> None:
+        nombres.append(job_name)
+
+    with patch("app.ingest.orchestrator._run_with_lock", side_effect=_fake_lock):
+        r = client.post(f"/api/jobs/run?job={job}", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert job not in nombres
+    esperado = ["ca"] if job == "ciclo-ca" else ["activas", "detalles"]
+    assert nombres[: len(esperado)] == esperado
+    assert nombres[-2:] == ["match", "alerts"]
+
+
+@respx.mock
+def test_jobs_compuestos_no_alteran_all_ni_nocturno(client, lock_spy):
+    """Regresión: `all` conserva su secuencia exacta (los compuestos no entran)."""
+    with _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=all", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert llamadas == [
+        "run_sync_activas",
+        "run_detalles",
+        "run_datos_abiertos",
+        "run_lifecycle",
+        "run_match",
+        "run_competencia",
+        "run_alerts",
+        "run_resumen",
+    ]
+
+
+@respx.mock
+def test_nocturno_conserva_el_guard_de_ventana(client, lock_spy):
+    """Regresión regla 5: el guard 22:00–07:00 sigue intacto tras invertir el
+    modelo — es la red de seguridad si el cron dispara a la hora equivocada."""
+    with freeze_time("2026-06-13 16:00:00"), _runners_mockeados() as llamadas:
+        r = client.post("/api/jobs/run?job=nocturno", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert llamadas == []
+    assert lock_spy.intentos == []
+
+
 def test_jobs_run_token_incorrecto(client):
     r = client.post("/api/jobs/run", headers={"X-Jobs-Token": "incorrecto"})
     assert r.status_code == 401
@@ -1177,13 +1272,13 @@ def test_logout_csrf_invalido(client, usuario, settings):
 # ---------------------------------------------------------------------------
 
 
-def test_lifespan_scheduler_arranca_y_apaga(engine, settings):
-    """El lifespan arranca el BackgroundScheduler y lo apaga al salir."""
+def test_lifespan_scheduler_arranca_y_apaga(engine, settings_con_scheduler):
+    """Con `scheduler_en_proceso=True` el lifespan lo arranca y lo apaga al salir."""
     from fastapi.testclient import TestClient
 
     from app.api.main import create_app
 
-    application = create_app(settings, engine)
+    application = create_app(settings_con_scheduler, engine)
     with TestClient(application) as tc:
         # Scheduler debe estar activo dentro del contexto
         assert application.state.scheduler.running
@@ -1193,6 +1288,53 @@ def test_lifespan_scheduler_arranca_y_apaga(engine, settings):
 
     # Fuera del contexto el scheduler debe haberse detenido
     assert not application.state.scheduler.running
+
+
+def test_lifespan_sin_scheduler_por_defecto(engine, settings):
+    """Default (F-invertir-modelo): el proceso web NO levanta el scheduler.
+
+    Es lo que le permite dormirse entre disparos en el free tier de Render, en
+    vez de depender de un pinger 24/7 que lo mantenga vivo. La app arranca y
+    sirve igual; los jobs los dispara el cron externo contra /api/jobs/run.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.api.main import create_app
+
+    assert settings.scheduler_en_proceso is False
+
+    application = create_app(settings, engine)
+    with TestClient(application) as tc:
+        assert application.state.scheduler is None
+        assert tc.get("/api/salud/ping").status_code == 200
+
+    # El apagado tolera que nunca se haya arrancado (no debe explotar el lifespan)
+    assert application.state.scheduler is None
+
+
+def test_lifespan_sin_scheduler_no_construye_jobs(engine, settings):
+    """Con la flag apagada no se llama a build_scheduler: no hay jobs que armar."""
+    from fastapi.testclient import TestClient
+
+    from app.api.main import create_app
+
+    with patch("app.ingest.orchestrator.build_scheduler") as bs:
+        application = create_app(settings, engine)
+        with TestClient(application):
+            pass
+
+    bs.assert_not_called()
+
+
+def test_flag_scheduler_apagada_por_defecto():
+    """La flag es opt-in: producción no la define y debe quedar en False."""
+    s = Settings(
+        mp_ticket="T",
+        database_url="sqlite:///:memory:",
+        secret_key="secret-test-key-larga-32chars!!",
+        jobs_token="tok",
+    )
+    assert s.scheduler_en_proceso is False
 
 
 def test_ping_sin_auth_ni_datos(engine, settings):
