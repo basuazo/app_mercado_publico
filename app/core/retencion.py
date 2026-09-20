@@ -3,6 +3,7 @@
 Regla: raw_json se guarda SOLO cuando la oportunidad tiene al menos un match.
 purgar_terminales() limpia raw_json e items/productos de oportunidades terminales
 antiguas, pero nunca toca filas vigentes ni matches con alertas pendientes.
+También purga el historial de corridas de jobs (job_runs), que crece sin techo.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from app.models.tables import (
     Alerta,
     CaProducto,
     CompraAgil,
+    JobRun,
     Licitacion,
     LicitacionItem,
     OportunidadMatch,
@@ -93,20 +95,36 @@ def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
         prods_borrados = 0
         ca_purgadas = 0
 
+    # -- Historial de corridas de jobs --
+    job_runs_borrados = purgar_job_runs(session, dias=dias)
+
     _log.info(
-        "purgar_terminales(dias=%d): licitaciones=%d items=%d ca=%d productos=%d",
+        "purgar_terminales(dias=%d): licitaciones=%d items=%d ca=%d productos=%d job_runs=%d",
         dias,
         lic_purgadas,
         items_borrados,
         ca_purgadas,
         prods_borrados,
+        job_runs_borrados,
     )
     return {
         "licitaciones_purgadas": lic_purgadas,
         "items_borrados": items_borrados,
         "ca_purgadas": ca_purgadas,
         "productos_borrados": prods_borrados,
+        "job_runs_borrados": job_runs_borrados,
     }
+
+
+def purgar_job_runs(session: Session, dias: int = 90) -> int:
+    """Borra el historial de corridas de jobs con más de `dias` días.
+
+    job_runs crece una fila por corrida y por disparador; sin purga la tabla
+    crece sin techo (regla 11: Neon son 0,5 GB). Devuelve las filas borradas.
+    """
+    corte = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=dias)
+    r = session.execute(delete(JobRun).where(JobRun.iniciado_en < corte))
+    return int(r.rowcount or 0)  # type: ignore[attr-defined]
 
 
 def tamano_bd(session: Session) -> int | None:

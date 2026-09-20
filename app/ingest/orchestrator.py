@@ -9,6 +9,7 @@ Reglas críticas:
 
 from __future__ import annotations
 
+import json
 import traceback
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -34,7 +35,7 @@ from app.ingest.licitaciones import (
     upsert_detalle,
 )
 from app.ingest.lifecycle import refresh_estados
-from app.models.tables import CompraAgil, Licitacion
+from app.models.tables import CompraAgil, JobRun, Licitacion
 
 _log = get_logger(__name__)
 _TZ_CHILE = ZoneInfo("America/Santiago")
@@ -129,7 +130,10 @@ def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
 
 def run_retencion(engine: Engine) -> dict[str, int]:
     with Session(engine) as session:
-        return purgar_terminales(session)
+        resultado = purgar_terminales(session)
+        # Sin commit, el cierre de la sesión revierte la purga entera.
+        session.commit()
+        return resultado
 
 
 def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
@@ -221,6 +225,56 @@ def run_backfill_fecha(settings: Settings, engine: Engine, fecha: date) -> dict[
 # ---------------------------------------------------------------------------
 
 
+def _registrar_corrida(
+    engine: Engine,
+    job: str,
+    iniciado_en: datetime,
+    estado: str,
+    resultado: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    """Graba UNA fila en job_runs con el desenlace de una corrida.
+
+    Usa su PROPIA sesión de vida corta, NUNCA la `conn` del advisory lock:
+    escribir ahí podría ensuciar su transacción, y un rollback soltaría el lock.
+    """
+    if resultado is not None:
+        try:
+            # Algunos runners devuelven valores no serializables; para el switch
+            # importa más que la fila exista que el detalle exacto del resultado.
+            resultado = json.loads(json.dumps(resultado, default=str))
+        except (TypeError, ValueError):
+            resultado = {"_no_serializable": True}
+
+    with Session(engine) as session:
+        session.add(
+            JobRun(
+                job=job,
+                iniciado_en=iniciado_en,
+                terminado_en=datetime.now(UTC).replace(tzinfo=None),
+                estado=estado,
+                resultado_json=resultado,
+                error=error,
+            )
+        )
+        session.commit()
+
+
+def _registrar_corrida_segura(
+    engine: Engine,
+    job: str,
+    iniciado_en: datetime,
+    estado: str,
+    resultado: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    """Envoltorio que NUNCA propaga: esto es telemetría, no puede tumbar un job."""
+    try:
+        _registrar_corrida(engine, job, iniciado_en, estado, resultado, error)
+    except Exception as _exc:
+        _log.warning("job=%s: no se pudo registrar la corrida en job_runs: %s", job, _exc)
+
+
 def _run_with_lock(
     job_name: str,
     fn: Callable[[], dict[str, int]],
@@ -232,19 +286,30 @@ def _run_with_lock(
 
     Retorna None si el lock está ocupado (otro proceso en ejecución).
     El lock se libera SIEMPRE en finally.
+
+    Cada corrida deja UNA fila en job_runs (ok | error | omitido). Este es el
+    único camino por el que pasan todos los disparadores —scheduler, endpoint
+    y CLI—, así que es el único lugar donde hay que instrumentar. La telemetría
+    no cambia el valor de retorno ni puede hacer fallar el job.
     """
+    iniciado_en = datetime.now(UTC).replace(tzinfo=None)
     with engine.connect() as conn:
         acquired = try_lock_fn(conn, _LOCK_KEY)
         if not acquired:
             _log.info("job=%s: advisory lock ocupado — ciclo omitido", job_name)
+            # "omitido" NO es fallo: otra instancia está haciendo el trabajo.
+            _registrar_corrida_segura(engine, job_name, iniciado_en, "omitido")
             return None
         try:
             _log.info("job=%s: iniciando", job_name)
             result = fn()
             _log.info("job=%s: OK %s", job_name, result)
+            _registrar_corrida_segura(engine, job_name, iniciado_en, "ok", resultado=result)
             return result
         except Exception:
-            _log.error("job=%s: ERROR\n%s", job_name, traceback.format_exc())
+            tb = traceback.format_exc()
+            _log.error("job=%s: ERROR\n%s", job_name, tb)
+            _registrar_corrida_segura(engine, job_name, iniciado_en, "error", error=tb)
             return None
         finally:
             try:

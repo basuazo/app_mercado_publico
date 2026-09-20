@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, NamedTuple
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -25,7 +27,7 @@ from app.matching.perfiles import (
     listar_perfiles,
     obtener_perfil,
 )
-from app.models.tables import Usuario
+from app.models.tables import JobRun, Usuario
 
 router = APIRouter(prefix="/api")
 
@@ -38,6 +40,90 @@ router = APIRouter(prefix="/api")
 @router.get("/salud/ping")
 async def ping() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Dead-man's switch de jobs (público)
+# ---------------------------------------------------------------------------
+
+
+class _JobVigilado(NamedTuple):
+    """Un job del watchlist: nombre canónico, alias y ventana máxima sin OK."""
+
+    job: str
+    alias: frozenset[str]
+    umbral_horas: float
+    critico: bool
+
+
+# El mismo job lógico llega con nombres distintos según el disparador (endpoint,
+# scheduler, ciclo nocturno); job_runs los graba tal cual y acá se resuelven.
+#
+# Los umbrales son amplios A PROPÓSITO: esto detecta "la ingesta se detuvo" —el
+# incidente real duró semanas— y no "un job se atrasó una hora". 30 h cubre el
+# hueco nocturno sin falsos positivos. Ajustables acá.
+_JOBS_VIGILADOS: tuple[_JobVigilado, ...] = (
+    _JobVigilado("activas", frozenset({"activas", "sync_activas"}), 30, True),
+    _JobVigilado("ca", frozenset({"ca", "ca_incremental"}), 30, True),
+    _JobVigilado("datos-abiertos", frozenset({"datos-abiertos", "datos_abiertos"}), 36, True),
+    _JobVigilado("resumen", frozenset({"resumen"}), 30, False),
+)
+
+
+@router.get("/salud/jobs")
+async def salud_jobs(
+    response: Response,
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Dead-man's switch: 503 si algún job crítico dejó de correr.
+
+    Público y sin secretos, igual que /salud/ping (un monitor externo gratuito
+    no puede mandar cookies). El no-2xx es la señal que dispara el aviso.
+    A diferencia de /ping, este sí toca la base: una consulta por job, resuelta
+    por ix_job_runs_job_iniciado.
+    """
+    ahora = datetime.now(UTC).replace(tzinfo=None)
+    jobs: list[dict[str, Any]] = []
+    hay_critico_stale = False
+
+    for vigilado in _JOBS_VIGILADOS:
+        ultimo_ok = session.execute(
+            select(JobRun.iniciado_en)
+            .where(JobRun.estado == "ok", JobRun.job.in_(sorted(vigilado.alias)))
+            .order_by(JobRun.iniciado_en.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if ultimo_ok is None:
+            # Nunca corrió OK: tan grave como estar atrasado.
+            edad_horas: float | None = None
+            stale = True
+        else:
+            edad_horas = round((ahora - ultimo_ok).total_seconds() / 3600, 1)
+            stale = edad_horas > vigilado.umbral_horas
+
+        if stale and vigilado.critico:
+            hay_critico_stale = True
+
+        jobs.append(
+            {
+                "job": vigilado.job,
+                "ultimo_ok": ultimo_ok.isoformat() if ultimo_ok is not None else None,
+                "edad_horas": edad_horas,
+                "umbral_horas": vigilado.umbral_horas,
+                "critico": vigilado.critico,
+                "stale": stale,
+            }
+        )
+
+    if hay_critico_stale:
+        response.status_code = 503
+
+    return {
+        "status": "stale" if hay_critico_stale else "ok",
+        "generado_en": ahora.isoformat(),
+        "jobs": jobs,
+    }
 
 
 # ---------------------------------------------------------------------------

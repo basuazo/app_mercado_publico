@@ -15,6 +15,16 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 20),
+        titulo="Avisamos si la carga de datos se detiene",
+        descripcion=(
+            "Antes, si la b\u00fasqueda de nuevas oportunidades dejaba de funcionar, no se "
+            "notaba: la pantalla se ve\u00eda igual, solo con menos resultados. Ahora el "
+            "sistema guarda un registro de cada carga de datos y avisa solo cuando una "
+            "lleva demasiado tiempo sin completarse, as\u00ed se arregla r\u00e1pido."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 7, 10),
         titulo="Mejor detecci\u00f3n por rubro en licitaciones",
         descripcion=(

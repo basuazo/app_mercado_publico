@@ -452,6 +452,30 @@ class SyncState(Base):
 
 
 # ---------------------------------------------------------------------------
+# Historial de corridas de jobs (observabilidad)
+# ---------------------------------------------------------------------------
+
+
+class JobRun(Base):
+    """Una fila por corrida de job: memoria para el dead-man's switch.
+
+    `job` se graba TAL CUAL llega del disparador: el mismo job lógico tiene
+    nombres distintos según el camino (endpoint, scheduler, CLI). Los alias se
+    resuelven al leer, en el watchlist de /api/salud/jobs.
+    """
+
+    __tablename__ = "job_runs"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    job: Mapped[str] = mapped_column(String(50), nullable=False)
+    iniciado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    terminado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)  # ok | error | omitido
+    resultado_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Ãndices adicionales
 # ---------------------------------------------------------------------------
 
@@ -463,3 +487,5 @@ Index("ix_oportunidades_match_perfil", OportunidadMatch.perfil_id)
 Index("ix_plan_compra_lineas_entidad_agno", PlanCompraLinea.codigo_entidad, PlanCompraLinea.agno)
 Index("ix_instituciones_pac_razon_social", InstitucionPAC.razon_social)
 Index("ix_match_feedback_usuario", MatchFeedback.usuario_id)
+# Sirve al switch (último "ok" por job) y a la purga de retención.
+Index("ix_job_runs_job_iniciado", JobRun.job, JobRun.iniciado_en.desc())
