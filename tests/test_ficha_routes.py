@@ -214,7 +214,9 @@ def test_ficha_refleja_me_sirve_activo(client, usuario, settings, engine):
 
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert 'btn btn-success">Me sirve' in r.text
+    # El estado activo se expresa por relleno, aria-pressed y marca textual.
+    assert 'class="btn btn-success" data-accion="me-sirve" aria-pressed="true"' in r.text
+    assert "Me sirve" in r.text
 
 
 def test_ficha_refleja_descartada_con_boton_restaurar(client, usuario, settings, engine):

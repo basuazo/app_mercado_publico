@@ -13,12 +13,13 @@
 
 <div class="d-flex justify-content-between align-items-start gap-3 mb-1 flex-wrap">
   <h2 class="mb-0">{{ oportunidad.nombre }}</h2>
-  {% if match.score >= 80 %}
-  <span class="badge bg-success fs-5">{{ match.score | round(0) | int }}</span>
-  {% elif match.score >= 50 %}
-  <span class="badge bg-warning text-dark fs-5">{{ match.score | round(0) | int }}</span>
+  {# Los cortes los decide la ruta con los mismos valores que los presets del feed. #}
+  {% if banda == 'alta' %}
+  <span class="badge bg-success fs-5 num">{{ match.score | round(0) | int }}<span class="visually-hidden"> — alta relevancia</span></span>
+  {% elif banda == 'media' %}
+  <span class="badge bg-warning text-dark fs-5 num">{{ match.score | round(0) | int }}<span class="visually-hidden"> — relevancia media</span></span>
   {% else %}
-  <span class="badge bg-secondary fs-5">{{ match.score | round(0) | int }}</span>
+  <span class="badge bg-secondary fs-5 num">{{ match.score | round(0) | int }}<span class="visually-hidden"> — baja relevancia</span></span>
   {% endif %}
 </div>
 <p class="text-muted mb-2">
@@ -39,7 +40,7 @@
   {% endif %}
   {% set monto = oportunidad.monto_clp if fuente == 'licitaciones' else oportunidad.monto_disponible_clp %}
   {% if monto %}
-  <span class="badge bg-light text-dark border me-1">${{ '{:,.0f}'.format(monto) }}</span>
+  <span class="badge bg-light text-dark border me-1 num">{{ monto | clp }}</span>
   {% endif %}
 </div>
 
@@ -82,10 +83,10 @@
   <table class="table table-sm table-striped align-middle">
     <thead>
       <tr>
-        <th>Descripción</th>
-        <th>Rubro</th>
-        <th class="text-end">Cantidad</th>
-        <th>Unidad</th>
+        <th scope="col">Descripción</th>
+        <th scope="col">Rubro</th>
+        <th scope="col" class="text-end">Cantidad</th>
+        <th scope="col">Unidad</th>
       </tr>
     </thead>
     <tbody>
@@ -93,7 +94,7 @@
       <tr>
         <td>{{ it.nombre }}</td>
         <td>{{ it.rubro or '—' }}</td>
-        <td class="text-end">{% if it.cantidad is not none %}{{ '{:,.0f}'.format(it.cantidad) }}{% else %}—{% endif %}</td>
+        <td class="text-end num">{{ it.cantidad | numero }}</td>
         <td>{{ it.unidad or '—' }}</td>
       </tr>
       {% endfor %}
@@ -111,21 +112,27 @@
   <table class="table table-sm table-striped align-middle">
     <thead>
       <tr>
-        <th>Proveedor</th>
-        <th>RUT</th>
-        <th class="text-end">Ítems ofertados</th>
-        <th class="text-end">Ítems ganados</th>
-        <th class="text-end">Total adjudicado</th>
+        <th scope="col">Proveedor</th>
+        <th scope="col">RUT</th>
+        <th scope="col" class="text-end">Ítems ofertados</th>
+        <th scope="col" class="text-end">Ítems ganados</th>
+        <th scope="col" class="text-end">Total adjudicado</th>
       </tr>
     </thead>
     <tbody>
       {% for p in competencia_resumen %}
-      <tr class="{% if current_user.rut_proveedor and p.rut_proveedor == current_user.rut_proveedor %}table-success{% endif %}">
-        <td>{{ p.nombre_proveedor }}{% if p.items_ganados > 0 %} <span class="badge bg-primary">Ganó</span>{% endif %}</td>
-        <td>{{ p.rut_proveedor }}</td>
-        <td class="text-end">{{ p.items_ofertados }}</td>
-        <td class="text-end">{{ p.items_ganados }}</td>
-        <td class="text-end">${{ '{:,.0f}'.format(p.total_adjudicado) }}</td>
+      {% set es_propia = current_user.rut_proveedor and p.rut_proveedor == current_user.rut_proveedor %}
+      {# El color no es el único canal: la fila propia lleva borde y chip de texto. #}
+      <tr class="{% if es_propia %}table-success border-start border-4 border-primary{% endif %}">
+        <td>
+          {{ p.nombre_proveedor }}
+          {%- if es_propia %} <span class="badge text-bg-primary">Tu empresa</span>{% endif %}
+          {%- if p.items_ganados > 0 %} <span class="badge bg-primary">Ganó</span>{% endif %}
+        </td>
+        <td class="num">{{ p.rut_proveedor }}</td>
+        <td class="text-end num">{{ p.items_ofertados | numero }}</td>
+        <td class="text-end num">{{ p.items_ganados | numero }}</td>
+        <td class="text-end num">{{ p.total_adjudicado | clp }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -139,21 +146,31 @@
     <table class="table table-sm align-middle">
       <thead>
         <tr>
-          <th>Ítem</th>
-          <th>Proveedor</th>
-          <th>RUT</th>
-          <th class="text-end">Monto unitario ofertado</th>
-          <th>Ganó</th>
+          <th scope="col">Ítem</th>
+          <th scope="col">Proveedor</th>
+          <th scope="col">RUT</th>
+          <th scope="col" class="text-end">Monto unitario ofertado</th>
+          <th scope="col">Ganó</th>
         </tr>
       </thead>
       <tbody>
         {% for d in competencia_detalle %}
-        <tr class="{% if current_user.rut_proveedor and d.rut_proveedor == current_user.rut_proveedor %}table-success{% endif %}">
-          <td>{{ d.codigo_item }}</td>
-          <td>{{ d.nombre_proveedor }}</td>
-          <td>{{ d.rut_proveedor }}</td>
-          <td class="text-end">{% if d.monto_unitario is not none %}${{ '{:,.0f}'.format(d.monto_unitario) }}{% else %}—{% endif %}</td>
-          <td>{% if d.seleccionada %}✓{% else %}—{% endif %}</td>
+        {% set es_propia = current_user.rut_proveedor and d.rut_proveedor == current_user.rut_proveedor %}
+        <tr class="{% if es_propia %}table-success border-start border-4 border-primary{% endif %}">
+          <td class="num">{{ d.codigo_item }}</td>
+          <td>
+            {{ d.nombre_proveedor }}
+            {%- if es_propia %} <span class="badge text-bg-primary">Tu empresa</span>{% endif %}
+          </td>
+          <td class="num">{{ d.rut_proveedor }}</td>
+          <td class="text-end num">{% if d.monto_unitario is not none %}{{ d.monto_unitario | clp }}{% else %}—{% endif %}</td>
+          <td>
+            {% if d.seleccionada %}
+            <span aria-hidden="true">✓</span><span class="visually-hidden">Adjudicado</span>
+            {% else %}
+            <span aria-hidden="true">—</span><span class="visually-hidden">No adjudicado</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

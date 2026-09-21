@@ -31,7 +31,9 @@
   <input type="hidden" name="agrupar_por" value="{{ agrupar_por }}">
 </form>
 
-{% set filtros_qs = "fuente=" ~ fuente ~ "&texto=" ~ texto ~ (("&perfil_id=" ~ perfil_id) if perfil_id else "") %}
+{# Cada valor va urlencoded: un "&" en la búsqueda partía el querystring y
+   corrompía los filtros al primer clic en orden, umbral o agrupación. #}
+{% set filtros_qs = "fuente=" ~ (fuente | urlencode) ~ "&texto=" ~ (texto | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") %}
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex flex-wrap gap-2">
@@ -63,7 +65,7 @@
   {% endif %}
 </div>
 
-{% set ver_todas_href = "?min_score=0&orden=" ~ orden ~ "&agrupar_por=" ~ agrupar_por ~ "&" ~ filtros_qs %}
+{% set ver_todas_href = "?min_score=0&orden=" ~ (orden | urlencode) ~ "&agrupar_por=" ~ (agrupar_por | urlencode) ~ "&" ~ filtros_qs %}
 {% if grupos %}
 <p class="text-muted small">
   Mostrando {{ total_unico }} oportunidad(es) · {{ total_apariciones }} aparición(es) en {{ grupos|length }} grupo(s)
@@ -92,7 +94,7 @@
         {% if grupo.count > grupo['items']|length %}
         <div class="mt-2">
           <a class="btn btn-sm btn-outline-secondary"
-             href="?grupo_expandido={{ grupo.key | urlencode }}&agrupar_por={{ agrupar_por }}&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}#{{ gid }}-body">
+             href="?grupo_expandido={{ grupo.key | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}#{{ gid }}-body">
             Ver más en este grupo ({{ grupo['items']|length }} de {{ grupo.count }})
           </a>
         </div>

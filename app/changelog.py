@@ -15,6 +15,14 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 21),
+        titulo="Mejoras de navegación, formato de montos y accesibilidad",
+        descripcion=(
+            "Arreglamos la navegación en celulares, los montos ahora se muestran en "
+            "formato chileno y mejoramos el uso con lector de pantalla."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 20),
         titulo="La b\u00fasqueda de oportunidades ya no depende de que la app est\u00e9 despierta",
         descripcion=(

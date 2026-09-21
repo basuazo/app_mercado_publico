@@ -173,6 +173,10 @@
         </div>
         <div class="col-12">
           <label class="form-label">Regiones (vacío = todas)</label>
+          <p class="text-muted small mb-2">
+            El filtro de región aplica solo a Compra Ágil. Las licitaciones no traen región en la
+            fuente oficial, así que no se filtran por este criterio.
+          </p>
           <div class="d-flex flex-wrap gap-2">
             {% for codigo, nombre in regiones_disponibles %}
             <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}" id="reg_{{ codigo }}" autocomplete="off">
@@ -275,6 +279,10 @@
           </div>
           <div class="col-12">
             <label class="form-label">Regiones (vacío = todas)</label>
+            <p class="text-muted small mb-2">
+              El filtro de región aplica solo a Compra Ágil. Las licitaciones no traen región en la
+              fuente oficial, así que no se filtran por este criterio.
+            </p>
             <div class="d-flex flex-wrap gap-2">
               {% for codigo, nombre in regiones_disponibles %}
               <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}"

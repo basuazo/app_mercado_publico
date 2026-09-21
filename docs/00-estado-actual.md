@@ -5,6 +5,202 @@
 
 ---
 
+## Última sesión — 21-sep-2026 (auditoría UX y plan de rediseño del feed)
+
+**Trabajo de diseño y planificación, sin cambios de código.** Auditoría UX/accesibilidad hecha
+contra la FUENTE PRIMARIA (las plantillas, `presentacion.py` y `query.py`), no contra el sitio
+renderizado: la URL de producción está bloqueada por la política de egreso del entorno del
+asistente. Registro completo en `docs/13-auditoria-ux.md`.
+
+### Verificado — cambia decisiones
+
+**1. Dos escalas de score conviviendo en la misma pantalla.** Los presets del feed son Alta = 60 /
+Media = `feed_min_score_default` (40) / Todas = 0, pero las bandas de color del badge son >=80
+verde, >=50 ámbar. Un score 65 pasa "Alta relevancia" y sale ámbar. Se unifica hacia 60/40, no hacia
+80/50, porque `feed_min_score_default` es ajustable por env y sigue pendiente de recalibrar con
+datos de producción.
+
+**2. El navbar está roto bajo 992px.** `base.html` declara `navbar-expand-lg` sin `navbar-toggler`
+ni `.collapse.navbar-collapse`: los siete controles se desbordan en móvil. Bug de layout, en vivo.
+
+**3. `index.html` no codifica `texto` en los enlaces de filtro.** `"texto=" ~ texto` sin
+`|urlencode`: una búsqueda con `&` corrompe los filtros al primer clic en orden o agrupación.
+
+**4. Los montos usan separador de miles estadounidense.** `'{:,.0f}'` produce `$12,500,000` en una
+app chilena. Aparece en tarjeta, ficha, competencia y Plan Anual.
+
+**5. No existe ninguna región `aria-live` en la app.** Tras los swaps de HTMX no se anuncia nada y
+el foco vuelve a `<body>`. Es el único criterio WCAG 2.1 AA que la app incumple de forma inequívoca.
+El contraste de color, en cambio, pasa AA en lo grueso porque Bootstrap viene calibrado: el problema
+de accesibilidad es semántico y de estado, no cromático.
+
+**6. El dashboard rediseñado necesita filtros que el backend NO tiene.** Existen fuente, perfil,
+texto, relevancia y orden score/cierre. No existen monto, rango de cierre, familia de estado, orden
+por monto, conteos por faceta, "nuevas hoy" ni paginación (eliminada a propósito en F-feed-agrupado
+cuando el cap por grupo la reemplazó). `region` existe en la firma de `get_oportunidades_usuario` y
+nunca se expuso — y solo aplica a Compra Ágil.
+
+### Decisiones tomadas
+- **Se queda en Bootstrap 5.3 + Jinja2/HTMX.** Sin migración a React. El rediseño es de plantillas
+  sobre Bootstrap, no de stack.
+- **Tres fases, en este orden:** F-ui-fixes (bugs y accesibilidad sobre lo que NO se rediseña, más
+  los helpers puros de `presentacion.py` que las otras dos consumen) -> F-feed-filtros (backend
+  puro, sin plantillas) -> F-feed-ui (reescritura de `index.html` y `_card_oportunidad.html` +
+  `app/api/static/app.css` montado con `StaticFiles`).
+- El prompt de F-feed-ui se escribe **cuando F-feed-filtros esté auditada**, para poder citar las
+  firmas reales en vez de inventarlas.
+- Los conteos por faceta se calculan **en Python sobre el conjunto ya cargado. Ninguna query SQL
+  nueva**: seis agregados por carga contra Neon free es exactamente el patrón que ya agotó CU-horas.
+- Paginación (20 por página) cuando `agrupar_por` es `"ninguno"` (valor nuevo); cap por grupo cuando
+  el usuario agrupa. El default de la ruta sigue en `"motivo"` hasta F-feed-ui, para no dejar el
+  dashboard actual mostrando una lista plana dentro de un acordeón de un solo ítem.
+- Sin sistema de diseño: los dos que la cuenta tiene son de Caminatas y este es otro producto.
+- Tipografía: el stack del sistema, **no Inter** — incompatible con mantener la referencia visual
+  actual, y de las dos cosas la tipografía era la prescindible.
+
+### Abierto al cierre
+- ~~**Correr F-ui-fixes en Claude Code y auditarla.**~~ Corrida el 21-sep-2026 (ver abajo); falta la
+  auditoría manual en navegador.
+- **`fecha_cierre`: huso indeterminado — NO etiquetar la hora todavía.** Ver
+  "Hallazgo de zona horaria" más abajo. F-feed-filtros lo necesita para comparar el rango de cierre.
+- **Confirmar `suspendida` en la familia `SIN_EFECTO`** — única asignación discutible del mapa de 6
+  familias de `EstadoOportunidad`.
+- Lienzo de diseño del dashboard: Artifact de tipo Design, un artboard a 1440x1640. Faltan el estado
+  vacío del feed, la versión móvil del panel de filtros y la ficha de licitación.
+- Siguen abiertos de la sesión anterior: rotar `JOBS_TOKEN`, borrar `_to_delete/_mp_snapshot.tar.gz`,
+  commitear los docs sin trackear, y la limpieza de argentinismos.
+
+---
+
+## Hallazgo de zona horaria de `fecha_cierre` (F-ui-fixes §2.5, 21-sep-2026)
+
+F-ui-fixes exigía verificar el almacenamiento **antes** de etiquetar la hora de cierre. Resultado:
+la etiqueta **no se agregó** y la conversión **no se hizo**, porque el huso no quedó verificado.
+
+**Verificado [V] — fuente primaria: el código de la app.**
+
+1. La columna es naive. `app/models/tables.py:110` (Licitacion) y `:179` (CompraAgil) declaran
+   `mapped_column(DateTime)` **sin** `timezone=True`: Postgres guarda `timestamp without time
+   zone` y el objeto Python no lleva `tzinfo`. No hay offset almacenado en ninguna parte.
+2. En licitaciones la hora es **fabricada**. `parse_fecha_v1` (`app/clients/types.py:29`) devuelve
+   un `date` — v1 entrega `ddmmaaaa`, o ISO que el parser recorta a `[:10]` — y
+   `_fecha_a_dt` (`app/ingest/licitaciones.py:25`) lo expande a `datetime(y, m, d)`. El
+   `%H:%M` que la ficha muestra para una licitación es siempre **00:00**, y no es un dato de la
+   fuente. Esto es peor que un problema de huso: no hay hora que convertir.
+3. En Compra Ágil el offset se descarta. `parse_fecha_iso` (`app/clients/types.py:50`) hace
+   `.rstrip("Z")` y prueba solo `%Y-%m-%dT%H:%M:%S[.%f]` y `%Y-%m-%d`. Un valor con offset
+   explícito (`...-04:00`) no calza con ningún formato y devuelve `None`; uno con `Z` pierde la
+   marca de UTC. El huso nunca llega a la BD.
+
+**No verificado [I] — falta fuente primaria.** A qué huso se refieren los valores ISO que devuelve
+`api2.mercadopublico.cl` en `fechas.fecha_cierre`. Los fixtures de `tests/test_clients.py` son
+sintéticos (los escribimos nosotros), y `docs/01-analisis-api-mercado-publico.md` no lo declara:
+su línea 163 dice "fechas a ISO/UTC" como **recomendación de normalización**, no como observación
+de la respuesta real. Verificarlo exige una respuesta real de la API o su documentación oficial.
+
+**Decisión:** por regla 20/23, no se escribe "hora de Chile" como hecho sin verificarlo, así que la
+ficha quedó igual que antes (sin sufijo de huso). Pendiente para una fase propia, con tests:
+
+- Capturar una respuesta real de v2 y comparar `fecha_cierre` contra la hora de cierre que muestra
+  el portal para esa misma Compra Ágil. Eso decide UTC vs. local.
+- Según el resultado: guardar `timezone=True` y convertir en la capa de presentación, o etiquetar.
+- Aparte y anterior: decidir qué mostrar como hora de cierre de una **licitación**, dado que hoy
+  el 00:00 es inventado por `_fecha_a_dt`. Ocultar la hora es lo honesto mientras v1 no la entregue.
+
+---
+
+## Última sesión — 21-sep-2026 (leer esto primero)
+
+**Estado al cierre:** ingesta **detenida desde ~00:30 del 21-sep**. La app está sana; el que
+falla es el disparador. Decidido y documentado el paso a GitHub Actions; tres prompts listos
+para correr en Claude Code.
+
+### Verificado — cambia decisiones
+
+**1. El 429 no viene de la app ni de la cuota de ChileCompra.** [V] Los 6 crons de
+cron-job.org más el monitor pasaron a `429 Too Many Requests` entre el 20-sep 21:00 y el
+21-sep 00:00 (hora Chile). Evidencia: (a) `grep` en `app/api/` y `app/core/` da **cero**
+`status_code=429` — el único rate-limit propio es el de login; (b) también rebota
+`GET /api/salud/jobs`, que es público, sin token y sin cuota; (c) ese mismo endpoint
+responde **200** a fetches externos en el momento de los fallos, con el switch en verde;
+(d) los rechazos tardan 226–614 ms, imposible para un arranque en frío de Render (30+ s);
+(e) una **ejecución de prueba** disparada desde el propio cron-job.org dio **200 OK** con
+`Server: cloudflare` y `x-render-origin-server: uvicorn`.
+**Conclusión [V]:** limita Cloudflare, en el borde de Render, contra las requests del
+*scheduler* de cron-job.org. Render documenta que su protección es Cloudflare y que no se
+pueden aflojar sus reglas de plataforma.
+**[I] sin confirmar:** que sea limitación por IP del pool compartido de cron-job.org. Encaja
+con que la ejecución de prueba —que sale por otra infra— pase sin problema.
+Esto **refuerza** la hipótesis que el 20-sep quedó marcada [I]: el HTML del 17-jul era
+probablemente Cloudflare, no la página de arranque en frío de Render.
+
+**2. El repo es PÚBLICO** (`github.com/basuazo/app_mercado_publico`). [V] Cambia dos cosas:
+Actions es gratis e **ilimitado** (el techo de 2.000 min/mes no aplica), y los **logs de las
+corridas son públicos** — de ahí que el `repr=False` de `Settings` (deuda A1) entre en la
+fase 1 y no después.
+
+**3. El CLI ya sirve tal como está.** [V] `app/ingest/__main__.py` envuelve cada job en
+`_run_with_lock`, así que por el camino del CLI el advisory lock se sigue tomando, `job_runs`
+se sigue escribiendo y `/api/salud/jobs` sigue funcionando **sin tocar una línea**. Lo único
+que no tiene son los compuestos `ciclo-ca`/`ciclo-activas` (viven en `_secuencia` del
+endpoint): se resuelven como secuencia de pasos en el workflow, sin código nuevo.
+
+**4. Bug de configuración, aparte del 429.** [V] El cron `Activas + detalles + match +
+alertas` tenía la URL literal `...?job=<ciclo-activas>`, con los signos `<>` adentro
+(verificado en el campo URL del formulario). Habría fallado igual sin el 429. El test
+`tests/test_workflows.py` de la fase 1 existe para que no se repita del lado de Actions.
+
+**5. El CLI sale 0 aunque el job falle.** [V] Descubierto el 21-sep al disparar `ciclo-ca` a
+mano: la API v2 devolvió `504 Endpoint request timed out` en la pág. 1 de CA y el job murió,
+pero `_run_with_lock` atrapa la excepción, la registra en `job_runs` como "error" y
+**devuelve None sin propagar**; `cmd_run_once` imprime ese None y termina en 0. Llevado a
+Actions, todas las corridas saldrían verdes para siempre y el correo de fallo de GitHub
+—la red de seguridad del modelo nuevo— nunca se dispararía. Ya estaba anotado como pendiente
+("exit codes del CLI") en el prompt de F-invertir-modelo. **Corregido en
+`docs/prompt-F-actions-1-canary.md` §3** (parámetro `propagar` en `_run_with_lock`, solo el
+CLI lo usa; "omitido" por lock ocupado sigue saliendo 0).
+
+**6. `_secuencia` NO corta la cadena ante un error.** [V] Mismo incidente: `ca` falló con 504
+y `match` y `alerts` corrieron igual, porque `_run_with_lock` no propaga. Consecuencia para
+Actions: el loop del workflow **no** debe usar `set -e` — tiene que seguir con los jobs
+siguientes y salir 1 al final si alguno falló. Corregido en el mismo prompt, §2.f.
+
+### Decisiones tomadas
+- **F-actions por la variante A: Actions ejecuta el CLI contra Neon directo**, no `curl` al
+  endpoint. Motivo: no pasa por Render ni por Cloudflare, así que es inmune a lo que acaba de
+  pasar. Descartada la variante B (curl desde Actions) porque las IPs de GitHub cruzan el
+  mismo borde.
+- **El repo queda público.** Los minutos ilimitados pesan más que el riesgo de log, que ya
+  cubren dos capas: el enmascarado automático de GitHub sobre los valores registrados como
+  secret, y el `_SecretFilter` propio (que ya incluye `DATABASE_URL` y `MP_TICKET`).
+- **`POST /api/jobs/run` se queda** como escotilla manual. `JOBS_TOKEN` deja de bloquear
+  F-actions (el CLI no lo usa), pero su rotación sigue pendiente.
+
+### Prompts listos para Claude Code (sin correr)
+- `docs/prompt-F-actions-1-canary.md` — `repr=False`, `_job.yml` reutilizable, canario
+  `ciclo-ca` manual, `tests/test_workflows.py`.
+- `docs/prompt-F-actions-2-horarios.md` — los 5 workflows restantes y los `schedule` en UTC,
+  con guardia de hora Chile para `resumen` (el cron de GitHub es solo UTC y Chile alterna
+  UTC−3/UTC−4).
+- `docs/prompt-F-actions-3-cutover.md` — `check-jobs` en el CLI, workflow de vigilancia,
+  apagado de cron-job.org y cierre documental.
+
+### Abierto al cierre
+- **Riesgo nuevo que hereda el modelo:** GitHub **deshabilita los workflows programados tras
+  60 días sin actividad en el repo**, en silencio. Es la misma muerte del pinger el 17-jul.
+  Por eso hace falta un monitor **fuera del repo** sobre `/api/salud/jobs`, no solo el
+  workflow de vigilancia.
+- **Trampa al cargar secrets:** el `.env` local tiene `DATABASE_URL` en el branch **dev** de
+  Neon; en Actions va el de **production** (`DATABASE_URL_PROD`).
+- **Sin verificar:** que `_make_engine` del CLI conecte a Neon desde fuera de la máquina de
+  Boris (el `connect_args={"sslmode": "require"}` nunca corrió ahí). Es lo que prueba el
+  canario de la fase 1.
+- Siguen abiertas de antes: `F-cuota` (los tres bugs del 429 interno), `F-secretos`,
+  borrar `_to_delete/_mp_snapshot.tar.gz` (agravado por ser repo público), y la limpieza de
+  argentinismos.
+
+---
+
 ## Última sesión — 20-sep-2026 (leer esto primero)
 
 **Estado al cierre:** app arriba y **la ingesta volvió a correr y actualizarse** tras
@@ -68,17 +264,18 @@ el deploy, `/api/salud/jobs` responde. Tras disparar `job=all` + `job=ca`, el sw
 ### Abierto al cierre
 - **ROTAR `JOBS_TOKEN`** (prioridad): el token de producción se pegó en el chat (riesgo A1
   [CRÍTICO-1], aún abierto). Cambiarlo en los TRES lados que deben coincidir: variable en
-  Render, header `X-Jobs-Token` de los crons que disparan jobs (job-all/job-ca), y `.env`.
+  Render, header `X-Jobs-Token` de los **6 crons que disparan jobs** (`ciclo-ca`, `ciclo-activas`, `nocturno`, `resumen`, `retencion`, `catalogos` — `job-all` quedó pausado), y `.env`.
 - **Borrar `_to_delete/_mp_snapshot.tar.gz`**: NO está en `.gitignore` y contiene `.env` con
   secretos de producción. Nunca hacer `git add -A` mientras exista.
-- **Commitear los docs** (fuera del commit de código): `docs/00-estado-actual.md`,
-  `docs/prompt-F-observabilidad.md` — commit `docs:` aparte.
+- **Commitear los docs** (fuera de los commits de código): `docs/00-estado-actual.md` y los
+  `docs/prompt-F-*.md` sin trackear (observabilidad, invertir-modelo, y secretos si sigue sin
+  commitear) — un commit `docs:` aparte. NO usar `git add -A` (arrastra `_to_delete/`).
 - **Verificar la 1ª purga de retención** (~03:00, ahora que el commit-fix está vivo): mirar
   tamaño de BD en `/api/salud` antes/después; el conteo alto es esperado, no un bug.
 - **Limpieza de argentinismos** (pedido de Boris, 20-sep): la app (textos de UI/plantillas) y
   docs/código tienen expresiones argentinas; Boris es chileno. Corregir a español chileno
   (sin voseo). Fase aparte, candidata a prompt de Claude Code.
-### F-invertir-modelo — IMPLEMENTADA Y AUDITADA (commit `d671dab`, SIN desplegar)
+### F-invertir-modelo — DESPLEGADA, CUTOVER EJECUTADO (commit `d671dab`, 20-sep)
 Verde: ruff/mypy limpios, pytest 578 passed / 20 skip (9 tests nuevos). Flag
 `scheduler_en_proceso` (env `SCHEDULER_EN_PROCESO`) default False → el lifespan no arranca el
 BackgroundScheduler y `app.state.scheduler=None`; el `yield` queda fuera del `if` (la app
@@ -87,18 +284,23 @@ arranca igual), shutdown guardado, import de `build_scheduler` lazy. Jobs compue
 `_secuencia`, reusando las entradas `_locked` → job_runs y el watchlist intactos.
 `_make_app`/factory/startCommand/render.yaml sin tocar. Auditado, correcto.
 
-**Cutover seguro — OJO con el orden (los compuestos NO existen hasta desplegar `d671dab`):**
-1. En Render, poner `SCHEDULER_EN_PROCESO=true` y desplegar `d671dab`: el código nuevo queda
-   vivo (los compuestos ya existen) pero el scheduler interno sigue corriendo → cero cambio de
-   comportamiento, cero gap de ingesta.
-2. Configurar los crons (`ciclo-ca`, `ciclo-activas`, `nocturno`, `resumen`, `retencion`,
-   `catalogos`) en cron-job.org con la cadencia de `docs/prompt-F-invertir-modelo.md`;
-   test-run de cada uno → 200 y OK en `/api/salud/jobs`. Scheduler y crons conviven; el
-   advisory lock deduplica, no hay trabajo doble.
-3. Quitar `SCHEDULER_EN_PROCESO` de Render (→ default False) y redeploy → scheduler apagado,
-   los crons manejan todo, el proceso duerme entre disparos.
-4. Apagar el pinger keep-alive. Ajustar el monitor con timeout+reintentos (cold-start).
-5. Vigilar `/api/salud/jobs` un día.
+**Cutover ejecutado (20-sep) — el modelo quedó cron-driven:**
+- Desplegado `d671dab`. En cron-job.org quedaron **6 crons activos con horario en
+  America/Santiago** (POST a `/api/jobs/run?job=<X>` con header `X-Jobs-Token`):
+  `CA + match + alertas` (`ciclo-ca`, 08–20 c/2h), `Activas + detalles + match + alertas`
+  (`ciclo-activas`, 08:10/13:10/18:10), `Ciclo nocturno` (`nocturno`, 01:00),
+  `Resumen por correo` (`resumen`, 08:30), `Retención (purga)` (`retencion`, 03:00),
+  `Catálogos` (`catalogos`, lunes 02:30).
+- `mp-oportunidades job-all` y `mp-oportunidades pinger`: **pausados**. El scheduler interno ya
+  no es el motor; el cron dispara y el proceso duerme entre disparos.
+- `/api/salud/jobs` en verde con corridas reales de cron (`ca`/`resumen` refrescados por sus
+  crons el 20-sep).
+- **Falta confirmar/afinar:** (a) que `SCHEDULER_EN_PROCESO` NO quede en Render (si se puso en
+  `true` para desplegar sin gap, quitarla → default False; con el pinger apagado el scheduler
+  igual muere al dormirse, pero conviene dejar limpio); (b) el monitor `GET Jobs` a cada 1–2 h
+  con timeout 30–60 s + reintentos (por el cold-start, ahora que el proceso duerme); (c) mañana
+  al mediodía, ver `activas`/`datos-abiertos` con OK de sus crons (no del run manual) = modelo
+  andando solo.
 
 ---
 

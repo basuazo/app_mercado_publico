@@ -22,6 +22,7 @@ from app.api.deps import (
     html_require_admin,
     html_require_user,
 )
+from app.api.presentacion import banda_relevancia, registrar_filtros
 from app.api.query import (
     AGRUPAR_POR_VALIDOS,
     agrupar_oportunidades,
@@ -77,6 +78,7 @@ _log = get_logger(__name__)
 _TZ_CHILE = ZoneInfo("America/Santiago")
 _PAC_PAGE_SIZE = 100
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+registrar_filtros(_TEMPLATES.env)
 
 
 def _match_perfil_background(engine: Engine, perfil_id: int) -> None:
@@ -243,6 +245,8 @@ async def oportunidad_detalle(
     from app.api.presentacion import nombre_region, razones_legibles
     from app.api.query import _url_ficha, mostrar_ficha_oficial
 
+    settings = request.app.state.settings
+
     url_ficha = _url_ficha(fuente, codigo)
     seguimiento = obtener_seguimiento(session, user.id, fuente, codigo)
 
@@ -284,6 +288,11 @@ async def oportunidad_detalle(
             request,
             user,
             match=match,
+            # Misma definición de "alta"/"media" que los presets del feed:
+            # el badge de la ficha ya no puede contradecir al filtro (2.2).
+            banda=banda_relevancia(
+                match.score, _RELEVANCIA_ALTA, settings.feed_min_score_default
+            ),
             oportunidad=op,
             fuente=fuente,
             url_ficha=url_ficha,

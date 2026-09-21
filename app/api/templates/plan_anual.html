@@ -46,29 +46,29 @@
 <div class="alert alert-warning">Sin plan publicado este año para esta institución.</div>
 {% elif lineas %}
 <p class="text-muted small">
-  {{ total_filas }} línea(s) — total estimado: ${{ '{:,.0f}'.format(total_estimado) }}
+  {{ total_filas }} línea(s) — total estimado: <span class="num">{{ total_estimado | clp }}</span>
   — página {{ pagina }}/{{ total_paginas }}
 </p>
 <div class="table-responsive">
   <table class="table table-sm table-striped align-middle">
     <thead>
       <tr>
-        <th>Descripción</th>
-        <th class="text-end">Cantidad</th>
-        <th class="text-end">Monto unitario</th>
-        <th class="text-end">Monto estimado</th>
-        <th>Mes</th>
-        <th>Trimestre</th>
-        <th>Estado</th>
+        <th scope="col">Descripción</th>
+        <th scope="col" class="text-end">Cantidad</th>
+        <th scope="col" class="text-end">Monto unitario</th>
+        <th scope="col" class="text-end">Monto estimado</th>
+        <th scope="col">Mes</th>
+        <th scope="col">Trimestre</th>
+        <th scope="col">Estado</th>
       </tr>
     </thead>
     <tbody>
       {% for l in lineas %}
       <tr>
         <td>{{ l.descripcion_producto }}</td>
-        <td class="text-end">{% if l.cantidad_estimada is not none %}{{ '{:,.0f}'.format(l.cantidad_estimada) }}{% else %}—{% endif %}</td>
-        <td class="text-end">{% if l.monto_unitario_clp is not none %}${{ '{:,.0f}'.format(l.monto_unitario_clp) }}{% else %}—{% endif %}</td>
-        <td class="text-end">{% if l.monto_estimado_clp is not none %}${{ '{:,.0f}'.format(l.monto_estimado_clp) }}{% else %}—{% endif %}</td>
+        <td class="text-end num">{{ l.cantidad_estimada | numero }}</td>
+        <td class="text-end num">{% if l.monto_unitario_clp is not none %}{{ l.monto_unitario_clp | clp }}{% else %}—{% endif %}</td>
+        <td class="text-end num">{% if l.monto_estimado_clp is not none %}{{ l.monto_estimado_clp | clp }}{% else %}—{% endif %}</td>
         <td>{{ l.mes_estimado or '—' }}</td>
         <td>{{ l.trimestre_estimado or '—' }}</td>
         <td>{{ l.estado_planificacion }}</td>

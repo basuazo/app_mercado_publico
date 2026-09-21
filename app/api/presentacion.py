@@ -30,6 +30,47 @@ def nombre_region(codigo: int | None) -> str | None:
     return nombre
 
 
+def formato_clp(valor: float | int | None) -> str:
+    """Monto en pesos chilenos con punto como separador de miles.
+
+    None -> "No informado": el organismo no lo publica con frecuencia y el
+    hueco se lee como error de la aplicación.
+    """
+    if valor is None:
+        return "No informado"
+    return "$" + f"{valor:,.0f}".replace(",", ".")
+
+
+def formato_numero(valor: float | int | None) -> str:
+    """Cantidad sin símbolo de moneda, mismo separador. None -> '—'."""
+    if valor is None:
+        return "—"
+    return f"{valor:,.0f}".replace(",", ".")
+
+
+def banda_relevancia(score: float, corte_alta: int, corte_media: int) -> str:
+    """'alta' | 'media' | 'baja', con los mismos cortes que los presets del feed.
+
+    Los cortes los pasa quien renderiza (la ruta), que es donde vive la única
+    definición de "alta" y "media"; aquí no se duplican valores.
+    """
+    if score >= corte_alta:
+        return "alta"
+    if score >= corte_media:
+        return "media"
+    return "baja"
+
+
+def registrar_filtros(env: Any) -> None:
+    """Registra los formateadores como filtros Jinja (`clp`, `numero`).
+
+    Recibe el `Environment` de un `Jinja2Templates`; se tipa como Any para que
+    este módulo siga sin depender de la capa web.
+    """
+    env.filters["clp"] = formato_clp
+    env.filters["numero"] = formato_numero
+
+
 def _campo_legible(campo: str) -> str:
     return {
         "nombre": "el título",
@@ -42,8 +83,13 @@ def razones_legibles(razones: dict[str, Any] | None) -> list[str]:
     """Traduce el dict de razones del match a frases para mostrar al usuario.
 
     El dict proviene del motor de matching y puede contener:
-    keywords_hit (list[str]), campo_hit (str), dias_al_cierre (float),
-    ofertas (int|None), monto_no_informado (bool).
+    keywords_hit (list[str]), campo_hit (str), ofertas (int|None),
+    monto_no_informado (bool), categorias_hit (list[str]),
+    organismo_seguido (bool).
+
+    `dias_al_cierre` se ignora a propósito: la cercanía del cierre ya la
+    muestra el badge de cierre de la tarjeta y de la ficha, y repetirla aquí
+    decía el mismo dato dos veces en el mismo bloque visual.
     """
     if not razones:
         return []
@@ -55,20 +101,6 @@ def razones_legibles(razones: dict[str, Any] | None) -> list[str]:
         kws = ", ".join(str(k) for k in keywords_hit)
         campo = _campo_legible(str(razones.get("campo_hit", "")))
         frases.append(f"Coincide en {campo} con: {kws}")
-
-    dias = razones.get("dias_al_cierre")
-    if dias is not None:
-        try:
-            d = float(dias)
-        except (TypeError, ValueError):
-            d = None
-        if d is not None:
-            if d < 1:
-                frases.append("Cierra hoy")
-            elif d <= 7:
-                frases.append(f"Cierra pronto: {round(d)} día(s) para el cierre")
-            else:
-                frases.append(f"{round(d)} días para el cierre")
 
     ofertas = razones.get("ofertas")
     if ofertas is not None:

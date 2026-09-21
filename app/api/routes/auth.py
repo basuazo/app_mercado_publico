@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.presentacion import registrar_filtros
 from app.auth.password import verify_password
 from app.auth.rate_limit import clear_attempts, is_rate_limited, record_failed_attempt
 from app.auth.session import COOKIE_NAME, create_session_token
@@ -18,6 +19,7 @@ from app.models.tables import Usuario
 
 router = APIRouter()
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+registrar_filtros(_TEMPLATES.env)
 
 _SESSION_MAX_AGE = 7 * 24 * 3600
 

@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MP Oportunidades{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <style>
+    /* Dígitos de igual ancho: las columnas de montos y cantidades quedan
+       alineadas. El archivo estático lo crea F-feed-ui; por ahora, inline. */
+    .num { font-variant-numeric: tabular-nums; }
+  </style>
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
 </head>
 <body
@@ -12,32 +17,49 @@
   hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
   {% endif %}
 >
+<a class="visually-hidden-focusable position-absolute top-0 start-0 m-2 p-2 bg-light text-dark rounded" href="#contenido">Saltar al contenido</a>
+
+{% set ruta_actual = request.url.path if request else '' %}
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
     <a class="navbar-brand" href="/">MP Oportunidades</a>
     {% if current_user is defined %}
-    <div class="d-flex align-items-center gap-3">
-      <span class="text-light small">{{ current_user.email }}</span>
-      {% if current_user.rol == 'admin' %}
-        <a class="btn btn-sm btn-outline-warning" href="/admin/usuarios">Admin</a>
-        <a class="btn btn-sm btn-outline-info" href="/salud">Salud</a>
-      {% endif %}
-      <a class="btn btn-sm btn-outline-light" href="/perfiles">Perfiles</a>
-      <a class="btn btn-sm btn-outline-light" href="/seguidas">Alertas activas</a>
-      <a class="btn btn-sm btn-outline-light" href="/plan-anual">Plan Anual</a>
-      <button type="button" class="btn btn-sm btn-outline-light" data-open-novedades>Novedades</button>
-      <form method="post" action="/logout" class="m-0">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn btn-sm btn-outline-danger">Salir</button>
-      </form>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+            data-bs-target="#nav-principal" aria-controls="nav-principal"
+            aria-expanded="false" aria-label="Abrir navegación">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav-principal">
+      <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-2 gap-lg-3 ms-lg-auto mt-2 mt-lg-0">
+        <span class="text-light small">{{ current_user.email }}</span>
+        {% if current_user.rol == 'admin' %}
+          <a class="btn btn-sm btn-outline-warning{% if ruta_actual == '/admin/usuarios' %} active{% endif %}"
+             href="/admin/usuarios"{% if ruta_actual == '/admin/usuarios' %} aria-current="page"{% endif %}>Admin</a>
+          <a class="btn btn-sm btn-outline-info{% if ruta_actual == '/salud' %} active{% endif %}"
+             href="/salud"{% if ruta_actual == '/salud' %} aria-current="page"{% endif %}>Salud</a>
+        {% endif %}
+        <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/perfiles' %} active{% endif %}"
+           href="/perfiles"{% if ruta_actual == '/perfiles' %} aria-current="page"{% endif %}>Perfiles</a>
+        <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/seguidas' %} active{% endif %}"
+           href="/seguidas"{% if ruta_actual == '/seguidas' %} aria-current="page"{% endif %}>Alertas activas</a>
+        <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/plan-anual' %} active{% endif %}"
+           href="/plan-anual"{% if ruta_actual == '/plan-anual' %} aria-current="page"{% endif %}>Plan Anual</a>
+        <button type="button" class="btn btn-sm btn-outline-light" data-open-novedades>Novedades</button>
+        <form method="post" action="/logout" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn btn-sm btn-outline-light">Salir</button>
+        </form>
+      </div>
     </div>
     {% endif %}
   </div>
 </nav>
 
-<div class="container py-4">
+<main id="contenido" class="container py-4">
   {% block content %}{% endblock %}
-</div>
+</main>
+
+<div id="anuncios" role="status" aria-live="polite" class="visually-hidden"></div>
 
 {% if current_user is defined %}
   {% include "_onboarding_modals.html" %}
@@ -46,6 +68,44 @@
 <footer class="text-center text-muted small py-3 border-top">
   Fuente: Dirección ChileCompra
 </footer>
+
+<script>
+  // Accesibilidad de los swaps de HTMX (WCAG 4.1.3 y 2.4.3):
+  //  - se anuncia en #anuncios el data-anuncio que traiga el nodo nuevo;
+  //  - el foco vuelve al mismo control (mismo data-accion) en vez de caer al body.
+  (function () {
+    var accionPendiente = null;
+
+    document.body.addEventListener("htmx:beforeRequest", function (evt) {
+      var origen = evt.detail && evt.detail.elt;
+      var control = origen && origen.closest ? origen.closest("[data-accion]") : null;
+      if (!control && document.activeElement && document.activeElement.closest) {
+        control = document.activeElement.closest("[data-accion]");
+      }
+      accionPendiente = control ? control.getAttribute("data-accion") : null;
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+      var nodo = evt.detail && evt.detail.target;
+      if (!nodo || !nodo.querySelector) return;
+
+      var region = document.getElementById("anuncios");
+      if (region) {
+        var portador = nodo.hasAttribute && nodo.hasAttribute("data-anuncio")
+          ? nodo
+          : nodo.querySelector("[data-anuncio]");
+        if (portador) region.textContent = portador.getAttribute("data-anuncio");
+      }
+
+      if (accionPendiente) {
+        var sel = '[data-accion="' + accionPendiente.replace(/"/g, '\\"') + '"]';
+        var destino = (nodo.matches && nodo.matches(sel)) ? nodo : nodo.querySelector(sel);
+        if (destino) destino.focus();
+        accionPendiente = null;
+      }
+    });
+  })();
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
 </body>
