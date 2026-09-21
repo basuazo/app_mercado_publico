@@ -16,6 +16,16 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 21),
+        titulo="La búsqueda deja de insistir cuando la fuente la rechaza",
+        descripcion=(
+            "Cuando Mercado Público nos cerraba la puerta por el día, la app seguía "
+            "pidiendo datos igual y gastaba el cupo diario sin traerse nada. Ahora se "
+            "detiene apenas aparece el rechazo, guarda lo que alcanzó a bajar y el "
+            "contador de consultas del día refleja el uso real."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 21),
         titulo="Mejoras de navegación, formato de montos y accesibilidad",
         descripcion=(
             "Arreglamos la navegación en celulares, los montos ahora se muestran en "

@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
+from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.types import LicitacionBasica, LicitacionDetalle
 from app.core.db_retry import commit_con_retry
@@ -243,7 +244,25 @@ def fetch_detalles_pendientes(
             upsert_detalle(session, det, settings)
             session.commit()
             procesadas += 1
+        except (MPRateLimitError, QuotaExceededError, MPAuthError):
+            # Errores del CANAL, no de esta licitación: seguir el loop solo
+            # gasta cuota contra una API que ya nos está rechazando (regla 3).
+            # El progreso parcial queda guardado y el estado registra el corte.
+            session.rollback()
+            _log.warning(
+                "fetch_detalles: corte del canal tras %d detalle(s) — progreso parcial guardado",
+                procesadas,
+            )
+            _guardar_estado(
+                session,
+                "licitaciones_detalles",
+                ok=False,
+                requests_usadas=procesadas,
+            )
+            session.commit()
+            raise
         except Exception as exc:
+            # Errores de ESTA licitación (parseo, un código raro): el loop sigue.
             _log.warning("Error al pedir detalle %s: %s", lic.codigo, exc)
             session.rollback()
             errores += 1

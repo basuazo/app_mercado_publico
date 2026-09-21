@@ -6,6 +6,7 @@ import random
 import threading
 import time
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -64,6 +65,49 @@ def _seconds_until_next_day_chile() -> int:
     now = datetime.now(_TZ_CHILE)
     next_day = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
     return max(0, int((next_day - now).total_seconds())) + 60
+
+
+# Cabeceras que, si la API las manda, dicen cuánto esperar de verdad. Se
+# registran para saber qué entrega realmente Mercado Público: hoy no lo sabemos.
+_HEADERS_DE_CUOTA = ("retry-after", "x-ratelimit-", "ratelimit-", "x-rate-limit-")
+
+
+def _headers_de_cuota(headers: object) -> dict[str, str]:
+    """Subconjunto de cabeceras de RESPUESTA relacionadas con límites de tasa.
+
+    Nunca se leen cabeceras de request: ahí viaja el ticket (regla 1).
+    """
+    try:
+        items = list(headers.items())  # type: ignore[attr-defined]
+    except Exception:
+        return {}
+    return {
+        str(k): str(v)
+        for k, v in items
+        if str(k).lower().startswith(_HEADERS_DE_CUOTA)
+    }
+
+
+def _parse_retry_after(valor: str | None) -> int | None:
+    """`Retry-After` en segundos o como fecha HTTP. None si no se puede leer.
+
+    RFC 9110 admite las dos formas; la API todavía no sabemos cuál usa, si es
+    que manda alguna.
+    """
+    if not valor:
+        return None
+    crudo = valor.strip()
+    if crudo.isdigit():
+        return max(0, int(crudo))
+    try:
+        cuando = parsedate_to_datetime(crudo)
+    except (TypeError, ValueError):
+        return None
+    if cuando is None:
+        return None
+    if cuando.tzinfo is None:
+        cuando = cuando.replace(tzinfo=_TZ_CHILE)
+    return max(0, int((cuando - datetime.now(cuando.tzinfo)).total_seconds()))
 
 
 # ---------------------------------------------------------------------------
@@ -187,9 +231,29 @@ class BaseClient:
         if response.status_code == 401:
             raise MPAuthError("Ticket inválido o ausente (401)")
         if response.status_code == 429:
-            secs = _seconds_until_next_day_chile()
+            # Instrumentación (F-cuota): hasta ahora inventábamos "00:01 Chile"
+            # sin mirar la respuesta. No sabemos si la API manda Retry-After ni
+            # si distingue tope diario de limitación por tasa, así que primero
+            # registramos lo que llega de verdad.
+            #
+            # La POLÍTICA DE REINTENTO NO CAMBIA EN ESTA FASE: MPRateLimitError
+            # sigue sin reintentarse (regla 3). Con dos o tres días de estos
+            # logs se decide si la regla 3 se corrige.
+            cabeceras = _headers_de_cuota(response.headers)
+            cuerpo = response.text[:500]
+            _log.warning(
+                "HTTP 429 headers_cuota=%s body=%s",
+                cabeceras or "(ninguna)",
+                cuerpo,
+            )
+            secs = _parse_retry_after(response.headers.get("Retry-After"))
+            if secs is None:
+                secs = _seconds_until_next_day_chile()
+                origen = "00:01 Chile"
+            else:
+                origen = "Retry-After"
             raise MPRateLimitError(
-                f"Cuota agotada (429). Reintentar en {secs} s (00:01 Chile)",
+                f"Cuota agotada (429). Reintentar en {secs} s ({origen})",
                 retry_after_seconds=secs,
             )
         if response.status_code >= 500:
@@ -224,10 +288,16 @@ class BaseClient:
         while True:
             try:
                 _log.debug("HTTP %s %s", method, url)
-                response = self._http.request(method, url, **kwargs)  # type: ignore[arg-type]
-                data = self._handle_response(response)
-                self._quota.consume()
-                return data
+                try:
+                    response = self._http.request(method, url, **kwargs)  # type: ignore[arg-type]
+                finally:
+                    # Cuenta CADA request emitida, sea cual sea su desenlace:
+                    # 429, 504, timeout y cada reintento por separado. El
+                    # presupuesto de 9.000 es sobre lo que nosotros emitimos, no
+                    # sobre lo que sale bien; contar solo los éxitos hacía que
+                    # /api/salud informara un piso en vez del consumo real.
+                    self._quota.consume()
+                return self._handle_response(response)
             except (MPAuthError, MPRateLimitError, MPParseError):
                 raise
             except MPServerError:

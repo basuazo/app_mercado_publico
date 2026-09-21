@@ -20,6 +20,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
@@ -42,6 +43,11 @@ _TZ_CHILE = ZoneInfo("America/Santiago")
 
 # Clave para pg_advisory_lock — hash arbitrario de "mp_ingesta"
 _LOCK_KEY = 7_891_011
+
+# Errores que hablan del CANAL, no del ítem que se estaba pidiendo: ante
+# cualquiera de ellos hay que cortar el loop en vez de seguir gastando cuota
+# contra una API que ya nos está rechazando (regla 3).
+_ERRORES_DE_CANAL = (MPRateLimitError, QuotaExceededError, MPAuthError)
 
 
 # ---------------------------------------------------------------------------
@@ -155,29 +161,42 @@ def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
     if sin_lic or sin_ca:
         v1, v2 = _make_clients(settings, engine)
 
-        for codigo in sin_lic:
-            try:
-                with Session(engine) as session:
-                    det = v1.licitacion_detalle(codigo)
-                    upsert_detalle(session, det, settings)
-                    lic = session.get(Licitacion, codigo)
-                    if lic:
-                        lic.raw_json = asdict(det)
-                    session.commit()
-            except Exception:
-                _log.error("run_match: error fetching detalle licitacion %s", codigo, exc_info=True)
+        try:
+            for codigo in sin_lic:
+                try:
+                    with Session(engine) as session:
+                        det = v1.licitacion_detalle(codigo)
+                        upsert_detalle(session, det, settings)
+                        lic = session.get(Licitacion, codigo)
+                        if lic:
+                            lic.raw_json = asdict(det)
+                        session.commit()
+                except _ERRORES_DE_CANAL:
+                    raise
+                except Exception:
+                    _log.error(
+                        "run_match: error fetching detalle licitacion %s", codigo, exc_info=True
+                    )
 
-        for codigo in sin_ca:
-            try:
-                with Session(engine) as session:
-                    det_ca = v2.detalle_compra_agil(codigo)
-                    upsert_ca_detalle(session, det_ca)
-                    ca = session.get(CompraAgil, codigo)
-                    if ca:
-                        ca.raw_json = asdict(det_ca)
-                    session.commit()
-            except Exception:
-                _log.error("run_match: error fetching detalle CA %s", codigo, exc_info=True)
+            for codigo in sin_ca:
+                try:
+                    with Session(engine) as session:
+                        det_ca = v2.detalle_compra_agil(codigo)
+                        upsert_ca_detalle(session, det_ca)
+                        ca = session.get(CompraAgil, codigo)
+                        if ca:
+                            ca.raw_json = asdict(det_ca)
+                        session.commit()
+                except _ERRORES_DE_CANAL:
+                    raise
+                except Exception:
+                    _log.error("run_match: error fetching detalle CA %s", codigo, exc_info=True)
+        except _ERRORES_DE_CANAL as exc:
+            # El match ya está hecho y comiteado; lo que falta son los raw_json.
+            # Cortar el fetch y devolver el resultado del match, anotando el corte:
+            # insistir contra una API que nos rechaza solo quema cuota (regla 3).
+            _log.warning("run_match: corte del canal al traer detalles — %s", exc)
+            result["detalles_interrumpidos"] = True
 
     return result
 
@@ -293,7 +312,13 @@ def _run_with_lock(
     no cambia el valor de retorno ni puede hacer fallar el job.
     """
     iniciado_en = datetime.now(UTC).replace(tzinfo=None)
-    with engine.connect() as conn:
+    # AUTOCOMMIT a propósito: pg_advisory_lock es de SESIÓN, no de transacción,
+    # así que el lock se mantiene igual mientras la conexión viva. Con una
+    # transacción abierta, en cambio, esta conexión quedaba "idle in
+    # transaction" durante todo fn() y Neon la mataba por
+    # idle_in_transaction_session_timeout: el lock se soltaba a mitad de la
+    # corrida y la garantía de la regla 13 se perdía en los jobs largos.
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         acquired = try_lock_fn(conn, _LOCK_KEY)
         if not acquired:
             _log.info("job=%s: advisory lock ocupado — ciclo omitido", job_name)

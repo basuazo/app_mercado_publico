@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
+from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
@@ -80,6 +81,16 @@ def refresh_estados(
             session.commit()
             actualizadas_lic += 1
             budget_restante -= 1
+        except (MPRateLimitError, QuotaExceededError, MPAuthError):
+            # Error del canal: cortar. Lo ya comiteado queda; seguir el loop
+            # solo gastaría cuota contra una API que nos rechaza (regla 3).
+            session.rollback()
+            _log.warning(
+                "lifecycle: corte del canal tras lic=%d ca=%d — progreso parcial guardado",
+                actualizadas_lic,
+                actualizadas_ca,
+            )
+            raise
         except Exception as exc:
             _log.warning("lifecycle: error lic %s: %s", lic.codigo, exc)
             session.rollback()
@@ -114,6 +125,14 @@ def refresh_estados(
             session.commit()
             actualizadas_ca += 1
             budget_restante -= 1
+        except (MPRateLimitError, QuotaExceededError, MPAuthError):
+            session.rollback()
+            _log.warning(
+                "lifecycle: corte del canal tras lic=%d ca=%d — progreso parcial guardado",
+                actualizadas_lic,
+                actualizadas_ca,
+            )
+            raise
         except Exception as exc:
             _log.warning("lifecycle: error CA %s: %s", ca.codigo, exc)
             session.rollback()
