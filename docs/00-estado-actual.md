@@ -12,21 +12,22 @@ arreglar el disparador. El código no estaba roto; lo roto era el cron externo.
 
 ### Verificado — cambia decisiones
 
-**1. Causa raíz del corte del 17-jul CONFIRMADA: el edge devolvía HTML al UA-bot de
-cron-job.org, no el JSON.** El `/api/salud/ping` devuelve 15 bytes (`{"status":"ok"}`,
-verificado con fetch externo a cliente genérico), así que la "salida demasiado grande" que
-cron-job.org marcó el 17-jul NO puede ser el JSON: recibió una página HTML (desafío
-anti-bot de Cloudflare —ya visto en navegador en `docs/11` §2— o la página de cold-start de
-Render) contra el User-Agent `Mozilla/4.0 (compatible; cron-job.org; .../abuse/)`. Cadena:
-ping falla "output too large" → cron-job.org **deshabilita** el pinger (17-jul) → sin
-keep-alive → Render free duerme a los 15 min → APScheduler (dentro del proceso web) muere
-con él → cero ingesta. El job-all nocturno pegaba después contra la instancia dormida →
-"error HTTP" → también quedó inactivo (12-ago). Cierra las hipótesis 3 y 4 de `docs/11` §2.
+**1. Causa raíz del corte del 17-jul — mecanismo confirmado, causa del HTML NO.** El
+`/api/salud/ping` devuelve 15 bytes (`{"status":"ok"}`, verificado con fetch externo), así
+que la "salida demasiado grande" que cron-job.org marcó el 17-jul no puede ser el JSON [V]:
+recibió una página HTML. Cadena verificada [V]: cron-job.org **deshabilita** el pinger tras
+esa falla (17-jul) → sin keep-alive → Render free duerme a los 15 min → APScheduler (dentro
+del proceso web) muere con él → cero ingesta; el job-all nocturno pegaba contra la instancia
+dormida → "error HTTP" → inactivo (12-ago). Lo que quedó **[I], sin confirmar**: si ese HTML
+era un desafío de Cloudflare al UA-bot o la página de cold-start de Render.
 
-**2. Capa 1 (arreglo operativo, sin código) aplicada y funcionando:** en cron-job.org se
-cambió el User-Agent del pinger/job-all a uno de navegador y se re-habilitaron. La ingesta
-está corriendo de nuevo (20-sep). El UA de navegador es requisito permanente para todo cron
-que le pegue a la app (Cloudflare delante de Render bloquea el UA-bot).
+**2. CORRECCIÓN — lo que revivió la ingesta NO fue cambiar el User-Agent.** Verificado el
+20-sep: **ningún cron tiene User-Agent custom** y aun así job-all da 200 y el switch se puso
+verde con corridas reales → con el UA por defecto de cron-job.org las requests pasan al
+origen hoy. O sea, Cloudflare no está bloqueando ese UA ahora, y la teoría del UA-block
+(punto 1) queda debilitada. Lo que revivió la ingesta fue **re-habilitar los crons**
+deshabilitados, no un cambio de UA. El UA de navegador queda solo como recurso de reserva si
+un cron vuelve a fallar con un 403/503 raro.
 
 **3. El endpoint ya está listo para el modelo invertido.** `POST /api/jobs/run` expone los
 12 jobs (`ca, activas, detalles, datos-abiertos, lifecycle, match, competencia, alerts,
@@ -58,17 +59,46 @@ corrida real de retención (03:00 vía scheduler, ahora que el keep-alive vive) 
 primera vez `raw_json`/ítems de terminales >90 d y productos de CA — es lo diseñado, solo
 achica la base (hoy 88 MB/16,8%); no confundir el conteo alto ni la baja de tamaño con un bug.
 
+### Desplegado y operativo (20-sep)
+F-observabilidad **en producción**: push a `main`, migración `b8d4e2a91c07` aplicada sola en
+el deploy, `/api/salud/jobs` responde. Tras disparar `job=all` + `job=ca`, el switch quedó en
+**200 / `status:ok`** con los tres críticos frescos. **Monitor conectado** en cron-job.org a
+`/api/salud/jobs` (GET, cada 1–2 h, sin headers — endpoint público). Dead-man's switch vivo.
+
 ### Abierto al cierre
-- **Desplegar** para que corra la migración `b8d4e2a91c07` (el startCommand hace
-  `alembic upgrade head` antes de servir → la tabla existe antes de cualquier job). El commit
-  está local; falta push/deploy.
-- **Montar el monitor externo** apuntando a `/api/salud/jobs` (no-2xx → correo), cada 1–2 h,
-  con UA de navegador. Sin esto el dead-man's switch no avisa a nadie.
-- **ROTAR `JOBS_TOKEN`:** el token de producción se pegó en el chat (riesgo A1 [CRÍTICO-1],
-  aún abierto). Rotar en Render + `.env`.
-- **Commitear los docs** (quedaron fuera del commit de código): `docs/00-estado-actual.md`,
-  `docs/prompt-F-observabilidad.md` — un commit `docs:` aparte, según convención.
-- **Fase siguiente:** invertir el modelo (§3 de `docs/11`).
+- **ROTAR `JOBS_TOKEN`** (prioridad): el token de producción se pegó en el chat (riesgo A1
+  [CRÍTICO-1], aún abierto). Cambiarlo en los TRES lados que deben coincidir: variable en
+  Render, header `X-Jobs-Token` de los crons que disparan jobs (job-all/job-ca), y `.env`.
+- **Borrar `_to_delete/_mp_snapshot.tar.gz`**: NO está en `.gitignore` y contiene `.env` con
+  secretos de producción. Nunca hacer `git add -A` mientras exista.
+- **Commitear los docs** (fuera del commit de código): `docs/00-estado-actual.md`,
+  `docs/prompt-F-observabilidad.md` — commit `docs:` aparte.
+- **Verificar la 1ª purga de retención** (~03:00, ahora que el commit-fix está vivo): mirar
+  tamaño de BD en `/api/salud` antes/después; el conteo alto es esperado, no un bug.
+- **Limpieza de argentinismos** (pedido de Boris, 20-sep): la app (textos de UI/plantillas) y
+  docs/código tienen expresiones argentinas; Boris es chileno. Corregir a español chileno
+  (sin voseo). Fase aparte, candidata a prompt de Claude Code.
+### F-invertir-modelo — IMPLEMENTADA Y AUDITADA (commit `d671dab`, SIN desplegar)
+Verde: ruff/mypy limpios, pytest 578 passed / 20 skip (9 tests nuevos). Flag
+`scheduler_en_proceso` (env `SCHEDULER_EN_PROCESO`) default False → el lifespan no arranca el
+BackgroundScheduler y `app.state.scheduler=None`; el `yield` queda fuera del `if` (la app
+arranca igual), shutdown guardado, import de `build_scheduler` lazy. Jobs compuestos
+`ciclo-ca` (ca→match→alerts) y `ciclo-activas` (activas→detalles→match→alerts) vía
+`_secuencia`, reusando las entradas `_locked` → job_runs y el watchlist intactos.
+`_make_app`/factory/startCommand/render.yaml sin tocar. Auditado, correcto.
+
+**Cutover seguro — OJO con el orden (los compuestos NO existen hasta desplegar `d671dab`):**
+1. En Render, poner `SCHEDULER_EN_PROCESO=true` y desplegar `d671dab`: el código nuevo queda
+   vivo (los compuestos ya existen) pero el scheduler interno sigue corriendo → cero cambio de
+   comportamiento, cero gap de ingesta.
+2. Configurar los crons (`ciclo-ca`, `ciclo-activas`, `nocturno`, `resumen`, `retencion`,
+   `catalogos`) en cron-job.org con la cadencia de `docs/prompt-F-invertir-modelo.md`;
+   test-run de cada uno → 200 y OK en `/api/salud/jobs`. Scheduler y crons conviven; el
+   advisory lock deduplica, no hay trabajo doble.
+3. Quitar `SCHEDULER_EN_PROCESO` de Render (→ default False) y redeploy → scheduler apagado,
+   los crons manejan todo, el proceso duerme entre disparos.
+4. Apagar el pinger keep-alive. Ajustar el monitor con timeout+reintentos (cold-start).
+5. Vigilar `/api/salud/jobs` un día.
 
 ---
 
