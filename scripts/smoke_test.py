@@ -94,7 +94,7 @@ def verificar_formato_fechas(
     payload = _validar_envelope(
         v2._get(
             _LISTADO,
-            {"estado": "publicada", "tamano_pagina": muestras, "numero_pagina": 1},
+            {"estado": "publicada", "tamano_pagina": 10, "numero_pagina": 1},
         )
     )
     convocatorias = payload.get("convocatorias") or payload.get("items") or []
@@ -155,7 +155,7 @@ def main() -> None:
 
     # 3. Primera página de Compras Ágiles publicadas
     print("\nCompras Ágiles publicadas (1 página):")
-    resp = v2.listar_compra_agil(estados=["publicada"], tamano_pagina=1)
+    resp = v2.listar_compra_agil(estados=["publicada"], tamano_pagina=10)
     print(f"  Total resultados: {resp.paginacion.total_resultados}")
     print(f"  Total páginas: {resp.paginacion.total_paginas}")
     if resp.items:
