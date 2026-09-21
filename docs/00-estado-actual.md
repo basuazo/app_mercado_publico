@@ -165,7 +165,36 @@ y `match` y `alerts` corrieron igual, porque `_run_with_lock` no propaga. Consec
 Actions: el loop del workflow **no** debe usar `set -e` — tiene que seguir con los jobs
 siguientes y salir 1 al final si alguno falló. Corregido en el mismo prompt, §2.f.
 
+**7. La API de Mercado Público está devolviendo errores hoy (21-sep, ~11:00–11:30 Chile).**
+[V] Dos síntomas simultáneos: la v2 devuelve `504 Endpoint request timed out` en la pág. 1
+del listado de Compra Ágil (dos intentos separados por 7 min, ambos fallidos tras el
+reintento interno), y la v1 devuelve **429 en todas** las peticiones de detalle.
+
+**8. El 429 probablemente NO es el tope diario.** [I] fuerte, sin confirmar. `activas` (v1)
+corrió bien y acto seguido **cero** detalles pasaron: si fuera el tope de 10.000 al menos
+los primeros habrían funcionado antes de cruzarlo, y el volumen del día era mínimo (ingesta
+parada desde las 00:30). Apunta a **limitación por tasa**, coherente con que la plataforma
+esté además devolviendo 504. Si se confirma, **la regla 3 de CLAUDE.md está escrita sobre un
+supuesto equivocado** y hay que corregirla. Cómo verificarlo: el punto 3 de
+`docs/prompt-F-cuota.md` instrumenta los headers del 429 para buscar `Retry-After`.
+Dato tranquilizador [V]: `QuotaTracker` no persiste ningún flag de "agotado" —solo un
+contador en `quota_log`—, así que un 429 no deja la app bloqueada hasta medianoche; se
+recupera sola cuando la API deja de rechazar.
+
+**9. Bug nuevo: el advisory lock se suelta solo en los jobs largos.** [V] `_run_with_lock`
+deja la conexión del lock **inactiva dentro de una transacción** mientras `fn()` trabaja con
+otras sesiones; Neon la mata por `idle_in_transaction_session_timeout` y el lock se libera a
+mitad de la corrida (dos veces en el log del 21-sep). La garantía de la regla 13 hoy no se
+cumple en `detalles` ni en `nocturno`. Arreglo propuesto en `docs/prompt-F-cuota.md` §4
+(conexión en AUTOCOMMIT: `pg_advisory_lock` es de sesión, no de transacción).
+
+**10. El bug 1 de F-cuota es real y está activo.** [V] `licitaciones.py:246` atrapa
+`except Exception` y siguió el loop: ~60 requests en 6 minutos contra una API que rechazaba
+todas. Con los jobs desatendidos en Actions esto correría solo cada 2 h.
+
 ### Decisiones tomadas
+- **F-cuota pasa ANTES de F-actions** (21-sep). Mover el disparador sin arreglar esto
+  automatiza el problema en vez de resolverlo. Prompt: `docs/prompt-F-cuota.md`.
 - **F-actions por la variante A: Actions ejecuta el CLI contra Neon directo**, no `curl` al
   endpoint. Motivo: no pasa por Render ni por Cloudflare, así que es inmune a lo que acaba de
   pasar. Descartada la variante B (curl desde Actions) porque las IPs de GitHub cruzan el
@@ -601,6 +630,20 @@ oportunidades por usuario; **activar alertas/archivar** oportunidades puntuales 
 - Migraciones: **dry-run** en una branch Neon creada desde `production` antes de tocar prod.
 
 ## Gotchas operacionales (aprendidos; no repetir)
+- **Levantar la app en local:** `python -m uvicorn app.api.main:_make_app --factory --reload`.
+  NO existe `app.api.main:app` — la instancia de módulo se borró en F-jobs-endpoint y el
+  `startCommand` de `render.yaml` usa `--factory`. Usar `app.api.main:app` da
+  `Error loading ASGI app. Attribute "app" not found` (el mismo error que tiró prod el 4-sep).
+- **`alembic` no lee el `.env`, la app sí.** `alembic/env.py:26` solo pisa `sqlalchemy.url` si
+  existe la variable de entorno `DATABASE_URL`; si no está, cae al placeholder de
+  `alembic.ini:89` (`driver://user:pass@localhost/dbname`) y el error es
+  `NoSuchModuleError: Can't load plugin: sqlalchemy.dialects:driver` — engañoso: no falta un
+  driver, está intentando cargar uno llamado "driver". Por eso uvicorn puede arrancar (pydantic
+  lee `.env`) mientras `alembic current` falla en la misma ventana. `alembic heads` funciona
+  igual porque no se conecta. Setearla desde el propio `.env`:
+  `$env:DATABASE_URL = ((Get-Content .env | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1) -replace '^DATABASE_URL=','').Trim().Trim('"')`
+  y verificar el host sin exponer la clave con `$env:DATABASE_URL -replace '://[^@]*@','://***@'`
+  ANTES de cualquier `upgrade`: el comando corre contra lo que diga la variable, sin preguntar.
 - `DATABASE_URL` siempre con prefijo **`postgresql+psycopg://`** (psycopg3).
   `app/core/db.py::normalizar_url_driver` lo normaliza para app y para alembic.
 - **alembic lee `DATABASE_URL` de la VARIABLE DE ENTORNO, no del `.env`.** En local hay
