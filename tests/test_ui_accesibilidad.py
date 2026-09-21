@@ -156,8 +156,13 @@ def test_salir_ya_no_usa_el_rojo_de_peligro(client, settings, usuario) -> None:
 
 
 def test_clase_num_disponible_para_columnas_numericas(client, settings, usuario) -> None:
+    """Desde F-feed-ui-1 la clase vive en el archivo estático, no inline."""
     html = client.get("/", cookies=_cookie(settings, usuario)).text
-    assert ".num { font-variant-numeric: tabular-nums; }" in html
+    assert '<link rel="stylesheet" href="/static/app.css?v=' in html
+
+    css = client.get("/static/app.css")
+    assert css.status_code == 200
+    assert ".num { font-variant-numeric: tabular-nums; }" in css.text
 
 
 def _crear_match(engine, owner_id: int, score: float, codigo: str = "LIC-UI-1") -> None:

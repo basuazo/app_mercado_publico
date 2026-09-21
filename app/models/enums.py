@@ -41,6 +41,63 @@ class EstadoOportunidad(enum.StrEnum):
     DESCONOCIDO = "desconocido"
 
 
+class FamiliaEstado(enum.StrEnum):
+    """Agrupación de los 16 EstadoOportunidad en las 6 situaciones que le
+    importan a quien decide si presentarse a un proceso (F-feed-ui-1)."""
+
+    ABIERTA = "abierta"
+    EN_EVALUACION = "en_evaluacion"
+    ADJUDICADA = "adjudicada"
+    COMPLETADA = "completada"
+    SIN_EFECTO = "sin_efecto"
+    DESCONOCIDO = "desconocido"
+
+
+# Mapa EXHAUSTIVO: cada EstadoOportunidad tiene que aparecer acá. El test
+# test_familias_cubre_todos_los_estados falla si ChileCompra agrega uno nuevo,
+# en vez de dejarlo caer en silencio a DESCONOCIDO.
+_MAP_FAMILIA: dict[EstadoOportunidad, FamiliaEstado] = {
+    EstadoOportunidad.PUBLICADA: FamiliaEstado.ABIERTA,
+    # Cerrada a ofertas, todavía sin resolución conocida.
+    EstadoOportunidad.CERRADA: FamiliaEstado.EN_EVALUACION,
+    EstadoOportunidad.EN_PROCESO: FamiliaEstado.EN_EVALUACION,
+    EstadoOportunidad.ENVIADA_PROVEEDOR: FamiliaEstado.EN_EVALUACION,
+    EstadoOportunidad.PENDIENTE_RECEPCION: FamiliaEstado.EN_EVALUACION,
+    EstadoOportunidad.ADJUDICADA: FamiliaEstado.ADJUDICADA,
+    EstadoOportunidad.PROVEEDOR_SELECCIONADO: FamiliaEstado.ADJUDICADA,
+    EstadoOportunidad.ACEPTADA: FamiliaEstado.ADJUDICADA,
+    EstadoOportunidad.RECEPCION_CONFORME: FamiliaEstado.COMPLETADA,
+    EstadoOportunidad.RECEPCION_PARCIAL: FamiliaEstado.COMPLETADA,
+    EstadoOportunidad.RECEPCION_CONFORME_INCOMPLETA: FamiliaEstado.COMPLETADA,
+    EstadoOportunidad.DESIERTA: FamiliaEstado.SIN_EFECTO,
+    EstadoOportunidad.REVOCADA: FamiliaEstado.SIN_EFECTO,
+    EstadoOportunidad.CANCELADA: FamiliaEstado.SIN_EFECTO,
+    # Discutible: un proceso suspendido puede reanudarse, pero para quien
+    # decide si presentarse hoy significa "no actúes ahora".
+    EstadoOportunidad.SUSPENDIDA: FamiliaEstado.SIN_EFECTO,
+    EstadoOportunidad.DESCONOCIDO: FamiliaEstado.DESCONOCIDO,
+}
+
+
+def familia_de_estado(estado: object) -> FamiliaEstado:
+    """Familia visual de un estado. Valor no mapeado → DESCONOCIDO + log."""
+    if isinstance(estado, EstadoOportunidad):
+        return _MAP_FAMILIA.get(estado, FamiliaEstado.DESCONOCIDO)
+    if not isinstance(estado, str):
+        _log.warning("Familia de estado: valor no es string: %r", estado)
+        return FamiliaEstado.DESCONOCIDO
+    try:
+        key = EstadoOportunidad(estado.lower().strip())
+    except ValueError:
+        _log.warning("Familia de estado sin mapeo: %r", estado)
+        return FamiliaEstado.DESCONOCIDO
+    familia = _MAP_FAMILIA.get(key)
+    if familia is None:
+        _log.warning("Familia de estado sin mapeo: %r", estado)
+        return FamiliaEstado.DESCONOCIDO
+    return familia
+
+
 # Mapeos de código numérico a enum (licitaciones y OC)
 _MAP_LICITACION: dict[int, EstadoOportunidad] = {
     5: EstadoOportunidad.PUBLICADA,

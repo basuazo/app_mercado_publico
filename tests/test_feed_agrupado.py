@@ -327,7 +327,7 @@ def test_descartar_oculta_todas_las_apariciones(client, usuario, settings, engin
     cookies, headers = _session(settings, usuario)
 
     r = client.get("/", cookies=_cookie(settings, usuario))
-    assert r.text.count("Licitación LIC-DOBLE") == 2
+    assert r.text.count('data-oportunidad-key="licitaciones:LIC-DOBLE"') == 2
 
     r_post = client.post(
         "/oportunidad/licitaciones/LIC-DOBLE/descartar", data={}, cookies=cookies, headers=headers
@@ -362,8 +362,8 @@ def test_render_encabezado_unico_vs_apariciones(client, usuario, settings, engin
     )
     r = client.get("/", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "Mostrando 1 oportunidad(es)" in r.text
-    assert "2 aparición(es)" in r.text
+    assert "1</strong> oportunidad(es)" in r.text
+    assert "algunas aparecen en más de un grupo" in r.text
 
 
 def test_agrupar_por_region_via_query(client, usuario, settings, engine):

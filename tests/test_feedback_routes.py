@@ -489,7 +489,10 @@ def test_dashboard_render_control_de_relevancia(client, usuario, settings, engin
     _crear_match_propio(engine, usuario, "LIC-001", score=80)
     r = client.get("/", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "Alta relevancia" in r.text
+    # F-feed-ui-1: el grupo pasó a tener encabezado visible "Relevancia" y los
+    # botones quedaron en "Alta" / "Media" / "Todas", con aria-current en el activo.
+    assert 'aria-labelledby="etiqueta-relevancia"' in r.text
+    assert ">Relevancia</div>" in r.text
     assert "Todas" in r.text
     assert "min_score=" in r.text
 
@@ -501,5 +504,7 @@ def test_dashboard_usa_total_filtrado_por_relevancia(client, usuario, settings, 
 
     r = client.get("/", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "Mostrando 25 oportunidad(es)" in r.text
-    assert "1 oculta(s) por baja relevancia" in r.text
+    assert "25</strong> oportunidad(es)" in r.text
+    # El conteo va envuelto en varias líneas dentro de la barra de resultados.
+    plano = " ".join(r.text.split())
+    assert "1</span> oculta(s) por baja relevancia" in plano

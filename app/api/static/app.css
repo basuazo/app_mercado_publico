@@ -1,0 +1,242 @@
+/* Tema de mp-oportunidades sobre Bootstrap 5.3 (F-feed-ui-1).
+ *
+ * Criterio: pisar las variables de Bootstrap en :root en vez de pelear con
+ * sus clases. Tipografía: el stack del sistema, que es el que Bootstrap ya
+ * trae — sin fuentes por CDN. Espaciado en múltiplos de 4. Sombra solo en
+ * hover y en elementos flotantes. Sin gradientes.
+ *
+ * El anillo de foco de Bootstrap NO se toca en ninguna regla de este archivo.
+ */
+
+:root {
+  --bg-app: #F8FAFC;   --bg-surface: #FFFFFF;   --bg-subtle: #F1F5F9;
+  --border: #E2E8F0;   --border-strong: #CBD5E1;
+  --texto: #0F172A;    --texto-2: #475569;      --texto-3: #64748B;
+  --marca: #1D4ED8;    --marca-hover: #1E40AF;  --marca-suave: #EFF6FF;  --marca-texto: #1E40AF;
+
+  /* Familias de estado: fondo / texto / borde */
+  --est-abierta-bg: #ECFDF5;   --est-abierta-fg: #065F46;   --est-abierta-bd: #6EE7B7;
+  --est-eval-bg:    #EFF6FF;   --est-eval-fg:    #1E40AF;   --est-eval-bd:    #93C5FD;
+  --est-adj-bg:     #F5F3FF;   --est-adj-fg:     #5B21B6;   --est-adj-bd:     #C4B5FD;
+  --est-compl-bg:   #F0FDF4;   --est-compl-fg:   #166534;   --est-compl-bd:   #86EFAC;
+  --est-sinef-bg:   #FEF2F2;   --est-sinef-fg:   #991B1B;   --est-sinef-bd:   #FCA5A5;
+  --est-desc-bg:    #F8FAFC;   --est-desc-fg:    #475569;   --est-desc-bd:    #CBD5E1;
+
+  /* Urgencia de cierre (borde izquierdo de la tarjeta) */
+  --urg-critica: #DC2626;  --urg-alta: #EA580C;  --urg-media: #D97706;  --urg-baja: #CBD5E1;
+
+  /* Bandas de match */
+  --match-alta: #059669;  --match-media: #D97706;  --match-baja: #64748B;
+
+  /* Topbar */
+  --topbar: #0F172A;
+
+  /* Pisa Bootstrap */
+  --bs-body-bg: var(--bg-app);
+  --bs-body-color: var(--texto);
+  --bs-primary: var(--marca);
+  --bs-border-color: var(--border);
+  --bs-link-color: var(--marca);
+  --bs-link-hover-color: var(--marca-hover);
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--texto);
+}
+
+/* Dígitos de igual ancho: las columnas de montos y cantidades quedan
+   alineadas. Venía de F-ui-fixes, en un <style> inline de base.html. */
+.num { font-variant-numeric: tabular-nums; }
+
+/* --- Topbar ------------------------------------------------------------ */
+
+.navbar.bg-dark {
+  background-color: var(--topbar) !important;
+}
+
+/* --- Tarjeta de oportunidad -------------------------------------------- */
+
+.tarjeta-op {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  border-left-width: 3px;
+  border-left-style: solid;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.tarjeta-op:hover {
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+}
+
+.tarjeta-op--critica { border-left-color: var(--urg-critica); }
+.tarjeta-op--alta    { border-left-color: var(--urg-alta); }
+.tarjeta-op--media   { border-left-color: var(--urg-media); }
+.tarjeta-op--baja    { border-left-color: var(--urg-baja); }
+
+.tarjeta-op__titulo {
+  color: var(--texto);
+  font-weight: 600;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tarjeta-op__titulo:hover { color: var(--marca-hover); text-decoration: underline; }
+
+.tarjeta-op__meta {
+  color: var(--texto-2);
+  font-size: 0.8125rem;
+}
+
+.tarjeta-op__monto {
+  color: var(--texto);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tarjeta-op__monto--ausente {
+  color: var(--texto-3);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.tarjeta-op__monto-glosa {
+  color: var(--texto-3);
+  font-size: 0.6875rem;
+  text-transform: lowercase;
+}
+
+/* --- Anillo de match ---------------------------------------------------- */
+
+.anillo-match {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border-radius: 50%;
+  border: 3px solid var(--match-baja);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--texto);
+}
+
+.anillo-match--alta  { border-color: var(--match-alta);  color: var(--match-alta); }
+.anillo-match--media { border-color: var(--match-media); color: var(--match-media); }
+.anillo-match--baja  { border-color: var(--match-baja);  color: var(--match-baja); }
+
+.anillo-match__glosa {
+  font-size: 11px;
+  color: var(--texto-3);
+  text-align: center;
+  margin-top: 2px;
+}
+
+/* --- Badges de estado y de cierre --------------------------------------- */
+
+.badge-estado,
+.badge-cierre,
+.chip-razon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.badge-estado svg,
+.badge-cierre svg { flex: 0 0 auto; }
+
+.badge-estado--familia_abierta      { background: var(--est-abierta-bg); color: var(--est-abierta-fg); border-color: var(--est-abierta-bd); }
+.badge-estado--familia_eval         { background: var(--est-eval-bg);    color: var(--est-eval-fg);    border-color: var(--est-eval-bd); }
+.badge-estado--familia_adj          { background: var(--est-adj-bg);     color: var(--est-adj-fg);     border-color: var(--est-adj-bd); }
+.badge-estado--familia_completada   { background: var(--est-compl-bg);   color: var(--est-compl-fg);   border-color: var(--est-compl-bd); }
+.badge-estado--familia_sinefecto    { background: var(--est-sinef-bg);   color: var(--est-sinef-fg);   border-color: var(--est-sinef-bd); }
+.badge-estado--familia_desconocido  { background: var(--est-desc-bg);    color: var(--est-desc-fg);    border-color: var(--est-desc-bd); }
+
+.badge-cierre--critica { background: #FEF2F2; color: #991B1B; border-color: #FCA5A5; }
+.badge-cierre--alta    { background: #FFF7ED; color: #9A3412; border-color: #FDBA74; }
+.badge-cierre--media   { background: #FFFBEB; color: #92400E; border-color: #FCD34D; }
+.badge-cierre--baja    { background: var(--bg-subtle); color: var(--texto-2); border-color: var(--border-strong); }
+
+/* --- Chips de razón ------------------------------------------------------ */
+
+.chip-razon {
+  font-weight: 400;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-razon--match        { background: var(--marca-suave);  color: var(--marca-texto); border-color: #BFDBFE; }
+.chip-razon--oportunidad  { background: var(--est-compl-bg); color: var(--est-compl-fg); border-color: var(--est-compl-bd); }
+.chip-razon--advertencia  { background: #FFFBEB;             color: #92400E;            border-color: #FCD34D; }
+.chip-razon--mas {
+  background: var(--bg-subtle);
+  color: var(--texto-2);
+  border-color: var(--border-strong);
+  cursor: pointer;
+}
+
+/* --- Chips de filtro activo ---------------------------------------------- */
+
+.chip-filtro {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--marca-suave);
+  color: var(--marca-texto);
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  padding: 2px 4px 2px 8px;
+  font-size: 0.8125rem;
+}
+
+/* 24x24 mínimo para el objetivo táctil del botón de quitar. */
+.chip-filtro__quitar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 6px;
+  color: var(--marca-texto);
+  text-decoration: none;
+  line-height: 1;
+}
+
+.chip-filtro__quitar:hover { background: #DBEAFE; color: var(--marca-hover); }
+
+/* --- Cabecera de resultados ---------------------------------------------- */
+
+.barra-resultados {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.barra-resultados label { font-size: 0.8125rem; color: var(--texto-2); margin-bottom: 2px; }
+
+/* --- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 575.98px) {
+  .tarjeta-op { padding: 12px; }
+  .tarjeta-op__acciones { width: 100%; }
+  .tarjeta-op__acciones .btn { flex: 1 1 auto; }
+  .chip-razon { max-width: 100%; }
+}

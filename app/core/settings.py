@@ -1,6 +1,11 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Versión de los estáticos: se usa como ?v= al enlazar app.css, para que un
+# deploy invalide la caché del navegador. Se sube A MANO en la fase que toca
+# el CSS; nada de hashes calculados en tiempo de request.
+VERSION_ESTATICOS = "f-feed-ui-1"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

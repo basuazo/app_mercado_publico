@@ -22,7 +22,14 @@ from app.api.deps import (
     html_require_admin,
     html_require_user,
 )
-from app.api.presentacion import banda_relevancia, registrar_filtros
+from app.api.presentacion import (
+    banda_relevancia,
+    banda_urgencia,
+    presentacion_estado,
+    razones_tipificadas,
+    registrar_filtros,
+    texto_cierre,
+)
 from app.api.query import (
     AGRUPAR_POR_VALIDOS,
     agrupar_oportunidades,
@@ -110,6 +117,26 @@ def _es_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request") == "true"
 
 
+def _decorar_item(item: dict[str, Any], settings: Any) -> dict[str, Any]:
+    """Agrega a un item del feed lo que la tarjeta necesita para pintarse.
+
+    Todo sale de funciones puras de `presentacion`: la plantilla no decide
+    umbrales ni mapea estados. La banda de match usa los MISMOS cortes que los
+    presets del feed y que el badge de la ficha — por eso la tarjeta ya no
+    tiene sus propios `>= 80` / `>= 50`.
+    """
+    item["banda"] = banda_relevancia(
+        item["match"].score, _RELEVANCIA_ALTA, settings.feed_min_score_default
+    )
+    item["urgencia"] = banda_urgencia(item["dias_al_cierre"])
+    item["estado_badge"] = presentacion_estado(item["estado"])
+    item["cierre_texto"] = texto_cierre(
+        item["fecha_cierre"], item["dias_al_cierre"], item["match"].fuente
+    )
+    item["razones_chips"] = razones_tipificadas(item["match"].razones)
+    return item
+
+
 _ORDENES_VALIDOS = {"score", "cierre"}
 
 # Preset "Alta relevancia" del control de umbral del feed (F-feed-umbral).
@@ -167,6 +194,8 @@ async def index(
         limit=_LIMITE_AGRUPADO,
         offset=0,
     )
+    for item in items:
+        _decorar_item(item, settings)
     grupos, total_unico, total_apariciones = agrupar_oportunidades(
         items, agrupar_por, grupo_expandido=grupo_expandido or None
     )
@@ -192,6 +221,10 @@ async def index(
             relevancia_media=settings.feed_min_score_default,
             n_descartadas=n_descartadas,
             perfiles=perfiles,
+            # Para el chip de filtro activo: el nombre, no el id.
+            nombre_perfil_activo=next(
+                (p.nombre for p in perfiles if p.id == perfil_id_int), None
+            ),
             mostrar_tutorial=not user.tutorial_visto,
             mostrar_novedades=_hay_novedades_pendientes(user),
         ),
@@ -340,6 +373,9 @@ def _render_card_partial(
     if item is None:
         return HTMLResponse(content="", status_code=200)
     settings = request.app.state.settings
+    # La tarjeta re-renderizada tiene que traer lo mismo que la del feed: si no,
+    # tras un swap quedaría sin banda, sin badge de estado y sin urgencia.
+    _decorar_item(item, settings)
     csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
     template = "_ficha_acciones_partial.html" if origen == "ficha" else "_card_partial.html"
     return _TEMPLATES.TemplateResponse(

@@ -4,16 +4,23 @@
 {% block content %}
 <h2 class="mb-4">Oportunidades</h2>
 
-<form class="row g-2 mb-2" method="get" action="/">
+{# Cada valor va urlencoded: un "&" en la búsqueda partía el querystring y
+   corrompía los filtros al primer clic en orden, umbral o agrupación. #}
+{% set filtros_qs = "fuente=" ~ (fuente | urlencode) ~ "&texto=" ~ (texto | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") %}
+{% set ver_todas_href = "?min_score=0&orden=" ~ (orden | urlencode) ~ "&agrupar_por=" ~ (agrupar_por | urlencode) ~ "&" ~ filtros_qs %}
+
+<form class="row g-2 mb-2 align-items-end" method="get" action="/">
   <div class="col-md-3">
-    <select name="fuente" class="form-select">
+    <label class="form-label small mb-1" for="filtro-fuente">Fuente</label>
+    <select name="fuente" id="filtro-fuente" class="form-select">
       <option value="">Todas las fuentes</option>
       <option value="licitaciones" {% if fuente == 'licitaciones' %}selected{% endif %}>Licitaciones</option>
       <option value="compras_agiles" {% if fuente == 'compras_agiles' %}selected{% endif %}>Compra Ágil</option>
     </select>
   </div>
   <div class="col-md-3">
-    <select name="perfil_id" class="form-select">
+    <label class="form-label small mb-1" for="filtro-perfil">Perfil</label>
+    <select name="perfil_id" id="filtro-perfil" class="form-select">
       <option value="">Todos los perfiles</option>
       {% for p in perfiles %}
       <option value="{{ p.id }}" {% if perfil_id == p.id|string %}selected{% endif %}>{{ p.nombre }}</option>
@@ -21,7 +28,10 @@
     </select>
   </div>
   <div class="col-md-4">
-    <input type="text" name="texto" class="form-control" placeholder="Buscar en nombre..." value="{{ texto }}">
+    {# WCAG 3.3.2: el placeholder no sustituye a la etiqueta. #}
+    <label class="form-label small mb-1" for="filtro-texto">Buscar</label>
+    <input type="text" name="texto" id="filtro-texto" class="form-control"
+           placeholder="Palabras del título..." value="{{ texto }}">
   </div>
   <div class="col-md-2">
     <button type="submit" class="btn btn-primary w-100">Filtrar</button>
@@ -31,48 +41,111 @@
   <input type="hidden" name="agrupar_por" value="{{ agrupar_por }}">
 </form>
 
-{# Cada valor va urlencoded: un "&" en la búsqueda partía el querystring y
-   corrompía los filtros al primer clic en orden, umbral o agrupación. #}
-{% set filtros_qs = "fuente=" ~ (fuente | urlencode) ~ "&texto=" ~ (texto | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") %}
+{# --- Chips de filtro activo: la fila no se renderiza si no hay ninguno --- #}
+{% set chips_filtro = [] %}
+{% if fuente %}
+  {% set _ = chips_filtro.append({
+      "etiqueta": "Fuente: " ~ ("Licitaciones" if fuente == "licitaciones" else "Compra Ágil"),
+      "href": "?texto=" ~ (texto | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") ~ "&orden=" ~ (orden | urlencode) ~ "&min_score=" ~ min_score ~ "&agrupar_por=" ~ (agrupar_por | urlencode)}) %}
+{% endif %}
+{% if perfil_id %}
+  {% set _ = chips_filtro.append({
+      "etiqueta": "Perfil: " ~ (nombre_perfil_activo or perfil_id),
+      "href": "?fuente=" ~ (fuente | urlencode) ~ "&texto=" ~ (texto | urlencode) ~ "&orden=" ~ (orden | urlencode) ~ "&min_score=" ~ min_score ~ "&agrupar_por=" ~ (agrupar_por | urlencode)}) %}
+{% endif %}
+{% if texto %}
+  {% set _ = chips_filtro.append({
+      "etiqueta": "Texto: " ~ texto,
+      "href": "?fuente=" ~ (fuente | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") ~ "&orden=" ~ (orden | urlencode) ~ "&min_score=" ~ min_score ~ "&agrupar_por=" ~ (agrupar_por | urlencode)}) %}
+{% endif %}
+{% if min_score != relevancia_media %}
+  {% set _ = chips_filtro.append({
+      "etiqueta": "Relevancia: " ~ ("alta" if min_score == relevancia_alta else "todas" if min_score == 0 else min_score|string),
+      "href": "?min_score=" ~ relevancia_media ~ "&orden=" ~ (orden | urlencode) ~ "&agrupar_por=" ~ (agrupar_por | urlencode) ~ "&" ~ filtros_qs}) %}
+{% endif %}
 
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div class="d-flex flex-wrap gap-2">
-    <div class="btn-group btn-group-sm" role="group" aria-label="Orden">
-      <a href="?orden=score&min_score={{ min_score }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
-         class="btn {% if orden == 'score' %}btn-primary{% else %}btn-outline-primary{% endif %}">Mejor match</a>
-      <a href="?orden=cierre&min_score={{ min_score }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
-         class="btn {% if orden == 'cierre' %}btn-primary{% else %}btn-outline-primary{% endif %}">Cierran pronto</a>
+{% if chips_filtro %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  {% for chip in chips_filtro %}
+  <span class="chip-filtro">
+    {{ chip.etiqueta }}
+    <a class="chip-filtro__quitar" href="{{ chip.href }}" aria-label="Quitar filtro {{ chip.etiqueta }}">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </a>
+  </span>
+  {% endfor %}
+  <a class="btn btn-sm btn-link link-secondary text-decoration-none" href="/">Limpiar todo ({{ chips_filtro | length }})</a>
+</div>
+{% endif %}
+
+{# --- Barra de resultados: conteo + controles etiquetados --- #}
+<div class="barra-resultados">
+  <div class="row g-3 align-items-end">
+    <div class="col-12 col-lg">
+      <p class="mb-0 text-muted small">
+        {% if total_unico %}
+        <strong class="num">{{ total_unico }}</strong> oportunidad(es)
+        {%- if total_apariciones > total_unico %}, algunas aparecen en más de un grupo{% endif -%}
+        {%- if n_ocultas_relevancia > 0 %} · <span class="num">{{ n_ocultas_relevancia }}</span>
+        oculta(s) por baja relevancia — <a href="{{ ver_todas_href }}">ver todas</a>{% endif %}
+        {% else %}
+        Sin resultados con los filtros actuales
+        {% endif %}
+      </p>
     </div>
-    <div class="btn-group btn-group-sm" role="group" aria-label="Umbral de relevancia">
-      <a href="?min_score={{ relevancia_alta }}&orden={{ orden }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
-         class="btn {% if min_score == relevancia_alta %}btn-primary{% else %}btn-outline-secondary{% endif %}">Alta relevancia</a>
-      <a href="?min_score={{ relevancia_media }}&orden={{ orden }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
-         class="btn {% if min_score == relevancia_media %}btn-primary{% else %}btn-outline-secondary{% endif %}">Media</a>
-      <a href="?min_score=0&orden={{ orden }}&agrupar_por={{ agrupar_por }}&{{ filtros_qs }}"
-         class="btn {% if min_score == 0 %}btn-primary{% else %}btn-outline-secondary{% endif %}">Todas</a>
+
+    <div class="col-6 col-lg-auto">
+      <label class="form-label mb-1" for="orden-select">Orden</label>
+      <select id="orden-select" class="form-select form-select-sm"
+              onchange="location.href=this.value">
+        <option value="?orden=score&min_score={{ min_score }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
+                {% if orden == 'score' %}selected{% endif %}>Mejor match</option>
+        <option value="?orden=cierre&min_score={{ min_score }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
+                {% if orden == 'cierre' %}selected{% endif %}>Cierran antes</option>
+      </select>
     </div>
-    <div class="btn-group btn-group-sm" role="group" aria-label="Agrupar por">
-      <a href="?agrupar_por=motivo&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}"
-         class="btn {% if agrupar_por == 'motivo' %}btn-primary{% else %}btn-outline-dark{% endif %}">Agrupar: motivo</a>
-      <a href="?agrupar_por=region&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}"
-         class="btn {% if agrupar_por == 'region' %}btn-primary{% else %}btn-outline-dark{% endif %}">Región</a>
-      <a href="?agrupar_por=fuente&orden={{ orden }}&min_score={{ min_score }}&{{ filtros_qs }}"
-         class="btn {% if agrupar_por == 'fuente' %}btn-primary{% else %}btn-outline-dark{% endif %}">Fuente</a>
+
+    <div class="col-6 col-lg-auto">
+      <label class="form-label mb-1" for="agrupar-select">Agrupar</label>
+      <select id="agrupar-select" class="form-select form-select-sm"
+              onchange="location.href=this.value">
+        <option value="?agrupar_por=motivo&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}"
+                {% if agrupar_por == 'motivo' %}selected{% endif %}>Por motivo</option>
+        <option value="?agrupar_por=region&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}"
+                {% if agrupar_por == 'region' %}selected{% endif %}>Por región</option>
+        <option value="?agrupar_por=fuente&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}"
+                {% if agrupar_por == 'fuente' %}selected{% endif %}>Por fuente</option>
+      </select>
     </div>
+
+    <div class="col-12 col-lg-auto">
+      {# Son enlaces, no botones: el estado activo va con aria-current. #}
+      <div id="etiqueta-relevancia" class="form-label mb-1">Relevancia</div>
+      <div class="btn-group btn-group-sm" role="group" aria-labelledby="etiqueta-relevancia">
+        <a href="?min_score={{ relevancia_alta }}&orden={{ orden | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
+           class="btn {% if min_score == relevancia_alta %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if min_score == relevancia_alta %}aria-current="true"{% endif %}>
+          {% if min_score == relevancia_alta %}<span aria-hidden="true">✓</span> {% endif %}Alta</a>
+        <a href="?min_score={{ relevancia_media }}&orden={{ orden | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
+           class="btn {% if min_score == relevancia_media %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if min_score == relevancia_media %}aria-current="true"{% endif %}>
+          {% if min_score == relevancia_media %}<span aria-hidden="true">✓</span> {% endif %}Media</a>
+        <a href="?min_score=0&orden={{ orden | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
+           class="btn {% if min_score == 0 %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if min_score == 0 %}aria-current="true"{% endif %}>
+          {% if min_score == 0 %}<span aria-hidden="true">✓</span> {% endif %}Todas</a>
+      </div>
+    </div>
+
+    {% if n_descartadas %}
+    <div class="col-12 col-lg-auto">
+      <a href="/descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
+    </div>
+    {% endif %}
   </div>
-  {% if n_descartadas %}
-  <a href="/descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
-  {% endif %}
 </div>
 
-{% set ver_todas_href = "?min_score=0&orden=" ~ (orden | urlencode) ~ "&agrupar_por=" ~ (agrupar_por | urlencode) ~ "&" ~ filtros_qs %}
 {% if grupos %}
-<p class="text-muted small">
-  Mostrando {{ total_unico }} oportunidad(es) · {{ total_apariciones }} aparición(es) en {{ grupos|length }} grupo(s)
-  {%- if n_ocultas_relevancia > 0 %} · {{ n_ocultas_relevancia }} oculta(s) por baja relevancia —
-  <a href="{{ ver_todas_href }}">ver todas</a>{% endif %}
-</p>
-
 <div class="accordion" id="feed-agrupado">
   {% for grupo in grupos %}
   {% set gidx = loop.index0 %}
@@ -86,11 +159,9 @@
     </h2>
     <div id="{{ gid }}-body" class="accordion-collapse collapse show" aria-labelledby="{{ gid }}-heading">
       <div class="accordion-body">
-        <div class="list-group">
-          {% for item in grupo['items'] %}
-          {{ card_oportunidad(item, csrf_token, idx=gidx) }}
-          {% endfor %}
-        </div>
+        {% for item in grupo['items'] %}
+        {{ card_oportunidad(item, csrf_token, idx=gidx) }}
+        {% endfor %}
         {% if grupo.count > grupo['items']|length %}
         <div class="mt-2">
           <a class="btn btn-sm btn-outline-secondary"
@@ -114,14 +185,52 @@
 {% endif %}
 
 <script>
+  // Al descartar: quitar todas las apariciones de la tarjeta (puede estar en
+  // varios grupos) y ofrecer deshacer en un toast, en vez del borrado sin
+  // vuelta atrás que había antes.
+  // El nombre se captura ANTES del swap: para cuando llega afterRequest, la
+  // tarjeta que se descartó ya salió del DOM y el botón se fue con ella.
+  var nombresDescartados = {};
+
+  document.body.addEventListener("htmx:beforeRequest", function (evt) {
+    var path = evt.detail.pathInfo && evt.detail.pathInfo.requestPath;
+    var m = path && path.match(/^\/oportunidad\/([^/]+)\/([^/]+)\/descartar$/);
+    if (!m) return;
+    var origen = evt.detail.elt;
+    var boton = origen && origen.querySelector
+      ? origen.querySelector("[data-nombre-oportunidad]")
+      : null;
+    if (boton) nombresDescartados[m[1] + ":" + m[2]] = boton.getAttribute("data-nombre-oportunidad");
+  });
+
   document.body.addEventListener("htmx:afterRequest", function (evt) {
     if (!evt.detail.successful) return;
     var path = evt.detail.pathInfo && evt.detail.pathInfo.requestPath;
     var m = path && path.match(/^\/oportunidad\/([^/]+)\/([^/]+)\/descartar$/);
     if (!m) return;
+
     var key = m[1] + ":" + m[2];
+    var nombre = nombresDescartados[key] || "";
+    delete nombresDescartados[key];
+
     document.querySelectorAll('[data-oportunidad-key="' + key + '"]').forEach(function (card) {
       card.remove();
+    });
+
+    if (window.mostrarToastDescarte) {
+      window.mostrarToastDescarte(
+        nombre,
+        "/oportunidad/" + m[1] + "/" + m[2] + "/deshacer-descarte",
+        {{ csrf_token | tojson }}
+      );
+    }
+  });
+
+  // Popover de los chips "+N" de razones.
+  document.addEventListener("DOMContentLoaded", function () {
+    if (!window.bootstrap) return;
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+      new window.bootstrap.Popover(el);
     });
   });
 </script>

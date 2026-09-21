@@ -5,9 +5,11 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -102,6 +104,14 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
             bg_sched.shutdown(wait=False)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+
+    # Estáticos propios (el tema). StaticFiles viene en Starlette: no es
+    # dependencia nueva.
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(Path(__file__).parent / "static")),
+        name="static",
+    )
 
     # Guardar estado compartido en app.state
     app.state.settings = settings

@@ -1,85 +1,135 @@
+{#
+  Tarjeta de oportunidad del feed (F-feed-ui-1).
+
+  Toda la lógica viene resuelta desde la ruta en funciones puras de
+  presentacion.py: `banda` (match), `urgencia`, `estado_badge`, `cierre_texto`
+  y `razones` ya tipificadas. Acá no se decide nada, solo se pinta.
+
+  Los iconos son SVG de trazo inline: sin librería de iconos ni emoji.
+#}
+{% macro icono_estado(familia) %}
+  {%- if familia == 'abierta' -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/></svg>
+  {%- elif familia == 'en_evaluacion' -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 3h10M4 3v3l3 2-3 2v3M12 3v3l-3 2 3 2v3M3 13h10"/></svg>
+  {%- elif familia == 'adjudicada' -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="6" r="4"/><path d="M5.5 9.5 4 14l4-2 4 2-1.5-4.5"/></svg>
+  {%- elif familia == 'completada' -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m5.5 8 2 2 3.5-4"/></svg>
+  {%- elif familia == 'sin_efecto' -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M4.5 4.5 11.5 11.5"/></svg>
+  {%- else -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M6.5 6a1.5 1.5 0 1 1 1.9 1.9c-.5.2-.9.6-.9 1.1M8 11.5h.01"/></svg>
+  {%- endif -%}
+{% endmacro %}
+
 {% macro card_oportunidad(item, csrf_token, idx="") %}
 {% set fuente = item.match.fuente %}
 {% set codigo = item.match.codigo_oportunidad %}
 {% set card_id = "card-" ~ (idx ~ "-" if idx != "" else "") ~ fuente ~ "-" ~ codigo %}
 {% set oportunidad_key = fuente ~ ":" ~ codigo %}
-<div class="list-group-item" id="{{ card_id }}" data-oportunidad-key="{{ oportunidad_key }}">
+{% set estado_badge = item.estado_badge %}
+{% set razones = item.razones_chips or [] %}
+{% set visibles = razones[:3] %}
+{% set ocultas = razones[3:] %}
+<div class="tarjeta-op tarjeta-op--{{ item.urgencia }}"
+     id="{{ card_id }}"
+     data-oportunidad-key="{{ oportunidad_key }}"
+     data-anuncio="{% if item.feedback == 'sirve' %}Marcada como útil: {{ item.nombre }}{% elif item.siguiendo %}Siguiendo: {{ item.nombre }}{% else %}Sin marcas: {{ item.nombre }}{% endif %}">
+
+  {# --- Fila superior: match · título/meta · monto --- #}
   <div class="d-flex align-items-start gap-3">
-    <div class="text-center" style="min-width: 3.5rem;">
-      {% if item.match.score >= 80 %}
-      <span class="badge bg-success fs-6">{{ item.match.score | round(0) | int }}</span>
-      {% elif item.match.score >= 50 %}
-      <span class="badge bg-warning text-dark fs-6">{{ item.match.score | round(0) | int }}</span>
+    <div>
+      <div class="anillo-match anillo-match--{{ item.banda }}">{{ item.match.score | round(0) | int }}</div>
+      <div class="anillo-match__glosa">Match</div>
+    </div>
+
+    <div class="flex-grow-1 min-w-0">
+      <a class="tarjeta-op__titulo" href="/oportunidad/{{ fuente }}/{{ codigo }}">{{ item.nombre }}</a>
+      <div class="tarjeta-op__meta mt-1">
+        {{ item.organismo or "Organismo no informado" }} ·
+        {{ item.region_nombre or "Sin región" }} ·
+        <span class="num">{{ codigo }}</span> ·
+        {% if fuente == 'licitaciones' %}Licitación{% else %}Compra Ágil{% endif %}
+      </div>
+    </div>
+
+    <div class="text-end">
+      {% if item.monto is none %}
+      <div class="tarjeta-op__monto tarjeta-op__monto--ausente">{{ None | clp }}</div>
       {% else %}
-      <span class="badge bg-secondary fs-6">{{ item.match.score | round(0) | int }}</span>
+      <div class="tarjeta-op__monto num">{{ item.monto | clp }}</div>
       {% endif %}
-      <div class="small text-muted">score</div>
-    </div>
-    <div class="flex-grow-1">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <a href="/oportunidad/{{ fuente }}/{{ codigo }}"><strong>{{ item.nombre }}</strong></a>
-          {% if item.dias_al_cierre is not none %}
-            {% if item.dias_al_cierre <= 3 %}
-            <span class="badge bg-danger ms-1">cierra en {{ item.dias_al_cierre | round(0) | int }}d</span>
-            {% elif item.dias_al_cierre <= 7 %}
-            <span class="badge bg-warning text-dark ms-1">cierra en {{ item.dias_al_cierre | round(0) | int }}d</span>
-            {% else %}
-            <span class="badge bg-light text-dark border ms-1">cierra en {{ item.dias_al_cierre | round(0) | int }}d</span>
-            {% endif %}
-          {% endif %}
-        </div>
-        {% if item.monto %}
-        <span class="text-nowrap fw-semibold">${{ '{:,.0f}'.format(item.monto) }}</span>
-        {% endif %}
-      </div>
-      <small class="text-muted d-block">
-        {{ item.organismo or "—" }} · {{ item.region_nombre or "Nacional" }} · {{ fuente }}
-      </small>
-      {% if item.razones %}
-      <div class="mt-1">
-        {% for r in item.razones %}
-        <span class="badge bg-light text-dark border me-1 fw-normal">{{ r }}</span>
-        {% endfor %}
-      </div>
-      {% endif %}
-
-      <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
-        <a href="/oportunidad/{{ fuente }}/{{ codigo }}" class="btn btn-sm btn-outline-primary">Ver ficha</a>
-
-        <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
-              hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
-              hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="next" value="/">
-          {% if item.siguiendo %}
-          <button type="submit" class="btn btn-sm btn-success">Siguiendo</button>
-          {% else %}
-          <button type="submit" class="btn btn-sm btn-outline-secondary">Activar alertas</button>
-          {% endif %}
-        </form>
-
-        <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
-              hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
-              hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="next" value="/">
-          {% if item.feedback == "sirve" %}
-          <button type="submit" class="btn btn-sm btn-success">Me sirve</button>
-          {% else %}
-          <button type="submit" class="btn btn-sm btn-outline-success">Me sirve</button>
-          {% endif %}
-        </form>
-
-        <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-              hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-              hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="next" value="/">
-          <button type="submit" class="btn btn-sm btn-outline-danger">Descartar</button>
-        </form>
+      <div class="tarjeta-op__monto-glosa">
+        {% if fuente == 'licitaciones' %}estimado{% else %}disponible{% endif %}
       </div>
     </div>
+  </div>
+
+  {# --- Fila de badges y chips --- #}
+  <div class="d-flex flex-wrap gap-2 mt-3">
+    <span class="badge-estado badge-estado--{{ estado_badge.clase }}">
+      {{ icono_estado(estado_badge.familia) }}{{ estado_badge.etiqueta }}
+    </span>
+
+    <span class="badge-cierre badge-cierre--{{ item.urgencia }}">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>
+      {{ item.cierre_texto }}
+    </span>
+
+    {% for chip in visibles %}
+    <span class="chip-razon chip-razon--{{ chip.tipo }}" title="{{ chip.texto }}">{{ chip.texto }}</span>
+    {% endfor %}
+
+    {% if ocultas %}
+    <button type="button" class="chip-razon chip-razon--mas" data-bs-toggle="popover"
+            data-bs-trigger="focus" data-bs-placement="top"
+            data-bs-title="Otras razones del match"
+            data-bs-content="{{ ocultas | map(attribute='texto') | join(' · ') }}"
+            aria-label="Ver {{ ocultas | length }} razón(es) más del match">+{{ ocultas | length }}</button>
+    {% endif %}
+  </div>
+
+  {# --- Fila de acciones --- #}
+  <div class="d-flex flex-wrap gap-2 align-items-center mt-3 tarjeta-op__acciones">
+    <a href="/oportunidad/{{ fuente }}/{{ codigo }}" class="btn btn-sm btn-primary">Ver ficha</a>
+
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
+          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
+          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="/">
+      {% if item.siguiendo %}
+      <button type="submit" class="btn btn-sm btn-success" data-accion="seguir" aria-pressed="true">
+        <span aria-hidden="true">✓</span> Alertas activas<span class="visually-hidden"> (seleccionado)</span>
+      </button>
+      {% else %}
+      <button type="submit" class="btn btn-sm btn-outline-secondary" data-accion="seguir" aria-pressed="false">Activar alertas</button>
+      {% endif %}
+    </form>
+
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="/">
+      {% if item.feedback == "sirve" %}
+      <button type="submit" class="btn btn-sm btn-success" data-accion="me-sirve" aria-pressed="true">
+        <span aria-hidden="true">✓</span> Me sirve<span class="visually-hidden"> (seleccionado)</span>
+      </button>
+      {% else %}
+      <button type="submit" class="btn btn-sm btn-outline-success" data-accion="me-sirve" aria-pressed="false">Me sirve</button>
+      {% endif %}
+    </form>
+
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline ms-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="/">
+      <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
+              data-accion="descartar" data-nombre-oportunidad="{{ item.nombre }}">Descartar</button>
+    </form>
   </div>
 </div>
 {% endmacro %}
