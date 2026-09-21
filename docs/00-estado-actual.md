@@ -152,6 +152,45 @@ offset. `app/core/tiempo.py` los interpreta como hora de **Chile continental**
 (`America/Santiago`), porque es una API del Estado de Chile publicando plazos chilenos. Es una
 suposición razonable, no un hecho.
 
+### Paso 0 — RESULTADO, ejecutado el 21-sep-2026
+
+`python scripts/smoke_test.py --fechas` contra la API real. Lo observado:
+
+**[V] La v1 SÍ manda la hora de cierre, con hora real y SIN offset.** Tres códigos del listado de
+activas:
+
+```
+1002584-12-LE26   FechaCierre = '2026-09-24T16:00:00'
+1002588-96-LE26   FechaCierre = '2026-09-23T15:00:00'
+1002588-97-LP26   FechaCierre = '2026-09-29T16:37:00'
+```
+
+Queda confirmado que el slice `s[:10]` de `parse_fecha_v1` estaba tirando un dato que la fuente sí
+entrega, y que la medianoche que fabricaba `_fecha_a_dt` era invención del código. F-fecha-cierre
+atacaba un problema real.
+
+**[V] `FechaPublicacion` llega `None` en el listado de activas.** No viene en ese endpoint; si se
+necesita, sale del detalle o de datos abiertos. No confundir con un fallo del parser.
+
+**[I] El huso sigue sin marca explícita en la respuesta**, así que la suposición
+"sin offset = hora de Chile continental" (`_TZ_SIN_OFFSET` en `app/core/tiempo.py`) se mantiene
+como inferencia. Ahora tiene evidencia circunstancial fuerte: 16:00, 15:00 y 16:37 son horas de
+cierre típicas del portal; leídos como UTC serían 13:00, 12:00 y 13:37 en Chile, menos plausibles
+para un cierre de licitación. **Para pasarlo a [V] falta un paso manual:** abrir la ficha de
+`1002588-97-LP26` en el portal y comparar la hora de cierre que muestra contra el `16:37`. Si
+coincide, la suposición queda verificada; si muestra `13:37`, el único cambio es `_TZ_SIN_OFFSET`.
+
+**[V] La paginación de v2 tiene MÍNIMO, no solo máximo.** `tamano_pagina` debe estar entre **10 y
+50**; con un valor menor la API responde `success='NOK'` y
+`400 — "tamano_pagina debe estar entre 10 y 50"`. `scripts/smoke_test.py` lo pedía más chico en dos
+lugares (líneas 97 y 158) y por eso el bloque de Compra Ágil del Paso 0 abortó. Anotado también en
+`docs/01-analisis-api-mercado-publico.md`.
+
+**Pendiente de esta verificación:** cerrar el bloque v2 del Paso 0 una vez corregido el
+`tamano_pagina`, y hacer la comparación manual contra la ficha del portal.
+
+---
+
 **Paso 0 — lo corre Boris, no los tests (regla 20/23):**
 
 ```

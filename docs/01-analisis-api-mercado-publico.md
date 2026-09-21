@@ -121,7 +121,7 @@ Base: `https://api2.mercadopublico.cl` · Auth: header `ticket`.
 - **Estado** (múltiples, separados por coma): `publicada`, `cerrada`, `desierta`, `cancelada`, `proveedor_seleccionado`. (`oc_emitida` existe en el modelo pero **no se usa en la práctica**; las CA con OC quedan en `proveedor_seleccionado`.)
 - **Región**: `region=13,5` (códigos 1–16; 13 = Metropolitana).
 - **Búsqueda**: `id` (código exacto) **o** `q` (palabras clave, URL-encoded) — mutuamente excluyentes.
-- **Paginación**: `tamano_pagina` (default 15, **máx. 50**), `numero_pagina` (desde 1). Respuesta incluye `payload.paginacion` con `total_paginas` y `total_resultados`.
+- **Paginación**: `tamano_pagina` (default 15, **mín. 10 y máx. 50** — verificado [V] el 21-sep-2026: con un valor menor a 10 la API responde `success='NOK'` con `400 — "tamano_pagina debe estar entre 10 y 50"`), `numero_pagina` (desde 1). Respuesta incluye `payload.paginacion` con `total_paginas` y `total_resultados`.
 - **Orden**: `ordenar_por=FechaUltimaModificacion` (default) o `FechaPublicacion`.
 
 ### 5.3 Limitaciones y "gotchas" documentadas oficialmente
