@@ -7,15 +7,14 @@ import threading
 import time
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
-from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import Engine, text
 
 from app.core.logging import get_logger
+from app.core.tiempo import TZ_CHILE
 
 _log = get_logger(__name__)
-_TZ_CHILE = ZoneInfo("America/Santiago")
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +61,7 @@ class QuotaExceededError(MPError):
 
 def _seconds_until_next_day_chile() -> int:
     """Segundos hasta las 00:01 del día siguiente en America/Santiago + 60 s de margen."""
-    now = datetime.now(_TZ_CHILE)
+    now = datetime.now(TZ_CHILE)
     next_day = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
     return max(0, int((next_day - now).total_seconds())) + 60
 
@@ -106,7 +105,7 @@ def _parse_retry_after(valor: str | None) -> int | None:
     if cuando is None:
         return None
     if cuando.tzinfo is None:
-        cuando = cuando.replace(tzinfo=_TZ_CHILE)
+        cuando = cuando.replace(tzinfo=TZ_CHILE)
     return max(0, int((cuando - datetime.now(cuando.tzinfo)).total_seconds()))
 
 
@@ -184,7 +183,7 @@ class QuotaTracker:
             conn.execute(text(_CREATE_QUOTA_TABLE))
 
     def _today(self) -> str:
-        return datetime.now(_TZ_CHILE).date().isoformat()
+        return datetime.now(TZ_CHILE).date().isoformat()
 
     def remaining(self) -> int:
         today = self._today()

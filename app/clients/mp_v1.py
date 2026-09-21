@@ -16,6 +16,7 @@ from app.clients.types import (
     Proveedor,
     parse_binario,
     parse_fecha_v1,
+    parse_fecha_v1_dt,
     parse_float,
     parse_int,
 )
@@ -40,8 +41,8 @@ def _parse_licitacion_basica(item: dict[str, object]) -> LicitacionBasica:
         codigo=str(item.get("CodigoExterno") or item.get("Codigo") or ""),
         nombre=str(item.get("Nombre") or ""),
         estado=parse_int(item.get("CodigoEstado")),
-        fecha_publicacion=parse_fecha_v1(item.get("FechaPublicacion")),
-        fecha_cierre=parse_fecha_v1(item.get("FechaCierre")),
+        fecha_publicacion=parse_fecha_v1_dt(item.get("FechaPublicacion")),
+        fecha_cierre=parse_fecha_v1_dt(item.get("FechaCierre"), fin_de_dia=True),
         tipo=str(item.get("Tipo") or item.get("CodigoTipo") or "") or None,
         codigo_organismo=str(item.get("CodigoOrganismo") or "") or None,
     )

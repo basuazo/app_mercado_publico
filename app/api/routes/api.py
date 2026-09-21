@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
@@ -20,6 +19,7 @@ from app.api.deps import (
 )
 from app.api.query import get_oportunidades_usuario
 from app.api.salud_data import get_salud_data
+from app.core.tiempo import ahora_utc
 from app.matching.perfiles import (
     actualizar_perfil,
     crear_perfil,
@@ -82,7 +82,7 @@ async def salud_jobs(
     A diferencia de /ping, este sí toca la base: una consulta por job, resuelta
     por ix_job_runs_job_iniciado.
     """
-    ahora = datetime.now(UTC).replace(tzinfo=None)
+    ahora = ahora_utc()
     jobs: list[dict[str, Any]] = []
     hay_critico_stale = False
 

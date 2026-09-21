@@ -8,12 +8,13 @@ También purga el historial de corridas de jobs (job_runs), que crece sin techo.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.core.tiempo import ahora_utc
 from app.models.enums import ESTADOS_TERMINALES
 from app.models.tables import (
     Alerta,
@@ -34,7 +35,7 @@ def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
     No toca oportunidades vigentes ni aquellas con alertas pendientes.
     Devuelve dict con conteos de filas afectadas por tipo.
     """
-    corte = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=dias)
+    corte = ahora_utc() - timedelta(days=dias)
     estados_str = [e.value for e in ESTADOS_TERMINALES]
 
     # IDs de matches que tienen alertas pendientes → protegerlos
@@ -122,7 +123,7 @@ def purgar_job_runs(session: Session, dias: int = 90) -> int:
     job_runs crece una fila por corrida y por disparador; sin purga la tabla
     crece sin techo (regla 11: Neon son 0,5 GB). Devuelve las filas borradas.
     """
-    corte = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=dias)
+    corte = ahora_utc() - timedelta(days=dias)
     r = session.execute(delete(JobRun).where(JobRun.iniciado_en < corte))
     return int(r.rowcount or 0)  # type: ignore[attr-defined]
 

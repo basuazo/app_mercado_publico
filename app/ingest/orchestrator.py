@@ -14,7 +14,6 @@ import traceback
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import Engine, text
@@ -26,6 +25,7 @@ from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
 from app.core.retencion import purgar_terminales
 from app.core.settings import Settings
+from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.ingest.catalogos import refresh_organismos
 from app.ingest.compra_agil import sync_incremental, upsert_ca_detalle
 from app.ingest.datos_abiertos import capturar_competencia, sync_items_datos_abiertos
@@ -39,7 +39,6 @@ from app.ingest.lifecycle import refresh_estados
 from app.models.tables import CompraAgil, JobRun, Licitacion
 
 _log = get_logger(__name__)
-_TZ_CHILE = ZoneInfo("America/Santiago")
 
 # Clave para pg_advisory_lock — hash arbitrario de "mp_ingesta"
 _LOCK_KEY = 7_891_011
@@ -76,7 +75,7 @@ def en_ventana_nocturna(now_fn: Callable[..., datetime] | None = None) -> bool:
 
     `now_fn` es inyectable para tests (ej. lambda tz: frozen_datetime).
     """
-    ahora = now_fn(_TZ_CHILE) if now_fn is not None else datetime.now(_TZ_CHILE)
+    ahora = now_fn(TZ_CHILE) if now_fn is not None else datetime.now(TZ_CHILE)
     hora = ahora.hour
     return hora >= 22 or hora < 7
 
@@ -270,7 +269,7 @@ def _registrar_corrida(
             JobRun(
                 job=job,
                 iniciado_en=iniciado_en,
-                terminado_en=datetime.now(UTC).replace(tzinfo=None),
+                terminado_en=ahora_utc(),
                 estado=estado,
                 resultado_json=resultado,
                 error=error,
@@ -311,7 +310,7 @@ def _run_with_lock(
     y CLI—, así que es el único lugar donde hay que instrumentar. La telemetría
     no cambia el valor de retorno ni puede hacer fallar el job.
     """
-    iniciado_en = datetime.now(UTC).replace(tzinfo=None)
+    iniciado_en = ahora_utc()
     # AUTOCOMMIT a propósito: pg_advisory_lock es de SESIÓN, no de transacción,
     # así que el lock se mantiene igual mientras la conexión viva. Con una
     # transacción abierta, en cambio, esta conexión quedaba "idle in

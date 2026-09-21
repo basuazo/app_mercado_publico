@@ -20,12 +20,24 @@ from app.clients.types import (
 )
 from app.core.logging import get_logger
 from app.core.settings import Settings
+from app.core.tiempo import a_naive_como_la_api
 
 _log = get_logger(__name__)
 
 _BASE = "https://api2.mercadopublico.cl"
 _LISTADO = _BASE + "/v2/compra-agil"
 _DETALLE = _BASE + "/v2/compra-agil/{codigo}"
+
+
+def _iso_para_la_api(dt: datetime) -> str:
+    """Serializa un instante en el formato que la API v2 usa: ISO-8601 sin offset.
+
+    Internamente los instantes viajan naive en UTC (ver ``app/core/tiempo.py``);
+    la API los manda y los espera en su propio huso, sin marcarlo. Este es el
+    único lugar que deshace la conversión, y es la inversa exacta de la que
+    aplica ``parse_fecha_iso`` al leer.
+    """
+    return a_naive_como_la_api(dt).isoformat()
 
 
 def _validar_envelope(data: dict[str, object]) -> dict[str, object]:
@@ -72,7 +84,8 @@ def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
             fechas.get("fecha_publicacion") if isinstance(fechas, dict) else None
         ),
         fecha_cierre=parse_fecha_iso(
-            fechas.get("fecha_cierre") if isinstance(fechas, dict) else None
+            fechas.get("fecha_cierre") if isinstance(fechas, dict) else None,
+            fin_de_dia=True,
         ),
         fecha_ultimo_cambio=parse_fecha_iso(
             fechas.get("fecha_ultimo_cambio") if isinstance(fechas, dict) else None
@@ -173,11 +186,15 @@ class MercadoPublicoV2Client:
         if ttl_cambio_ms is not None:
             params["ttl_cambio_ms"] = ttl_cambio_ms
         if cambio_desde is not None:
-            params["cambio_desde"] = cambio_desde.isoformat()
+            # El cursor se guarda en UTC naive, pero la API manda (y espera) sus
+            # fechas sin offset. Devolverlo tal cual lo correría horas hacia
+            # adelante y la ingesta incremental perdería cambios: round-trip
+            # simétrico vía a_naive_como_la_api (F-fecha-cierre).
+            params["cambio_desde"] = _iso_para_la_api(cambio_desde)
         if publicado_desde is not None:
-            params["publicado_desde"] = publicado_desde.isoformat()
+            params["publicado_desde"] = _iso_para_la_api(publicado_desde)
         if publicado_hasta is not None:
-            params["publicado_hasta"] = publicado_hasta.isoformat()
+            params["publicado_hasta"] = _iso_para_la_api(publicado_hasta)
         if estados:
             params["estado"] = ",".join(estados)
         if regiones:

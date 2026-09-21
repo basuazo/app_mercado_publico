@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
 from app.core.settings import Settings
+from app.core.tiempo import ahora_utc
 from app.ingest.compra_agil import upsert_ca_detalle
 from app.ingest.licitaciones import upsert_detalle
 from app.models.enums import ESTADOS_TERMINALES, EstadoOportunidad
@@ -22,10 +23,6 @@ _log = get_logger(__name__)
 _ESTADOS_NO_TERMINALES = [
     e.value for e in EstadoOportunidad if e not in ESTADOS_TERMINALES and e != EstadoOportunidad.DESCONOCIDO
 ]
-
-
-def _ahora() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def refresh_estados(
@@ -46,7 +43,7 @@ def refresh_estados(
     Prioriza por cercanía de cierre (las más urgentes primero).
     Respeta max_requests (1 req por oportunidad).
     """
-    ahora = _ahora()
+    ahora = ahora_utc()
     ventana_inicio = ahora - timedelta(days=7)
     ventana_fin = ahora + timedelta(days=3)
     budget_restante = max_requests

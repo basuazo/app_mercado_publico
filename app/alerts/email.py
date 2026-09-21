@@ -11,12 +11,11 @@ Reglas críticas:
 from __future__ import annotations
 
 import smtplib
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import httpx
 from jinja2 import Environment, FileSystemLoader
@@ -25,6 +24,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
 from app.core.settings import Settings
+from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.models.enums import EstadoAlerta
 from app.models.tables import (
     Alerta,
@@ -38,7 +38,6 @@ from app.models.tables import (
 )
 
 _log = get_logger(__name__)
-_TZ_CHILE = ZoneInfo("America/Santiago")
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _jinja = Environment(
@@ -58,7 +57,7 @@ class EmailCounter:
         self._state = self._load()
 
     def _today_chile(self) -> str:
-        return datetime.now(_TZ_CHILE).date().isoformat()
+        return datetime.now(TZ_CHILE).date().isoformat()
 
     def _load(self) -> SyncState:
         s = self._session.get(SyncState, self._FUENTE)
@@ -257,10 +256,6 @@ def _smtp_send_raw(
         smtp.sendmail(settings.smtp_from, [to_email], msg.as_string())
 
 
-def _now_utc() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
 def _load_alertas_seguimiento_pendientes(session: Session) -> list[Alerta]:
     return list(
         session.execute(
@@ -291,7 +286,7 @@ def _enviar_una(
         body_html = _jinja.get_template(f"{template_base}.html").render(**ctx)
         _smtp_send(settings, to_email, subject, body_text, body_html)
         alerta.estado = EstadoAlerta.ENVIADA.value
-        alerta.enviada_en = _now_utc()
+        alerta.enviada_en = ahora_utc()
         session.commit()
         counter.consume()
         return True
@@ -359,7 +354,7 @@ def _matches_nuevos_usuario(session: Session, usuario: Usuario) -> list[Oportuni
 def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None = None) -> dict[str, int]:
     """Envía un resumen consolidado por usuario elegible si tiene matches nuevos."""
     if ahora is None:
-        ahora = _now_utc()
+        ahora = ahora_utc()
     counter = EmailCounter(session, settings.email_daily_limit)
     usuarios = list(session.execute(select(Usuario).where(Usuario.activo.is_(True))).scalars())
 

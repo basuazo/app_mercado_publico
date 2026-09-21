@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.core.tiempo import ahora_utc
 from app.models.tables import Alerta, CompraAgil, Licitacion, OportunidadSeguida
 
 _log = get_logger(__name__)
-
-def _ahora_utc() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _ya_existe_seguimiento(session: Session, seguimiento_id: int, tipo: str) -> bool:
@@ -56,7 +54,7 @@ def detectar_cambio_estado_seguidas(session: Session) -> int:
     for seguimiento, estado_nuevo in rows_lic:
         session.add(Alerta(seguimiento_id=seguimiento.id, tipo=f"seguimiento_estado:{estado_nuevo}"))
         seguimiento.estado_visto = estado_nuevo
-        seguimiento.actualizado_en = _ahora_utc()
+        seguimiento.actualizado_en = ahora_utc()
         creados += 1
 
     rows_ca = list(
@@ -73,7 +71,7 @@ def detectar_cambio_estado_seguidas(session: Session) -> int:
     for seguimiento, estado_nuevo in rows_ca:
         session.add(Alerta(seguimiento_id=seguimiento.id, tipo=f"seguimiento_estado:{estado_nuevo}"))
         seguimiento.estado_visto = estado_nuevo
-        seguimiento.actualizado_en = _ahora_utc()
+        seguimiento.actualizado_en = ahora_utc()
         creados += 1
 
     _log.info("detectar_cambio_estado_seguidas: %d alertas creadas", creados)
@@ -90,7 +88,7 @@ def detectar_recordatorio_cierre_seguidas(
     enviada de cierre para esa oportunidad seguida.
     """
     if ahora is None:
-        ahora = _ahora_utc()
+        ahora = ahora_utc()
     limite = ahora + timedelta(hours=48)
     creados = 0
 

@@ -11,9 +11,8 @@ tienen ítems. No marca detalle_obtenido ni toca los demás campos del detalle
 from __future__ import annotations
 
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import exists, select
@@ -31,6 +30,7 @@ from app.clients.datos_abiertos import (
 from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.settings import Settings
+from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.models.enums import EstadoOportunidad
 from app.models.tables import (
     Licitacion,
@@ -42,7 +42,6 @@ from app.models.tables import (
 
 _log = get_logger(__name__)
 _FUENTE = "datos_abiertos_lic"
-_TZ_CHILE = ZoneInfo("America/Santiago")
 
 _VACIO: dict[str, int] = {
     "licitaciones_tocadas": 0,
@@ -62,12 +61,8 @@ _VACIO_COMPETENCIA: dict[str, int] = {
 _MESES_FALLBACK = 4
 
 
-def _ahora() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
 def _mes_actual_chile() -> tuple[int, int]:
-    ahora = datetime.now(_TZ_CHILE)
+    ahora = datetime.now(TZ_CHILE)
     return ahora.year, ahora.month
 
 
@@ -87,10 +82,10 @@ def _guardar_estado(session: Session, fuente: str = _FUENTE, *, cursor: str | No
     if state is None:
         state = SyncState(fuente=fuente)
         session.add(state)
-    state.ultima_ejecucion = _ahora()
+    state.ultima_ejecucion = ahora_utc()
     if cursor is not None:
         state.cursor = cursor
-        state.ultimo_ok = _ahora()
+        state.ultimo_ok = ahora_utc()
     state.notas = notas
 
 
@@ -99,8 +94,8 @@ def _guardar_resumen_legacy(session: Session, *, notas: str) -> None:
     if state is None:
         state = SyncState(fuente=_FUENTE)
         session.add(state)
-    state.ultima_ejecucion = _ahora()
-    state.ultimo_ok = _ahora()
+    state.ultima_ejecucion = ahora_utc()
+    state.ultimo_ok = ahora_utc()
     state.notas = notas
 
 

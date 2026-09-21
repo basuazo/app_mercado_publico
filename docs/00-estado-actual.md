@@ -61,8 +61,11 @@ nunca se expuso — y solo aplica a Compra Ágil.
 ### Abierto al cierre
 - ~~**Correr F-ui-fixes en Claude Code y auditarla.**~~ Corrida el 21-sep-2026 (ver abajo); falta la
   auditoría manual en navegador.
-- **`fecha_cierre`: huso indeterminado — NO etiquetar la hora todavía.** Ver
-  "Hallazgo de zona horaria" más abajo. F-feed-filtros lo necesita para comparar el rango de cierre.
+- **`fecha_cierre`: huso indeterminado — NO etiquetar la hora todavía.** ~~Ver "Hallazgo de zona
+  horaria" más abajo.~~ **F-fecha-cierre (21-sep) lo arregló en datos y matching**; falta correr el
+  Paso 0 (`python scripts/smoke_test.py --fechas`) para confirmar el huso de la fuente y escribir
+  el resultado acá. La hora sigue sin mostrarse en licitaciones. F-feed-filtros ya puede construir
+  el filtro por rango de cierre sobre este campo.
 - **Confirmar `suspendida` en la familia `SIN_EFECTO`** — única asignación discutible del mapa de 6
   familias de `EstadoOportunidad`.
 - Lienzo de diseño del dashboard: Artifact de tipo Design, un artboard a 1440x1640. Faltan el estado
@@ -106,6 +109,72 @@ ficha quedó igual que antes (sin sufijo de huso). Pendiente para una fase propi
 - Según el resultado: guardar `timezone=True` y convertir en la capa de presentación, o etiquetar.
 - Aparte y anterior: decidir qué mostrar como hora de cierre de una **licitación**, dado que hoy
   el 00:00 es inventado por `_fecha_a_dt`. Ocultar la hora es lo honesto mientras v1 no la entregue.
+
+> **Resuelto en el código por F-fecha-cierre (21-sep-2026).** Los tres puntos [V] de arriba
+> describen el código **anterior** a esa fase: `_fecha_a_dt` ya no existe, `parse_fecha_iso` ya no
+> hace `rstrip("Z")`, y el parseo de v1 conserva la hora. Lo que sigue [I] es el huso de la fuente.
+> Ver la sección siguiente.
+
+---
+
+## F-fecha-cierre — la hora real de cierre (21-sep-2026)
+
+Cierra el hallazgo de arriba en lo que era **bug de negocio**, no de presentación: una licitación
+que cerraba hoy a las 15:00 quedaba guardada como `00:00` de ese día; leído como UTC, eso son las
+21:00 del día ANTERIOR en Chile, así que dejaba de ser candidata —desaparecía del feed y no
+generaba alertas— durante todo su último día.
+
+**Qué cambió [V] (leído en el código de esta fase):**
+
+- `app/core/tiempo.py` es nuevo y es el **único** lugar del proyecto que convierte husos y el
+  **único** que define "ahora" (`ahora_utc()`). Las ~15 copias de
+  `datetime.now(UTC).replace(tzinfo=None)` desaparecieron.
+- `parse_fecha_v1_dt` (`app/clients/types.py`) conserva la hora del ISO que manda el listado de
+  activas. `parse_fecha_v1` sigue existiendo, sin cambios, para los campos que sí son fechas.
+- `parse_fecha_iso` usa `datetime.fromisoformat`, que en 3.11+ entiende `Z` y los offsets: el
+  offset **se conserva** en vez de descartarse.
+- Cuando la fuente solo da la fecha (`ddmmaaaa`), `fecha_cierre` se guarda como el **FIN** del día
+  en hora de Chile, no el comienzo. Eso solo arregla el bug incluso para las filas sin hora.
+- En la base se sigue guardando **naive en UTC**. No hubo migración: las columnas siguen sin
+  `timezone=True`.
+- `app/clients/mp_v2.py::_iso_para_la_api` deshace la conversión al mandarle `cambio_desde` a la
+  API. Sin eso el cursor de Compra Ágil se habría corrido 3–4 horas hacia adelante y la ingesta
+  incremental habría empezado a perder cambios.
+- Las filas viejas se curan solas: `upsert_basica` sobrescribe `fecha_cierre` siempre que el item
+  entrante traiga el dato (solo protege el caso `None`), así que la próxima corrida de `activas`
+  reescribe todas las licitaciones activas. No se escribió ningún script de backfill. Las
+  terminales viejas quedan con el dato viejo: no son candidatas y la retención las purga a los 90
+  días.
+- La UI **no cambió**: `texto_cierre` sigue sin mostrar la hora en licitaciones (ver su docstring).
+
+**Lo que sigue sin verificar [I]:** a qué huso se refieren los valores que la API manda **sin**
+offset. `app/core/tiempo.py` los interpreta como hora de **Chile continental**
+(`America/Santiago`), porque es una API del Estado de Chile publicando plazos chilenos. Es una
+suposición razonable, no un hecho.
+
+**Paso 0 — lo corre Boris, no los tests (regla 20/23):**
+
+```
+python scripts/smoke_test.py --fechas
+```
+
+Pide una página del listado de activas (v1) y una de Compra Ágil (v2) —2 requests— e imprime, sin
+exponer el ticket, el valor crudo de `FechaCierre`/`fecha_cierre`, si trae hora distinta de
+`00:00:00` y si trae offset explícito. **El resultado va escrito acá, marcado [V].** Según lo que
+muestre:
+
+- hora real y sin offset → confirmar contra la hora de cierre que el portal muestra para ese mismo
+  código; si no coincide con Chile, el único cambio es `_TZ_SIN_OFFSET` en `app/core/tiempo.py`;
+- con `Z` o con offset → no hay suposición que confirmar, el código ya lo respeta;
+- sin hora → la mitad de la fase no aplicaba y hay que replantearla.
+
+**Verificación manual pendiente:** tras un `POST /api/jobs/run?job=activas` en producción, mirar en
+el feed que una licitación que cierra HOY siga apareciendo.
+
+**Queda anotado para una fase de una línea:** devolver la hora al badge de cierre de licitaciones,
+cuando el Paso 0 confirme que la API manda hora y haya pasado una corrida completa de `activas`.
+Antes no, porque hasta entonces conviven filas con hora real y filas con el borde del día derivado,
+sin manera de distinguirlas en la UI.
 
 ---
 

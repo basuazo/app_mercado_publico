@@ -22,6 +22,7 @@ from app.clients.types import (
     RespuestaListadoV2,
 )
 from app.core.settings import Settings
+from app.core.tiempo import ahora_utc
 from app.ingest.compra_agil import sync_incremental
 from app.ingest.licitaciones import (
     fetch_detalles_pendientes,
@@ -78,8 +79,8 @@ def _lic_basica(codigo: str, nombre: str = "Test", estado: int = 5) -> Licitacio
         codigo=codigo,
         nombre=nombre,
         estado=estado,
-        fecha_publicacion=date(2026, 1, 1),
-        fecha_cierre=date(2026, 3, 1),
+        fecha_publicacion=datetime(2026, 1, 1),
+        fecha_cierre=datetime(2026, 3, 1),
         tipo="L1",
         codigo_organismo="ORG-001",
     )
@@ -90,8 +91,8 @@ def _lic_detalle(codigo: str, nombre: str = "Test") -> LicitacionDetalle:
         codigo=codigo,
         nombre=nombre,
         estado=5,
-        fecha_publicacion=date(2026, 1, 1),
-        fecha_cierre=date(2026, 3, 1),
+        fecha_publicacion=datetime(2026, 1, 1),
+        fecha_cierre=datetime(2026, 3, 1),
         tipo="L1",
         codigo_organismo="ORG-001",
         descripcion="Descripcion de prueba",
@@ -296,12 +297,12 @@ class TestUpsertBasicaAntiClobber:
 
     def test_activa_con_fecha_futura_queda_publicada(self, session, settings):
         """Licitación activa (estado=5) con fecha de cierre futura → publicada, no descartada."""
-        fecha_futura = date.today() + timedelta(days=30)
+        fecha_futura = ahora_utc() + timedelta(days=30)
         item = LicitacionBasica(
             codigo="LIC-FUTURA",
             nombre="Test",
             estado=5,
-            fecha_publicacion=date.today(),
+            fecha_publicacion=ahora_utc(),
             fecha_cierre=fecha_futura,
             tipo="L1",
             codigo_organismo="ORG-001",
@@ -313,7 +314,7 @@ class TestUpsertBasicaAntiClobber:
         assert lic is not None
         assert lic.estado == "publicada"
         assert lic.fecha_cierre is not None
-        assert lic.fecha_cierre > datetime.now(UTC).replace(tzinfo=None)
+        assert lic.fecha_cierre > ahora_utc()
 
 
 class TestFetchDetalles:

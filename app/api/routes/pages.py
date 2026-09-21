@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
-from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
@@ -49,6 +48,7 @@ from app.auth.password import hash_password, verify_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.changelog import entradas_changelog, fecha_ultima_novedad
 from app.core.logging import get_logger
+from app.core.tiempo import TZ_CHILE
 from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
 from app.matching.engine import match_perfil
 from app.matching.feedback import alternar_me_sirve, deshacer_descarte, listar_descartadas
@@ -82,7 +82,6 @@ from app.models.tables import (
 
 router = APIRouter()
 _log = get_logger(__name__)
-_TZ_CHILE = ZoneInfo("America/Santiago")
 _PAC_PAGE_SIZE = 100
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 registrar_filtros(_TEMPLATES.env)
@@ -1022,7 +1021,7 @@ async def plan_anual_get(
     sync_instituciones_pac(session, settings)
     sync_sectores_organismos(session, settings)
 
-    anio_actual = datetime.now(_TZ_CHILE).year
+    anio_actual = datetime.now(TZ_CHILE).year
     anios_disponibles = list(range(settings.plan_compra_anio_inicio, anio_actual + 1))
 
     agno_int = int(agno) if agno.strip().isdigit() else anio_actual

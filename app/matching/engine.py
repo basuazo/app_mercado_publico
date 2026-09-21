@@ -18,7 +18,7 @@ score quedan unificados en un solo motor (Postgres FTS 'spanish').
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, cast
 
 from sqlalchemy import String, bindparam, exists, or_, select, text
@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
+from app.core.tiempo import ahora_utc
 from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
 from app.models.enums import EstadoOportunidad
 from app.models.tables import (
@@ -505,7 +506,7 @@ def match_perfil(
     decida qué detalles buscar respetando el presupuesto de cuota.
     """
     if ahora is None:
-        ahora = datetime.now(UTC).replace(tzinfo=None)
+        ahora = ahora_utc()
 
     keywords = cast(list[str], list(perfil.keywords or []))
     keywords_excluir = cast(list[str], list(perfil.keywords_excluir or []))

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -22,6 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB as _PG_JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.tiempo import ahora_utc
 from app.models.base import Base
 from app.models.enums import (
     EstadoAlerta,
@@ -35,10 +36,6 @@ JSONB = JSON().with_variant(_PG_JSONB(), "postgresql")
 
 # BigInteger on Postgres, Integer on SQLite (autoincrement requires INTEGER type in SQLite).
 BigInt = BigInteger().with_variant(Integer(), "sqlite")
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +58,7 @@ class Usuario(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     novedades_visto_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
         "PerfilBusqueda", back_populates="owner", cascade="all, delete-orphan"
@@ -86,7 +83,7 @@ class Organismo(Base):
     nombre: Mapped[str] = mapped_column(String(500), nullable=False)
     rut: Mapped[str | None] = mapped_column(String(20), nullable=True)
     actualizado_en: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=_now, onupdate=_now
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )
 
 
@@ -114,9 +111,9 @@ class Licitacion(Base):
     codigo_organismo: Mapped[str | None] = mapped_column(String(50), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, default=None)
     detalle_obtenido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=_now, onupdate=_now
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )
 
     items: Mapped[list[LicitacionItem]] = relationship(
@@ -157,7 +154,7 @@ class OfertaCompetencia(Base):
     monto_linea_adjudicada: Mapped[float | None] = mapped_column(Float, nullable=True)
     cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
     seleccionada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +185,9 @@ class CompraAgil(Base):
     total_ofertas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     id_orden_compra: Mapped[str | None] = mapped_column(String(50), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, default=None)
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=_now, onupdate=_now
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )
 
     productos: Mapped[list[CaProducto]] = relationship(
@@ -281,9 +278,9 @@ class OportunidadSeguida(Base):
     estado_visto: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     archivada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=_now, onupdate=_now
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )
 
     owner: Mapped[Usuario] = relationship("Usuario", back_populates="seguidas")
@@ -313,7 +310,7 @@ class OportunidadMatch(Base):
     razones: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     # Primera vez que el perfil matcheó esta oportunidad. Inmutable ante re-match:
     # el resumen consolidado la usa para no re-reportar oportunidades viejas.
-    fecha_match: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    fecha_match: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
     perfil: Mapped[PerfilBusqueda] = relationship("PerfilBusqueda", back_populates="matches")
     alertas: Mapped[list[Alerta]] = relationship(
@@ -343,9 +340,9 @@ class MatchFeedback(Base):
     fuente: Mapped[str] = mapped_column(String(30), nullable=False)
     codigo_oportunidad: Mapped[str] = mapped_column(String(50), nullable=False)
     valor: Mapped[str] = mapped_column(String(20), nullable=False)
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=_now, onupdate=_now
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )
 
     usuario: Mapped[Usuario] = relationship("Usuario", back_populates="match_feedback")
@@ -405,7 +402,7 @@ class PlanCompraLinea(Base):
     estado_planificacion: Mapped[str] = mapped_column(
         String(30), nullable=False, default=EstadoPlanificacionPAC.DESCONOCIDO.value
     )
-    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
 
 class PlanCompraSync(Base):
@@ -416,7 +413,7 @@ class PlanCompraSync(Base):
 
     codigo_entidad: Mapped[int] = mapped_column(Integer, primary_key=True)
     agno: Mapped[int] = mapped_column(Integer, primary_key=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     fuente_last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
     n_filas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     estado: Mapped[str] = mapped_column(String(20), nullable=False, default="sin_plan")
@@ -468,7 +465,7 @@ class JobRun(Base):
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
     job: Mapped[str] = mapped_column(String(50), nullable=False)
-    iniciado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_now)
+    iniciado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     terminado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     estado: Mapped[str] = mapped_column(String(20), nullable=False)  # ok | error | omitido
     resultado_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

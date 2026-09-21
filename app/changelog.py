@@ -16,6 +16,17 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 21),
+        titulo="Ya no se nos escapan las oportunidades en su último día",
+        descripcion=(
+            "Guardábamos la fecha de cierre sin la hora, y eso hacía que una "
+            "licitación desapareciera de la lista y dejara de avisar durante todo su "
+            "último día, justo cuando más importaba. Ahora se guarda la hora real "
+            "de cierre que entrega Mercado Público, y cuando la fuente solo da el día "
+            "la oportunidad sigue apareciendo hasta que ese día termina."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 21),
         titulo="Nueva vista de oportunidades",
         descripcion=(
             "Rediseñamos la lista de oportunidades: ahora cada una muestra su nivel de "

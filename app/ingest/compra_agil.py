@@ -12,6 +12,7 @@ from app.clients.types import CompraAgilBasica, CompraAgilDetalle, RespuestaList
 from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.settings import Settings
+from app.core.tiempo import ahora_utc
 from app.models.enums import estado_ca
 from app.models.tables import CaProducto, CompraAgil, SyncState
 
@@ -43,17 +44,13 @@ def _filtros_listado(cambio_desde: datetime | None) -> list[str]:
     return estados
 
 
-def _ahora() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
 def upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAgil, bool]:
     """Upsert básico de Compra Ágil. Devuelve (objeto, es_nueva)."""
     existing = session.get(CompraAgil, item.codigo)
     es_nueva = existing is None
 
     if existing is None:
-        ca = CompraAgil(codigo=item.codigo, creado_en=_ahora())
+        ca = CompraAgil(codigo=item.codigo, creado_en=ahora_utc())
         session.add(ca)
     else:
         ca = existing
@@ -68,7 +65,7 @@ def upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAg
     ca.organismo_nombre = item.organismo_nombre
     ca.organismo_rut = item.organismo_rut
     ca.total_ofertas = item.total_ofertas
-    ca.actualizado_en = _ahora()
+    ca.actualizado_en = ahora_utc()
     return ca, es_nueva
 
 
@@ -78,7 +75,7 @@ def upsert_ca_detalle(session: Session, det: CompraAgilDetalle) -> None:
     ca.descripcion = det.descripcion
     ca.id_orden_compra = det.id_orden_compra
     ca.estado_convocatoria = det.estado_convocatoria
-    ca.actualizado_en = _ahora()
+    ca.actualizado_en = ahora_utc()
 
     for prod in ca.productos:
         session.delete(prod)
@@ -114,7 +111,7 @@ def _guardar_cursor(session: Session, nuevo_cursor_dt: datetime, ok: bool) -> No
     if state is None:
         state = SyncState(fuente=_FUENTE)
         session.add(state)
-    ahora = _ahora()
+    ahora = ahora_utc()
     state.ultima_ejecucion = ahora
     if ok:
         state.cursor = nuevo_cursor_dt.replace(tzinfo=None).isoformat()
@@ -226,7 +223,7 @@ def sync_incremental(
             if state is None:
                 state = SyncState(fuente=_FUENTE)
                 session.add(state)
-            state.ultima_ejecucion = _ahora()
+            state.ultima_ejecucion = ahora_utc()
             try:
                 session.commit()
             except Exception:

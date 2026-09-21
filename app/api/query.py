@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles
 from app.catalogos.unspsc import nombre_rubro
+from app.core.tiempo import ahora_utc
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas, obtener_seguimiento
@@ -122,7 +123,7 @@ def get_item_oportunidad(
 
     feedback = obtener_feedback(session, user_id, fuente, codigo)
     siguiendo = obtener_seguimiento(session, user_id, fuente, codigo) is not None
-    ahora = datetime.now(UTC).replace(tzinfo=None)
+    ahora = ahora_utc()
     return _construir_item(
         m,
         op,
@@ -198,7 +199,7 @@ def get_oportunidades_usuario(
         ).scalars():
             cas[c.codigo] = c
 
-    ahora = datetime.now(UTC).replace(tzinfo=None)
+    ahora = ahora_utc()
     result: list[dict[str, Any]] = []
 
     for m in matches:

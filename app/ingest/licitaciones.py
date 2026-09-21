@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -13,20 +13,11 @@ from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.montos import normalizar_clp
 from app.core.settings import Settings
+from app.core.tiempo import ahora_utc
 from app.models.enums import estado_licitacion
 from app.models.tables import Licitacion, LicitacionItem, SyncState
 
 _log = get_logger(__name__)
-
-
-def _ahora() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
-def _fecha_a_dt(d: date | None) -> datetime | None:
-    if d is None:
-        return None
-    return datetime(d.year, d.month, d.day)
 
 
 def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion, bool]:
@@ -42,7 +33,7 @@ def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion,
     if existing is None:
         lic = Licitacion(
             codigo=item.codigo,
-            creado_en=_ahora(),
+            creado_en=ahora_utc(),
         )
         session.add(lic)
     else:
@@ -55,15 +46,15 @@ def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion,
     lic.tipo = item.tipo
     lic.codigo_organismo = item.codigo_organismo
 
-    fecha_publicacion = _fecha_a_dt(item.fecha_publicacion)
-    if fecha_publicacion is not None or es_nueva:
-        lic.fecha_publicacion = fecha_publicacion
+    # Ya vienen como instantes naive en UTC desde parse_fecha_v1_dt: nada que
+    # fabricar aquí (F-fecha-cierre; antes _fecha_a_dt inventaba medianoche).
+    if item.fecha_publicacion is not None or es_nueva:
+        lic.fecha_publicacion = item.fecha_publicacion
 
-    fecha_cierre = _fecha_a_dt(item.fecha_cierre)
-    if fecha_cierre is not None or es_nueva:
-        lic.fecha_cierre = fecha_cierre
+    if item.fecha_cierre is not None or es_nueva:
+        lic.fecha_cierre = item.fecha_cierre
 
-    lic.actualizado_en = _ahora()
+    lic.actualizado_en = ahora_utc()
     return lic, es_nueva
 
 
@@ -77,7 +68,7 @@ def upsert_detalle(
     lic.monto_estimado = det.monto_estimado
     lic.monto_clp = normalizar_clp(det.monto_estimado, det.moneda, settings)
     lic.detalle_obtenido = True
-    lic.actualizado_en = _ahora()
+    lic.actualizado_en = ahora_utc()
 
     # Reemplazar items
     for item in lic.items:
@@ -116,7 +107,7 @@ def _guardar_estado(
     if state is None:
         state = SyncState(fuente=fuente)
         session.add(state)
-    ahora = _ahora()
+    ahora = ahora_utc()
     state.ultima_ejecucion = ahora
     if ok:
         state.ultimo_ok = ahora

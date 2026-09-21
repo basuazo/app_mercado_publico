@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from sqlalchemy.orm import Session
 
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.core.logging import get_logger
+from app.core.tiempo import ahora_utc
 from app.models.tables import Organismo
 
 _log = get_logger(__name__)
-
-
-def _ahora() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def refresh_organismos(
@@ -38,14 +33,14 @@ def refresh_organismos(
                     codigo=c.codigo,
                     nombre=c.nombre,
                     rut=c.rut,
-                    actualizado_en=_ahora(),
+                    actualizado_en=ahora_utc(),
                 )
             )
             nuevos += 1
         else:
             existing.nombre = c.nombre
             existing.rut = c.rut
-            existing.actualizado_en = _ahora()
+            existing.actualizado_en = ahora_utc()
             actualizados += 1
 
     session.commit()

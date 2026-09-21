@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
+
+from app.core.logging import get_logger
+from app.core.tiempo import a_utc_naive, borde_del_dia_utc_naive
+
+_log = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers de parsing defensivo
@@ -47,17 +52,85 @@ def parse_fecha_v1(s: object) -> date | None:
         return None
 
 
-def parse_fecha_iso(s: object) -> datetime | None:
-    """Parsea fechas ISO-8601 con tolerancia a formatos parciales."""
+def parse_fecha_v1_dt(s: object, *, fin_de_dia: bool = False) -> datetime | None:
+    """Igual que :func:`parse_fecha_v1`, pero conservando la HORA que manda la fuente.
+
+    El listado de licitaciones activas trae ``FechaCierre``/``FechaPublicacion``
+    en ISO-8601, así que ahí sí hay hora; el resto de v1 manda ``ddmmaaaa``, que
+    no la tiene. Esta función cubre los dos casos y devuelve siempre **naive en
+    UTC**, que es como se guarda en la base (ver ``app/core/tiempo.py``):
+
+    - ISO con hora: se conserva la hora. Si trae offset se convierte a UTC; si
+      no lo trae se interpreta como hora de Chile **[I]**.
+    - Solo fecha (``ddmmaaaa`` o ISO de 10 caracteres): no hay hora que
+      conservar, así que se usa el borde del día que corresponda —
+      ``fin_de_dia=True`` para ``fecha_cierre``, ``False`` para
+      ``fecha_publicacion`` (ver :func:`app.core.tiempo.borde_del_dia_utc_naive`).
+
+    Regla 6: cualquier valor que no calce devuelve ``None`` y queda logueado,
+    nunca rompe la ingesta.
+    """
     if not s or not isinstance(s, str):
         return None
-    s = s.strip().rstrip("Z")
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+    txt = s.strip()
+
+    if len(txt) == 8 and txt.isdigit():
         try:
-            return datetime.strptime(s, fmt)
+            d = date(int(txt[4:]), int(txt[2:4]), int(txt[:2]))
         except ValueError:
-            continue
-    return None
+            _log.warning("Fecha v1 ddmmaaaa inválida: %r", txt)
+            return None
+        return borde_del_dia_utc_naive(d, fin_de_dia=fin_de_dia)
+
+    solo_fecha = "T" not in txt and " " not in txt and len(txt) <= 10
+    try:
+        dt = datetime.fromisoformat(txt)
+    except ValueError:
+        try:
+            d = date.fromisoformat(txt[:10])
+        except ValueError:
+            _log.warning("Fecha v1 no reconocida: %r", txt)
+            return None
+        return borde_del_dia_utc_naive(d, fin_de_dia=fin_de_dia)
+
+    if solo_fecha:
+        return borde_del_dia_utc_naive(dt.date(), fin_de_dia=fin_de_dia)
+    return a_utc_naive(dt)
+
+
+def parse_fecha_iso(s: object, *, fin_de_dia: bool = False) -> datetime | None:
+    """Parsea fechas ISO-8601 de v2 con tolerancia a formatos parciales.
+
+    Devuelve **naive en UTC** (ver ``app/core/tiempo.py``). ``datetime.fromisoformat``
+    en Python 3.11+ entiende tanto la ``Z`` como los offsets explícitos, así que
+    el offset **se conserva** en vez de descartarse; los formatos antiguos
+    quedan solo como caída. Si el valor trae solo la fecha, ``fin_de_dia``
+    elige el borde del día igual que en :func:`parse_fecha_v1_dt`.
+    """
+    if not s or not isinstance(s, str):
+        return None
+    txt = s.strip()
+    solo_fecha = "T" not in txt and " " not in txt and len(txt) <= 10
+
+    try:
+        dt = datetime.fromisoformat(txt)
+    except ValueError:
+        sin_z, en_utc = (txt[:-1], True) if txt.endswith("Z") else (txt, False)
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+            try:
+                dt = datetime.strptime(sin_z, fmt)
+            except ValueError:
+                continue
+            if en_utc:
+                dt = dt.replace(tzinfo=UTC)
+            break
+        else:
+            _log.warning("Fecha ISO no reconocida: %r", txt)
+            return None
+
+    if solo_fecha:
+        return borde_del_dia_utc_naive(dt.date(), fin_de_dia=fin_de_dia)
+    return a_utc_naive(dt)
 
 
 def parse_float(v: object) -> float | None:
@@ -96,8 +169,9 @@ class LicitacionBasica:
     codigo: str
     nombre: str
     estado: int | None
-    fecha_publicacion: date | None
-    fecha_cierre: date | None
+    # Instantes naive en UTC, ya convertidos por parse_fecha_v1_dt (F-fecha-cierre).
+    fecha_publicacion: datetime | None
+    fecha_cierre: datetime | None
     tipo: str | None
     codigo_organismo: str | None
 

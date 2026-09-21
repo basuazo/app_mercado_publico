@@ -12,7 +12,7 @@ extra en cada consulta.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -25,6 +25,7 @@ from app.clients.plan_compra import (
 )
 from app.core.logging import get_logger
 from app.core.settings import Settings
+from app.core.tiempo import ahora_utc
 from app.models.enums import (
     ID_SECTOR_SIN_CLASIFICACION,
     SECTOR_SIN_CLASIFICACION,
@@ -37,10 +38,6 @@ _log = get_logger(__name__)
 
 _FUENTE_INSTITUCIONES = "plan_compra_instituciones"
 _FUENTE_SECTORES = "plan_compra_sectores"
-
-
-def _ahora() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @dataclass
@@ -79,7 +76,7 @@ def get_plan(
     403 del cliente (sin plan publicado) se cachea también con TTL como
     estado='sin_plan' para no re-pegar a la fuente en cada consulta repetida.
     """
-    ahora = _ahora()
+    ahora = ahora_utc()
     sync = session.get(PlanCompraSync, (codigo_entidad, agno))
     if sync is not None and _fresco(sync.fetched_at, settings.plan_compra_ttl_dias, ahora):
         if sync.estado == "ok":
@@ -159,7 +156,7 @@ def sync_instituciones_pac(session: Session, settings: Settings) -> int:
     reutiliza sync_state — el catálogo cambia con tan poca frecuencia que no
     necesita su propia tabla de control). Devuelve cuántas se cachearon (0 si
     no hubo refresh)."""
-    ahora = _ahora()
+    ahora = ahora_utc()
     state = session.get(SyncState, _FUENTE_INSTITUCIONES)
     if state is not None and state.ultimo_ok is not None and _fresco(
         state.ultimo_ok, settings.plan_compra_ttl_dias, ahora
@@ -207,7 +204,7 @@ def sync_sectores_organismos(session: Session, settings: Settings) -> int:
     vencimiento del TTL propio. Debe llamarse junto a/después de
     `sync_instituciones_pac`.
     """
-    ahora = _ahora()
+    ahora = ahora_utc()
     state = session.get(SyncState, _FUENTE_SECTORES)
     hay_sin_clasificar = (
         session.execute(select(InstitucionPAC.codigo_entidad).where(InstitucionPAC.id_sector.is_(None)).limit(1)).first()

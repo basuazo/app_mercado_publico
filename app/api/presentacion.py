@@ -208,14 +208,19 @@ def texto_cierre(
 ) -> str:
     """Texto del badge de cierre.
 
-    La hora SOLO se muestra en Compra Ágil. En licitaciones la hora es
-    fabricada por el parser (`parse_fecha_v1` corta el ISO a 10 caracteres y
-    `_fecha_a_dt` expande a medianoche), así que publicar "00:00" sería
-    presentar como dato de la fuente algo que la fuente no entregó. Vuelve en
-    F-fecha-cierre. Ver docs/00-estado-actual.md.
+    La hora SOLO se muestra en Compra Ágil. F-fecha-cierre arregló el parser
+    (la hora del ISO ya no se corta) pero NO devuelve la hora al badge de
+    licitaciones: hasta que una corrida de `activas` re-sincronice todas las
+    filas, conviven las que traen hora real de la fuente y las que llevan el
+    borde del día derivado de un `ddmmaaaa`, sin manera de distinguirlas en la
+    UI. Mostrar la hora ahora volvería a publicar como dato de la fuente algo
+    que la fuente no entregó, para un subconjunto de las filas.
+
+    Vuelve en una fase posterior, cuando el Paso 0 confirme que la API manda
+    hora y haya pasado una corrida completa. Ver docs/00-estado-actual.md.
 
     Tampoco se afirma zona horaria en Compra Ágil: el huso de la fuente no
-    está verificado.
+    está verificado (ver app/core/tiempo.py).
     """
     if fecha_cierre is None:
         return "Sin fecha de cierre"

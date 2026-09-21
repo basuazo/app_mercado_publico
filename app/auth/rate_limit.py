@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import threading
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+
+from app.core.tiempo import ahora_utc
 
 _lock = threading.Lock()
 _attempts: dict[str, list[datetime]] = defaultdict(list)
@@ -23,13 +25,13 @@ def _cleanup(ip: str, now: datetime) -> None:
 
 def is_rate_limited(ip: str) -> bool:
     with _lock:
-        _cleanup(ip, datetime.now(UTC).replace(tzinfo=None))
+        _cleanup(ip, ahora_utc())
         return len(_attempts[ip]) >= _MAX_ATTEMPTS
 
 
 def record_failed_attempt(ip: str) -> None:
     with _lock:
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = ahora_utc()
         _cleanup(ip, now)
         _attempts[ip].append(now)
 
