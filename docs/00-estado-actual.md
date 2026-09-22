@@ -5,6 +5,62 @@
 
 ---
 
+## Actualización 22-sep-2026 (noche) · lo más reciente, leer primero
+
+- **Hecho y verificado en el repo:** los commits están pusheados (`main` = `origin/main`);
+  F-feed-ui-2 está commiteada (`d2758bb`), falta auditarla; `_to_delete/` está vacío (el
+  snapshot con secretos se borró y nunca entró a git); los prompts y `ingesta_manual.ps1`
+  están trackeados. Boris confirma que ya corrió `activas` en producción y que rotó `JOBS_TOKEN`.
+- **F-cuota auditada:** el corte del loop está bien en todos los runners. Tiene un hueco
+  heredado: los reintentos de `_request` no pasan por `acquire()` ni por `check_budget()`. Se
+  corrige en la fase siguiente.
+- **CORRECCIÓN [V] a lo escrito abajo sobre el 429:** no es cierto que "cada job toma su
+  propio advisory lock". Hay **un solo lock** (`_LOCK_KEY = 7_891_011`) para scheduler,
+  endpoint y CLI, así que dos jobs no deberían solaparse. La causa del 10500 **queda sin
+  explicar**. Además, `retry_after_seconds` no lo lee nadie: no hubo "8 horas de ingesta
+  muerta" impuestas por el código, solo una corrida cortada y la regla de no insistir.
+- **Siguiente fase:** `docs/prompt-F-429-concurrencia.md`. Su Paso 0 revisa `job_runs` para ver
+  si el lock funcionó; si hubo solape, el bug es el lock y la fase se detiene. Después: 10500
+  con backoff corto, presupuesto y rate limiter en cada intento, un limiter por proceso y la
+  regla 3 de `Claude.md` actualizada. Luego vienen F-actions 1→3.
+- **Log del 22-sep (noche) [V]:** en una sola secuencia `ciclo-ca`, sin otro job corriendo, la
+  v2 dio 504 dos veces y la primera request de `match` (v1) recibió el 429/10500. El 10500 no
+  requiere solape de jobs. **[I]** Hipótesis: el gateway corta a ~30 s pero el backend sigue
+  procesando, y lo que mandamos después cuenta como simultáneo. El prompt quedó ajustado:
+  enfriamiento de 60 s tras un 504 o un timeout, en un limiter compartido por proceso; esperas
+  de 30/60/120 s para el 10500; Paso 0 solo informativo. **[I] Riesgo:** si `ca` no ha tenido
+  una corrida buena desde el 21-sep, el cursor atrasado agranda la ventana y alimenta el 504.
+  Candidata a fase aparte: ventana acotada con `cambio_desde`/`cambio_hasta`.
+
+### Resultado del Paso 0 de F-429-concurrencia (22-sep-2026, `job_runs` de producción)
+
+- **(B) [V]: el lock funcionó.** La consulta de solapes desde el 20-sep no devuelve filas.
+  Todo disparo concurrente quedó `omitido`: ids 41–47 mientras corría `activas` 48 (21-sep) e
+  id 60 (`activas`, 19:02:22 UTC del 22-sep) mientras corría `match` 61.
+- **[V] Solo UNA fila de `job_runs` tiene 429 en `error`:** id 50, `detalles`, 21-sep 21:18:56
+  UTC (18:18 Chile), cliente **v1** (`licitacion_detalle`), "Reintentar en 20579 s". El `Codigo`
+  del cuerpo no quedó en la BD; que haya sido 10500 no está verificado.
+- **[I] El 10500 del log de Render ("28771 s") casi seguro es `match` id 61**, cliente **v1**.
+  00:02 Chile − 28771 s = 19:02:29 UTC del 22-sep, y `match` 61 terminó a las 19:02:28.9 con
+  `detalles_interrumpidos: true` y `sin_detalle_ca` vacío, o sea que el corte fue en el loop
+  v1. `run_match` atrapa el error del canal y termina `ok`, por eso no está en `error`.
+  `match` 51 y 55 también cortaron el fetch v1 (`detalles_interrumpidos`) sin dejar rastro del
+  código. Por la misma cuenta, el log del prompt ajustado ("26381 s") corresponde a `match`
+  64: 00:02 Chile − 26381 s = 19:42:19 UTC, y `match` 64 terminó a las 19:42:18.5.
+- **[V] 504 → corte de `match`:** desde el 20-sep hay 6 corridas con 504 en `error`, todas de
+  `ca` (ids 28, 31, 38, 54, 59, 63), y 1 con 429 (id 50). Ese 429 no tuvo un 504 en los 5 min
+  previos: vino justo después de `activas` 49. En cambio, **3 de los 4** `match` con
+  `detalles_interrumpidos` (55, 61, 64) arrancaron segundos después de un `ca` con 504 (54, 59,
+  63). Eso sostiene la hipótesis del 504, pero no la prueba: el id 50 no la sigue.
+- **Otras fuentes del ticket fuera del lock (sin resolver):** `scripts/smoke_test.py`; la app o
+  el CLI en local (el CLI toma el lock en la BD del `.env`, que es **dev**, y no excluye a
+  producción); otro proceso con el mismo ticket.
+- **[V] Cursor de Compra Ágil atrasado ~47 h:** `sync_state.compra_agil.cursor` =
+  `2026-09-20T21:05:06.707` (si está en UTC, como el resto de `sync_state`), `ultimo_ok` =
+  21-sep 00:29:55 UTC, y la última corrida `ok` de `ca` es la id 19, del 21-sep 00:29:55 UTC.
+  Todas las corridas de `ca` desde entonces murieron con 504. Es insumo para la fase de
+  ventana acotada.
+
 ## Dos frentes abiertos (mapa, 22-sep-2026)
 
 El proyecto tiene **dos hilos paralelos e independientes**. No mezclarlos en la misma sesión de
@@ -104,7 +160,7 @@ reintentar". Resultado: un solape accidental de dos jobs convierte un rechazo tr
 horas de ingesta muerta, con el mensaje "Reintentar en 28771 s (00:01 Chile)" que la app inventa.
 
 **Cómo se produjo:** se disparó `job=activas` dos veces con 60 s de diferencia mientras `job=ca`
-corría. Cada job toma su propio advisory lock, así que distintos jobs SÍ pueden solaparse, y el
+corría. ~~Cada job toma su propio advisory lock, así que distintos jobs SÍ pueden solaparse~~ **FALSO, ver la actualización del 22-sep (noche): hay un solo lock**, y el
 rate limiter de 1 req/s es por instancia de cliente, no global entre jobs.
 
 **Qué hay que arreglar (fase pendiente, no hecha):** distinguir el `Codigo` del cuerpo. El 10500
