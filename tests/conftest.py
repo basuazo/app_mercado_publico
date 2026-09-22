@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import pytest
 
+from app.clients.base import reset_rate_limiter_compartido
 from app.core.settings import Settings
+
+
+@pytest.fixture(autouse=True)
+def _limiter_compartido_limpio():
+    """Cada test arranca con el RateLimiter del proceso sin crear.
+
+    Si no, el primer test fijaría la tasa para toda la suite y el bucket vacío
+    de uno haría esperar al siguiente.
+    """
+    reset_rate_limiter_compartido()
+    yield
+    reset_rate_limiter_compartido()
 
 
 @pytest.fixture(scope="session")

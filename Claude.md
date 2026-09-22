@@ -21,8 +21,12 @@ passlib[bcrypt] + cookies firmadas, pytest + respx, ruff + mypy + pre-commit.
    v2 (api2.mercadopublico.cl): ticket por HEADER "ticket"; ISO-8601;
    envelope {success, payload, errors}; paginación máx 50.
 3. Cuota 10.000 req/día; presupuesto local 9.000, contado y PERSISTIDO EN POSTGRES
-   (el disco de Render es efímero). 429 = agotado hasta el cambio de DÍA CALENDARIO
-   en America/Santiago; jamás reintentar un 429 el mismo día.
+   (el disco de Render es efímero). 429 con Codigo 10500 (peticiones simultáneas) =
+   concurrencia: máx. 3 reintentos con backoff (30/60/120 s) y luego cortar el job; el
+   siguiente disparo corre normal. Tras un 504 o un timeout, enfriar 60 s antes de
+   cualquier request (el backend puede seguir procesando). Cualquier otro 429 = tratarlo
+   como tope diario: no reintentar hasta el cambio de DÍA CALENDARIO en
+   America/Santiago. El 10500 es el único código de 429 verificado (22-sep-2026).
 4. Rate limit propio 1 req/s con jitter. Sin paralelismo agresivo.
 5. Backfills masivos SOLO entre 22:00 y 07:00 hora de Chile, validado en código
    con ZoneInfo("America/Santiago") (los crons externos corren en UTC: no confiar en ellos).

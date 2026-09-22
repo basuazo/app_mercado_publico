@@ -16,6 +16,21 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 22),
+        titulo="La descarga de datos ya no se rinde ante un rechazo pasajero",
+        descripcion=(
+            "Mercado Público a veces rechaza una consulta porque le llegaron varias "
+            "casi al mismo tiempo. Hasta ahora eso se trataba como si se hubiera "
+            "agotado el cupo del día y la descarga se detenía. Ahora la aplicación "
+            "reconoce ese aviso, espera entre medio minuto y dos minutos y vuelve a "
+            "intentar hasta tres veces. Si el rechazo sigue, corta y el siguiente "
+            "ciclo programado corre con normalidad. Además, cuando Mercado Público "
+            "tarda demasiado en responder, la aplicación hace una pausa de un minuto "
+            "antes de consultarle cualquier otra cosa, y todas las consultas pasan por "
+            "un mismo regulador de ritmo, para no mandarlas de a dos."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 22),
         titulo="Panel de filtros en el tablero",
         descripcion=(
             "Ahora la lista de oportunidades tiene un panel al costado para acotarla "

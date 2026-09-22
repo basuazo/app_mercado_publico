@@ -6,7 +6,7 @@ from datetime import date
 
 from sqlalchemy import Engine
 
-from app.clients.base import BaseClient, QuotaTracker, RateLimiter
+from app.clients.base import BaseClient, QuotaTracker, rate_limiter_compartido
 from app.clients.types import (
     Comprador,
     ItemLicitacion,
@@ -95,7 +95,7 @@ class MercadoPublicoV1Client:
     """Acceso a la API clásica de Mercado Público (v1)."""
 
     def __init__(self, settings: Settings, engine: Engine) -> None:
-        rl = RateLimiter(settings.rate_limit_rps)
+        rl = rate_limiter_compartido(settings.rate_limit_rps)
         quota = QuotaTracker(engine, settings.api_daily_budget)
         self._ticket = settings.mp_ticket
         self._client = BaseClient(ticket=settings.mp_ticket, rate_limiter=rl, quota=quota)

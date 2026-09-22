@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 from app.clients.base import (
     BaseClient,
     MPAuthError,
+    MPConcurrencyError,
     MPRateLimitError,
     MPServerError,
     QuotaExceededError,
@@ -195,10 +196,16 @@ def test_sin_retry_after_se_mantiene_el_fallback_de_medianoche(client) -> None:
 
 @respx.mock
 def test_el_429_sigue_sin_reintentarse(client, quota) -> None:
-    """Regla 3: la política de reintento NO cambia en esta fase."""
-    ruta = respx.get(_URL).mock(return_value=httpx.Response(429, text="limite"))
-    with pytest.raises(MPRateLimitError):
+    """Regla 3: un 429 que NO es 10500 se trata como tope diario y no se reintenta.
+
+    El 10500 (concurrencia) sí se reintenta: ver tests/test_429_concurrencia.py.
+    """
+    ruta = respx.get(_URL).mock(
+        return_value=httpx.Response(429, json={"Codigo": 10501, "Mensaje": "limite"})
+    )
+    with pytest.raises(MPRateLimitError) as exc:
         client._request("GET", _URL)
+    assert not isinstance(exc.value, MPConcurrencyError)
     assert ruta.call_count == 1
 
 

@@ -31,11 +31,24 @@ class MPAuthError(MPError):
 
 
 class MPRateLimitError(MPError):
-    """Error 429 — cuota agotada; esperar hasta el día siguiente en TZ Chile."""
+    """Error 429 — la API rechaza por límite.
+
+    Salvo la subclase MPConcurrencyError, se trata como tope diario: no se
+    reintenta hasta el cambio de día en TZ Chile (regla 3).
+    """
 
     def __init__(self, message: str, retry_after_seconds: int) -> None:
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+
+
+class MPConcurrencyError(MPRateLimitError):
+    """Error 429 con Codigo 10500 — "peticiones simultáneas", transitorio.
+
+    Subclase A PROPÓSITO: _request lo reintenta con backoff corto, y si los
+    reintentos se agotan los runners lo cortan igual que a cualquier
+    MPRateLimitError, sin tener que conocerlo.
+    """
 
 
 class MPServerError(MPError):
@@ -109,23 +122,83 @@ def _parse_retry_after(valor: str | None) -> int | None:
     return max(0, int((cuando - datetime.now(cuando.tzinfo)).total_seconds()))
 
 
+# Único código de 429 verificado (22-sep-2026): "Hemos detectado que existen
+# peticiones simultáneas". Cualquier otro se sigue tratando como tope diario.
+_CODIGO_CONCURRENCIA = 10500
+_RETRY_AFTER_CONCURRENCIA = 900
+
+
+def _codigo_de_error(response: httpx.Response) -> int | None:
+    """`Codigo` del cuerpo de un error, o None. Nunca lanza.
+
+    Se busca en la raíz (forma v1) y, si no está, en los elementos de la lista
+    `errors` del envelope v2. Cuerpo vacío, HTML o JSON sin código → None.
+    """
+
+    def _leer(obj: object) -> int | None:
+        if not isinstance(obj, dict):
+            return None
+        valor = obj.get("Codigo", obj.get("codigo"))
+        if valor is None or isinstance(valor, bool):
+            return None
+        try:
+            return int(str(valor).strip())
+        except ValueError:
+            return None
+
+    try:
+        cuerpo = response.json()
+    except Exception:
+        return None
+    codigo = _leer(cuerpo)
+    if codigo is not None:
+        return codigo
+    errores = cuerpo.get("errors") if isinstance(cuerpo, dict) else None
+    if isinstance(errores, list):
+        for err in errores:
+            codigo = _leer(err)
+            if codigo is not None:
+                return codigo
+    return None
+
+
 # ---------------------------------------------------------------------------
 # RateLimiter — token bucket con jitter
 # ---------------------------------------------------------------------------
 
 
 class RateLimiter:
-    """Token bucket síncrono; thread-safe."""
+    """Token bucket síncrono; thread-safe, con enfriamiento opcional."""
 
     def __init__(self, rps: float) -> None:
         self._rps = max(rps, 0.01)
         self._tokens: float = 1.0
         self._last: float = time.monotonic()
+        self._no_antes_de: float = 0.0
         self._lock = threading.Lock()
+
+    @property
+    def rps(self) -> float:
+        return self._rps
+
+    def enfriar(self, segundos: float, causa: str) -> None:
+        """Ningún acquire() vuelve antes de `segundos` desde ahora.
+
+        Un enfriamiento más corto no acorta uno más largo que ya esté en curso.
+        """
+        with self._lock:
+            hasta = time.monotonic() + max(0.0, segundos)
+            if hasta <= self._no_antes_de:
+                return
+            self._no_antes_de = hasta
+        _log.warning("RateLimiter: enfriamiento de %.1f s (%s)", segundos, causa)
 
     def acquire(self) -> None:
         with self._lock:
             now = time.monotonic()
+            if now < self._no_antes_de:
+                time.sleep(self._no_antes_de - now)
+                now = time.monotonic()
             elapsed = now - self._last
             self._tokens = min(1.0, self._tokens + elapsed * self._rps)
             self._last = now
@@ -138,6 +211,36 @@ class RateLimiter:
         jitter = random.uniform(0.0, 0.15 / self._rps)
         if jitter > 0:
             time.sleep(jitter)
+
+
+# v1 y v2 usan el MISMO ticket: si cada cliente tuviera su limiter, el proceso
+# podría emitir 2 req/s. Es por proceso, no global: entre procesos serializan el
+# advisory lock y el grupo `concurrency` de los workflows.
+_limiter_compartido: RateLimiter | None = None
+_limiter_compartido_lock = threading.Lock()
+
+
+def rate_limiter_compartido(rps: float) -> RateLimiter:
+    """El RateLimiter único del proceso; se crea en la primera llamada."""
+    global _limiter_compartido
+    with _limiter_compartido_lock:
+        if _limiter_compartido is None:
+            _limiter_compartido = RateLimiter(rps)
+        elif _limiter_compartido.rps != max(rps, 0.01):
+            _log.warning(
+                "rate_limiter_compartido: se pidió %.3f req/s pero ya existe uno de %.3f; "
+                "se mantiene el primero",
+                rps,
+                _limiter_compartido.rps,
+            )
+        return _limiter_compartido
+
+
+def reset_rate_limiter_compartido() -> None:
+    """Descarta el limiter del proceso. Solo para tests."""
+    global _limiter_compartido
+    with _limiter_compartido_lock:
+        _limiter_compartido = None
 
 
 # ---------------------------------------------------------------------------
@@ -230,21 +333,25 @@ class BaseClient:
         if response.status_code == 401:
             raise MPAuthError("Ticket inválido o ausente (401)")
         if response.status_code == 429:
-            # Instrumentación (F-cuota): hasta ahora inventábamos "00:01 Chile"
-            # sin mirar la respuesta. No sabemos si la API manda Retry-After ni
-            # si distingue tope diario de limitación por tasa, así que primero
-            # registramos lo que llega de verdad.
-            #
-            # La POLÍTICA DE REINTENTO NO CAMBIA EN ESTA FASE: MPRateLimitError
-            # sigue sin reintentarse (regla 3). Con dos o tres días de estos
-            # logs se decide si la regla 3 se corrige.
+            # Instrumentación (F-cuota): se registra lo que llega de verdad.
+            # F-429-concurrencia: los logs mostraron que la API distingue por
+            # `Codigo` del cuerpo. El 10500 (peticiones simultáneas) es
+            # transitorio y _request lo reintenta; cualquier otro 429 se sigue
+            # tratando como tope diario, sin reintento (regla 3).
             cabeceras = _headers_de_cuota(response.headers)
             cuerpo = response.text[:500]
+            codigo = _codigo_de_error(response)
             _log.warning(
-                "HTTP 429 headers_cuota=%s body=%s",
+                "HTTP 429 codigo=%s headers_cuota=%s body=%s",
+                codigo if codigo is not None else "(ninguno)",
                 cabeceras or "(ninguna)",
                 cuerpo,
             )
+            if codigo == _CODIGO_CONCURRENCIA:
+                raise MPConcurrencyError(
+                    f"Concurrencia (429/{_CODIGO_CONCURRENCIA}): peticiones simultáneas",
+                    retry_after_seconds=_RETRY_AFTER_CONCURRENCIA,
+                )
             secs = _parse_retry_after(response.headers.get("Retry-After"))
             if secs is None:
                 secs = _seconds_until_next_day_chile()
@@ -274,17 +381,29 @@ class BaseClient:
     def _request(self, method: str, url: str, **kwargs: object) -> dict[str, object]:
         # MPServerError: máx 2 intentos totales (1 reintento) — absorbe errores transitorios
         # httpx.TimeoutException: máx 3 intentos totales (2 reintentos)
-        # MPRateLimitError: nunca reintentar
+        # MPConcurrencyError (429/10500): máx 4 intentos totales, backoff 30/60/120 s + jitter
+        # MPRateLimitError (cualquier otro 429): nunca reintentar
+        # Los tres contadores son independientes.
+        #
+        # 504 y timeout enfrían el limiter del proceso 60 s, se reintente o no:
+        # [I] el gateway corta a ~30 s pero el backend de ChileCompra sigue con
+        # la consulta, y cualquier request nuestra con el mismo ticket, de v1 o
+        # de v2, puede contarse como simultánea (10500). Las esperas del 10500
+        # también pasan por el limiter, para frenar a todo el proceso.
         _MAX_SERVER_ATTEMPTS = 2
         _MAX_TIMEOUT_ATTEMPTS = 3
-
-        self._quota.check_budget()
-        self._rate_limiter.acquire()
+        _CONCURRENCY_DELAYS = (30.0, 60.0, 120.0)
+        _ENFRIAMIENTO_S = 60.0
 
         server_attempt = 0
         timeout_attempt = 0
+        concurrency_retry = 0
 
         while True:
+            # Antes de CADA intento, también los reintentos: si el presupuesto
+            # se agota a mitad de camino, QuotaExceededError sin emitir nada.
+            self._quota.check_budget()
+            self._rate_limiter.acquire()
             try:
                 _log.debug("HTTP %s %s", method, url)
                 try:
@@ -297,9 +416,24 @@ class BaseClient:
                     # /api/salud informara un piso en vez del consumo real.
                     self._quota.consume()
                 return self._handle_response(response)
+            except MPConcurrencyError:
+                if concurrency_retry >= len(_CONCURRENCY_DELAYS):
+                    raise
+                delay = _CONCURRENCY_DELAYS[concurrency_retry] * (1 + random.uniform(0.0, 0.2))
+                concurrency_retry += 1
+                _log.warning(
+                    "MPConcurrencyError (429/10500) reintento %d/%d; reintentando en %.1f s",
+                    concurrency_retry,
+                    len(_CONCURRENCY_DELAYS),
+                    delay,
+                )
+                self._rate_limiter.enfriar(delay, causa="429/10500")
             except (MPAuthError, MPRateLimitError, MPParseError):
                 raise
-            except MPServerError:
+            except MPServerError as exc:
+                es_504 = exc.status_code == 504
+                if es_504:
+                    self._rate_limiter.enfriar(_ENFRIAMIENTO_S, causa="HTTP 504")
                 server_attempt += 1
                 if server_attempt >= _MAX_SERVER_ATTEMPTS:
                     raise
@@ -308,17 +442,20 @@ class BaseClient:
                     "MPServerError intento %d/%d; reintentando en %.1f s",
                     server_attempt,
                     _MAX_SERVER_ATTEMPTS,
-                    delay,
+                    max(delay, _ENFRIAMIENTO_S) if es_504 else delay,
                 )
-                time.sleep(delay)
+                if not es_504:
+                    # 500/502/503 conservan su espera: el 500 de Compra Ágil es
+                    # determinista (docs/09-compra-agil-500.md), no una consulta viva.
+                    time.sleep(delay)
             except httpx.TimeoutException as exc:
+                self._rate_limiter.enfriar(_ENFRIAMIENTO_S, causa="timeout")
                 timeout_attempt += 1
                 if timeout_attempt >= _MAX_TIMEOUT_ATTEMPTS:
                     raise MPServerError("Timeout de red", status_code=0) from exc
-                delay = min(2.0 * (2 ** (timeout_attempt - 1)), 30.0)
                 _log.warning(
                     "TimeoutException intento %d/%d; reintentando en %.1f s",
                     timeout_attempt,
                     _MAX_TIMEOUT_ATTEMPTS,
-                    delay,
+                    _ENFRIAMIENTO_S,
                 )

@@ -7,7 +7,13 @@ from datetime import datetime
 
 from sqlalchemy import Engine
 
-from app.clients.base import BaseClient, MPAuthError, MPParseError, QuotaTracker, RateLimiter
+from app.clients.base import (
+    BaseClient,
+    MPAuthError,
+    MPParseError,
+    QuotaTracker,
+    rate_limiter_compartido,
+)
 from app.clients.types import (
     CompraAgilBasica,
     CompraAgilDetalle,
@@ -150,7 +156,7 @@ class MercadoPublicoV2Client:
     """Acceso a la API Compra Ágil v2 de Mercado Público."""
 
     def __init__(self, settings: Settings, engine: Engine) -> None:
-        rl = RateLimiter(settings.rate_limit_rps)
+        rl = rate_limiter_compartido(settings.rate_limit_rps)
         quota = QuotaTracker(engine, settings.api_daily_budget)
         self._ticket = settings.mp_ticket
         self._client = BaseClient(
