@@ -31,6 +31,7 @@ from app.api.presentacion import (
 )
 from app.api.query import (
     AGRUPAR_POR_VALIDOS,
+    LIMITE_PAGINA_DEFAULT,
     agrupar_oportunidades,
     buscar_instituciones_pac,
     check_oportunidad_access,
@@ -136,7 +137,7 @@ def _decorar_item(item: dict[str, Any], settings: Any) -> dict[str, Any]:
     return item
 
 
-_ORDENES_VALIDOS = {"score", "cierre"}
+_ORDENES_VALIDOS = {"score", "cierre", "monto"}
 
 # Preset "Alta relevancia" del control de umbral del feed (F-feed-umbral).
 # "Media" usa settings.feed_min_score_default (configurable por env);
@@ -182,7 +183,10 @@ async def index(
     agrupar_por = agrupar_por if agrupar_por in AGRUPAR_POR_VALIDOS else "motivo"
     settings = request.app.state.settings
     min_score_efectivo = min_score if min_score is not None and min_score >= 0 else settings.feed_min_score_default
-    items, total, total_sin_relevancia = get_oportunidades_usuario(
+    # Sin agrupación manda la paginación; agrupando manda el cap por grupo
+    # (F-feed-filtros, Bloque 7). El default de la ruta sigue siendo "motivo".
+    limite = LIMITE_PAGINA_DEFAULT if agrupar_por == "ninguno" else _LIMITE_AGRUPADO
+    resultado = get_oportunidades_usuario(
         session,
         user.id,
         fuente=fuente or None,
@@ -190,9 +194,10 @@ async def index(
         perfil_id=perfil_id_int,
         orden=orden,
         min_score=min_score_efectivo,
-        limit=_LIMITE_AGRUPADO,
+        limit=limite,
         offset=0,
     )
+    items = resultado.items
     for item in items:
         _decorar_item(item, settings)
     grupos, total_unico, total_apariciones = agrupar_oportunidades(
@@ -215,7 +220,7 @@ async def index(
             orden=orden,
             min_score=min_score_efectivo,
             agrupar_por=agrupar_por,
-            n_ocultas_relevancia=total_sin_relevancia - total,
+            n_ocultas_relevancia=resultado.total_sin_filtro_relevancia - resultado.total,
             relevancia_alta=_RELEVANCIA_ALTA,
             relevancia_media=settings.feed_min_score_default,
             n_descartadas=n_descartadas,

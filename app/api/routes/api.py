@@ -163,7 +163,7 @@ async def listar_oportunidades(
 ) -> dict[str, Any]:
     limit = 50
     offset = (pagina - 1) * limit
-    items, total, _ = get_oportunidades_usuario(
+    resultado = get_oportunidades_usuario(
         session,
         user.id,
         fuente=fuente or None,
@@ -173,7 +173,7 @@ async def listar_oportunidades(
         offset=offset,
     )
     return {
-        "total": total,
+        "total": resultado.total,
         "pagina": pagina,
         "items": [
             {
@@ -188,7 +188,7 @@ async def listar_oportunidades(
                 "organismo": item["organismo"],
                 "url_ficha": item["url_ficha"],
             }
-            for item in items
+            for item in resultado.items
         ],
     }
 

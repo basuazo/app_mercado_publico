@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -11,11 +13,17 @@ from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles
 from app.catalogos.unspsc import nombre_rubro
-from app.core.tiempo import ahora_utc
+from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_naive
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas, obtener_seguimiento
-from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, ValorFeedback
+from app.models.enums import (
+    SECTOR_SIN_CLASIFICACION,
+    EstadoOportunidad,
+    FamiliaEstado,
+    ValorFeedback,
+    familia_de_estado,
+)
 from app.models.tables import (
     CompraAgil,
     InstitucionPAC,
@@ -133,6 +141,233 @@ def get_item_oportunidad(
     )
 
 
+# ---------------------------------------------------------------------------
+# Filtros, facetas y conteos del feed (F-feed-filtros)
+#
+# Todo lo de este bloque son funciones PURAS sobre la lista de items que
+# `get_oportunidades_usuario` ya cargó: ni una query agregada, ni un COUNT por
+# faceta. Seis agregados por carga de página contra Neon free es el patrón que
+# ya agotó las CU-horas (docs/11 y reglas 10-15 de CLAUDE.md).
+# ---------------------------------------------------------------------------
+
+
+# Página del feed cuando NO se agrupa (`agrupar_por="ninguno"`). Con agrupación
+# manda el cap por grupo de `agrupar_oportunidades` y el offset se ignora.
+LIMITE_PAGINA_DEFAULT = 20
+
+
+@dataclass(frozen=True)
+class ResultadoFeed:
+    """Lo que el feed necesita para pintarse, en un solo objeto.
+
+    `total` es después de TODOS los filtros y antes de paginar;
+    `total_sin_filtro_relevancia` es el mismo conteo sin aplicar `min_score`
+    (para "N ocultas por baja relevancia"). `facetas` y `nuevas_hoy` se
+    calculan sobre el conjunto ya cargado, sin tocar la base.
+    """
+
+    items: list[dict[str, Any]]
+    total: int
+    total_sin_filtro_relevancia: int
+    facetas: dict[str, dict[str, int]] = field(default_factory=dict)
+    nuevas_hoy: int = 0
+
+
+@dataclass(frozen=True)
+class FiltrosFeed:
+    """Los filtros del feed, todos opcionales y todos aplicados en Python.
+
+    `None` (o el default) siempre significa "sin filtro". Los dos `incluir_*`
+    van en `True` a propósito: ver `_pasa_monto` y `_pasa_cierre`.
+    """
+
+    fuente: str | None = None
+    region: int | None = None
+    texto: str | None = None
+    monto_min: float | None = None
+    monto_max: float | None = None
+    incluir_monto_no_informado: bool = True
+    cierre_desde: datetime | None = None
+    cierre_hasta: datetime | None = None
+    incluir_sin_fecha_cierre: bool = True
+    familias: frozenset[FamiliaEstado] | None = None
+    min_score: int = 0
+
+
+def _pasa_fuente(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    return filtros.fuente is None or item["match"].fuente == filtros.fuente
+
+
+def _pasa_region(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    """OJO: el filtro de región solo discrimina Compra Ágil.
+
+    `Licitacion` no guarda región (es un cambio de modelo y de ingesta, con su
+    propia fase), así que las licitaciones pasan TODAS. Quien exponga este
+    filtro en la UI tiene que decírselo al usuario.
+    """
+    if filtros.region is None:
+        return True
+    if item["match"].fuente != "compras_agiles":
+        return True
+    return bool(item["region"] == filtros.region)
+
+
+def _pasa_texto(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    if not filtros.texto:
+        return True
+    return filtros.texto.lower() in (item["nombre"] or "").lower()
+
+
+def _pasa_monto(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    """Filtro sobre el `monto` YA normalizado por `_construir_item`
+    (`monto_clp` en licitaciones, `monto_disponible_clp` en Compra Ágil).
+
+    Un monto no informado pasa salvo que se pida lo contrario: falta seguido en
+    la fuente oficial y excluirlo por omisión escondería oportunidades reales.
+    """
+    monto = item["monto"]
+    if monto is None:
+        return filtros.incluir_monto_no_informado
+    if filtros.monto_min is not None and monto < filtros.monto_min:
+        return False
+    return not (filtros.monto_max is not None and monto > filtros.monto_max)
+
+
+def _pasa_cierre(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    """Rango sobre `fecha_cierre`, que en la base es naive en UTC
+    (`app/core/tiempo`, criterio de almacenamiento de F-fecha-cierre), así que
+    los bordes se normalizan con `a_utc_naive` antes de comparar.
+
+    Un item sin fecha de cierre pasa salvo que se pida lo contrario: Compra
+    Ágil está dejando `fecha_cierre` en NULL incluso en las publicadas (deuda
+    de docs/00-estado-actual.md) y el matching ya las trata como abiertas —
+    con el default en False este filtro las borraría todas del feed.
+    """
+    cierre = item["fecha_cierre"]
+    if cierre is None:
+        return filtros.incluir_sin_fecha_cierre
+    if filtros.cierre_desde is not None and cierre < a_utc_naive(filtros.cierre_desde):
+        return False
+    return not (
+        filtros.cierre_hasta is not None and cierre > a_utc_naive(filtros.cierre_hasta)
+    )
+
+
+def _pasa_familia(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    if filtros.familias is None:
+        return True
+    return familia_de_estado(item["estado"]) in filtros.familias
+
+
+def _pasa_min_score(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    return bool(item["match"].score >= filtros.min_score)
+
+
+# clave de filtro -> predicado. La clave es la que `_aplicar_filtros` sabe
+# saltarse (facetas y `total_sin_filtro_relevancia` piden justo eso).
+_PREDICADOS: dict[str, Callable[[dict[str, Any], FiltrosFeed], bool]] = {
+    "fuente": _pasa_fuente,
+    "region": _pasa_region,
+    "texto": _pasa_texto,
+    "monto": _pasa_monto,
+    "cierre": _pasa_cierre,
+    "familias": _pasa_familia,
+    "min_score": _pasa_min_score,
+}
+
+
+def _aplicar_filtros(
+    items: Iterable[dict[str, Any]],
+    filtros: FiltrosFeed,
+    *,
+    excepto: str | None = None,
+) -> list[dict[str, Any]]:
+    """Los items que pasan todos los filtros, salvo el de clave `excepto`."""
+    predicados = [p for clave, p in _PREDICADOS.items() if clave != excepto]
+    return [item for item in items if all(p(item, filtros) for p in predicados)]
+
+
+def _clave_faceta_fuente(item: dict[str, Any]) -> str:
+    return str(item["match"].fuente)
+
+
+def _clave_faceta_estado(item: dict[str, Any]) -> str:
+    return familia_de_estado(item["estado"]).value
+
+
+def _clave_faceta_region(item: dict[str, Any]) -> str:
+    """Código de región como string; los nombres los resuelve
+    `presentacion.nombre_region` en la capa de plantilla, no acá.
+
+    Las licitaciones caen todas en "sin_region" porque el modelo no guarda su
+    región (ver `_pasa_region`)."""
+    reg = item["region"]
+    return "sin_region" if reg is None else str(reg)
+
+
+# faceta -> (clave del filtro PROPIO que no se le aplica, extractor de la clave)
+_FACETAS: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
+    "fuente": ("fuente", _clave_faceta_fuente),
+    "estado": ("familias", _clave_faceta_estado),
+    "region": ("region", _clave_faceta_region),
+}
+
+
+def calcular_facetas(
+    items: Iterable[dict[str, Any]], filtros: FiltrosFeed
+) -> dict[str, dict[str, int]]:
+    """Conteos por faceta sobre el conjunto ya cargado.
+
+    Regla de búsqueda facetada: el conteo de cada faceta se calcula con todos
+    los demás filtros aplicados MENOS el suyo propio. Si el usuario ya filtró
+    por "Licitaciones", el conteo de Compra Ágil tiene que seguir diciendo
+    cuántas habría si soltara ese filtro; si no, el número baja a cero y el
+    filtro se vuelve una trampa de la que no se puede salir.
+    """
+    items = list(items)
+    facetas: dict[str, dict[str, int]] = {}
+    for faceta, (filtro_propio, clave_de) in _FACETAS.items():
+        conteo: dict[str, int] = {}
+        for item in _aplicar_filtros(items, filtros, excepto=filtro_propio):
+            clave = clave_de(item)
+            conteo[clave] = conteo.get(clave, 0) + 1
+        # Orden estable y útil para la UI: más frecuentes primero.
+        facetas[faceta] = dict(sorted(conteo.items(), key=lambda kv: (-kv[1], kv[0])))
+    return facetas
+
+
+def contar_nuevas_hoy(items: Iterable[dict[str, Any]], *, hoy: date) -> int:
+    """Cuántos matches aparecieron HOY, con el día calendario de Chile.
+
+    `hoy` es la fecha en `America/Santiago` (regla 5: el proceso corre en UTC,
+    su fecha no sirve). `fecha_match` es naive en UTC y es inmutable por diseño
+    —la primera vez que esa oportunidad matcheó ese perfil, no se re-toca al
+    re-scorear (F-notificaciones)—, así que el conteo es confiable.
+    """
+    inicio = borde_del_dia_utc_naive(hoy, fin_de_dia=False)
+    fin = borde_del_dia_utc_naive(hoy + timedelta(days=1), fin_de_dia=False)
+    total = 0
+    for item in items:
+        fecha_match = getattr(item["match"], "fecha_match", None)
+        if fecha_match is None:
+            continue
+        if inicio <= fecha_match < fin:
+            total += 1
+    return total
+
+
+def _ordenar(items: list[dict[str, Any]], orden: str) -> None:
+    """Ordena in-place. Un `orden` desconocido cae al default (score), sin romper."""
+    if orden == "cierre":
+        items.sort(key=lambda r: (r["dias_al_cierre"] is None, r["dias_al_cierre"]))
+    elif orden == "monto":
+        # Descendente, con los no informados AL FINAL: un monto que la fuente
+        # no entrega no es un monto cero.
+        items.sort(key=lambda r: (r["monto"] is None, -(r["monto"] or 0.0)))
+    else:
+        items.sort(key=lambda r: r["match"].score, reverse=True)
+
+
 def get_oportunidades_usuario(
     session: Session,
     user_id: int,
@@ -142,37 +377,75 @@ def get_oportunidades_usuario(
     perfil_id: int | None = None,
     orden: str = "score",
     min_score: int = 0,
-    limit: int = 50,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
+    incluir_monto_no_informado: bool = True,
+    cierre_desde: datetime | None = None,
+    cierre_hasta: datetime | None = None,
+    incluir_sin_fecha_cierre: bool = True,
+    familias: set[FamiliaEstado] | frozenset[FamiliaEstado] | None = None,
+    limit: int = LIMITE_PAGINA_DEFAULT,
     offset: int = 0,
-) -> tuple[list[dict[str, Any]], int, int]:
-    """Retorna (items, total, total_sin_filtro_relevancia) de oportunidades_match
-    para los perfiles activos del usuario.
+) -> ResultadoFeed:
+    """Retorna un `ResultadoFeed` con las oportunidades_match de los perfiles
+    activos del usuario.
 
-    Aplica filtros opcionales en Python (texto, region, min_score) después de
-    cargar matches. Excluye las oportunidades que el usuario descartó (feedback
-    F10 parte 2) — esas solo se ven en la vista "ver descartadas"
-    (`listar_descartadas_detalle`).
-    `orden`: "score" (default, mejor match primero) o "cierre" (cierran antes
-    primero, sin fecha al final). Paginación correcta después de aplicar todos
-    los filtros y el orden.
-    `min_score`: piso de `OportunidadMatch.score` (umbral de relevancia del
-    feed); 0 = sin piso, muestra todo. `total_sin_filtro_relevancia` es el total
-    que habría sin aplicar `min_score` (mismos filtros de fuente/perfil/texto/
-    región/descartadas), para poder mostrar "N ocultas por baja relevancia".
+    Todos los filtros se aplican en Python después de cargar los matches, sobre
+    el MISMO conjunto ya cargado: es lo que permite calcular las facetas sin
+    una sola query agregada extra. Excluye las oportunidades que el usuario
+    descartó (feedback F10 parte 2) — esas solo se ven en la vista "ver
+    descartadas" (`listar_descartadas_detalle`).
+
+    - `orden`: "score" (default, mejor match primero), "cierre" (cierran antes
+      primero, sin fecha al final) o "monto" (mayor primero, no informados al
+      final). Paginación después de aplicar todos los filtros y el orden.
+    - `min_score`: piso de `OportunidadMatch.score` (umbral de relevancia del
+      feed); 0 = sin piso. `total_sin_filtro_relevancia` es el total que habría
+      sin aplicarlo, para mostrar "N ocultas por baja relevancia".
+    - `region`: **solo afecta a Compra Ágil**. `Licitacion` no guarda región,
+      así que las licitaciones pasan todas — ver `_pasa_region`.
+    - `monto_min`/`monto_max` van contra el monto ya normalizado;
+      `cierre_desde`/`cierre_hasta` contra `fecha_cierre` (naive en UTC: un
+      borde naive se interpreta como hora de Chile, igual que el resto del
+      proyecto). Los dos `incluir_*` en `True` evitan que el filtro se coma las
+      oportunidades sin el dato.
+    - `familias`: familias de `EstadoOportunidad` (F-feed-ui-1); None = todas.
+
+    El feed carga todos los matches del usuario en memoria y recién después
+    filtra y corta. A la escala de un equipo de 3-10 usuarios aguanta de sobra
+    en los 512 MB de Render, pero es el techo conocido si el volumen crece.
     """
+    filtros = FiltrosFeed(
+        fuente=fuente,
+        region=region,
+        texto=texto,
+        monto_min=monto_min,
+        monto_max=monto_max,
+        incluir_monto_no_informado=incluir_monto_no_informado,
+        cierre_desde=cierre_desde,
+        cierre_hasta=cierre_hasta,
+        incluir_sin_fecha_cierre=incluir_sin_fecha_cierre,
+        familias=frozenset(familias) if familias is not None else None,
+        min_score=min_score,
+    )
+    vacio = ResultadoFeed(
+        items=[], total=0, total_sin_filtro_relevancia=0, facetas=calcular_facetas([], filtros)
+    )
+
     perfiles = listar_perfiles(session, user_id)
     if not perfiles:
-        return [], 0, 0
+        return vacio
 
     perfil_ids = [p.id for p in perfiles]
 
     stmt = select(OportunidadMatch).where(OportunidadMatch.perfil_id.in_(perfil_ids))
 
-    if fuente:
-        stmt = stmt.where(OportunidadMatch.fuente == fuente)
+    # `fuente` NO se filtra en SQL: la faceta de fuente tiene que poder contar
+    # la fuente descartada (regla de leave-one-out de `calcular_facetas`), y
+    # para eso los items de ambas fuentes tienen que estar cargados.
     if perfil_id is not None:
         if perfil_id not in perfil_ids:
-            return [], 0, 0
+            return vacio
         stmt = stmt.where(OportunidadMatch.perfil_id == perfil_id)
 
     stmt = stmt.order_by(OportunidadMatch.score.desc())
@@ -212,14 +485,6 @@ def get_oportunidades_usuario(
         if op is None:
             continue
 
-        # Filtro de región (solo CA)
-        if region is not None and m.fuente == "compras_agiles" and isinstance(op, CompraAgil) and op.region != region:
-            continue
-
-        # Filtro de texto
-        if texto and texto.lower() not in op.nombre.lower():
-            continue
-
         feedback = feedback_map.get((m.fuente, m.codigo_oportunidad))
         if feedback is not None and feedback.valor == ValorFeedback.DESCARTE.value:
             continue
@@ -234,24 +499,32 @@ def get_oportunidades_usuario(
             )
         )
 
-    if orden == "cierre":
-        result.sort(key=lambda r: (r["dias_al_cierre"] is None, r["dias_al_cierre"]))
-    else:
-        result.sort(key=lambda r: r["match"].score, reverse=True)
+    # `result` es el conjunto cargado (sin filtrar): la base de las facetas.
+    total_sin_filtro = len(_aplicar_filtros(result, filtros, excepto="min_score"))
+    facetas = calcular_facetas(result, filtros)
 
-    total_sin_filtro = len(result)
-    if min_score > 0:
-        result = [r for r in result if r["match"].score >= min_score]
+    filtrados = _aplicar_filtros(result, filtros)
+    _ordenar(filtrados, orden)
 
-    total = len(result)
-    return result[offset : offset + limit], total, total_sin_filtro
+    total = len(filtrados)
+    nuevas_hoy = contar_nuevas_hoy(filtrados, hoy=datetime.now(TZ_CHILE).date())
+    return ResultadoFeed(
+        items=filtrados[offset : offset + limit],
+        total=total,
+        total_sin_filtro_relevancia=total_sin_filtro,
+        facetas=facetas,
+        nuevas_hoy=nuevas_hoy,
+    )
 
 
 # Tope de items visibles por grupo antes de "ver más en este grupo" (evita
 # explotar el DOM cuando el umbral de relevancia está en "Todas").
 CAP_GRUPO_DEFAULT = 10
 
-AGRUPAR_POR_VALIDOS = {"motivo", "region", "fuente"}
+AGRUPAR_POR_VALIDOS = {"motivo", "region", "fuente", "ninguno"}
+
+# Clave del grupo implícito de `agrupar_por="ninguno"` (lista plana paginada).
+GRUPO_UNICO_KEY = "ninguno:todas"
 
 
 def _claves_grupo(item: dict[str, Any], agrupar_por: str) -> list[tuple[str, str]]:
@@ -295,12 +568,31 @@ def agrupar_oportunidades(
     `get_oportunidades_usuario`. Retorna (grupos, total_unico, total_apariciones).
 
     `agrupar_por`: "motivo" (default, con repetición intencional entre
-    grupos), "region" o "fuente" (categorización única). El orden de los
+    grupos), "region" o "fuente" (categorización única), o "ninguno" (un solo
+    grupo implícito con todos los items y SIN cap). El orden de los
     items dentro de cada grupo respeta el orden de `items` de entrada (no se
     reordena). Los grupos se ordenan por su mejor score (desc). Cada grupo se
     capa a `cap_por_grupo` items salvo que `grupo_expandido` sea su `key`
     (control "ver más en este grupo", sin reordenar todo el feed).
+
+    Quién manda sobre cuántos items se ven, que es donde esto choca con
+    F-feed-agrupado: con "ninguno" manda la paginación de
+    `get_oportunidades_usuario` (`limit`/`offset`) y acá no se capa nada; al
+    agrupar manda el cap por grupo y el `offset` no participa.
     """
+    if agrupar_por == "ninguno":
+        items = list(items)
+        grupo = {
+            "key": GRUPO_UNICO_KEY,
+            "tipo": "ninguno",
+            "label": "Todas",
+            "items": items,
+            "count": len(items),
+            "mejor_score": max((i["match"].score for i in items), default=0.0),
+        }
+        total_unico = len({(i["match"].fuente, i["match"].codigo_oportunidad) for i in items})
+        return [grupo], total_unico, len(items)
+
     grupos_map: dict[str, dict[str, Any]] = {}
 
     for item in items:
