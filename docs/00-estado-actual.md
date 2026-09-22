@@ -5,7 +5,208 @@
 
 ---
 
-## Última sesión — 21-sep-2026 (auditoría UX y plan de rediseño del feed)
+## Dos frentes abiertos (mapa, 22-sep-2026)
+
+El proyecto tiene **dos hilos paralelos e independientes**. No mezclarlos en la misma sesión de
+Claude Code. La sesión de abajo cubre el frente UX; esto orienta el otro.
+
+### Frente UX / feed → bloque "Última sesión — 22-sep-2026", acá abajo.
+
+### Frente INGESTA → detalle en "Sesión 21-sep-2026 · frente INGESTA", más abajo.
+
+**Problema:** desde el 21-sep ~00:00 Cloudflare (el borde de Render) responde **429 a todos los
+crons de cron-job.org**, incluido el `GET /api/salud/jobs` público. Verificado [V]: no es la app
+—cero `status_code=429` en `app/`— ni la cuota de ChileCompra; el mismo endpoint responde 200 a
+otros orígenes, y una ejecución de prueba desde el propio cron-job.org dio 200 con
+`Server: cloudflare`. [I] sin confirmar: que sea limitación por IP del pool compartido de
+cron-job.org. **Hoy la ingesta se dispara a mano.**
+
+**Solución acordada — F-actions variante A:** GitHub Actions ejecuta el CLI
+(`python -m app.ingest run-once`) contra Neon directo, sin pasar por Render ni Cloudflare. El repo
+es **público** [V] → minutos de Actions ilimitados, pero logs públicos.
+
+| # | Prompt | Estado |
+|---|---|---|
+| 1 | `docs/prompt-F-cuota.md` | ✅ **Ejecutada** — commit `26d6f30`. Verificado en el código: `licitaciones.py:238` re-lanza `MPRateLimitError`/`QuotaExceededError`/`MPAuthError`; `consume()` cuenta toda request emitida; hay `_parse_retry_after` y `_headers_de_cuota`; el lock corre en `AUTOCOMMIT`. **Falta auditarla.** |
+| 2 | `docs/prompt-F-actions-1-canary.md` | Sin correr. `repr=False` en `Settings`, `_job.yml` reutilizable, **exit codes del CLI**, canario `ciclo-ca` manual, `tests/test_workflows.py`. |
+| 3 | `docs/prompt-F-actions-2-horarios.md` | Sin correr. Los 5 workflows restantes y los `schedule` en UTC, con guardia de hora Chile para `resumen`. |
+| 4 | `docs/prompt-F-actions-3-cutover.md` | Sin correr. `check-jobs` en el CLI, workflow de vigilancia, apagado de cron-job.org, cierre documental. |
+
+**Por qué los exit codes son lo primero de la fase 2:** hoy `run-once --job=X` **sale 0 aunque el
+job falle** (`_run_with_lock` atrapa la excepción y devuelve `None`; el CLI imprime ese `None`).
+Llevado a Actions, todas las corridas saldrían verdes para siempre y el correo de fallo de GitHub
+—la red de seguridad del modelo nuevo— nunca se dispararía.
+
+**Antes de cargar los secrets en GitHub, la trampa:** el `.env` local tiene `DATABASE_URL`
+apuntando al branch **dev** de Neon. En Actions el secret `DATABASE_URL` lleva el valor de
+**`DATABASE_URL_PROD`**. Si se copia tal cual, los jobs escriben en dev y el dashboard no muestra
+nada nuevo.
+
+### Rutina manual de ingesta, mientras tanto
+
+`scripts/ingesta_manual.ps1` (PowerShell, sin trackear). Lee el `JOBS_TOKEN` del `.env`, dispara
+los jobs **en serie** contra `POST /api/jobs/run` desde la máquina de Boris —cuya IP sí pasa— y
+sondea `/api/salud/jobs` cada 60 s. Ese sondeo no es adorno: **mantiene despierto el proceso**.
+Render lo duerme a los 15 min de la última request *entrante* aunque tenga un job en background, y
+el 21-sep un `ciclo-activas` quedó cortado por eso [V].
+
+| Cuándo | Comando | Jobs |
+|---|---|---|
+| ~08:15 | `.\scripts\ingesta_manual.ps1 -Ciclo manana` | `ciclo-activas`, `ciclo-ca`, `datos-abiertos`, `resumen` |
+| ~14:00 *(opcional)* | `... -Ciclo tarde` | `ciclo-ca`, `ciclo-activas` |
+| ~23:00 | `... -Ciclo noche` | `nocturno`, `retencion` (+ `catalogos` los lunes) |
+
+El nocturno va después de las 22:00 porque `_ciclo_nocturno` valida por su cuenta la ventana
+22:00–07:00 de Chile (regla 5) y fuera de ella aborta solo. Reglas: ante **429 en cadena no
+insistir ese día**; ante **504, reintentar en un par de horas** (es de ChileCompra, se resuelve
+solo y el cursor queda intacto). Se puede automatizar con el Programador de tareas de Windows,
+con el límite obvio de que el equipo tiene que estar encendido.
+
+### Riesgo que hereda el modelo nuevo
+
+**GitHub deshabilita los workflows programados tras 60 días sin actividad en el repo**, en
+silencio — la misma muerte que tuvo el pinger el 17-jul. Por eso hace falta un monitor **fuera del
+repo** sobre `/api/salud/jobs`, no solo el workflow de vigilancia. Si se monta UptimeRobot u otro:
+con **GET**, porque `HEAD /` devuelve 405 y varios monitores usan HEAD por defecto.
+
+### Pendientes operativos compartidos por los dos frentes
+
+- **Rotar `JOBS_TOKEN`** (se pegó en un chat). Ya no bloquea F-actions —el CLI no lo usa—, pero la
+  rutina manual sí depende de él.
+- **Borrar `_to_delete/_mp_snapshot.tar.gz`**: no está en `.gitignore` y contiene un `.env` con
+  secretos de producción. **Agravado porque el repo es público.** Nunca `git add -A`.
+- **Commitear los docs sin trackear** en un commit `docs:` aparte, incluyendo los cuatro
+  `prompt-F-cuota/F-actions-*.md` y `scripts/ingesta_manual.ps1`.
+- `F-secretos` (rotar los 7) y la limpieza de argentinismos.
+
+---
+
+## Última sesión — 22-sep-2026 · LEER ESTO PRIMERO
+
+**Qué fue esta sesión:** auditoría UX/accesibilidad de la interfaz y rediseño del feed, ejecutado
+en seis fases, más dos hallazgos de datos que aparecieron en el camino y resultaron más graves que
+el rediseño. Las secciones de abajo tienen el detalle de cada una; esto es el mapa.
+
+### [V] El 429 de la API NO es cuota diaria: es límite de concurrencia (22-sep-2026)
+
+Cierra la pregunta marcada como "sin verificar y decisiva" desde el 4-sep. Observado en el log de
+Render con la respuesta cruda de la API:
+
+```
+HTTP 429 headers_cuota=(ninguna)
+body={"Codigo":10500,"Mensaje":"Lo sentimos. Hemos detectado que existen peticiones simultáneas."}
+```
+
+**Es limitación por tasa/concurrencia, no el tope de 9.000/día.** El código de
+`app/clients/base.py::_handle_response` trata TODO 429 como cuota agotada: sin header `Retry-After`
+calcula `_seconds_until_next_day_chile()` y `MPRateLimitError` está en la lista de "nunca
+reintentar". Resultado: un solape accidental de dos jobs convierte un rechazo transitorio en ~8
+horas de ingesta muerta, con el mensaje "Reintentar en 28771 s (00:01 Chile)" que la app inventa.
+
+**Cómo se produjo:** se disparó `job=activas` dos veces con 60 s de diferencia mientras `job=ca`
+corría. Cada job toma su propio advisory lock, así que distintos jobs SÍ pueden solaparse, y el
+rate limiter de 1 req/s es por instancia de cliente, no global entre jobs.
+
+**Qué hay que arreglar (fase pendiente, no hecha):** distinguir el `Codigo` del cuerpo. El 10500
+merece backoff corto y reintento, no darse por vencido hasta el día siguiente. Un tope diario real
+sí debe cortar. Mientras tanto: no disparar un job a mano si hay otro corriendo, y no repetir el
+disparo porque el endpoint responde al instante (encola en BackgroundTask).
+
+**Nota operativa:** `GET /api/salud/jobs` devolviendo **503 no es un fallo del endpoint** — es el
+dead-man's switch avisando que algún job del watchlist lleva más de 30–36 h sin corrida buena. Para
+ver la cuota real, `GET /api/salud` y su `usadas_hoy`.
+
+**Además, en el mismo log:** `job=ca` falló con `504 {"message": "Endpoint request timed out"}` del
+gateway de ChileCompra — transitorio y del lado de ellos, distinto del 429.
+
+### Estado del árbol al cerrar
+
+- `main` está **ahead 2** de `origin/main`: `bc33280` (F-feed-filtros) y `f3a3015` (F-coherencia)
+  **sin pushear**.
+- **F-feed-ui-2 está EN VUELO y sin commitear.** Hay cambios en `app/api/presentacion.py`,
+  `app/api/routes/pages.py`, `app/api/static/app.css`, `app/api/templates/base.html`,
+  `app/api/templates/index.html`, `tests/test_feed_agrupado.py`, más un
+  `app/api/templates/_panel_filtros.html` nuevo sin trackear. Antes de seguir: correr `ruff check .`,
+  `python -m mypy app` y `python -m pytest`, y decidir si se commitea o se descarta.
+- `docs/prompt-F-feed-ui-2.md` sin trackear.
+
+### Las fases, en orden
+
+| Commit | Fase | Qué dejó |
+|---|---|---|
+| `82221c3` | F-ui-fixes | navbar móvil (estaba roto bajo 992px), `urlencode` del texto en los filtros, formato CLP chileno, `<main>` + enlace de salto + región `aria-live`, `scope` en tablas |
+| `26d6f30` | F-cuota | los bugs encadenados del 429 — **no pasó por auditoría en esta conversación** |
+| `bbe3476` | F-feed-ui-1 | `app/api/static/app.css` con los tokens, `FamiliaEstado`, tarjeta nueva del feed, toast de deshacer |
+| `1687013` | F-fecha-cierre | la hora real de cierre y el fin del bug que perdía licitaciones su último día |
+| `1acb7e7` | fix | `tamano_pagina` mínimo de 10 en el smoke test |
+| `bc33280` | F-feed-filtros | `FiltrosFeed`, `ResultadoFeed`, facetas leave-one-out, orden por monto, paginación |
+| `f3a3015` | F-coherencia | un solo criterio de fecha de cierre para ficha, correos y `seguidas.html` |
+
+### Verificado [V] — cambia decisiones
+
+1. **El huso de la API es hora de Chile.** Cerrado contra la ficha del portal; detalle más abajo.
+   `_TZ_SIN_OFFSET` en `app/core/tiempo.py` es correcto.
+2. **La ficha y LOS CORREOS publicaban la medianoche fabricada.** El correo es el canal de mayor
+   confianza del producto y mandaba una hora que el código inventaba. Ahora hay un solo decisor:
+   `presentacion.fecha_cierre_legible`, consumido por el badge, la ficha, los correos y `seguidas`.
+3. **La deuda de `fecha_cierre` NULL en Compra Ágil murió** con F-fecha-cierre:
+   `parse_fecha_iso('2026-09-22 18:00')` devuelve `2026-09-22 21:00:00`; antes devolvía `None`
+   porque el formato con espacio y sin segundos no calzaba ningún patrón estricto.
+4. **La v2 exige `tamano_pagina` entre 10 y 50** — el mínimo no estaba documentado.
+5. **La v2 mezcla husos en el mismo payload:** `fecha_cierre` y `fecha_publicacion` sin offset (hora
+   de Chile), `fecha_ultimo_cambio` con `Z` (UTC). Por eso el round-trip `_iso_para_la_api` del
+   cursor de Compra Ágil era necesario, no una precaución.
+6. **La faceta de fuente NO se puede calcular con una agregada** sobre `oportunidades_match`: cinco
+   de los siete filtros del feed dependen de las filas de `Licitacion`/`CompraAgil`. Evaluado y
+   descartado en F-coherencia; el razonamiento quedó en `app/api/query.py:443` para que la próxima
+   fase no lo re-litigue.
+
+### Decisiones tomadas
+
+- **Se queda en Bootstrap 5.3 + Jinja2/HTMX.** Sin React. El rediseño es de plantillas.
+- **Sin sistema de diseño** (los dos de la cuenta son de Caminatas, otro producto) y **con el stack
+  tipográfico del sistema, no Inter**: meter una tipografía nueva era incompatible con mantener la
+  referencia visual.
+- **Los cortes de relevancia se unifican en 60/40**, los del feed, no en las bandas 80/50 que usaba
+  el badge. `feed_min_score_default` es ajustable por env y sigue pendiente de recalibrar.
+- **El default de agrupación pasa a `"ninguno"`** en F-feed-ui-2: los motivos viven como chips en la
+  tarjeta en vez de repetir la misma oportunidad en varios grupos.
+- **La hora de cierre NO vuelve todavía al badge de licitaciones.** Las filas re-sincronizadas
+  tienen hora real, las viejas no, y no hay forma de distinguirlas en la UI. Vuelve cuando una
+  corrida completa de `activas` haya pasado sobre el grueso de las abiertas.
+- **`fuente` se queda fuera del `WHERE`**, con su costo de memoria aceptado. El disparador para
+  revisarlo es medición (presión de memoria en Render), no anticipación.
+
+### Abierto al cierre
+
+- **Pushear los dos commits.**
+- **Correr `POST /api/jobs/run?job=activas` en producción.** Sin eso las licitaciones siguen con
+  medianoche en la base y el bug se ve en pantalla aunque el código esté arreglado. `upsert_basica`
+  las cura solas; no hace falta backfill.
+- **Terminar y auditar F-feed-ui-2** (prompt en `docs/prompt-F-feed-ui-2.md`).
+- Después del feed: la ficha con pestañas y cabecera pegajosa; la limpieza de argentinismos (pedido
+  del 20-sep, sigue pendiente); separar `/perfiles` de `/cuenta` y arreglar el widget de organismos.
+- Cola chica: `python -m app.admin crear-usuario` (hoy el seed de admin solo corre si la tabla
+  `usuarios` está vacía, lo que deja afuera a quien apunte a una base con datos de prueba).
+- Fricción del entorno, no deuda de código: la branch `dev` de Neon se queda sin credencial cada
+  cierto tiempo y quedó sin datos. La verificación manual se hace contra **producción**.
+- Sigue abierto de antes: rotar `JOBS_TOKEN`, borrar `_to_delete/_mp_snapshot.tar.gz`.
+
+### Los documentos de esta sesión
+
+`docs/13-auditoria-ux.md` es el registro: diagnóstico corregido, matriz de mejoras con la fase
+asignada a cada fila, tokens y las decisiones de diseño con su razón. Los prompts ejecutados están
+en `docs/prompt-F-*.md`. El lienzo del dashboard vive como Artifact de tipo Design.
+
+### Método de trabajo de esta sesión
+
+El asistente redacta el prompt de la fase en `docs/`, Boris lo corre en Claude Code, y se audita el
+diff en conversación. Cada prompt lleva su checklist de auditoría con una sección de criterio que se
+mira a mano en el diff, no solo comandos. Verificación visual contra producción.
+
+---
+
+## Sesión 21-sep-2026 — detalle: auditoría UX y plan de rediseño del feed
 
 **Trabajo de diseño y planificación, sin cambios de código.** Auditoría UX/accesibilidad hecha
 contra la FUENTE PRIMARIA (las plantillas, `presentacion.py` y `query.py`), no contra el sitio
@@ -152,6 +353,42 @@ offset. `app/core/tiempo.py` los interpreta como hora de **Chile continental**
 (`America/Santiago`), porque es una API del Estado de Chile publicando plazos chilenos. Es una
 suposición razonable, no un hecho.
 
+### Paso 0 — CERRADO [V]: el huso es hora de Chile (21-sep-2026)
+
+Comparación contra la fuente primaria: la ficha del portal de `1002588-97-LP26` dice
+**"Fecha de Cierre: 29-09-2026 16:37:00"** y la API mandó `'2026-09-29T16:37:00'`. Coinciden al
+segundo. **`_TZ_SIN_OFFSET = TZ_CHILE` en `app/core/tiempo.py` queda VERIFICADO [V]**, ya no es
+inferencia. No hay cambio que hacer.
+
+**[V] HALLAZGO NUEVO — la v2 mezcla dos husos en el MISMO payload.** En `/v2/compra-agil`:
+
+```
+fecha_cierre        = '2026-09-22 18:00'          sin offset  -> hora de Chile
+fecha_publicacion   = '2026-09-21 17:49'          sin offset  -> hora de Chile
+fecha_ultimo_cambio = '2026-09-21T17:50:00.820Z'  offset Z    -> UTC
+```
+
+Los dos primeros vienen con espacio como separador, sin segundos y sin marca de huso; el tercero
+viene en ISO estricto con `Z`. El código lo resuelve bien porque respeta el offset cuando existe y
+asume Chile cuando no, pero confirma que el round-trip `_iso_para_la_api` de F-fecha-cierre **no
+era una precaución sino una necesidad**: el cursor de Compra Ágil sale de `fecha_ultimo_cambio`, que
+es el campo que sí viene en UTC.
+
+**Hipótesis a verificar — la deuda de `fecha_cierre` NULL en Compra Ágil pudo morir con
+F-fecha-cierre.** El formato `'2026-09-22 18:00'` (espacio, sin segundos) no calzaba ninguno de los
+tres formatos estrictos que `parse_fecha_iso` probaba antes, así que devolvía `None` y la columna
+quedaba NULL. Con `datetime.fromisoformat` (Python 3.11+ acepta espacio y minutos sin segundos) sí
+parsea. Confirmar con:
+`python -c "from app.clients.types import parse_fecha_iso; print(parse_fecha_iso('2026-09-22 18:00'))"`
+
+**[V] Bug de REPORTE en `scripts/smoke_test.py`.** Para `'2026-09-22 18:00'` imprime
+"SIN componente de hora", lo que es falso: la hora está (18:00). El detector busca el separador `T`
+y no reconoce el formato con espacio. No afecta el dato ingerido, pero un reporte de verificación
+que afirma lo contrario de lo que muestra induce a conclusiones erradas. A la cola, junto con la
+normalización de la URL.
+
+---
+
 ### Paso 0 — RESULTADO, ejecutado el 21-sep-2026
 
 `python scripts/smoke_test.py --fechas` contra la API real. Lo observado:
@@ -217,7 +454,7 @@ sin manera de distinguirlas en la UI.
 
 ---
 
-## Última sesión — 21-sep-2026 (leer esto primero)
+## Sesión 21-sep-2026 · frente INGESTA — el 429 de Cloudflare y el plan F-actions
 
 **Estado al cierre:** ingesta **detenida desde ~00:30 del 21-sep**. La app está sana; el que
 falla es el disparador. Decidido y documentado el paso a GitHub Actions; tres prompts listos

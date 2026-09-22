@@ -216,40 +216,45 @@ cómoda 44px / compacta 36px en tablas.
 
 ---
 
-## 4. Plan de implementación
+## 4. Plan de implementación — estado real al 22-sep-2026
 
-Tres fases, en este orden. El diseño promete filtros que el backend no tiene, así que la mayor
-parte del trabajo no está en las plantillas.
+El plan original eran tres fases. Terminaron siendo seis, porque auditar F-ui-fixes destapó dos
+problemas de datos que pesaban más que el rediseño y que había que arreglar antes de construir
+encima.
 
-**F-ui-fixes** — `docs/prompt-F-ui-fixes.md`. Bugs y accesibilidad sobre lo que NO se rediseña
-ahora: `base.html`, `oportunidad.html`, `perfiles.html`, `plan_anual.html`, más los helpers puros
-de `presentacion.py` (`formato_clp`, `formato_numero`, `banda_relevancia`) que las dos fases
-siguientes consumen. Sin migración.
+| Fase | Commit | Estado | Qué dejó |
+|---|---|---|---|
+| F-ui-fixes | `82221c3` | hecha, en prod | Bugs y accesibilidad sobre lo que no se rediseñaba, más los helpers puros de `presentacion.py` |
+| F-feed-ui-1 | `bbe3476` | hecha | Tema en `app/api/static/app.css`, `FamiliaEstado`, tarjeta nueva, toast de deshacer |
+| F-fecha-cierre | `1687013` | hecha | **No estaba en el plan.** La hora real de cierre; la app perdía licitaciones su último día |
+| F-feed-filtros | `bc33280` | hecha, sin pushear | `FiltrosFeed`, `ResultadoFeed`, facetas, orden por monto, paginación |
+| F-coherencia | `f3a3015` | hecha, sin pushear | **No estaba en el plan.** Un solo criterio de fecha para ficha, correos y seguidas |
+| F-feed-ui-2 | — | en vuelo, sin commitear | El panel lateral de filtros. Prompt en `docs/prompt-F-feed-ui-2.md` |
 
-**F-feed-filtros** — `docs/prompt-F-feed-filtros.md`. Backend puro, sin plantillas: monto, rango de
-cierre, estado por familia, región expuesta, orden por monto, conteos por faceta, nuevas del día,
-paginación. Sin migración.
+Después del feed, en este orden: la ficha (`oportunidad.html`) con cabecera pegajosa y pestañas; la
+limpieza de argentinismos; y `/perfiles` separada de `/cuenta` con el widget de organismos
+accesible.
 
-**F-feed-ui** — el prompt se escribe cuando F-feed-filtros esté auditada, porque tiene que citar
-las firmas reales. Reescritura de `index.html` y `_card_oportunidad.html`, más
-`app/api/static/app.css` montado con `StaticFiles`.
+### Por qué aparecieron dos fases que no estaban
 
-Después: la ficha (`oportunidad.html`), la separación de `/perfiles` y `/cuenta`, y la limpieza de
-argentinismos, que es fase aparte ya comprometida.
+**F-fecha-cierre.** `parse_fecha_v1` cortaba el ISO con un slice de 10 caracteres y `_fecha_a_dt`
+expandía a medianoche, así que el filtro de candidatos `fecha_cierre > ahora` daba por cerrada una
+licitación desde las 21:00 del día anterior. La herramienta se callaba justo el día que importaba.
+Salió de tirar del hilo de una etiqueta de zona horaria que no se podía escribir.
 
-### Restricciones que condicionan las fases
+**F-coherencia.** El badge de cierre estaba duplicado en cuatro lugares y solo uno se había
+arreglado. El peor era `app/alerts/email.py`, que mandaba la medianoche fabricada al inbox.
 
-Los conteos por faceta se calculan **en Python sobre el resultado ya cargado**, nunca con queries
-agregadas aparte: seis queries extra por carga contra Neon free es exactamente el patrón que ya
-causó problemas de CU-horas.
+### Restricciones que condicionaron las fases
 
-Reponer la paginación **choca con F-feed-agrupado**, que la eliminó a propósito cuando el cap por
-grupo la reemplazó. Regla adoptada: paginación cuando `agrupar_por` es "sin agrupar" (el nuevo
-default); cap por grupo cuando el usuario agrupa.
+Los conteos por faceta se calculan en Python sobre el conjunto ya cargado. Se evaluó bajarlos a una
+consulta agregada y **no se puede**: cinco de los siete filtros del feed dependen de las filas de
+`Licitacion`/`CompraAgil`, no de `oportunidades_match`. El razonamiento quedó en `query.py:443`.
 
-Compra Ágil deja `fecha_cierre` en NULL (deuda conocida), así que un filtro por rango de cierre
-excluiría todas las CA. Necesita una casilla "incluir sin fecha de cierre informada", marcada por
-defecto.
+La paginación aplica cuando `agrupar_por` es `"ninguno"`; agrupando manda el cap por grupo.
+
+Compra Ágil dejaba `fecha_cierre` NULL por un formato que el parser no reconocía. Esa deuda murió
+con F-fecha-cierre, verificado.
 
 ---
 
