@@ -16,6 +16,19 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 22),
+        titulo="La ficha y los correos dicen lo mismo que la lista sobre el cierre",
+        descripcion=(
+            "La ficha de una oportunidad y los correos mostraban una hora de cierre "
+            "que Mercado Público nunca entregó: aparecía una medianoche inventada "
+            "que además no calzaba con lo que decía la misma oportunidad en la lista. "
+            "Ahora las tres pantallas usan el mismo texto, y la hora solo se muestra "
+            "cuando la fuente la informa de verdad. Además, al descartar una "
+            "oportunidad el teclado queda en la siguiente de la lista en vez de "
+            "perderse al principio de la página."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 22),
         titulo="Preparamos los filtros nuevos de la lista de oportunidades",
         descripcion=(
             "Dejamos lista por dentro la maquinaria para acotar la lista por monto, "

@@ -15,15 +15,19 @@ from pathlib import Path
 # Añadir la raíz del proyecto al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import re  # noqa: E402
+
 from dotenv import load_dotenv  # noqa: E402
-
-load_dotenv()
-
 from sqlalchemy import create_engine  # noqa: E402
 
 from app.clients.mp_v1 import MercadoPublicoV1Client  # noqa: E402
 from app.clients.mp_v2 import MercadoPublicoV2Client  # noqa: E402
+from app.core.db import normalizar_url_driver  # noqa: E402
 from app.core.settings import Settings  # noqa: E402
+
+# `load_dotenv()` se llama en `main()`, no al importar: así los tests del
+# detector de formatos pueden importar este módulo sin que el .env real (con
+# MP_TICKET y la connstring de Neon) se cuele en el entorno del proceso.
 
 # ---------------------------------------------------------------------------
 # Paso 0 de F-fecha-cierre — ¿qué manda de verdad la fuente en FechaCierre?
@@ -39,31 +43,68 @@ from app.core.settings import Settings  # noqa: E402
 # imprime ninguna URL ni ningún parámetro de la request.
 
 
+# Los tres formatos observados en respuestas reales:
+#   '2026-09-22T18:00:00'       ISO con T y segundos
+#   '2026-09-22T18:00:00.000Z'  ISO con T, milisegundos y Z
+#   '2026-09-22 18:00'          separador ESPACIO y sin segundos (Compra Ágil)
+# El detector viejo buscaba la hora por posición fija (`txt[11:19]`) y para el
+# tercero informaba "SIN componente de hora" teniendo la hora a la vista. Una
+# herramienta de verificación que afirma lo contrario de lo que muestra hace
+# cerrar mal una pregunta: reglas 20 y 23.
+_RE_FECHA = re.compile(
+    r"^(?P<fecha>\d{4}-\d{2}-\d{2})"
+    r"(?:[T ](?P<hora>\d{2}:\d{2})(?::(?P<segundos>\d{2}))?(?:\.(?P<fraccion>\d+))?)?"
+    r"(?P<offset>[Zz]|[+-]\d{2}:?\d{2})?$"
+)
+
+
 def _describir_fecha(valor: object) -> str:
-    """Describe un valor crudo de fecha: si trae hora y si trae offset."""
+    """Describe un valor crudo de fecha: si trae hora, si trae segundos y si
+    trae offset.
+
+    Las tres por separado, porque son tres preguntas distintas: solo la primera
+    decide si el cierre que guardamos es un instante real o uno derivado.
+    """
     if not isinstance(valor, str) or not valor.strip():
         return f"{valor!r}  -> sin valor"
     txt = valor.strip()
 
     if len(txt) == 8 and txt.isdigit():
-        return f"{txt!r}  -> formato ddmmaaaa: SIN hora, SIN offset"
+        return f"{txt!r}  -> formato ddmmaaaa: SIN hora, SIN segundos, SIN offset"
 
-    if txt.endswith("Z"):
-        offset = "offset explícito: Z (UTC)"
-    elif len(txt) >= 6 and txt[-6] in "+-" and txt[-3] == ":":
-        offset = f"offset explícito: {txt[-6:]}"
-    else:
-        offset = "SIN offset  <- se interpreta como hora de Chile [I]"
+    m = _RE_FECHA.match(txt)
+    if m is None:
+        return f"{txt!r}  -> formato NO reconocido (mirarlo a mano antes de concluir nada)"
 
-    hora = txt[11:19] if len(txt) >= 19 else ""
-    if not hora:
+    hora = m.group("hora")
+    segundos = m.group("segundos")
+    fraccion = m.group("fraccion")
+    offset = m.group("offset")
+
+    if hora is None:
         hora_desc = "SIN componente de hora"
-    elif hora == "00:00:00":
-        hora_desc = "hora presente pero 00:00:00 (indistinguible de 'solo fecha')"
+        seg_desc = "SIN segundos (no hay hora)"
     else:
-        hora_desc = f"hora REAL: {hora}"
+        completa = hora if segundos is None else f"{hora}:{segundos}"
+        if hora == "00:00" and segundos in (None, "00"):
+            hora_desc = f"hora presente pero {completa} (indistinguible de 'solo fecha')"
+        else:
+            hora_desc = f"hora REAL: {completa}"
+        if segundos is None:
+            seg_desc = "SIN segundos (solo hh:mm)"
+        elif fraccion is not None:
+            seg_desc = f"con segundos y fracción: {segundos}.{fraccion}"
+        else:
+            seg_desc = f"con segundos: {segundos}"
 
-    return f"{txt!r}\n        {hora_desc}\n        {offset}"
+    if offset is None:
+        off_desc = "SIN offset  <- se interpreta como hora de Chile [I]"
+    elif offset in ("Z", "z"):
+        off_desc = "offset explícito: Z (UTC)"
+    else:
+        off_desc = f"offset explícito: {offset}"
+
+    return f"{txt!r}\n        {hora_desc}\n        {seg_desc}\n        {off_desc}"
 
 
 def verificar_formato_fechas(
@@ -128,8 +169,12 @@ def verificar_formato_fechas(
 
 
 def main() -> None:
+    load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
-    engine = create_engine(settings.database_url)
+    # Mismo helper que `make_engine` y `alembic/env.py`: sin él, una
+    # DATABASE_URL sin driver explícito —como la entrega Neon— reventaba con
+    # ModuleNotFoundError: psycopg2, que no dice nada de la causa real.
+    engine = create_engine(normalizar_url_driver(settings.database_url))
 
     v1 = MercadoPublicoV1Client(settings, engine)
     v2 = MercadoPublicoV2Client(settings, engine)

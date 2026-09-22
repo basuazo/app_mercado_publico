@@ -24,7 +24,7 @@
         {% endif %}
       </div>
       <small class="text-muted">
-        {% if item.fecha_cierre %}Cierre: {{ item.fecha_cierre.strftime('%d/%m/%Y') }}{% endif %}
+        {{ item.cierre_texto }}
       </small>
     </div>
     <small class="text-muted d-block">Estado: {{ item.estado }}</small>

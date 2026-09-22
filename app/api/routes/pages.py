@@ -317,6 +317,7 @@ async def oportunidad_detalle(
     ]
 
     feedback_item = get_item_oportunidad(session, user.id, fuente, codigo)
+    dias_al_cierre = feedback_item["dias_al_cierre"] if feedback_item else None
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -330,6 +331,11 @@ async def oportunidad_detalle(
             banda=banda_relevancia(
                 match.score, _RELEVANCIA_ALTA, settings.feed_min_score_default
             ),
+            # El cierre lo deciden las MISMAS funciones puras que en la tarjeta
+            # (F-coherencia): la ficha tenía una copia divergente que mostraba
+            # la medianoche derivada de un ddmmaaaa como si fuera hora real.
+            urgencia=banda_urgencia(dias_al_cierre),
+            cierre_texto=texto_cierre(op.fecha_cierre, dias_al_cierre, fuente),
             oportunidad=op,
             fuente=fuente,
             url_ficha=url_ficha,

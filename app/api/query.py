@@ -11,7 +11,7 @@ from urllib.parse import quote
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.presentacion import nombre_region, razones_legibles
+from app.api.presentacion import nombre_region, razones_legibles, texto_cierre
 from app.catalogos.unspsc import nombre_rubro
 from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_naive
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
@@ -443,6 +443,18 @@ def get_oportunidades_usuario(
     # `fuente` NO se filtra en SQL: la faceta de fuente tiene que poder contar
     # la fuente descartada (regla de leave-one-out de `calcular_facetas`), y
     # para eso los items de ambas fuentes tienen que estar cargados.
+    #
+    # F-coherencia revisó si la faceta podía salir de UNA consulta agregada
+    # (`GROUP BY fuente`) para dejar de pagar esa memoria, y NO se puede sin
+    # mentir: de los siete filtros del feed, cinco (region, texto, monto,
+    # cierre, familias) dependen de las filas de Licitacion/CompraAgil, no de
+    # oportunidades_match, y `familias` además del mapa de 16 estados de
+    # `app/models/enums.py`. Una agregada que solo respete perfil, min_score y
+    # descartadas devuelve un número MAYOR que el real apenas el usuario usa
+    # cualquiera de esos cinco — y F-feed-ui-2 los expone todos. Respetarlos en
+    # SQL sería reimplementar el pipeline completo sobre dos tablas y duplicar
+    # el mapa de familias: dos fuentes de verdad para el mismo número.
+    # Se mantiene el cálculo en Python. Ver el resumen de F-coherencia.
     if perfil_id is not None:
         if perfil_id not in perfil_ids:
             return vacio
@@ -647,6 +659,7 @@ def listar_seguidas_detalle(
         ).scalars():
             cas[c.codigo] = c
 
+    ahora = ahora_utc()
     result: list[dict[str, Any]] = []
     for s in seguidas:
         op: Licitacion | CompraAgil | None
@@ -655,11 +668,17 @@ def listar_seguidas_detalle(
         else:
             op = cas.get(s.codigo_oportunidad)
 
+        fecha_cierre = op.fecha_cierre if op is not None else None
+        dias = None if fecha_cierre is None else max(
+            0.0, (fecha_cierre - ahora).total_seconds() / 86400
+        )
         result.append({
             "seguimiento": s,
             "nombre": op.nombre if op is not None else s.codigo_oportunidad,
             "estado": op.estado if op is not None else s.estado_visto,
-            "fecha_cierre": op.fecha_cierre if op is not None else None,
+            "fecha_cierre": fecha_cierre,
+            # Mismo texto que la tarjeta y la ficha (F-coherencia).
+            "cierre_texto": texto_cierre(fecha_cierre, dias, s.fuente),
             "url_ficha_app": f"/oportunidad/{s.fuente}/{s.codigo_oportunidad}",
         })
     return result

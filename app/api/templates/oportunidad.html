@@ -9,8 +9,6 @@
   </ol>
 </nav>
 
-{% set dias_al_cierre = feedback_item.dias_al_cierre if feedback_item else none %}
-
 <div class="d-flex justify-content-between align-items-start gap-3 mb-1 flex-wrap">
   <h2 class="mb-0">{{ oportunidad.nombre }}</h2>
   {# Los cortes los decide la ruta con los mismos valores que los presets del feed. #}
@@ -29,15 +27,12 @@
 
 <div class="mb-3">
   <span class="badge bg-light text-dark border me-1">{{ oportunidad.estado }}</span>
-  {% if dias_al_cierre is not none %}
-    {% if dias_al_cierre <= 3 %}
-    <span class="badge bg-danger me-1">cierra en {{ dias_al_cierre | round(0) | int }}d — {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</span>
-    {% elif dias_al_cierre <= 7 %}
-    <span class="badge bg-warning text-dark me-1">cierra en {{ dias_al_cierre | round(0) | int }}d — {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</span>
-    {% else %}
-    <span class="badge bg-light text-dark border me-1">cierra en {{ dias_al_cierre | round(0) | int }}d — {{ oportunidad.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</span>
-    {% endif %}
-  {% endif %}
+  {# Mismo badge que la tarjeta del feed: color por urgencia, icono y el texto
+     que decide `texto_cierre`. La ficha ya no formatea fechas por su cuenta. #}
+  <span class="badge-cierre badge-cierre--{{ urgencia }} me-1">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>
+    {{ cierre_texto }}
+  </span>
   {% set monto = oportunidad.monto_clp if fuente == 'licitaciones' else oportunidad.monto_disponible_clp %}
   {% if monto %}
   <span class="badge bg-light text-dark border me-1 num">{{ monto | clp }}</span>

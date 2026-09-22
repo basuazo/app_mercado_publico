@@ -79,6 +79,38 @@
   (function () {
     var pendiente = null;
 
+    // Al descartar, la tarjeta se va del DOM un instante después del swap (lo
+    // hace el script del feed), así que devolver el foco a su propio botón lo
+    // deja en <body>. En ese caso el destino es la tarjeta SIGUIENTE, y si no
+    // hay, el botón "Deshacer" del toast: el control relevante del momento.
+    function siguienteTarjeta(desde, clave) {
+      if (!desde) return null;
+      var todas = document.querySelectorAll("[data-oportunidad-key]");
+      var vista = false;
+      for (var i = 0; i < todas.length; i++) {
+        if (todas[i] === desde) { vista = true; continue; }
+        // Una misma oportunidad aparece en varios grupos y todas sus
+        // apariciones desaparecen juntas: hay que saltarlas.
+        if (vista && todas[i].getAttribute("data-oportunidad-key") !== clave) {
+          return todas[i];
+        }
+      }
+      return null;
+    }
+
+    function enfocarTrasDescarte(siguiente) {
+      // En el tick siguiente: para entonces el script del feed ya quitó todas
+      // las apariciones de la tarjeta y ya creó el toast de deshacer.
+      window.setTimeout(function () {
+        if (siguiente && document.contains(siguiente)) {
+          var ficha = siguiente.querySelector('.tarjeta-op__acciones a[href^="/oportunidad/"]');
+          if (ficha) { ficha.focus(); return; }
+        }
+        var deshacer = document.querySelector("#toasts [data-deshacer]");
+        if (deshacer) deshacer.focus();
+      }, 0);
+    }
+
     document.body.addEventListener("htmx:beforeRequest", function (evt) {
       var origen = evt.detail && evt.detail.elt;
       var control = origen && origen.closest ? origen.closest("[data-accion]") : null;
@@ -87,9 +119,14 @@
       }
       if (!control) { pendiente = null; return; }
       var contenedor = control.closest("[data-oportunidad-key]");
+      var clave = contenedor ? contenedor.getAttribute("data-oportunidad-key") : null;
+      var accion = control.getAttribute("data-accion");
       pendiente = {
-        accion: control.getAttribute("data-accion"),
-        clave: contenedor ? contenedor.getAttribute("data-oportunidad-key") : null
+        accion: accion,
+        clave: clave,
+        // Se busca AHORA, con la tarjeta todavía en el DOM: después del swap
+        // ya no hay desde dónde contar.
+        siguiente: accion === "descartar" ? siguienteTarjeta(contenedor, clave) : null
       };
     });
 
@@ -115,7 +152,11 @@
         if (portador) region.textContent = portador.getAttribute("data-anuncio");
       }
 
-      if (pendiente.accion) {
+      if (pendiente.accion === "descartar") {
+        // No se enfoca el botón recién llegado: está por desaparecer con su
+        // tarjeta.
+        enfocarTrasDescarte(pendiente.siguiente);
+      } else if (pendiente.accion) {
         var destino = ambito.querySelector(
           '[data-accion="' + escapar(pendiente.accion) + '"]'
         );

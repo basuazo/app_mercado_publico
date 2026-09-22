@@ -22,6 +22,7 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.presentacion import fecha_cierre_legible
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
@@ -94,10 +95,14 @@ def _fmt_monto(monto: float | None) -> str:
     return f"${monto:,.0f} CLP"
 
 
-def _fmt_fecha(dt: datetime | None) -> str:
-    if dt is None:
-        return "Sin fecha"
-    return dt.strftime("%d/%m/%Y %H:%M")
+def _fmt_cierre(dt: datetime | None, fuente: str) -> str:
+    """El cierre del correo lo decide la MISMA función que el badge de la app.
+
+    Antes esto era un `strftime("%d/%m/%Y %H:%M")` para todo, así que el correo
+    de una licitación publicaba una medianoche que la fuente nunca entregó
+    (F-coherencia). `fecha_cierre_legible` muestra la hora solo en Compra Ágil.
+    """
+    return fecha_cierre_legible(dt, fuente)
 
 
 def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, Any]:
@@ -170,7 +175,7 @@ def _ctx_alerta_seguimiento(alerta: Alerta, session: Session, settings: Settings
         "nombre": op["nombre"],
         "organismo": op["organismo"],
         "estado": op["estado"],
-        "fecha_cierre": _fmt_fecha(op["fecha_cierre"]),
+        "fecha_cierre": _fmt_cierre(op["fecha_cierre"], seguimiento.fuente),
         "mensaje": _mensaje_seguimiento(alerta, op["estado"]),
         "url": _url_ficha_app(settings, seguimiento.fuente, seguimiento.codigo_oportunidad),
         "owner_email": seguimiento.owner.email,
@@ -184,7 +189,7 @@ def _ctx_resumen_item(match: OportunidadMatch, session: Session, settings: Setti
         "nombre": op["nombre"],
         "organismo": op["organismo"],
         "monto": _fmt_monto(op["monto"]),
-        "fecha_cierre": _fmt_fecha(op["fecha_cierre"]),
+        "fecha_cierre": _fmt_cierre(op["fecha_cierre"], match.fuente),
         "estado": op["estado"],
         "score": match.score,
         "url": _url_ficha_app(settings, match.fuente, match.codigo_oportunidad),

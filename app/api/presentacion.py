@@ -201,6 +201,24 @@ def banda_urgencia(dias_al_cierre: float | None) -> str:
     return "baja"
 
 
+def fecha_cierre_legible(fecha_cierre: datetime | None, fuente: str) -> str:
+    """El instante de cierre como texto, con hora SOLO donde la fuente la da.
+
+    ÚNICO lugar donde se decide si la hora de cierre se muestra. Lo usan el
+    badge del feed y de la ficha (a través de `texto_cierre`) y los correos
+    (`app/alerts/email.py`): antes cada uno tenía su propio `strftime` y la
+    misma licitación se leía distinta en cada superficie — el correo y la ficha
+    publicaban una medianoche que la fuente nunca entregó.
+
+    Ver `texto_cierre` para por qué las licitaciones no muestran hora todavía.
+    """
+    if fecha_cierre is None:
+        return "Sin fecha de cierre"
+    if fuente == "compras_agiles":
+        return fecha_cierre.strftime("%d/%m/%Y %H:%M")
+    return fecha_cierre.strftime("%d/%m/%Y")
+
+
 def texto_cierre(
     fecha_cierre: datetime | None,
     dias_al_cierre: float | None,
@@ -208,7 +226,8 @@ def texto_cierre(
 ) -> str:
     """Texto del badge de cierre.
 
-    La hora SOLO se muestra en Compra Ágil. F-fecha-cierre arregló el parser
+    La hora SOLO se muestra en Compra Ágil (`fecha_cierre_legible`).
+    F-fecha-cierre arregló el parser
     (la hora del ISO ya no se corta) pero NO devuelve la hora al badge de
     licitaciones: hasta que una corrida de `activas` re-sincronice todas las
     filas, conviven las que traen hora real de la fuente y las que llevan el
@@ -239,6 +258,4 @@ def texto_cierre(
     else:
         cuando = f"Cierra en {dias} días"
 
-    if fuente == "compras_agiles":
-        return f"{cuando} · {fecha_cierre.strftime('%d/%m/%Y %H:%M')}"
-    return f"{cuando} · {fecha_cierre.strftime('%d/%m/%Y')}"
+    return f"{cuando} · {fecha_cierre_legible(fecha_cierre, fuente)}"
