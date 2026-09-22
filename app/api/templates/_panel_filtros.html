@@ -1,0 +1,243 @@
+{#
+  Panel de filtros del feed (F-feed-ui-2).
+
+  Se INCLUYE dos veces —barra lateral en escritorio y offcanvas bajo 1024px—
+  así que todo lo que lleva `id` se prefija con `panel_id`. Quien incluye define:
+
+    panel_id            prefijo de los ids de este panel (obligatorio)
+    panel_texto_externo true si el buscador vive fuera del panel y ya apunta a
+                        este formulario con `form=`; si no, el texto viaja acá
+                        como campo oculto para no perderse al aplicar filtros.
+
+  Es un único <form method="get">: los controles no navegan solos, se aplican
+  todos juntos con "Aplicar filtros". Los conteos vienen de `ResultadoFeed.facetas`
+  y NO se recalculan acá; una opción sin conteo se muestra sin número, nunca con
+  un cero inventado.
+
+  `panel=1` marca que el envío vino de este formulario. Sin esa marca no hay
+  manera de distinguir "casilla desmarcada" de "URL sin el parámetro", y las dos
+  casillas "Incluir…" tienen que quedar MARCADAS cuando la URL no dice nada.
+#}
+<form id="{{ panel_id }}-form" method="get" action="/" class="panel-filtros__form">
+  <input type="hidden" name="panel" value="1">
+  {% if not panel_texto_externo %}<input type="hidden" name="texto" value="{{ texto }}">{% endif %}
+  <input type="hidden" name="orden" value="{{ orden }}">
+  <input type="hidden" name="agrupar_por" value="{{ agrupar_por }}">
+
+  <div class="accordion accordion-flush" id="{{ panel_id }}-acordeon">
+
+    {# --- 1. Perfil de búsqueda --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-perfil" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-perfil">Perfil de búsqueda</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-perfil" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          <label class="form-label small" for="{{ panel_id }}-perfil">Perfil</label>
+          <select class="form-select form-select-sm" name="perfil_id" id="{{ panel_id }}-perfil">
+            <option value="">Todos los perfiles</option>
+            {% for p in perfiles %}
+            <option value="{{ p.id }}" {% if perfil_id == p.id %}selected{% endif %}>{{ p.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {# --- 2. Fuente --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-fuente" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-fuente">Fuente</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-fuente" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          {% for op in opciones_fuente %}
+          <div class="form-check d-flex align-items-center gap-2">
+            <input class="form-check-input" type="checkbox" name="fuente" value="{{ op.valor }}"
+                   id="{{ panel_id }}-fuente-{{ op.valor }}" {% if op.marcada %}checked{% endif %}>
+            <label class="form-check-label flex-grow-1" for="{{ panel_id }}-fuente-{{ op.valor }}">
+              {{ op.etiqueta }}
+            </label>
+            {% if op.n is not none %}<span class="panel-filtros__conteo num">{{ op.n }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# --- 3. Región --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-region" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-region">Región</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-region" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          <label class="form-label small" for="{{ panel_id }}-region">Región</label>
+          <select class="form-select form-select-sm" name="region" id="{{ panel_id }}-region">
+            <option value="">Todas las regiones</option>
+            {% for op in opciones_region %}
+            <option value="{{ op.codigo }}" {% if region == op.codigo %}selected{% endif %}>
+              {{ op.nombre }}{% if op.n is not none %} ({{ op.n }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {# Obligatoria: sin esto el filtro miente sobre lo que está haciendo. #}
+          <p class="text-muted small mt-2 mb-0">
+            El filtro de región aplica solo a Compra Ágil. Las licitaciones no traen región en la
+            fuente oficial, así que no se filtran por este criterio.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# --- 4. Monto estimado --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-monto" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-monto">Monto estimado (CLP)</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-monto" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label small" for="{{ panel_id }}-monto-min">Desde</label>
+              <input class="form-control form-control-sm num" type="text" inputmode="numeric"
+                     name="monto_min" id="{{ panel_id }}-monto-min"
+                     value="{% if monto_min is not none %}{{ monto_min | numero }}{% endif %}">
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="{{ panel_id }}-monto-max">Hasta</label>
+              <input class="form-control form-control-sm num" type="text" inputmode="numeric"
+                     name="monto_max" id="{{ panel_id }}-monto-max"
+                     value="{% if monto_max is not none %}{{ monto_max | numero }}{% endif %}">
+            </div>
+          </div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="incluir_sin_monto" value="1"
+                   id="{{ panel_id }}-sin-monto" {% if incluir_sin_monto %}checked{% endif %}>
+            <label class="form-check-label small" for="{{ panel_id }}-sin-monto">
+              Incluir monto no informado
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# --- 5. Fecha de cierre --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-cierre" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-cierre">Fecha de cierre</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-cierre" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          {# Los atajos son enlaces: no esperan al botón "Aplicar". Por eso el
+             estado activo va con aria-current y nunca con aria-pressed. #}
+          <div id="{{ panel_id }}-etiqueta-atajos" class="form-label small">Atajos</div>
+          <div class="d-flex flex-wrap gap-1" role="group"
+               aria-labelledby="{{ panel_id }}-etiqueta-atajos">
+            {% for preset in presets_cierre %}
+            <a class="btn btn-sm {% if preset.activo %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+               href="{{ preset.href }}"{% if preset.activo %} aria-current="true"{% endif %}>
+              {% if preset.activo %}<span aria-hidden="true">✓</span> {% endif %}{{ preset.etiqueta }}
+            </a>
+            {% endfor %}
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6">
+              <label class="form-label small" for="{{ panel_id }}-cierre-desde">Desde</label>
+              <input class="form-control form-control-sm" type="date" name="cierre_desde"
+                     id="{{ panel_id }}-cierre-desde" value="{{ cierre_desde }}">
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="{{ panel_id }}-cierre-hasta">Hasta</label>
+              <input class="form-control form-control-sm" type="date" name="cierre_hasta"
+                     id="{{ panel_id }}-cierre-hasta" value="{{ cierre_hasta }}">
+            </div>
+          </div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="incluir_sin_cierre" value="1"
+                   id="{{ panel_id }}-sin-cierre" {% if incluir_sin_cierre %}checked{% endif %}>
+            <label class="form-check-label small" for="{{ panel_id }}-sin-cierre">
+              Incluir sin fecha de cierre informada
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# --- 6. Estado --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-estado" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-estado">Estado</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-estado" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          {% for op in opciones_familia %}
+          {# "Estado no informado" va al final y separado: no es una situación
+             del proceso, es la ausencia del dato. #}
+          {% if op.valor == 'desconocido' %}<hr class="my-2">{% endif %}
+          <div class="form-check d-flex align-items-center gap-2">
+            <input class="form-check-input" type="checkbox" name="estado" value="{{ op.valor }}"
+                   id="{{ panel_id }}-estado-{{ op.valor }}" {% if op.marcada %}checked{% endif %}>
+            <label class="form-check-label flex-grow-1 d-flex align-items-center gap-2"
+                   for="{{ panel_id }}-estado-{{ op.valor }}">
+              <span class="punto-familia punto-familia--{{ op.clase }}" aria-hidden="true"></span>
+              {{ op.etiqueta }}
+            </label>
+            {% if op.n is not none %}<span class="panel-filtros__conteo num">{{ op.n }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# --- 7. Relevancia del match --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-relevancia" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-relevancia">Relevancia del match</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-relevancia" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          {# Los cortes los pasa la ruta: son los mismos que usan el anillo de
+             la tarjeta y el badge de la ficha. Acá no hay números escritos. #}
+          <div id="{{ panel_id }}-etiqueta-relevancia" class="form-label small">Relevancia</div>
+          <div role="group" aria-labelledby="{{ panel_id }}-etiqueta-relevancia">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="min_score" value="{{ relevancia_alta }}"
+                     id="{{ panel_id }}-rel-alta" {% if min_score == relevancia_alta %}checked{% endif %}>
+              <label class="form-check-label small" for="{{ panel_id }}-rel-alta">Alta</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="min_score" value="{{ relevancia_media }}"
+                     id="{{ panel_id }}-rel-media" {% if min_score == relevancia_media %}checked{% endif %}>
+              <label class="form-check-label small" for="{{ panel_id }}-rel-media">Media</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="min_score" value="0"
+                     id="{{ panel_id }}-rel-todas" {% if min_score == 0 %}checked{% endif %}>
+              <label class="form-check-label small" for="{{ panel_id }}-rel-todas">Todas</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-filtros__pie">
+    <button type="submit" class="btn btn-primary w-100">Aplicar filtros</button>
+    <a class="btn btn-outline-secondary w-100 mt-2" href="{{ url_limpiar }}">Limpiar</a>
+  </div>
+</form>

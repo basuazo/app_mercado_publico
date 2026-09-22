@@ -16,6 +16,23 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 22),
+        titulo="Panel de filtros en el tablero",
+        descripcion=(
+            "Ahora la lista de oportunidades tiene un panel al costado para acotarla "
+            "por perfil, fuente, región, monto, fecha de cierre, estado del proceso y "
+            "nivel de coincidencia. Cada opción muestra cuántas oportunidades hay "
+            "antes de aplicarla, así se sabe de antemano si vale la pena. Los filtros "
+            "puestos aparecen como etiquetas que se pueden quitar una por una, y la "
+            "dirección de la página guarda la búsqueda completa: se puede compartir "
+            "por correo o volver con el botón atrás del navegador. En el celular el "
+            "panel se abre con el botón Filtros. La lista pasa a mostrarse sin "
+            "agrupar —cada oportunidad una sola vez, con sus motivos de coincidencia "
+            "en la propia tarjeta— y el selector de arriba permite volver a agrupar "
+            "por motivo, región o fuente cuando convenga."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 22),
         titulo="La ficha y los correos dicen lo mismo que la lista sobre el cierre",
         descripcion=(
             "La ficha de una oportunidad y los correos mostraban una hora de cierre "

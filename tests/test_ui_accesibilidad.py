@@ -5,6 +5,8 @@ Todos offline: SQLite en memoria y TestClient, sin tocar la red.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -91,12 +93,17 @@ def test_enlaces_de_orden_y_agrupacion_conservan_el_texto_codificado(
     r = client.get("/", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario))
     html = r.text
 
-    for href in ("?orden=cierre", "?agrupar_por=region", "?min_score=0"):
-        i = html.find(href)
-        assert i != -1, f"no se encontró el enlace {href}"
-        # El querystring del enlace llega hasta la comilla de cierre del href.
-        enlace = html[i : html.index('"', i)]
-        assert "%26" in enlace, f"{href} perdió la codificación: {enlace}"
+    # Desde F-feed-ui-2 el orden de los parámetros lo fija `_ORDEN_PARAMS`, así
+    # que el enlace no empieza necesariamente por el parámetro buscado: se
+    # localiza el href completo y se revisa ahí dentro.
+    enlaces = re.findall(r'(?:href|value)="(/\?[^"]*)"', html)
+    # `min_score` salió de esta lista en F-feed-ui-2: dejó de ser un enlace y
+    # pasó a ser un radio del panel, que el navegador codifica solo.
+    for parametro in ("orden=cierre", "agrupar_por=region"):
+        conservan = [e for e in enlaces if parametro in e]
+        assert conservan, f"no se encontró el enlace con {parametro}"
+        for enlace in conservan:
+            assert "%26" in enlace, f"{parametro} perdió la codificación: {enlace}"
 
 
 # ---------------------------------------------------------------------------

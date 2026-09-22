@@ -240,3 +240,67 @@ body {
   .tarjeta-op__acciones .btn { flex: 1 1 auto; }
   .chip-razon { max-width: 100%; }
 }
+
+/* --- Panel lateral de filtros (F-feed-ui-2) ------------------------------- */
+
+.panel-filtros {
+  flex: 0 0 288px;
+  width: 288px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  /* Sticky bajo la barra superior, con scroll propio: el feed se recorre sin
+     perder los filtros de vista. */
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.panel-filtros .accordion-button {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 10px 12px;
+}
+
+.panel-filtros .accordion-body { padding: 12px; }
+.panel-filtros .form-check-label { font-size: 0.875rem; }
+
+.panel-filtros__conteo {
+  color: var(--texto-3);
+  font-size: 0.75rem;
+}
+
+.panel-filtros__pie {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  padding: 12px;
+}
+
+/* En el offcanvas el panel ocupa todo el ancho disponible y no se pega. */
+.offcanvas .panel-filtros__form .panel-filtros__pie { position: static; }
+
+/* Punto de color de la familia de estado, junto a su casilla. */
+.punto-familia {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+}
+
+.punto-familia--familia_abierta     { background: var(--est-abierta-bg); border-color: var(--est-abierta-bd); }
+.punto-familia--familia_eval        { background: var(--est-eval-bg);    border-color: var(--est-eval-bd); }
+.punto-familia--familia_adj         { background: var(--est-adj-bg);     border-color: var(--est-adj-bd); }
+.punto-familia--familia_completada  { background: var(--est-compl-bg);   border-color: var(--est-compl-bd); }
+.punto-familia--familia_sinefecto   { background: var(--est-sinef-bg);   border-color: var(--est-sinef-bd); }
+.punto-familia--familia_desconocido { background: var(--est-desc-bg);    border-color: var(--est-desc-bd); }
+
+/* --- Densidad compacta del feed ------------------------------------------ */
+
+.feed--compacto .tarjeta-op { padding: 10px 12px; margin-bottom: 8px; }
+.feed--compacto .tarjeta-op__acciones { margin-top: 8px !important; }
+.feed--compacto .anillo-match { width: 38px; height: 38px; flex-basis: 38px; font-size: 0.8125rem; }

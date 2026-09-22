@@ -487,12 +487,14 @@ def test_dashboard_render_control_de_relevancia(client, usuario, settings, engin
     _crear_match_propio(engine, usuario, "LIC-001", score=80)
     r = client.get("/", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    # F-feed-ui-1: el grupo pasó a tener encabezado visible "Relevancia" y los
-    # botones quedaron en "Alta" / "Media" / "Todas", con aria-current en el activo.
-    assert 'aria-labelledby="etiqueta-relevancia"' in r.text
+    # F-feed-ui-1 le puso encabezado visible "Relevancia" y las tres opciones
+    # "Alta" / "Media" / "Todas". F-feed-ui-2 lo mudó al panel de filtros: los
+    # ids llevan el prefijo del panel y las opciones son radios del formulario,
+    # no enlaces.
+    assert 'aria-labelledby="filtros-escritorio-etiqueta-relevancia"' in r.text
     assert ">Relevancia</div>" in r.text
     assert "Todas" in r.text
-    assert "min_score=" in r.text
+    assert 'name="min_score"' in r.text
 
 
 def test_dashboard_usa_total_filtrado_por_relevancia(client, usuario, settings, engine):

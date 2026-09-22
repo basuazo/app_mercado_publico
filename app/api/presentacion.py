@@ -169,15 +169,25 @@ _FAMILIAS: dict[FamiliaEstado, tuple[str, str]] = {
 }
 
 
+def presentacion_familia(familia: FamiliaEstado) -> dict[str, str]:
+    """`{"familia", "etiqueta", "clase"}` de una familia ya resuelta.
+
+    Lo usa el filtro por estado del panel, que ofrece las familias como opción
+    y no tiene un estado crudo del que partir. Las etiquetas viven acá y no en
+    la plantilla: el badge de la tarjeta y la casilla del panel tienen que
+    llamar a lo mismo de la misma manera.
+    """
+    etiqueta, clase = _FAMILIAS[familia]
+    return {"familia": str(familia), "etiqueta": etiqueta, "clase": clase}
+
+
 def presentacion_estado(estado: object) -> dict[str, str]:
     """`{"familia", "etiqueta", "clase"}` para el badge de estado.
 
     Un estado que la fuente todavía no declaraba cae en DESCONOCIDO y se
     muestra como "Estado no informado": nunca un badge vacío (regla 6).
     """
-    familia = familia_de_estado(estado)
-    etiqueta, clase = _FAMILIAS[familia]
-    return {"familia": str(familia), "etiqueta": etiqueta, "clase": clase}
+    return presentacion_familia(familia_de_estado(estado))
 
 
 # ---------------------------------------------------------------------------

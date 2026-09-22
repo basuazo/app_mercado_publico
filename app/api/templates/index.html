@@ -1,188 +1,213 @@
 {% extends "base.html" %}
 {% from "_card_oportunidad.html" import card_oportunidad %}
 {% block title %}Dashboard — MP Oportunidades{% endblock %}
+{% block main_clase %}container-xxl{% endblock %}
 {% block content %}
-<h2 class="mb-4">Oportunidades</h2>
 
-{# Cada valor va urlencoded: un "&" en la búsqueda partía el querystring y
-   corrompía los filtros al primer clic en orden, umbral o agrupación. #}
-{% set filtros_qs = "fuente=" ~ (fuente | urlencode) ~ "&texto=" ~ (texto | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") %}
-{% set ver_todas_href = "?min_score=0&orden=" ~ (orden | urlencode) ~ "&agrupar_por=" ~ (agrupar_por | urlencode) ~ "&" ~ filtros_qs %}
+{#
+  Ni un querystring armado a mano en esta plantilla: todos los enlaces salen de
+  `url_feed(...)` / `url_alternar(...)`, que la ruta expone y que codifican con
+  `urlencode` sobre la estructura completa. El bug de F-ui-fixes —un "&" escrito
+  en el buscador que partía la URL al primer clic— nació de concatenar acá.
+#}
 
-<form class="row g-2 mb-2 align-items-end" method="get" action="/">
-  <div class="col-md-3">
-    <label class="form-label small mb-1" for="filtro-fuente">Fuente</label>
-    <select name="fuente" id="filtro-fuente" class="form-select">
-      <option value="">Todas las fuentes</option>
-      <option value="licitaciones" {% if fuente == 'licitaciones' %}selected{% endif %}>Licitaciones</option>
-      <option value="compras_agiles" {% if fuente == 'compras_agiles' %}selected{% endif %}>Compra Ágil</option>
-    </select>
-  </div>
-  <div class="col-md-3">
-    <label class="form-label small mb-1" for="filtro-perfil">Perfil</label>
-    <select name="perfil_id" id="filtro-perfil" class="form-select">
-      <option value="">Todos los perfiles</option>
-      {% for p in perfiles %}
-      <option value="{{ p.id }}" {% if perfil_id == p.id|string %}selected{% endif %}>{{ p.nombre }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-md-4">
-    {# WCAG 3.3.2: el placeholder no sustituye a la etiqueta. #}
-    <label class="form-label small mb-1" for="filtro-texto">Buscar</label>
-    <input type="text" name="texto" id="filtro-texto" class="form-control"
-           placeholder="Palabras del título..." value="{{ texto }}">
-  </div>
-  <div class="col-md-2">
-    <button type="submit" class="btn btn-primary w-100">Filtrar</button>
-  </div>
-  <input type="hidden" name="orden" value="{{ orden }}">
-  <input type="hidden" name="min_score" value="{{ min_score }}">
-  <input type="hidden" name="agrupar_por" value="{{ agrupar_por }}">
-</form>
-
-{# --- Chips de filtro activo: la fila no se renderiza si no hay ninguno --- #}
-{% set chips_filtro = [] %}
-{% if fuente %}
-  {% set _ = chips_filtro.append({
-      "etiqueta": "Fuente: " ~ ("Licitaciones" if fuente == "licitaciones" else "Compra Ágil"),
-      "href": "?texto=" ~ (texto | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") ~ "&orden=" ~ (orden | urlencode) ~ "&min_score=" ~ min_score ~ "&agrupar_por=" ~ (agrupar_por | urlencode)}) %}
-{% endif %}
-{% if perfil_id %}
-  {% set _ = chips_filtro.append({
-      "etiqueta": "Perfil: " ~ (nombre_perfil_activo or perfil_id),
-      "href": "?fuente=" ~ (fuente | urlencode) ~ "&texto=" ~ (texto | urlencode) ~ "&orden=" ~ (orden | urlencode) ~ "&min_score=" ~ min_score ~ "&agrupar_por=" ~ (agrupar_por | urlencode)}) %}
-{% endif %}
-{% if texto %}
-  {% set _ = chips_filtro.append({
-      "etiqueta": "Texto: " ~ texto,
-      "href": "?fuente=" ~ (fuente | urlencode) ~ (("&perfil_id=" ~ (perfil_id | urlencode)) if perfil_id else "") ~ "&orden=" ~ (orden | urlencode) ~ "&min_score=" ~ min_score ~ "&agrupar_por=" ~ (agrupar_por | urlencode)}) %}
-{% endif %}
-{% if min_score != relevancia_media %}
-  {% set _ = chips_filtro.append({
-      "etiqueta": "Relevancia: " ~ ("alta" if min_score == relevancia_alta else "todas" if min_score == 0 else min_score|string),
-      "href": "?min_score=" ~ relevancia_media ~ "&orden=" ~ (orden | urlencode) ~ "&agrupar_por=" ~ (agrupar_por | urlencode) ~ "&" ~ filtros_qs}) %}
-{% endif %}
-
-{% if chips_filtro %}
-<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  {% for chip in chips_filtro %}
-  <span class="chip-filtro">
-    {{ chip.etiqueta }}
-    <a class="chip-filtro__quitar" href="{{ chip.href }}" aria-label="Quitar filtro {{ chip.etiqueta }}">
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
-    </a>
-  </span>
-  {% endfor %}
-  <a class="btn btn-sm btn-link link-secondary text-decoration-none" href="/">Limpiar todo ({{ chips_filtro | length }})</a>
+<div class="d-flex justify-content-between align-items-center gap-3 mb-3 flex-wrap">
+  <h2 class="mb-0">Oportunidades</h2>
+  <button class="btn btn-outline-secondary d-lg-none" type="button" id="boton-filtros"
+          data-bs-toggle="offcanvas" data-bs-target="#panel-filtros-movil"
+          aria-controls="panel-filtros-movil">
+    Filtros{% if chips %} ({{ chips | length }}){% endif %}
+  </button>
 </div>
-{% endif %}
 
-{# --- Barra de resultados: conteo + controles etiquetados --- #}
-<div class="barra-resultados">
-  <div class="row g-3 align-items-end">
-    <div class="col-12 col-lg">
-      <p class="mb-0 text-muted small">
-        {% if total_unico %}
-        <strong class="num">{{ total_unico }}</strong> oportunidad(es)
-        {%- if total_apariciones > total_unico %}, algunas aparecen en más de un grupo{% endif -%}
-        {%- if n_ocultas_relevancia > 0 %} · <span class="num">{{ n_ocultas_relevancia }}</span>
-        oculta(s) por baja relevancia — <a href="{{ ver_todas_href }}">ver todas</a>{% endif %}
-        {% else %}
-        Sin resultados con los filtros actuales
-        {% endif %}
-      </p>
-    </div>
+<div class="d-flex align-items-start gap-4">
 
-    <div class="col-6 col-lg-auto">
-      <label class="form-label mb-1" for="orden-select">Orden</label>
-      <select id="orden-select" class="form-select form-select-sm"
-              onchange="location.href=this.value">
-        <option value="?orden=score&min_score={{ min_score }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
-                {% if orden == 'score' %}selected{% endif %}>Mejor match</option>
-        <option value="?orden=cierre&min_score={{ min_score }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
-                {% if orden == 'cierre' %}selected{% endif %}>Cierran antes</option>
-      </select>
-    </div>
+  {# --- Panel lateral (escritorio) --------------------------------------- #}
+  <aside class="panel-filtros d-none d-lg-block" aria-label="Filtros del feed">
+    {% set panel_id = "filtros-escritorio" %}
+    {% set panel_texto_externo = true %}
+    {% include "_panel_filtros.html" %}
+  </aside>
 
-    <div class="col-6 col-lg-auto">
-      <label class="form-label mb-1" for="agrupar-select">Agrupar</label>
-      <select id="agrupar-select" class="form-select form-select-sm"
-              onchange="location.href=this.value">
-        <option value="?agrupar_por=motivo&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}"
-                {% if agrupar_por == 'motivo' %}selected{% endif %}>Por motivo</option>
-        <option value="?agrupar_por=region&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}"
-                {% if agrupar_por == 'region' %}selected{% endif %}>Por región</option>
-        <option value="?agrupar_por=fuente&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}"
-                {% if agrupar_por == 'fuente' %}selected{% endif %}>Por fuente</option>
-      </select>
-    </div>
+  {# --- Columna del feed --------------------------------------------------- #}
+  <div class="flex-grow-1 min-w-0">
 
-    <div class="col-12 col-lg-auto">
-      {# Son enlaces, no botones: el estado activo va con aria-current. #}
-      <div id="etiqueta-relevancia" class="form-label mb-1">Relevancia</div>
-      <div class="btn-group btn-group-sm" role="group" aria-labelledby="etiqueta-relevancia">
-        <a href="?min_score={{ relevancia_alta }}&orden={{ orden | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
-           class="btn {% if min_score == relevancia_alta %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-           {% if min_score == relevancia_alta %}aria-current="true"{% endif %}>
-          {% if min_score == relevancia_alta %}<span aria-hidden="true">✓</span> {% endif %}Alta</a>
-        <a href="?min_score={{ relevancia_media }}&orden={{ orden | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
-           class="btn {% if min_score == relevancia_media %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-           {% if min_score == relevancia_media %}aria-current="true"{% endif %}>
-          {% if min_score == relevancia_media %}<span aria-hidden="true">✓</span> {% endif %}Media</a>
-        <a href="?min_score=0&orden={{ orden | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&{{ filtros_qs }}"
-           class="btn {% if min_score == 0 %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-           {% if min_score == 0 %}aria-current="true"{% endif %}>
-          {% if min_score == 0 %}<span aria-hidden="true">✓</span> {% endif %}Todas</a>
+    {# El buscador vive acá pero pertenece al formulario del panel (`form=`):
+       así una búsqueda y los filtros se aplican juntos, sin dos formularios
+       que se pisen el estado. #}
+    <div class="row g-2 align-items-end mb-2">
+      <div class="col">
+        <label class="form-label small mb-1" for="filtro-texto">Buscar</label>
+        <input type="text" name="texto" id="filtro-texto" class="form-control"
+               form="filtros-escritorio-form"
+               placeholder="Palabras del título..." value="{{ texto }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary" form="filtros-escritorio-form">Buscar</button>
       </div>
     </div>
 
-    {% if n_descartadas %}
-    <div class="col-12 col-lg-auto">
-      <a href="/descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
+    {# --- Chips de filtro activo: la fila no existe si no hay ninguno ------ #}
+    {% if chips %}
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      {% for chip in chips %}
+      <span class="chip-filtro">
+        {{ chip.etiqueta }}
+        <a class="chip-filtro__quitar" href="{{ chip.href }}"
+           aria-label="Quitar filtro {{ chip.etiqueta }}">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </a>
+      </span>
+      {% endfor %}
+      <a class="btn btn-sm btn-link link-secondary text-decoration-none" href="{{ url_limpiar }}">
+        Limpiar todo ({{ chips | length }})
+      </a>
     </div>
     {% endif %}
-  </div>
-</div>
 
-{% if grupos %}
-<div class="accordion" id="feed-agrupado">
-  {% for grupo in grupos %}
-  {% set gidx = loop.index0 %}
-  {% set gid = "grupo-" ~ gidx %}
-  <div class="accordion-item">
-    <h2 class="accordion-header" id="{{ gid }}-heading">
-      <button class="accordion-button" type="button" data-bs-toggle="collapse"
-              data-bs-target="#{{ gid }}-body" aria-expanded="true" aria-controls="{{ gid }}-body">
-        {{ grupo.label }} <span class="badge bg-secondary ms-2">{{ grupo.count }}</span>
-      </button>
-    </h2>
-    <div id="{{ gid }}-body" class="accordion-collapse collapse show" aria-labelledby="{{ gid }}-heading">
-      <div class="accordion-body">
-        {% for item in grupo['items'] %}
-        {{ card_oportunidad(item, csrf_token, idx=gidx) }}
-        {% endfor %}
-        {% if grupo.count > grupo['items']|length %}
-        <div class="mt-2">
-          <a class="btn btn-sm btn-outline-secondary"
-             href="?grupo_expandido={{ grupo.key | urlencode }}&agrupar_por={{ agrupar_por | urlencode }}&orden={{ orden | urlencode }}&min_score={{ min_score }}&{{ filtros_qs }}#{{ gid }}-body">
-            Ver más en este grupo ({{ grupo['items']|length }} de {{ grupo.count }})
-          </a>
+    {# --- Cabecera de resultados ------------------------------------------- #}
+    <div class="barra-resultados">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-lg">
+          <p class="mb-0 text-muted small" id="conteo-resultados">
+            {% if total %}
+            <strong class="num">{{ total }}</strong> oportunidad(es)
+            {%- if nuevas_hoy %} · <span class="num">{{ nuevas_hoy }}</span> nueva(s) hoy{% endif -%}
+            {%- if not sin_agrupar and total_apariciones > total_unico %}, algunas aparecen en más de un grupo{% endif -%}
+            {%- if n_ocultas_relevancia > 0 %} · <span class="num">{{ n_ocultas_relevancia }}</span>
+            oculta(s) por baja relevancia — <a href="{{ url_feed(min_score=0) }}">ver todas</a>{% endif %}
+            {% else %}
+            Sin resultados con los filtros actuales
+            {% endif %}
+          </p>
+        </div>
+
+        <div class="col-6 col-lg-auto">
+          <label class="form-label mb-1" for="orden-select">Orden</label>
+          <select id="orden-select" class="form-select form-select-sm"
+                  onchange="location.href=this.value">
+            <option value="{{ url_feed(orden=none) }}" {% if orden == 'score' %}selected{% endif %}>Mejor match</option>
+            <option value="{{ url_feed(orden='cierre') }}" {% if orden == 'cierre' %}selected{% endif %}>Cierran antes</option>
+            <option value="{{ url_feed(orden='monto') }}" {% if orden == 'monto' %}selected{% endif %}>Monto mayor</option>
+          </select>
+        </div>
+
+        <div class="col-6 col-lg-auto">
+          <label class="form-label mb-1" for="agrupar-select">Agrupar</label>
+          <select id="agrupar-select" class="form-select form-select-sm"
+                  onchange="location.href=this.value">
+            <option value="{{ url_feed(agrupar_por=none) }}" {% if agrupar_por == 'ninguno' %}selected{% endif %}>Sin agrupar</option>
+            <option value="{{ url_feed(agrupar_por='motivo') }}" {% if agrupar_por == 'motivo' %}selected{% endif %}>Por motivo</option>
+            <option value="{{ url_feed(agrupar_por='region') }}" {% if agrupar_por == 'region' %}selected{% endif %}>Por región</option>
+            <option value="{{ url_feed(agrupar_por='fuente') }}" {% if agrupar_por == 'fuente' %}selected{% endif %}>Por fuente</option>
+          </select>
+        </div>
+
+        <div class="col-6 col-lg-auto">
+          {# Botón real: el estado sí es de "presionado", y no navega. #}
+          <div class="form-label mb-1" id="etiqueta-densidad">Densidad</div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="toggle-densidad"
+                  aria-pressed="false" aria-describedby="etiqueta-densidad">Compacta</button>
+        </div>
+
+        {% if n_descartadas %}
+        <div class="col-6 col-lg-auto">
+          <a href="/descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
         </div>
         {% endif %}
       </div>
     </div>
+
+    {# --- Feed -------------------------------------------------------------- #}
+    <div id="feed">
+    {# Ojo: con "ninguno" `grupos` SIEMPRE trae el grupo implícito, aunque esté
+       vacío. Lo que decide si hay algo que pintar es `items_en_pagina`. #}
+    {% if sin_agrupar and items_en_pagina %}
+      {% for item in grupos[0]['items'] %}
+      {{ card_oportunidad(item, csrf_token) }}
+      {% endfor %}
+
+      {# Paginación: solo sin agrupar. Agrupando manda el cap por grupo y el
+         offset no participa (F-feed-filtros, Bloque 7). #}
+      {% set quedan = total - (offset + items_en_pagina) %}
+      {% if offset > 0 or quedan > 0 %}
+      <nav class="d-flex justify-content-between align-items-center gap-2 mt-3" aria-label="Paginación del feed">
+        {% if offset > 0 %}
+        <a class="btn btn-outline-secondary btn-sm"
+           href="{{ url_feed(offset=(offset - limite_pagina) if offset > limite_pagina else none) }}">
+          Ver las {{ limite_pagina }} anteriores
+        </a>
+        {% else %}<span></span>{% endif %}
+        {% if quedan > 0 %}
+        <a class="btn btn-primary btn-sm" href="{{ url_feed(offset=offset + limite_pagina) }}">
+          Ver {{ limite_pagina if quedan > limite_pagina else quedan }} más
+          <span class="text-nowrap">(quedan {{ quedan }})</span>
+        </a>
+        {% endif %}
+      </nav>
+      {% endif %}
+
+    {% elif not sin_agrupar and grupos %}
+      <div class="accordion" id="feed-agrupado">
+        {% for grupo in grupos %}
+        {% set gidx = loop.index0 %}
+        {% set gid = "grupo-" ~ gidx %}
+        <div class="accordion-item">
+          <h3 class="accordion-header" id="{{ gid }}-heading">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#{{ gid }}-body" aria-expanded="true" aria-controls="{{ gid }}-body">
+              {{ grupo.label }} <span class="badge bg-secondary ms-2">{{ grupo.count }}</span>
+            </button>
+          </h3>
+          <div id="{{ gid }}-body" class="accordion-collapse collapse show" aria-labelledby="{{ gid }}-heading">
+            <div class="accordion-body">
+              {% for item in grupo['items'] %}
+              {{ card_oportunidad(item, csrf_token, idx=gidx) }}
+              {% endfor %}
+              {% if grupo.count > grupo['items']|length %}
+              <div class="mt-2">
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{{ url_feed(grupo_expandido=grupo.key) }}#{{ gid }}-body">
+                  Ver más en este grupo ({{ grupo['items']|length }} de {{ grupo.count }})
+                </a>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+    {% elif n_ocultas_relevancia > 0 %}
+      <div class="alert alert-info">
+        {{ n_ocultas_relevancia }} oportunidad(es) oculta(s) por baja relevancia —
+        <a href="{{ url_feed(min_score=0) }}">ver todas</a>
+      </div>
+    {% elif chips %}
+      <div class="alert alert-info">
+        No hay oportunidades con estos filtros.
+        <a href="{{ url_limpiar }}">Limpiar los filtros</a> para ver todo tu feed.
+      </div>
+    {% else %}
+      <div class="alert alert-info">No hay oportunidades que coincidan con tus perfiles.</div>
+    {% endif %}
+    </div>
   </div>
-  {% endfor %}
 </div>
-{% elif n_ocultas_relevancia > 0 %}
-<div class="alert alert-info">
-  {{ n_ocultas_relevancia }} oportunidad(es) oculta(s) por baja relevancia —
-  <a href="{{ ver_todas_href }}">ver todas</a>
+
+{# --- Panel de filtros en móvil ------------------------------------------- #}
+<div class="offcanvas offcanvas-start d-lg-none" tabindex="-1" id="panel-filtros-movil"
+     aria-labelledby="titulo-filtros-movil">
+  <div class="offcanvas-header">
+    <h3 class="offcanvas-title h5" id="titulo-filtros-movil">Filtros</h3>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body">
+    {% set panel_id = "filtros-movil" %}
+    {% set panel_texto_externo = false %}
+    {% include "_panel_filtros.html" %}
+  </div>
 </div>
-{% else %}
-<div class="alert alert-info">No hay oportunidades que coincidan con tus perfiles.</div>
-{% endif %}
 
 <script>
   // Al descartar: quitar todas las apariciones de la tarjeta (puede estar en
@@ -233,5 +258,64 @@
       new window.bootstrap.Popover(el);
     });
   });
+
+  (function () {
+    // --- Densidad, recordada por navegador ---------------------------------
+    // localStorage puede tirar excepción (modo privado, cookies bloqueadas):
+    // si falla, la página tiene que seguir funcionando igual.
+    var feed = document.getElementById("feed");
+    var boton = document.getElementById("toggle-densidad");
+
+    function leer() {
+      try { return window.localStorage.getItem("densidad-feed"); } catch (e) { return null; }
+    }
+    function guardar(valor) {
+      try { window.localStorage.setItem("densidad-feed", valor); } catch (e) { /* sin persistir */ }
+    }
+    function aplicar(compacta) {
+      if (!feed || !boton) return;
+      feed.classList.toggle("feed--compacto", compacta);
+      boton.setAttribute("aria-pressed", compacta ? "true" : "false");
+      boton.textContent = compacta ? "Cómoda" : "Compacta";
+    }
+
+    aplicar(leer() === "compacta");
+    if (boton) {
+      boton.addEventListener("click", function () {
+        var compacta = boton.getAttribute("aria-pressed") !== "true";
+        aplicar(compacta);
+        guardar(compacta ? "compacta" : "comoda");
+      });
+    }
+
+    // --- El conteo se anuncia tras aplicar filtros --------------------------
+    // Solo si hay filtros activos: en la carga limpia no hay nada que anunciar.
+    var hayFiltros = {{ (chips | length) | tojson }};
+    if (hayFiltros) {
+      var region = document.getElementById("anuncios");
+      var conteo = document.getElementById("conteo-resultados");
+      if (region && conteo) {
+        window.setTimeout(function () {
+          region.textContent = conteo.textContent.trim();
+        }, 100);
+      }
+    }
+
+    // --- URLs sin ruido ----------------------------------------------------
+    // Un formulario GET manda TODOS sus campos, incluidos los vacíos. Sin esto
+    // la URL compartible se llena de "region=&monto_min=&...". Sin JS la
+    // página funciona igual: la ruta ya trata el vacío como "sin filtro".
+    document.querySelectorAll(".panel-filtros__form").forEach(function (form) {
+      form.addEventListener("submit", function () {
+        // `form.elements` incluye el buscador, que vive fuera del panel y se
+        // asocia con el atributo `form`.
+        Array.prototype.slice.call(form.elements).forEach(function (campo) {
+          var vacio = campo.value === "";
+          var casillaApagada = (campo.type === "checkbox" || campo.type === "radio") && !campo.checked;
+          if (vacio && !casillaApagada) campo.disabled = true;
+        });
+      });
+    });
+  })();
 </script>
 {% endblock %}

@@ -1,5 +1,7 @@
-"""Tests F-feed-agrupado — feed agrupado por categorías (motivo/región/fuente),
-reemplaza la lista plana del dashboard (F10)."""
+"""Tests F-feed-agrupado — feed agrupado por categorías (motivo/región/fuente).
+
+Desde F-feed-ui-2 el default de la ruta es "ninguno" (lista plana paginada), así
+que los tests de la vista agrupada piden `?agrupar_por=...` explícitamente."""
 
 from __future__ import annotations
 
@@ -326,7 +328,7 @@ def test_descartar_oculta_todas_las_apariciones(client, usuario, settings, engin
     )
     cookies, headers = _session(settings, usuario)
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.text.count('data-oportunidad-key="licitaciones:LIC-DOBLE"') == 2
 
     r_post = client.post(
@@ -334,7 +336,7 @@ def test_descartar_oculta_todas_las_apariciones(client, usuario, settings, engin
     )
     assert r_post.status_code in (200, 303)
 
-    r2 = client.get("/", cookies=_cookie(settings, usuario))
+    r2 = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert "Licitación LIC-DOBLE" not in r2.text
 
 
@@ -346,7 +348,7 @@ def test_render_vista_agrupada_sin_resultados(client, usuario, settings, engine)
 
 def test_render_grupo_otros_por_defecto(client, usuario, settings, engine):
     _crear_match_licitacion(engine, usuario, "LIC-001", score=80, razones={})
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Otros" in r.text
     assert "Licitación LIC-001" in r.text
@@ -360,7 +362,7 @@ def test_render_encabezado_unico_vs_apariciones(client, usuario, settings, engin
         score=80,
         razones={"categorias_hit": ["1010", "1011"]},
     )
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "1</strong> oportunidad(es)" in r.text
     assert "algunas aparecen en más de un grupo" in r.text
@@ -390,6 +392,6 @@ def test_dashboard_cap_por_grupo_muestra_ver_mas(client, usuario, settings, engi
     for i in range(15):
         _crear_match_licitacion(engine, usuario, f"LIC-{i}", score=80, razones={"organismo_seguido": True})
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Ver más en este grupo (10 de 15)" in r.text
