@@ -34,6 +34,8 @@ passlib[bcrypt] + cookies firmadas, pytest + respx, ruff + mypy + pre-commit.
    es null aunque exista OC (usar id_orden_compra); slugs de estado de OC con
    erratas oficiales (usar tal cual); tipologías obsoletas; desconocido → enum
    DESCONOCIDO + log, nunca romper la ingesta.
+   v2: todas las fechas vienen en hora de Chile; la Z de fecha_ultimo_cambio y de
+   los *_llamado es falsa (verificado 22-sep-2026): ignorarla.
 7. Compra Ágil NO filtra por organismo: filtrar por region y luego localmente.
 8. Toda publicación de datos lleva "Fuente: Dirección ChileCompra".
 9. Prohibido scrapear HTML de mercadopublico.cl; solo la API oficial.

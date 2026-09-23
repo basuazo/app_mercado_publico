@@ -5,32 +5,75 @@
 
 ---
 
-## Actualización 22-sep-2026 (noche) · lo más reciente, leer primero
+## Actualización 22-sep-2026 (F-ca-ventana) · lo más reciente
 
-- **Hecho y verificado en el repo:** los commits están pusheados (`main` = `origin/main`);
-  F-feed-ui-2 está commiteada (`d2758bb`), falta auditarla; `_to_delete/` está vacío (el
-  snapshot con secretos se borró y nunca entró a git); los prompts y `ingesta_manual.ps1`
-  están trackeados. Boris confirma que ya corrió `activas` en producción y que rotó `JOBS_TOKEN`.
-- **F-cuota auditada:** el corte del loop está bien en todos los runners. Tiene un hueco
-  heredado: los reintentos de `_request` no pasan por `acquire()` ni por `check_budget()`. Se
-  corrige en la fase siguiente.
-- **CORRECCIÓN [V] a lo escrito abajo sobre el 429:** no es cierto que "cada job toma su
-  propio advisory lock". Hay **un solo lock** (`_LOCK_KEY = 7_891_011`) para scheduler,
-  endpoint y CLI, así que dos jobs no deberían solaparse. La causa del 10500 **queda sin
-  explicar**. Además, `retry_after_seconds` no lo lee nadie: no hubo "8 horas de ingesta
-  muerta" impuestas por el código, solo una corrida cortada y la regla de no insistir.
-- **Siguiente fase:** `docs/prompt-F-429-concurrencia.md`. Su Paso 0 revisa `job_runs` para ver
-  si el lock funcionó; si hubo solape, el bug es el lock y la fase se detiene. Después: 10500
-  con backoff corto, presupuesto y rate limiter en cada intento, un limiter por proceso y la
-  regla 3 de `Claude.md` actualizada. Luego vienen F-actions 1→3.
-- **Log del 22-sep (noche) [V]:** en una sola secuencia `ciclo-ca`, sin otro job corriendo, la
-  v2 dio 504 dos veces y la primera request de `match` (v1) recibió el 429/10500. El 10500 no
-  requiere solape de jobs. **[I]** Hipótesis: el gateway corta a ~30 s pero el backend sigue
-  procesando, y lo que mandamos después cuenta como simultáneo. El prompt quedó ajustado:
-  enfriamiento de 60 s tras un 504 o un timeout, en un limiter compartido por proceso; esperas
-  de 30/60/120 s para el 10500; Paso 0 solo informativo. **[I] Riesgo:** si `ca` no ha tenido
-  una corrida buena desde el 21-sep, el cursor atrasado agranda la ventana y alimenta el 504.
-  Candidata a fase aparte: ventana acotada con `cambio_desde`/`cambio_hasta`.
+- **F-ca-ventana implementada y commiteada, falta el deploy.** El prompt ya corrió: no volver a
+  correrlo. Resultado de la sonda y diseño revisado al final de `docs/prompt-F-ca-ventana.md`.
+- **Tras el deploy (Boris):** disparar `ciclo-ca` a mano y mirar en `job_runs` o en el log que `ca`
+  quede en `ok` con `atraso_horas` bajando y `ventanas_partidas` en 0. Con 150 requests por
+  corrida y páginas de 20, un atraso de ~50 h puede tomar varias corridas.
+- **PENDIENTE [V], verificar tras el deploy:** `compras_agiles.fecha_publicacion` está NULL en las
+  65 696 CA de producción. La API sí manda el campo (`'2026-09-21 17:49'`). **[I]** Hipótesis: las
+  filas se escribieron antes de F-fecha-cierre, cuando `parse_fecha_iso` no entendía el formato
+  con espacio, y nadie las ha reescrito porque la ingesta está detenida desde el 21-sep 00:29 UTC.
+  Si después de unas corridas buenas las CA recién tocadas siguen en NULL, es un bug del parseo.
+- Menor, sin arreglar: `_parse_ca_basica` guarda la cadena `'None'` en `organismo_nombre` y
+  `organismo_rut` cuando falta `institucion` (usa `str(...)` antes del `or None`).
+
+## CÓMO RETOMAR (22-sep-2026, cierre)
+
+**Siguiente paso: correr `docs/prompt-F-ca-ventana.md`** en una conversación nueva de Claude
+Code, con el Opus más reciente. Tiene dos paradas:
+1. Claude Code agrega `cambio_hasta` al cliente y el modo `ventana-ca` a `scripts/smoke_test.py`,
+   y se detiene.
+2. Boris corre la sonda contra producción, sin ningún job corriendo (~5 min, 5–10 requests), y
+   pega la salida. Si la ventana de 47 h da 504 y las acotadas dan 200, se implementa; si no,
+   Claude Code se detiene.
+Después se audita el diff en conversación, con el checklist que trae el mismo prompt.
+
+**Por qué es lo primero [V]:** la ingesta de Compra Ágil está DETENIDA. El cursor está en
+`2026-09-20T21:05` y todo `ca` desde el 21-sep 00:29 UTC muere con 504 en la página 1. **No
+disparar `ciclo-ca` hasta desplegar F-ca-ventana**; `ciclo-activas` sí se puede correr.
+
+### Estado del árbol
+- `main` = `origin/main`, con F-429-concurrencia pusheada (`b0ff832` código, `81a66b4` docs).
+  Confirmar en Render que el deploy terminó antes de correr la sonda.
+- `docs/prompt-F-ca-ventana.md` quedó en stage (`A`), sin commitear: lo commitea Claude Code en
+  el `docs:` de esa fase.
+
+### Cerrado en esta sesión
+- F-cuota (`26d6f30`): auditada y aprobada.
+- F-429-concurrencia (`b0ff832`): auditada y aprobada. El 10500 se reintenta a los 30/60/120 s;
+  tras un 504 o un timeout, pausa de 60 s en un limiter compartido por v1 y v2 dentro del
+  proceso; `check_budget` y `acquire` corren en cada intento; regla 3 de `Claude.md` reescrita.
+  De paso se corrigió que el reintento tras un timeout no esperaba nada.
+- Boris corrió `activas` en producción y rotó `JOBS_TOKEN`. `_to_delete/` está vacío.
+- CORREGIDO: el handoff anterior decía que cada job tenía su propio lock. Es falso: hay uno
+  solo (`_LOCK_KEY`), y el Paso 0 confirmó que funciona.
+
+### Hipótesis vigente [I]
+Un 504 de la v2 ("Endpoint request timed out") es un corte del gateway a ~30 s mientras el
+backend sigue con la consulta; lo que mandamos en ese intervalo con el mismo ticket sale
+como 429/10500. La respalda que 3 de los 4 `match` cortados arrancaron justo después de un
+`ca` con 504. No la explica el id 50, un 429 sin 504 previo. Desde `b0ff832` el log guarda
+`codigo=` en cada 429: el próximo lo aclara.
+
+### Cola, en orden
+1. **F-ca-ventana** (arriba).
+2. **F-actions 1→3** (`docs/prompt-F-actions-*.md`). Agregar a F-actions-2: el enfriamiento
+   vive en la memoria del proceso, así que dos workflows seguidos no lo heredan. Separar los
+   horarios de los workflows que usan la API.
+3. Deuda de observabilidad: `run_match` registra `ok` aunque corte los detalles por un 429
+   (`detalles_interrumpidos`). `job_runs` y `/api/salud/jobs` no lo ven.
+4. Auditar F-feed-ui-2 (`d2758bb`).
+5. Producto: ficha con pestañas, separar `/perfiles` de `/cuenta`, widget de organismos,
+   argentinismos, `app.admin crear-usuario`, recalibrar `feed_min_score_default`.
+6. `F-secretos` (rotar los 7 secretos) y monitor externo sobre `/api/salud/jobs` (con GET).
+
+### Método
+El asistente redacta el prompt de la fase en `docs/`, Boris lo corre en Claude Code (**todo
+cambio de código va por prompt**) y se audita el diff en conversación. Mientras no exista
+F-actions, la ingesta se dispara a mano con `scripts/ingesta_manual.ps1 -Ciclo manana|tarde|noche`.
 
 ### Resultado del Paso 0 de F-429-concurrencia (22-sep-2026, `job_runs` de producción)
 
@@ -209,9 +252,12 @@ gateway de ChileCompra — transitorio y del lado de ellos, distinto del 429.
    `parse_fecha_iso('2026-09-22 18:00')` devuelve `2026-09-22 21:00:00`; antes devolvía `None`
    porque el formato con espacio y sin segundos no calzaba ningún patrón estricto.
 4. **La v2 exige `tamano_pagina` entre 10 y 50** — el mínimo no estaba documentado.
-5. **La v2 mezcla husos en el mismo payload:** `fecha_cierre` y `fecha_publicacion` sin offset (hora
-   de Chile), `fecha_ultimo_cambio` con `Z` (UTC). Por eso el round-trip `_iso_para_la_api` del
-   cursor de Compra Ágil era necesario, no una precaución.
+5. ~~**La v2 mezcla husos en el mismo payload.**~~ **CORREGIDO en F-ca-ventana (22-sep-2026) [V]:**
+   la v2 da TODAS sus fechas en hora de Chile. La `Z` de `fecha_ultimo_cambio` y de los
+   `*_llamado` es falsa: el piso entre `actualizado_en` (UTC real) y `fecha_ultimo_cambio` en las
+   65 515 CA de producción pasó de 4,03 h a 3,09 h justo con el cambio de horario del 6-sep, y
+   `fecha_cierre` `'2026-09-23 13:00'` = `fecha_cierre_primer_llamado` `'2026-09-23T13:00:00Z'`.
+   `parse_fecha_v2` ignora la `Z`. El envío (`_iso_para_la_api`, UTC → Chile) sí estaba bien.
 6. **La faceta de fuente NO se puede calcular con una agregada** sobre `oportunidades_match`: cinco
    de los siete filtros del feed dependen de las filas de `Licitacion`/`CompraAgil`. Evaluado y
    descartado en F-coherencia; el razonamiento quedó en `app/api/query.py:443` para que la próxima
@@ -415,6 +461,11 @@ Comparación contra la fuente primaria: la ficha del portal de `1002588-97-LP26`
 **"Fecha de Cierre: 29-09-2026 16:37:00"** y la API mandó `'2026-09-29T16:37:00'`. Coinciden al
 segundo. **`_TZ_SIN_OFFSET = TZ_CHILE` en `app/core/tiempo.py` queda VERIFICADO [V]**, ya no es
 inferencia. No hay cambio que hacer.
+
+> **CORRECCIÓN (22-sep-2026, F-ca-ventana) [V]:** la conclusión de abajo es FALSA. La `Z` de
+> `fecha_ultimo_cambio` no significa UTC: es hora de Chile mal etiquetada. Ver el ítem 5 de
+> "Verificado [V]" y la sección "Resultado de la sonda" de `docs/prompt-F-ca-ventana.md`. Se deja
+> el texto original como registro de cómo se llegó a la conclusión equivocada.
 
 **[V] HALLAZGO NUEVO — la v2 mezcla dos husos en el MISMO payload.** En `/v2/compra-agil`:
 
