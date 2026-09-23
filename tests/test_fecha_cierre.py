@@ -295,6 +295,38 @@ class TestCursorCompraAgil:
         _v2_client(settings_fake, mem_engine).listar_compra_agil(cambio_desde=cursor)
         assert ruta.calls.last.request.url.params["cambio_desde"] == "2026-09-24T15:00:00"
 
+    @respx.mock
+    def test_la_request_lleva_cambio_hasta_en_el_mismo_huso(self, settings_fake, mem_engine):
+        """F-ca-ventana: los dos bordes de la ventana salen en el huso de la API."""
+        ruta = respx.get(_V2_LISTADO).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "success": "OK",
+                    "payload": {
+                        "convocatorias": [],
+                        "paginacion": {
+                            "total_paginas": 1,
+                            "total_resultados": 0,
+                            "numero_pagina": 1,
+                            "tamano_pagina": 50,
+                        },
+                    },
+                },
+            )
+        )
+        desde = parse_fecha_iso("2026-09-24T15:00:00")
+        hasta = parse_fecha_iso("2026-09-24T21:00:00")
+        assert desde is not None and hasta is not None
+        # Lo guardado es UTC naive: Chile en verano (UTC-3) → 3 h más.
+        assert hasta == datetime(2026, 9, 25, 0, 0, 0)
+        _v2_client(settings_fake, mem_engine).listar_compra_agil(
+            cambio_desde=desde, cambio_hasta=hasta
+        )
+        params = ruta.calls.last.request.url.params
+        assert params["cambio_desde"] == "2026-09-24T15:00:00"
+        assert params["cambio_hasta"] == "2026-09-24T21:00:00"
+
 
 # ---------------------------------------------------------------------------
 # 6. El test que prueba que el bug murió

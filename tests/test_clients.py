@@ -560,6 +560,24 @@ def test_v2_exclusion_mutua_ttl_cambio_desde(settings_fake, mem_engine):
         )
 
 
+def test_v2_exclusion_mutua_ttl_cambio_hasta(settings_fake, mem_engine):
+    client = _v2_client(settings_fake, mem_engine)
+    with pytest.raises(ValueError):
+        client.listar_compra_agil(
+            ttl_cambio_ms=5000,
+            cambio_hasta=datetime(2026, 6, 1),
+        )
+
+
+@respx.mock
+def test_v2_sin_cambio_hasta_no_manda_el_parametro(settings_fake, mem_engine):
+    ruta = respx.get(_V2_BASE + "/v2/compra-agil").mock(
+        return_value=httpx.Response(200, json=_LISTADO_RESP)
+    )
+    _v2_client(settings_fake, mem_engine).listar_compra_agil(cambio_desde=datetime(2026, 6, 1))
+    assert "cambio_hasta" not in ruta.calls.last.request.url.params
+
+
 # ---------------------------------------------------------------------------
 # Tests adicionales — cobertura de v1 (órdenes, proveedor, compradores)
 # ---------------------------------------------------------------------------

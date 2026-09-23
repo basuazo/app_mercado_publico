@@ -64,9 +64,9 @@ def a_utc_naive(valor: datetime) -> datetime:
 def a_naive_como_la_api(valor: datetime) -> datetime:
     """Inversa de :func:`a_utc_naive`, para devolverle a la API lo que ella manda.
 
-    Solo la usa ``app/clients/mp_v2.py`` al serializar ``cambio_desde``: ese
-    cursor sale de un ``fecha_ultimo_cambio`` que la API mandó sin offset y que
-    guardamos convertido a UTC. Mandarlo de vuelta como UTC naive correría el
+    Solo la usa ``app/clients/mp_v2.py`` al serializar ``cambio_desde`` y
+    ``cambio_hasta``: la v2 habla SIEMPRE en hora de Chile —incluso cuando pone
+    una `Z` falsa, ver ``parse_fecha_v2``— y lo guardamos convertido a UTC. Mandarlo de vuelta como UTC naive correría el
     cursor varias horas hacia adelante y la ingesta incremental **perdería
     cambios**. Round-trip simétrico: lo que entró sin offset, sale sin offset.
     """

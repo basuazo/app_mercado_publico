@@ -20,7 +20,7 @@ from app.clients.types import (
     CompraAgilItem,
     PaginacionV2,
     RespuestaListadoV2,
-    parse_fecha_iso,
+    parse_fecha_v2,
     parse_float,
     parse_int,
 )
@@ -41,7 +41,7 @@ def _iso_para_la_api(dt: datetime) -> str:
     Internamente los instantes viajan naive en UTC (ver ``app/core/tiempo.py``);
     la API los manda y los espera en su propio huso, sin marcarlo. Este es el
     único lugar que deshace la conversión, y es la inversa exacta de la que
-    aplica ``parse_fecha_iso`` al leer.
+    aplica ``parse_fecha_v2`` al leer (que además ignora la `Z` falsa).
     """
     return a_naive_como_la_api(dt).isoformat()
 
@@ -86,14 +86,14 @@ def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
         codigo=str(item.get("codigo") or ""),
         nombre=str(item.get("nombre") or ""),
         estado=estado_str,
-        fecha_publicacion=parse_fecha_iso(
+        fecha_publicacion=parse_fecha_v2(
             fechas.get("fecha_publicacion") if isinstance(fechas, dict) else None
         ),
-        fecha_cierre=parse_fecha_iso(
+        fecha_cierre=parse_fecha_v2(
             fechas.get("fecha_cierre") if isinstance(fechas, dict) else None,
             fin_de_dia=True,
         ),
-        fecha_ultimo_cambio=parse_fecha_iso(
+        fecha_ultimo_cambio=parse_fecha_v2(
             fechas.get("fecha_ultimo_cambio") if isinstance(fechas, dict) else None
         ),
         monto_clp=parse_float(
@@ -181,9 +181,13 @@ class MercadoPublicoV2Client:
         tamano_pagina: int = 50,
         numero_pagina: int = 1,
         ordenar_por: str | None = None,
+        cambio_hasta: datetime | None = None,
     ) -> RespuestaListadoV2:
+        # Grupo 1 de la guía oficial: ttl_cambio_ms O cambio_desde/cambio_hasta.
         if ttl_cambio_ms is not None and cambio_desde is not None:
             raise ValueError("ttl_cambio_ms y cambio_desde son mutuamente excluyentes")
+        if ttl_cambio_ms is not None and cambio_hasta is not None:
+            raise ValueError("ttl_cambio_ms y cambio_hasta son mutuamente excluyentes")
 
         params: dict[str, object] = {
             "tamano_pagina": min(tamano_pagina, 50),
@@ -197,6 +201,10 @@ class MercadoPublicoV2Client:
             # adelante y la ingesta incremental perdería cambios: round-trip
             # simétrico vía a_naive_como_la_api (F-fecha-cierre).
             params["cambio_desde"] = _iso_para_la_api(cambio_desde)
+        if cambio_hasta is not None:
+            # Mismo huso que cambio_desde: los dos bordes de la ventana hablan el
+            # idioma de la API (F-ca-ventana).
+            params["cambio_hasta"] = _iso_para_la_api(cambio_hasta)
         if publicado_desde is not None:
             params["publicado_desde"] = _iso_para_la_api(publicado_desde)
         if publicado_hasta is not None:

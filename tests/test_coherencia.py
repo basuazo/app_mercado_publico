@@ -74,7 +74,7 @@ def test_el_detector_distingue_hora_segundos_y_offset() -> None:
 
     con_todo = smoke._describir_fecha("2026-09-22T18:00:00.000Z")
     assert "con segundos y fracción: 00.000" in con_todo
-    assert "offset explícito: Z (UTC)" in con_todo
+    assert "offset explícito: Z (UTC) — OJO: en la v2 es falsa, es hora de Chile" in con_todo
 
     sin_segundos = smoke._describir_fecha("2026-09-22 18:00")
     assert "SIN segundos (solo hh:mm)" in sin_segundos

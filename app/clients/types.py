@@ -133,6 +133,24 @@ def parse_fecha_iso(s: object, *, fin_de_dia: bool = False) -> datetime | None:
     return a_utc_naive(dt)
 
 
+def parse_fecha_v2(s: object, *, fin_de_dia: bool = False) -> datetime | None:
+    """Parsea una fecha de la API v2 (Compra Ágil): SIEMPRE es hora de Chile.
+
+    La `Z` final que traen ``fecha_ultimo_cambio`` y los ``*_llamado`` es falsa
+    **[V]** (22-sep-2026): el piso entre nuestro ``actualizado_en`` (UTC real) y
+    ``fecha_ultimo_cambio`` pasó de 4 h a 3 h justo con el cambio de horario de
+    Chile del 6-sep, y ``fecha_cierre`` '2026-09-23 13:00' viene junto a
+    ``fecha_cierre_primer_llamado`` '2026-09-23T13:00:00Z' para el mismo
+    instante. Se descarta la `Z` y se delega en la regla "sin offset = Chile"
+    de :func:`parse_fecha_iso`, que queda como está.
+    """
+    if isinstance(s, str):
+        txt = s.strip()
+        if txt[-1:] in ("Z", "z"):
+            s = txt[:-1]
+    return parse_fecha_iso(s, fin_de_dia=fin_de_dia)
+
+
 def parse_float(v: object) -> float | None:
     if v is None:
         return None

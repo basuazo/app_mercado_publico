@@ -42,6 +42,20 @@ class Settings(BaseSettings):
         default=200, description="Tamaño de lote para commits incrementales en la ingesta"
     )
 
+    # --- Compra Ágil incremental en ventanas (F-ca-ventana) ---
+    # La sonda del 22-sep-2026 mostró que el 504 del listado depende de los
+    # ítems por página, no del ancho de la ventana: 50 → 504, 20 → ~12 s.
+    ca_tamano_pagina: int = Field(
+        default=20, description="Ítems por página al listar Compra Ágil (máx. de la API: 50)"
+    )
+    ca_ventana_horas: int = Field(
+        default=2, description="Ancho de cada ventana cambio_desde → cambio_hasta, en horas"
+    )
+    ca_max_requests_por_corrida: int = Field(
+        default=150,
+        description="Tope de requests de listado por corrida de `ca`; se revisa antes de cada ventana",
+    )
+
     # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---
     brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS")
 

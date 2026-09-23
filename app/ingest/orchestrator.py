@@ -95,7 +95,7 @@ def run_sync_activas(settings: Settings, engine: Engine, limit: int | None = Non
         return sync_activas(session, v1, settings, limit=limit)
 
 
-def run_sync_ca(settings: Settings, engine: Engine) -> dict[str, int]:
+def run_sync_ca(settings: Settings, engine: Engine) -> dict[str, Any]:
     _, v2 = _make_clients(settings, engine)
     with Session(engine) as session:
         return sync_incremental(session, v2, settings)

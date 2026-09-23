@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +28,21 @@ _FUENTE = "compra_agil"
 # El filtro local de estado se mantiene como defensa adicional por si la API cambia qué
 # acepta en el parámetro `estado`.
 _ESTADOS_VALIDOS = {"publicada", "cerrada", "proveedor_seleccionado"}
+
+# --- Ventanas (F-ca-ventana) ------------------------------------------------
+# Solapamiento con la ventana anterior, para no perder cambios en el borde.
+_SOLAPAMIENTO = timedelta(minutes=5)
+# La ventana nunca llega al presente: lo recién cambiado puede no estar indexado.
+_MARGEN_PRESENTE = timedelta(minutes=10)
+# [V] 22-sep-2026: la API informa total_resultados=10000 exacto (200 × 50) y no
+# deja pasar de ahí; una ventana que llega al tope no se puede recorrer entera.
+_TOPE_RESULTADOS = 10_000
+# Una ventana que llega al tope se parte a la mitad, pero nunca por debajo de esto.
+_VENTANA_MINIMA = timedelta(minutes=10)
+
+
+class CompraAgilIngestaError(RuntimeError):
+    """La corrida de CA no puede seguir sin arriesgarse a saltar datos."""
 
 
 def _filtros_listado(cambio_desde: datetime | None) -> list[str]:
@@ -118,6 +135,85 @@ def _guardar_cursor(session: Session, nuevo_cursor_dt: datetime, ok: bool) -> No
         state.ultimo_ok = ahora
 
 
+def _registrar_intento(session: Session, *, ok: bool) -> None:
+    """Deja constancia de la corrida en sync_state sin tocar el cursor."""
+    session.rollback()
+    state = session.get(SyncState, _FUENTE)
+    if state is None:
+        state = SyncState(fuente=_FUENTE)
+        session.add(state)
+    ahora = ahora_utc()
+    state.ultima_ejecucion = ahora
+    if ok:
+        state.ultimo_ok = ahora
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+
+
+@dataclass
+class _Totales:
+    nuevas: int = 0
+    actualizadas: int = 0
+    descartadas: int = 0
+
+    def como_dict(self) -> dict[str, Any]:
+        return {
+            "nuevas": self.nuevas,
+            "actualizadas": self.actualizadas,
+            "descartadas": self.descartadas,
+        }
+
+
+def _procesar_pagina(
+    session: Session, resp: RespuestaListadoV2, totales: _Totales, contexto: str
+) -> datetime | None:
+    """Upsert de una página con filtro local de estado y commit con reintento.
+
+    Devuelve el mayor fecha_ultimo_cambio de la página. Si el commit no se pudo
+    confirmar, lanza CompraAgilIngestaError: una página que no quedó en la base
+    NUNCA se salta para seguir con la siguiente (antes se logueaba y se seguía,
+    y el cursor avanzaba igual por encima del hueco).
+    """
+    nuevas = actualizadas = descartadas = 0
+    maximo: datetime | None = None
+
+    def _aplicar() -> None:
+        nonlocal nuevas, actualizadas, descartadas, maximo
+        nuevas = actualizadas = descartadas = 0
+        maximo = None
+        for ca in resp.items:
+            if ca.estado not in _ESTADOS_VALIDOS:
+                descartadas += 1
+                continue
+            _, es_nueva = upsert_ca_basica(session, ca)
+            if es_nueva:
+                nuevas += 1
+            else:
+                actualizadas += 1
+            if ca.fecha_ultimo_cambio is not None and (
+                maximo is None or ca.fecha_ultimo_cambio > maximo
+            ):
+                maximo = ca.fecha_ultimo_cambio
+
+    # Commit por página con reintento → el progreso persiste incluso ante una
+    # desconexión transitoria o ante un 429 en la página siguiente.
+    if not commit_con_retry(session, _aplicar, contexto=contexto):
+        _log.error(
+            "sync_incremental CA: %s no quedó confirmada tras los reintentos — "
+            "corrida cortada sin avanzar el cursor",
+            contexto,
+        )
+        raise CompraAgilIngestaError(
+            f"{contexto}: el commit falló tras los reintentos; el cursor no avanzó"
+        )
+    totales.nuevas += nuevas
+    totales.actualizadas += actualizadas
+    totales.descartadas += descartadas
+    return maximo
+
+
 # ---------------------------------------------------------------------------
 # API pública
 # ---------------------------------------------------------------------------
@@ -127,118 +223,175 @@ def sync_incremental(
     session: Session,
     v2_client: MercadoPublicoV2Client,
     settings: Settings,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Sincronización incremental de Compras Ágiles.
 
-    Lee cursor desde sync_state (ISO-8601 UTC), aplica solapamiento de 5 min,
-    pagina de 50, filtra localmente por estado, hace commit por página.
-    Cursor avanza SOLO si la corrida completa fue exitosa.
+    - Sin cursor (arranque en frío): una pasada sin cambio_desde, igual que
+      antes de F-ca-ventana; el cursor queda en el mayor fecha_ultimo_cambio.
+    - Con cursor: recorre el atraso en ventanas acotadas de
+      ``ca_ventana_horas`` (ver :func:`_sync_en_ventanas`).
+
+    Ante cualquier error el cursor queda en la última ventana completa, se
+    registra el intento en sync_state y se re-lanza.
     """
-    cursor_dt = _leer_cursor(session)
-    cambio_desde: datetime | None = None
-    if cursor_dt is not None:
-        # solapamiento de 5 min para no perder cambios en el borde
-        cambio_desde = cursor_dt - timedelta(minutes=5)
-        # quitar tzinfo: el cliente serializa como ISO sin zona
-        cambio_desde = cambio_desde.replace(tzinfo=None)
-
-    nuevo_cursor_dt: datetime | None = None
-    nuevas = actualizadas = descartadas = 0
-    exitoso = False
-
+    cursor = _leer_cursor(session)
     try:
-        estados_filtro = _filtros_listado(cambio_desde)
+        if cursor is None:
+            resultado = _sync_arranque_en_frio(session, v2_client)
+        else:
+            resultado = _sync_en_ventanas(session, v2_client, settings, cursor.replace(tzinfo=None))
+    except MPRateLimitError:
+        _log.warning(
+            "429 en CA incremental — progreso parcial guardado, cursor en la última ventana completa"
+        )
+        _registrar_intento(session, ok=False)
+        raise
+    except Exception:
+        _log.error("Error en sync_incremental CA", exc_info=True)
+        _registrar_intento(session, ok=False)
+        raise
+
+    # Como texto: un dict como único argumento, logging lo toma como mapping de
+    # argumentos con nombre, y el _SecretFilter lo rompe al reconstruir args.
+    _log.info("sync_incremental CA: %s", ", ".join(f"{k}={v}" for k, v in resultado.items()))
+    return resultado
+
+
+def _sync_arranque_en_frio(session: Session, v2_client: MercadoPublicoV2Client) -> dict[str, Any]:
+    """Primera corrida: sin cambio_desde, con filtro de estado, páginas de 50."""
+    estados = _filtros_listado(None)
+    totales = _Totales()
+    nuevo_cursor: datetime | None = None
+    pagina = 1
+    while True:
+        resp = v2_client.listar_compra_agil(
+            cambio_desde=None,
+            estados=estados,
+            tamano_pagina=50,
+            numero_pagina=pagina,
+        )
+        maximo = _procesar_pagina(session, resp, totales, contexto=f"CA pág {pagina}")
+        if maximo is not None and (nuevo_cursor is None or maximo > nuevo_cursor):
+            nuevo_cursor = maximo
+        if pagina >= resp.paginacion.total_paginas:
+            break
+        pagina += 1
+
+    # Cursor avanza SOLO en éxito total.
+    if nuevo_cursor is not None:
+        _guardar_cursor(session, nuevo_cursor, ok=True)
+        session.commit()
+    return totales.como_dict()
+
+
+def _sync_en_ventanas(
+    session: Session,
+    v2_client: MercadoPublicoV2Client,
+    settings: Settings,
+    cursor: datetime,
+) -> dict[str, Any]:
+    """Recorre el atraso ventana a ventana y avanza el cursor al cerrar cada una.
+
+    Por ventana: desde = cursor − 5 min; hasta = min(desde + ancho, ahora − 10 min).
+    Siempre se manda cambio_hasta. Se paginan TODAS las páginas de la ventana y,
+    al completarla, el cursor pasa a `hasta` y se commitea. La corrida termina OK
+    al alcanzar el presente o, antes de abrir una ventana, al llegar al tope de
+    requests; lo que falte lo recorre la corrida siguiente.
+
+    `requests_usadas` cuenta las llamadas de listado de esta corrida; los
+    reintentos internos del cliente (504, 429/10500) no se ven desde acá.
+    """
+    estados = _filtros_listado(cursor)
+    ancho = timedelta(hours=settings.ca_ventana_horas)
+    tamano = settings.ca_tamano_pagina
+    totales = _Totales()
+    ventanas = partidas = requests = 0
+
+    def listar(desde: datetime, hasta: datetime, pagina: int) -> RespuestaListadoV2:
+        nonlocal requests
+        requests += 1
+        return v2_client.listar_compra_agil(
+            cambio_desde=desde,
+            cambio_hasta=hasta,
+            estados=estados,
+            tamano_pagina=tamano,
+            numero_pagina=pagina,
+        )
+
+    while True:
+        desde = cursor - _SOLAPAMIENTO
+        hasta = min(desde + ancho, ahora_utc() - _MARGEN_PRESENTE)
+        # `hasta <= cursor`, no `hasta <= desde`: por el solapamiento, al llegar al
+        # presente desde queda 5 min antes que hasta y la corrida volvería a pedir
+        # la misma ventana sin avanzar hasta agotar el tope de requests.
+        if hasta <= cursor:
+            break
+        if requests >= settings.ca_max_requests_por_corrida:
+            _log.info(
+                "sync_incremental CA: tope de %d requests por corrida alcanzado; "
+                "el resto lo recorre la corrida siguiente",
+                settings.ca_max_requests_por_corrida,
+            )
+            break
+
+        # Página 1; si la ventana llega al tope de resultados, se parte a la mitad.
+        resp = listar(desde, hasta, 1)
+        while resp.paginacion.total_resultados >= _TOPE_RESULTADOS:
+            mitad = (hasta - desde) / 2
+            if mitad < _VENTANA_MINIMA:
+                raise CompraAgilIngestaError(
+                    f"CA: la ventana {desde.isoformat()} → {hasta.isoformat()} sigue en el "
+                    f"tope de {_TOPE_RESULTADOS} resultados y no se puede partir por debajo "
+                    f"de {_VENTANA_MINIMA}; cursor sin avanzar"
+                )
+            _log.warning(
+                "CA: ventana %s → %s en el tope de %d resultados; se parte a la mitad",
+                desde.isoformat(),
+                hasta.isoformat(),
+                _TOPE_RESULTADOS,
+            )
+            hasta = desde + mitad
+            partidas += 1
+            resp = listar(desde, hasta, 1)
+
+        total_informado = resp.paginacion.total_resultados
+        codigos: set[str] = set()
         pagina = 1
         while True:
-            resp = v2_client.listar_compra_agil(
-                cambio_desde=cambio_desde,
-                estados=estados_filtro,
-                tamano_pagina=50,
-                numero_pagina=pagina,
+            codigos.update(ca.codigo for ca in resp.items)
+            _procesar_pagina(
+                session, resp, totales, contexto=f"CA ventana {desde.isoformat()} pág {pagina}"
             )
-
-            pagina_nuevas = pagina_actualizadas = pagina_descartadas = 0
-            pagina_cursor: datetime | None = None
-
-            def _aplicar_pagina(resp: RespuestaListadoV2 = resp) -> None:
-                nonlocal pagina_nuevas, pagina_actualizadas, pagina_descartadas, pagina_cursor
-                pagina_nuevas = pagina_actualizadas = pagina_descartadas = 0
-                pagina_cursor = None
-                for ca in resp.items:
-                    # Filtro local por estado (spec: sin filtro en el endpoint)
-                    if ca.estado not in _ESTADOS_VALIDOS:
-                        pagina_descartadas += 1
-                        continue
-
-                    _, es_nueva = upsert_ca_basica(session, ca)
-                    if es_nueva:
-                        pagina_nuevas += 1
-                    else:
-                        pagina_actualizadas += 1
-
-                    if ca.fecha_ultimo_cambio is not None and (
-                        pagina_cursor is None or ca.fecha_ultimo_cambio > pagina_cursor
-                    ):
-                        pagina_cursor = ca.fecha_ultimo_cambio
-
-            # Commit por página con reintento → progreso persiste incluso ante
-            # desconexión transitoria o ante un 429 en la página siguiente.
-            ok = commit_con_retry(session, _aplicar_pagina, contexto=f"CA pág {pagina}")
-            if ok:
-                nuevas += pagina_nuevas
-                actualizadas += pagina_actualizadas
-                descartadas += pagina_descartadas
-                if pagina_cursor is not None and (
-                    nuevo_cursor_dt is None or pagina_cursor > nuevo_cursor_dt
-                ):
-                    nuevo_cursor_dt = pagina_cursor
-            else:
-                _log.error(
-                    "sync_incremental CA: página %d descartada tras reintentos fallidos", pagina
-                )
-
             if pagina >= resp.paginacion.total_paginas:
                 break
             pagina += 1
+            resp = listar(desde, hasta, pagina)
 
-        exitoso = True
+        if len(codigos) < total_informado:
+            # Si un ítem cambia mientras se pagina, sale de la ventana y corre las
+            # páginas: alguno puede quedar sin verse. Solo se avisa. [I]
+            _log.warning(
+                "CA: ventana %s → %s vio %d códigos únicos y la página 1 informó %d; "
+                "posible salto por cambios durante la paginación",
+                desde.isoformat(),
+                hasta.isoformat(),
+                len(codigos),
+                total_informado,
+            )
 
-    except MPRateLimitError:
-        _log.warning(
-            "429 recibido en pág %d de CA incremental — progreso parcial guardado, cursor intacto",
-            pagina,
-        )
-        raise
-    except Exception:
-        _log.error("Error en sync_incremental CA (pág %d)", pagina, exc_info=True)
-        raise
-    finally:
-        # Cursor avanza SOLO en éxito total
-        if exitoso and nuevo_cursor_dt is not None:
-            _guardar_cursor(session, nuevo_cursor_dt, ok=True)
-            session.commit()
-        elif not exitoso:
-            # Registrar que hubo un intento (sin avanzar cursor)
-            state = session.get(SyncState, _FUENTE)
-            if state is None:
-                state = SyncState(fuente=_FUENTE)
-                session.add(state)
-            state.ultima_ejecucion = ahora_utc()
-            try:
-                session.commit()
-            except Exception:
-                session.rollback()
+        cursor = hasta
+        _guardar_cursor(session, cursor, ok=True)
+        session.commit()
+        ventanas += 1
 
-    _log.info(
-        "sync_incremental CA: nuevas=%d act=%d desc=%d",
-        nuevas,
-        actualizadas,
-        descartadas,
-    )
+    _registrar_intento(session, ok=True)
     return {
-        "nuevas": nuevas,
-        "actualizadas": actualizadas,
-        "descartadas": descartadas,
+        **totales.como_dict(),
+        "ventanas_completadas": ventanas,
+        "requests_usadas": requests,
+        "cursor_final": cursor.isoformat(),
+        "atraso_horas": round((ahora_utc() - cursor).total_seconds() / 3600, 2),
+        "ventanas_partidas": partidas,
     }
 
 

@@ -445,12 +445,17 @@ class TestSyncIncrementalCA:
         return v2
 
     def test_idempotencia(self, session, settings):
-        """Misma página dos veces → no duplica."""
+        """Misma página dos veces → no duplica.
+
+        F-ca-ventana: la segunda corrida ya tiene cursor y recorre ventanas hasta
+        el presente; el reloj se congela 1 h después del cambio para que sea una
+        sola ventana (el mock devuelve la misma página a cualquier ventana)."""
         items = [_ca_basica("CA-001"), _ca_basica("CA-002")]
         v2 = self._make_v2([items])
 
-        sync_incremental(session, v2, settings)
-        result = sync_incremental(session, v2, settings)
+        with freeze_time("2026-06-01 13:00:00"):
+            sync_incremental(session, v2, settings)
+            result = sync_incremental(session, v2, settings)
 
         assert result["nuevas"] == 0
         assert result["actualizadas"] == 2

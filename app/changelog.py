@@ -16,6 +16,21 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 22),
+        titulo="Las Compras Ágiles vuelven a llegar",
+        descripcion=(
+            "Desde el 21 de septiembre la aplicación no estaba trayendo Compras Ágiles "
+            "nuevas: cada vez que le pedía a Mercado Público los cambios pendientes, la "
+            "consulta tardaba demasiado y se cortaba. Ahora las pide en tramos de dos "
+            "horas y en páginas más cortas, que Mercado Público responde a tiempo, y "
+            "avanza tramo a tramo: si una descarga se corta, la siguiente sigue desde el "
+            "último tramo completo, sin perder ni repetir nada. El atraso acumulado se "
+            "pone al día en unas pocas descargas. Además se corrigió cómo se lee la hora "
+            "del último cambio de cada Compra Ágil, que se estaba tomando tres horas "
+            "antes de lo real."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 22),
         titulo="La descarga de datos ya no se rinde ante un rechazo pasajero",
         descripcion=(
             "Mercado Público a veces rechaza una consulta porque le llegaron varias "
