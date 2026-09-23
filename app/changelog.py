@@ -15,6 +15,21 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 23),
+        titulo="Primer paso para que las descargas no dependan del servidor web",
+        descripcion=(
+            "Hasta ahora las descargas de Mercado Público corrían dentro del mismo "
+            "servidor que muestra la aplicación, y ese servidor se duerme cuando "
+            "nadie la está usando: una descarga larga podía quedar cortada a la "
+            "mitad. Se preparó una forma nueva de correrlas desde fuera, que no "
+            "depende de que el servidor esté despierto. Por ahora solo se activa a "
+            "mano, como prueba, para la descarga de Compras Ágiles; si todo anda "
+            "bien, en los próximos días pasará a correr sola en los horarios de "
+            "siempre. Además, cuando una descarga falle ahora queda marcada como "
+            "fallida, en vez de parecer que terminó bien."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 22),
         titulo="Las Compras Ágiles vuelven a llegar",
         descripcion=(

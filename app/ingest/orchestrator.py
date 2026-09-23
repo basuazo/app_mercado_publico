@@ -299,11 +299,18 @@ def _run_with_lock(
     engine: Engine,
     try_lock_fn: Callable[[Any, int], bool] = _pg_try_lock,
     unlock_fn: Callable[[Any, int], None] = _pg_unlock,
+    propagar: bool = False,
 ) -> dict[str, int] | None:
     """Ejecuta fn dentro de un pg_advisory_lock.
 
     Retorna None si el lock está ocupado (otro proceso en ejecución).
     El lock se libera SIEMPRE en finally.
+
+    Si fn falla: con `propagar=False` (default: scheduler, endpoint y los pasos
+    de `_ciclo_nocturno`) registra el error y devuelve None, para que un paso
+    caído no corte la secuencia. Con `propagar=True` —solo el CLI— registra
+    igual y re-lanza, para que el proceso salga ≠ 0 y GitHub Actions quede en
+    rojo. Así el CLI distingue "omitido" (None, sin excepción) de "error".
 
     Cada corrida deja UNA fila en job_runs (ok | error | omitido). Este es el
     único camino por el que pasan todos los disparadores —scheduler, endpoint
@@ -334,6 +341,8 @@ def _run_with_lock(
             tb = traceback.format_exc()
             _log.error("job=%s: ERROR\n%s", job_name, tb)
             _registrar_corrida_segura(engine, job_name, iniciado_en, "error", error=tb)
+            if propagar:
+                raise
             return None
         finally:
             try:

@@ -1,0 +1,152 @@
+# Workflow reutilizable: ejecuta jobs del CLI (`python -m app.ingest run-once`)
+# contra Neon directo, sin pasar por Render ni por Cloudflare (F-actions).
+#
+# OJO: el repo es público y los logs de las corridas también. Nunca imprimir
+# valores de configuración; solo nombres.
+name: _job
+
+on:
+  workflow_call:
+    inputs:
+      jobs:
+        description: "Jobs del CLI a ejecutar EN ORDEN, separados por espacio"
+        type: string
+        required: true
+      guard_hora_chile:
+        description: "Si viene (ej. \"08\"), solo corre si esa es la hora actual en Chile"
+        type: string
+        required: false
+        default: ""
+      timeout_min:
+        description: "Timeout del job en minutos"
+        type: number
+        required: false
+        default: 60
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_min }}
+    steps:
+      # El cron de GitHub es SOLO UTC y Chile alterna entre UTC−3 y UTC−4: los
+      # horarios programan ambos disparos UTC posibles y esta guardia deja pasar
+      # solo el que coincide con la hora de Chile. Un disparo manual pasa siempre.
+      - name: Guardia de hora Chile
+        id: guard
+        env:
+          GUARD_HORA: ${{ inputs.guard_hora_chile }}
+          EVENTO: ${{ github.event_name }}
+        run: |
+          hora_chile="$(TZ=America/Santiago date +%H)"
+          if [ -z "$GUARD_HORA" ] || [ "$EVENTO" = "workflow_dispatch" ] || [ "$hora_chile" = "$GUARD_HORA" ]; then
+            echo "correr=si" >> "$GITHUB_OUTPUT"
+          else
+            echo "Hora Chile $hora_chile ≠ $GUARD_HORA: este disparo no corresponde, no se hace nada."
+            echo "correr=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Una variable ausente llega a pydantic como cadena vacía y revienta el
+      # parseo de int/float con un traceback opaco: mejor fallar antes y claro.
+      - name: Verificar configuración
+        if: steps.guard.outputs.correr == 'si'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MP_TICKET: ${{ secrets.MP_TICKET }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          DIGEST_HOUR: ${{ vars.DIGEST_HOUR }}
+          TASA_UF: ${{ vars.TASA_UF }}
+          TASA_UTM: ${{ vars.TASA_UTM }}
+          TASA_USD: ${{ vars.TASA_USD }}
+          TASA_EUR: ${{ vars.TASA_EUR }}
+        run: |
+          faltan=0
+          for v in DATABASE_URL MP_TICKET BREVO_API_KEY SMTP_FROM; do
+            if [ -z "${!v}" ]; then echo "::error::Falta el secret $v"; faltan=1; fi
+          done
+          for v in APP_BASE_URL DIGEST_HOUR TASA_UF TASA_UTM TASA_USD TASA_EUR; do
+            if [ -z "${!v}" ]; then echo "::error::Falta la variable $v"; faltan=1; fi
+          done
+          exit "$faltan"
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.correr == 'si'
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.correr == 'si'
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.lock
+
+      # Sin [dev]: en Actions no corren tests. --no-deps respeta el lock.
+      - name: Instalar dependencias
+        if: steps.guard.outputs.correr == 'si'
+        run: pip install -r requirements.lock && pip install -e . --no-deps
+
+      - name: Ejecutar jobs
+        if: steps.guard.outputs.correr == 'si'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MP_TICKET: ${{ secrets.MP_TICKET }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          DIGEST_HOUR: ${{ vars.DIGEST_HOUR }}
+          TASA_UF: ${{ vars.TASA_UF }}
+          TASA_UTM: ${{ vars.TASA_UTM }}
+          TASA_USD: ${{ vars.TASA_USD }}
+          TASA_EUR: ${{ vars.TASA_EUR }}
+          # Opcionales: deben coincidir con Render para que la ingesta se
+          # comporte igual la dispare quien la dispare. Si no están definidas
+          # se quitan abajo, y rige el default del código.
+          CA_TAMANO_PAGINA: ${{ vars.CA_TAMANO_PAGINA }}
+          CA_VENTANA_HORAS: ${{ vars.CA_VENTANA_HORAS }}
+          CA_MAX_REQUESTS_POR_CORRIDA: ${{ vars.CA_MAX_REQUESTS_POR_CORRIDA }}
+          RATE_LIMIT_RPS: ${{ vars.RATE_LIMIT_RPS }}
+          JOBS: ${{ inputs.jobs }}
+        # Sin -e a propósito: el default de Actions es `bash -e`, que cortaría el
+        # loop en el primer job que falle (ver comentario del loop).
+        shell: bash --noprofile --norc {0}
+        run: |
+          # Una opcional vacía NO debe llegar a pydantic como "" (rompe int/float).
+          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA RATE_LIMIT_RPS; do
+            if [ -z "${!v}" ]; then unset "$v"; fi
+          done
+
+          # `Settings` declara SECRET_KEY y JOBS_TOKEN obligatorios, pero el camino
+          # del CLI no firma cookies ni atiende HTTP (ningún runner los lee), así
+          # que se generan efímeros acá en vez de traer los de producción a CI.
+          export SECRET_KEY="$(openssl rand -hex 32)"
+          export JOBS_TOKEN="$(openssl rand -hex 32)"
+          echo "::add-mask::$SECRET_KEY"
+          echo "::add-mask::$JOBS_TOKEN"
+
+          # SIN set -e: si un job falla, los siguientes corren igual (paridad con
+          # `_secuencia` del endpoint: un 504 en `ca` no debe dejar sin `match` ni
+          # `alerts` lo que ya se ingestó). Al final, rojo si alguno falló.
+          fallidos=""
+          primero=1
+          for j in $JOBS; do
+            # Cada job es un proceso nuevo y el enfriamiento tras un 504 vive en
+            # memoria: sin esta pausa el siguiente job choca con el 429/10500.
+            if [ "$primero" -eq 0 ]; then sleep 60; fi
+            primero=0
+            echo "::group::$j"
+            python -m app.ingest run-once --job="$j"
+            codigo=$?
+            echo "::endgroup::"
+            if [ "$codigo" -ne 0 ]; then
+              echo "::error::El job $j salió con código $codigo"
+              fallidos="$fallidos $j"
+            fi
+          done
+
+          if [ -n "$fallidos" ]; then
+            echo "Jobs fallidos:$fallidos"
+            exit 1
+          fi

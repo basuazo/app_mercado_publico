@@ -15,13 +15,15 @@ class Settings(BaseSettings):
     )
 
     # --- Secretos obligatorios ---
-    mp_ticket: str = Field(..., description="Ticket de acceso a la API de Mercado Público")
-    database_url: str = Field(..., description="URL de conexión a Postgres (Neon) branch dev; sslmode=require")
-    secret_key: str = Field(..., description="Clave para firmar cookies de sesión")
-    jobs_token: str = Field(..., description="Token para proteger POST /api/jobs/run")
+    # repr=False en todo campo secreto: los logs de GitHub Actions son públicos
+    # (repo público), y un `repr(settings)` accidental no debe exponer nada.
+    mp_ticket: str = Field(..., description="Ticket de acceso a la API de Mercado Público", repr=False)
+    database_url: str = Field(..., description="URL de conexión a Postgres (Neon) branch dev; sslmode=require", repr=False)
+    secret_key: str = Field(..., description="Clave para firmar cookies de sesión", repr=False)
+    jobs_token: str = Field(..., description="Token para proteger POST /api/jobs/run", repr=False)
 
     # --- Branch production de Neon (solo referencia; la usa Render) ---
-    database_url_prod: str = Field(default="", description="URL Neon branch production — solo para referencia, no se usa en runtime")
+    database_url_prod: str = Field(default="", description="URL Neon branch production — solo para referencia, no se usa en runtime", repr=False)
 
     # --- Modelo de ejecución de jobs (F-invertir-modelo) ---
     scheduler_en_proceso: bool = Field(
@@ -57,13 +59,13 @@ class Settings(BaseSettings):
     )
 
     # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---
-    brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS")
+    brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS", repr=False)
 
     # --- SMTP (deprecated: solo para desarrollo local sin Brevo configurado) ---
     smtp_host: str = Field(default="", description="Host SMTP")
     smtp_port: int = Field(default=587, description="Puerto SMTP")
     smtp_user: str = Field(default="", description="Usuario SMTP")
-    smtp_password: str = Field(default="", description="Contraseña SMTP")
+    smtp_password: str = Field(default="", description="Contraseña SMTP", repr=False)
     smtp_from: str = Field(default="", description="Dirección remitente")
 
     # --- Alertas email ---
@@ -72,7 +74,7 @@ class Settings(BaseSettings):
     # --- Admin inicial (solo para seed; no usar en runtime) ---
     admin_email: str = Field(default="", description="Email del administrador inicial")
     admin_password: str = Field(
-        default="", description="Contraseña del administrador inicial (solo seed)"
+        default="", description="Contraseña del administrador inicial (solo seed)", repr=False
     )
 
     # --- Tasas de cambio configurables ---

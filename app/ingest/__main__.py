@@ -67,8 +67,13 @@ def cmd_run_once(
         El CLI es un camino de producción (cron externo), así que toma el mismo
         lock que el scheduler interno y que POST /api/jobs/run. Lock ocupado →
         `_run_with_lock` devuelve None y el ciclo se omite; no se reintenta.
+
+        `propagar=True`: el error se re-lanza para que el proceso salga 1. Sin
+        esto el CLI salía 0 aunque el job fallara y GitHub Actions quedaba verde
+        los días sin ingesta. Solo el CLI lo pasa: endpoint y scheduler siguen
+        tragándose el error para no cortar sus secuencias.
         """
-        return lambda: _run_with_lock(nombre, fn, engine)
+        return lambda: _run_with_lock(nombre, fn, engine, propagar=True)
 
     dispatch: dict[str, Callable[[], Any]] = {
         "activas": _locked("activas", lambda: run_sync_activas(settings, engine, limit=limit)),
@@ -94,7 +99,20 @@ def cmd_run_once(
         print(f"Job desconocido: {job}. Opciones: {', '.join(_JOBS)}", file=sys.stderr)
         sys.exit(1)
 
-    result = dispatch[job]()
+    try:
+        result = dispatch[job]()
+    except Exception as exc:
+        # Solo el tipo, no el mensaje: el traceback completo ya quedó en el log
+        # (con _SecretFilter) y en job_runs, mientras que print() no enmascara y
+        # el mensaje de un error de httpx puede traer la URL v1 con el ticket.
+        print(f"[{job}] ERROR: {type(exc).__name__} (detalle en el log y en job_runs)", file=sys.stderr)
+        sys.exit(1)
+
+    if result is None and job != "nocturno":
+        # "omitido" no es fallo: otra corrida tenía el advisory lock. Sale 0 para
+        # no dejar el workflow en rojo por una falsa alarma.
+        print(f"[{job}] omitido: advisory lock ocupado por otra corrida")
+        return
     print(f"[{job}] {result}")
 
 

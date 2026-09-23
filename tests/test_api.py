@@ -1060,6 +1060,28 @@ def test_jobs_run_ciclo_ca_corre_ca_match_alerts_en_orden(client, lock_spy):
 
 
 @respx.mock
+def test_jobs_run_ciclo_ca_sigue_tras_un_paso_que_falla(client, lock_spy):
+    """Regresión de F-actions-1: `propagar=True` es solo del CLI. En el endpoint
+    un `ca` caído (p. ej. 504 de la API) no corta la secuencia: `match` y
+    `alerts` corren igual sobre lo ya ingestado, y el cliente ve 200."""
+    with (
+        _runners_mockeados() as llamadas,
+        patch(
+            "app.ingest.orchestrator.run_sync_ca",
+            side_effect=RuntimeError("504 simulado"),
+        ) as ca,
+    ):
+        r = client.post("/api/jobs/run?job=ciclo-ca", headers=_JOBS_HEADERS)
+
+    assert r.status_code == 200
+    assert r.json() == {"queued": True, "job": "ciclo-ca"}
+    assert ca.call_count == 1
+    assert llamadas == ["run_match", "run_alerts"]
+    assert lock_spy.intentos == [_LOCK_KEY] * 3
+    assert lock_spy.liberados == [_LOCK_KEY] * 3
+
+
+@respx.mock
 def test_jobs_run_ciclo_activas_corre_los_cuatro_pasos_en_orden(client, lock_spy):
     """`ciclo-activas` reproduce el grupo de las 8/13/18 h del scheduler."""
     with _runners_mockeados() as llamadas:

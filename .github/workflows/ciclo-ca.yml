@@ -1,0 +1,23 @@
+# Canario de F-actions: ciclo de Compra Ágil disparado a mano. Los horarios
+# (`schedule`) entran en F-actions-2, una vez verificado que conecta a Neon.
+name: ciclo-ca
+
+on:
+  workflow_dispatch:
+
+# El advisory lock es una llave global: dos workflows simultáneos harían que
+# uno se omita en silencio. Se encolan en vez de cancelarse.
+concurrency:
+  group: mp-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "ca match alerts"
+      timeout_min: 90

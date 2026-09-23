@@ -1159,3 +1159,124 @@ class TestCliRunOnce:
             cli.cmd_run_once("inventado")
 
         assert exc.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Códigos de salida del CLI (F-actions-1): sin esto Actions queda verde siempre
+# ---------------------------------------------------------------------------
+
+
+def _lock_real(disponible: bool) -> Any:
+    """`_run_with_lock` real con el lock de Postgres reemplazado por un doble.
+
+    Se usa la función verdadera —no un doble— porque lo que se prueba es cómo
+    distingue error de omitido; solo el SQL del advisory lock es de Postgres.
+    """
+
+    def _wrapper(job_name: str, fn: Any, eng: Any, **kw: Any) -> Any:
+        return _run_with_lock(
+            job_name,
+            fn,
+            eng,
+            try_lock_fn=lambda c, k: disponible,
+            unlock_fn=lambda c, k: None,
+            **kw,
+        )
+
+    return _wrapper
+
+
+class TestCliCodigosDeSalida:
+    def test_job_que_falla_sale_1(self, settings, engine, capsys):
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", side_effect=_lock_real(True)),
+            patch.object(cli, "run_sync_ca", side_effect=RuntimeError("boom-detalle")),
+            pytest.raises(SystemExit) as exc,
+        ):
+            cli.cmd_run_once("ca")
+
+        assert exc.value.code == 1
+        # La última línea es la del print() del CLI (antes va el traceback del
+        # log, que sí pasa por _SecretFilter). print() no enmascara, así que el
+        # mensaje de la excepción no debe ir en ella.
+        linea_cli = capsys.readouterr().err.strip().splitlines()[-1]
+        assert linea_cli.startswith("[ca] ERROR: RuntimeError")
+        assert "boom-detalle" not in linea_cli
+
+    def test_job_que_corre_bien_sale_0(self, settings, engine, capsys):
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", side_effect=_lock_real(True)),
+            patch.object(cli, "run_sync_ca", return_value={"nuevas": 3}),
+        ):
+            cli.cmd_run_once("ca")  # no SystemExit → código 0
+
+        assert "{'nuevas': 3}" in capsys.readouterr().out
+
+    def test_job_omitido_por_lock_ocupado_sale_0(self, settings, engine, capsys):
+        """Omitido no es fallo: un workflow en rojo porque otro job tenía la
+        llave sería una falsa alarma recurrente."""
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", side_effect=_lock_real(False)),
+            patch.object(cli, "run_sync_ca") as ca,
+        ):
+            cli.cmd_run_once("ca")  # no SystemExit → código 0
+
+        ca.assert_not_called()
+        assert "omitido" in capsys.readouterr().out
+
+    def test_el_cli_pide_propagar(self, settings, engine):
+        with (
+            _cli_patched(settings, engine) as cli,
+            patch.object(cli, "_run_with_lock", return_value={}) as lock,
+        ):
+            cli.cmd_run_once("match")
+
+        assert lock.call_args.kwargs.get("propagar") is True
+
+
+class TestRunWithLockPropagar:
+    def test_default_registra_y_devuelve_none(self, tmp_path):
+        """Scheduler, endpoint y `_ciclo_nocturno`: comportamiento idéntico al de siempre."""
+        import app.models.tables  # noqa: F401
+        from app.models.base import Base
+        from app.models.tables import JobRun
+
+        e = create_engine(f"sqlite:///{tmp_path / 'lock.db'}")
+        Base.metadata.create_all(e)
+
+        def _falla() -> dict[str, int]:
+            raise RuntimeError("x")
+
+        r = _run_with_lock("t", _falla, e, lambda c, k: True, lambda c, k: None)
+
+        with Session(e) as s:
+            estados = s.scalars(select(JobRun.estado)).all()
+        e.dispose()
+        assert r is None
+        assert estados == ["error"]
+
+    def test_propagar_registra_y_relanza(self, tmp_path):
+        import app.models.tables  # noqa: F401
+        from app.models.base import Base
+        from app.models.tables import JobRun
+
+        e = create_engine(f"sqlite:///{tmp_path / 'lock.db'}")
+        Base.metadata.create_all(e)
+        liberados: list[int] = []
+
+        def _falla() -> dict[str, int]:
+            raise RuntimeError("x")
+
+        with pytest.raises(RuntimeError):
+            _run_with_lock(
+                "t", _falla, e, lambda c, k: True, lambda c, k: liberados.append(k), propagar=True
+            )
+
+        with Session(e) as s:
+            estados = s.scalars(select(JobRun.estado)).all()
+        e.dispose()
+        assert estados == ["error"]
+        assert len(liberados) == 1  # el finally libera el lock aunque se re-lance

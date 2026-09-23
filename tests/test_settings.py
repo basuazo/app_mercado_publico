@@ -80,3 +80,33 @@ def test_db_url_falla_si_apunta_a_prod(monkeypatch: pytest.MonkeyPatch) -> None:
                 "DATABASE_URL es idéntica a DATABASE_URL_PROD — los tests apuntarían "
                 "a la branch production de Neon. Revisa tu .env."
             )
+
+
+_SECRETOS_REPR = {
+    "MP_TICKET": "ticketDePruebaAAAA1111",
+    "DATABASE_URL": "postgresql://u:passDePruebaBBBB2222@host/db",
+    "DATABASE_URL_PROD": "postgresql://u:passDePruebaCCCC3333@host/prod",
+    "SECRET_KEY": "secretKeyDePruebaDDDD4444",
+    "JOBS_TOKEN": "jobsTokenDePruebaEEEE5555",
+    "BREVO_API_KEY": "brevoKeyDePruebaFFFF6666",
+    "SMTP_PASSWORD": "smtpPassDePruebaGGGG7777",
+    "ADMIN_PASSWORD": "adminPassDePruebaHHHH8888",
+}
+
+
+def test_repr_no_expone_secretos(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-actions-1: los logs de GitHub Actions son públicos. Un `repr(settings)`
+    accidental (un traceback con locals, un print de depuración) no puede
+    exponer ningún secreto."""
+    from app.core.logging import looks_like_secret
+
+    for k, v in _SECRETOS_REPR.items():
+        monkeypatch.setenv(k, v)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    texto = repr(s) + str(s)
+
+    for valor in _SECRETOS_REPR.values():
+        assert valor not in texto
+    # Sanidad del propio test: los valores sí parecen secretos y sí se cargaron.
+    assert looks_like_secret(_SECRETOS_REPR["JOBS_TOKEN"])
+    assert s.jobs_token == _SECRETOS_REPR["JOBS_TOKEN"]
