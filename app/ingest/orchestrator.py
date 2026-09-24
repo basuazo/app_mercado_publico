@@ -434,6 +434,73 @@ def _registrar_corrida_segura(
         _log.warning("job=%s: no se pudo registrar la corrida en job_runs: %s", job, _exc)
 
 
+# Cada cuánto se reintenta pg_try_advisory_lock mientras se espera (F-actions-2).
+_ESPERA_LOCK_INTERVALO_S = 30.0
+
+
+def _adquirir_lock(
+    job_name: str,
+    engine: Engine,
+    try_lock_fn: Callable[[Any, int], bool],
+    esperar_lock_s: int,
+    sleep_fn: Callable[[float], None],
+    reloj_fn: Callable[[], float],
+) -> Any | None:
+    """Devuelve una conexión AUTOCOMMIT que YA tiene el lock, o None si venció el plazo.
+
+    Con ``esperar_lock_s=0`` es un solo intento, como siempre. Con más, reintenta
+    ``pg_try_advisory_lock`` cada 30 s hasta el plazo. No se usa el
+    ``pg_advisory_lock`` bloqueante: sin timeout, un lock colgado dejaría la
+    corrida esperando hasta que la mate su propio timeout.
+
+    Mientras espera NO retiene ninguna conexión: cada intento abre la suya y la
+    devuelve al pool si no consiguió el lock. Así no hay transacción abierta
+    (Neon mata "idle in transaction", ver F-cuota) ni una conexión del pool
+    (pool_size ≤ 5) ociosa durante media hora.
+    """
+    inicio = reloj_fn()
+    esperando = False
+    while True:
+        # AUTOCOMMIT a propósito: pg_advisory_lock es de SESIÓN, no de transacción,
+        # así que el lock se mantiene igual mientras la conexión viva. Con una
+        # transacción abierta, en cambio, esta conexión quedaba "idle in
+        # transaction" durante todo fn() y Neon la mataba por
+        # idle_in_transaction_session_timeout: el lock se soltaba a mitad de la
+        # corrida y la garantía de la regla 13 se perdía en los jobs largos.
+        conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        try:
+            acquired = try_lock_fn(conn, _LOCK_KEY)
+        except BaseException:
+            conn.close()
+            raise
+        esperado = reloj_fn() - inicio
+        if acquired:
+            if esperando:
+                _log.info(
+                    "job=%s: advisory lock conseguido tras %.0f s de espera", job_name, esperado
+                )
+            return conn
+        conn.close()
+        if esperado >= esperar_lock_s:
+            if esperando:
+                _log.info(
+                    "job=%s: advisory lock sigue ocupado tras %.0f s de espera (plazo %d s)",
+                    job_name,
+                    esperado,
+                    esperar_lock_s,
+                )
+            return None
+        if not esperando:
+            _log.info(
+                "job=%s: advisory lock ocupado — esperando hasta %d s, reintento cada %.0f s",
+                job_name,
+                esperar_lock_s,
+                _ESPERA_LOCK_INTERVALO_S,
+            )
+            esperando = True
+        sleep_fn(min(_ESPERA_LOCK_INTERVALO_S, esperar_lock_s - esperado))
+
+
 def _run_with_lock(
     job_name: str,
     fn: Callable[[], dict[str, int]],
@@ -441,11 +508,19 @@ def _run_with_lock(
     try_lock_fn: Callable[[Any, int], bool] = _pg_try_lock,
     unlock_fn: Callable[[Any, int], None] = _pg_unlock,
     propagar: bool = False,
+    esperar_lock_s: int = 0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    reloj_fn: Callable[[], float] = time.monotonic,
 ) -> dict[str, int] | None:
     """Ejecuta fn dentro de un pg_advisory_lock.
 
     Retorna None si el lock está ocupado (otro proceso en ejecución).
     El lock se libera SIEMPRE en finally.
+
+    `esperar_lock_s` (F-actions-2, solo el CLI lo pasa > 0): en vez de omitir de
+    inmediato, reintenta el lock hasta ese plazo (ver :func:`_adquirir_lock`).
+    Con 0, el default, se comporta como siempre: scheduler, endpoint y Render no
+    cambian. `sleep_fn` y `reloj_fn` son inyectables para tests.
 
     Si fn falla: con `propagar=False` (default: scheduler, endpoint y los pasos
     de `_ciclo_nocturno`) registra el error y devuelve None, para que un paso
@@ -459,19 +534,13 @@ def _run_with_lock(
     no cambia el valor de retorno ni puede hacer fallar el job.
     """
     iniciado_en = ahora_utc()
-    # AUTOCOMMIT a propósito: pg_advisory_lock es de SESIÓN, no de transacción,
-    # así que el lock se mantiene igual mientras la conexión viva. Con una
-    # transacción abierta, en cambio, esta conexión quedaba "idle in
-    # transaction" durante todo fn() y Neon la mataba por
-    # idle_in_transaction_session_timeout: el lock se soltaba a mitad de la
-    # corrida y la garantía de la regla 13 se perdía en los jobs largos.
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-        acquired = try_lock_fn(conn, _LOCK_KEY)
-        if not acquired:
-            _log.info("job=%s: advisory lock ocupado — ciclo omitido", job_name)
-            # "omitido" NO es fallo: otra instancia está haciendo el trabajo.
-            _registrar_corrida_segura(engine, job_name, iniciado_en, "omitido")
-            return None
+    conn = _adquirir_lock(job_name, engine, try_lock_fn, esperar_lock_s, sleep_fn, reloj_fn)
+    if conn is None:
+        _log.info("job=%s: advisory lock ocupado — ciclo omitido", job_name)
+        # "omitido" NO es fallo: otra instancia está haciendo el trabajo.
+        _registrar_corrida_segura(engine, job_name, iniciado_en, "omitido")
+        return None
+    with conn:
         try:
             _log.info("job=%s: iniciando", job_name)
             result = fn()
@@ -504,6 +573,7 @@ def _ciclo_nocturno(
     settings: Settings,
     engine: Engine,
     now_fn: Callable[..., datetime] | None = None,
+    esperar_lock_s: int = 0,
 ) -> None:
     """Datos abiertos + lifecycle + competencia + backfill del día anterior.
 
@@ -518,14 +588,32 @@ def _ciclo_nocturno(
     (F-actions-2): tiene que cubrir ese presupuesto + lo que tarde el resto del
     ciclo + ~2 min de margen porque un detalle ya empezado termina. Con el
     default, no menos de 120 + el resto medido.
+
+    `esperar_lock_s` se aplica a CADA paso (lo pasa el CLI, F-actions-2): entre
+    un paso y otro otra corrida puede quedarse con el lock.
     """
     if not en_ventana_nocturna(now_fn):
         _log.warning("ciclo_nocturno: fuera de ventana horaria — abortando")
         return
 
-    _run_with_lock("datos_abiertos", lambda: run_datos_abiertos(settings, engine), engine)
-    _run_with_lock("lifecycle", lambda: run_lifecycle(settings, engine), engine)
-    _run_with_lock("competencia", lambda: run_competencia(settings, engine), engine)
+    _run_with_lock(
+        "datos_abiertos",
+        lambda: run_datos_abiertos(settings, engine),
+        engine,
+        esperar_lock_s=esperar_lock_s,
+    )
+    _run_with_lock(
+        "lifecycle",
+        lambda: run_lifecycle(settings, engine),
+        engine,
+        esperar_lock_s=esperar_lock_s,
+    )
+    _run_with_lock(
+        "competencia",
+        lambda: run_competencia(settings, engine),
+        engine,
+        esperar_lock_s=esperar_lock_s,
+    )
 
     # Backfill: ayer (simple, se puede extender a rangos mayores)
     ayer = (datetime.now(UTC) - timedelta(days=1)).date()
@@ -533,12 +621,14 @@ def _ciclo_nocturno(
         "backfill_ayer",
         lambda: run_backfill_fecha(settings, engine, ayer),
         engine,
+        esperar_lock_s=esperar_lock_s,
     )
 
     _run_with_lock(
         "detalles-match",
         lambda: run_detalles_match(settings, engine, now_fn=now_fn),
         engine,
+        esperar_lock_s=esperar_lock_s,
     )
 
 

@@ -1,14 +1,15 @@
-# Canario de F-actions: ciclo de Compra Ágil disparado a mano. Los horarios
-# (`schedule`) entran en F-actions-2, una vez verificado que conecta a Neon.
+# Canario de F-actions: ciclo de Compra Ágil disparado a mano. Queda SIN
+# `schedule` (F-actions-2): lo programado va en ca.yml y ciclo-match.yml; este
+# sirve para canarios.
 name: ciclo-ca
 
 on:
   workflow_dispatch:
 
-# El advisory lock es una llave global: dos workflows simultáneos harían que
-# uno se omita en silencio. Se encolan en vez de cancelarse.
+# Grupo propio, como todos (ver el comentario de concurrencia en _job.yml): la
+# serialización entre workflows la hace el advisory lock.
 concurrency:
-  group: mp-jobs
+  group: mp-${{ github.workflow }}
   cancel-in-progress: false
 
 permissions:
@@ -21,5 +22,8 @@ jobs:
     with:
       jobs: "ca match alerts detalles-match"
       # ca (~40 min) + match (~2) + alerts + detalles-match (tope 20 + un detalle
-      # en curso) + 3 pausas de 60 s entre jobs ≈ 70 min: 90 deja margen.
+      # en curso) + 3 pausas de 60 s ≈ 70 min: 90 deja margen.
       timeout_min: 90
+      # Sin espera: un canario manual que encuentra el lock ocupado sale
+      # `omitido` al tiro, y se vuelve a disparar cuando no haya otra corrida.
+      esperar_lock_min: 0

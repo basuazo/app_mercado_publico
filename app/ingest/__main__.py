@@ -57,25 +57,33 @@ def _make_engine(settings: Settings) -> Engine:
 
 
 def cmd_run_once(
-    job: str, limit: int | None = None, anio: int | None = None, mes: int | None = None
+    job: str,
+    limit: int | None = None,
+    anio: int | None = None,
+    mes: int | None = None,
+    esperar_lock_min: int = 0,
 ) -> None:
     setup_logging()
     settings = get_settings()
     engine = _make_engine(settings)
+    esperar_lock_s = esperar_lock_min * 60
 
     def _locked(nombre: str, fn: Callable[[], Any]) -> Callable[[], Any]:
         """Envuelve un runner en el pg_advisory_lock (regla 13 de CLAUDE.md).
 
         El CLI es un camino de producción (cron externo), así que toma el mismo
         lock que el scheduler interno y que POST /api/jobs/run. Lock ocupado →
-        `_run_with_lock` devuelve None y el ciclo se omite; no se reintenta.
+        espera hasta `--esperar-lock-min` (F-actions-2; 0 = no espera) y, si
+        sigue ocupado, `_run_with_lock` devuelve None y el ciclo se omite.
 
         `propagar=True`: el error se re-lanza para que el proceso salga 1. Sin
         esto el CLI salía 0 aunque el job fallara y GitHub Actions quedaba verde
         los días sin ingesta. Solo el CLI lo pasa: endpoint y scheduler siguen
         tragándose el error para no cortar sus secuencias.
         """
-        return lambda: _run_with_lock(nombre, fn, engine, propagar=True)
+        return lambda: _run_with_lock(
+            nombre, fn, engine, propagar=True, esperar_lock_s=esperar_lock_s
+        )
 
     dispatch: dict[str, Callable[[], Any]] = {
         "activas": _locked("activas", lambda: run_sync_activas(settings, engine, limit=limit)),
@@ -97,7 +105,7 @@ def cmd_run_once(
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.
-        "nocturno": lambda: _ciclo_nocturno(settings, engine),
+        "nocturno": lambda: _ciclo_nocturno(settings, engine, esperar_lock_s=esperar_lock_s),
     }
 
     if job not in dispatch:
@@ -119,6 +127,13 @@ def cmd_run_once(
         print(f"[{job}] omitido: advisory lock ocupado por otra corrida")
         return
     print(f"[{job}] {result}")
+
+
+def _minutos_no_negativos(valor: str) -> int:
+    n = int(valor)
+    if n < 0:
+        raise argparse.ArgumentTypeError("debe ser ≥ 0")
+    return n
 
 
 def cmd_run_scheduler() -> None:
@@ -161,12 +176,28 @@ def main() -> None:
         help="Mes del archivo de datos abiertos a procesar (solo job=datos-abiertos; default: mes actual)",
     )
 
+    once.add_argument(
+        "--esperar-lock-min",
+        type=_minutos_no_negativos,
+        default=0,
+        help=(
+            "Si el advisory lock está ocupado, reintentar hasta N minutos antes de "
+            "omitir (default 0: omite de inmediato). En `nocturno`, por cada paso"
+        ),
+    )
+
     sub.add_parser("run-scheduler", help="Inicia el scheduler APScheduler (bloqueante)")
 
     args = parser.parse_args()
 
     if args.cmd == "run-once":
-        cmd_run_once(args.job, limit=args.limit, anio=args.anio, mes=args.mes)
+        cmd_run_once(
+            args.job,
+            limit=args.limit,
+            anio=args.anio,
+            mes=args.mes,
+            esperar_lock_min=args.esperar_lock_min,
+        )
     elif args.cmd == "run-scheduler":
         cmd_run_scheduler()
 

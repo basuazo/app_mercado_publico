@@ -1,0 +1,39 @@
+# Resumen diario por correo, a las 08:30 hora Chile (F-actions-2).
+#
+# El único a prueba del cambio de hora: dos crons (11:30 UTC = 08:30 en UTC−3;
+# 12:30 UTC = 08:30 en UTC−4) y `guard_hora_chile: "08"`, así que solo corre el
+# disparo que cae a las 08 en Chile. Un disparo manual pasa siempre.
+# OJO: el guardia está amarrado a DIGEST_HOUR=8. Si alguien cambia DIGEST_HOUR,
+# hay que cambiar a mano los dos crons y el guardia, o quedan desfasados.
+#
+# `resumen` no usa la API, pero toma el mismo advisory lock que todos. A las
+# 08:30 casi siempre encuentra corriendo el `ca` de las 08:05 (hasta ~40 min):
+# por eso espera hasta 45 min y el correo llega entre 08:30 y ~08:50. Aceptado;
+# no se cambia la semántica del lock para evitarlo.
+# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
+# ocupa el :05 de todas las horas).
+name: resumen
+
+on:
+  schedule:
+    - cron: "30 11 * * *"
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "resumen"
+      guard_hora_chile: "08"
+      # Paso 0: 0,0 min. 45 de espera + margen.
+      timeout_min: 60
+      esperar_lock_min: 45

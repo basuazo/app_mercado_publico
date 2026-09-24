@@ -15,6 +15,21 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 24),
+        titulo="Las Compras Ágiles se revisan cada hora, también de noche",
+        descripcion=(
+            "Las descargas de Mercado Público ahora corren solas desde fuera del "
+            "servidor web, con horarios propios. Las Compras Ágiles se revisan cada "
+            "hora, las 24 horas: en las horas de más movimiento hay tantos cambios "
+            "que revisarlas cada dos horas dejaba un atraso creciente, y de noche, "
+            "con poco movimiento, se pone al día. La búsqueda de oportunidades y las "
+            "alertas corren cada dos horas durante el día, y las licitaciones tres "
+            "veces al día. Cuando una descarga encuentra otra en curso, ahora espera "
+            "a que termine en vez de saltarse su turno. Por eso el correo de resumen "
+            "de la mañana puede llegar entre las 08:30 y las 08:50."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 23),
         titulo="Primer paso para que las descargas no dependan del servidor web",
         descripcion=(

@@ -1,0 +1,29 @@
+# Retención: purga de terminales > 90 días (regla 11), diaria (F-actions-2).
+#
+# 08:40 UTC = 05:40 Chile en UTC−3 (04:40 en UTC−4; el corrimiento se acepta).
+# Va después de `nocturno` (01:10), que puede tener el lock ~3 h.
+# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
+# ocupa el :05 de todas las horas).
+name: retencion
+
+on:
+  schedule:
+    - cron: "40 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "retencion"
+      # Paso 0: 0,0 min. 30 de espera + margen.
+      timeout_min: 45
+      esperar_lock_min: 30

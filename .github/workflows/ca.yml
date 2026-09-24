@@ -1,0 +1,39 @@
+# Compra Ágil incremental, cada hora las 24 h (F-actions-2).
+#
+# En hora punta la API entrega ~42 ítems/min y hay ~2000 cambios/h de CA: `ca`
+# apenas le gana al ritmo aunque corra sin parar, así que va solo y cada hora, y
+# de noche (poco volumen) se pone al día. Los jobs que dependen de los datos
+# (match, alerts, detalles-match) van en ciclo-match.yml.
+#
+# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows. `ca`
+# ocupa el :05 de TODAS las horas; los demás usan otros minutos.
+# Cron en UTC: cuando Chile cambia de hora esto no se corre (es cada hora).
+#
+# Si el lock está ocupado (nocturno, ciclo-activas, detalles-match) espera hasta
+# 25 min; si vence, sale `omitido` y la hora siguiente vuelve a intentarlo.
+name: ca
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "ca"
+      # Paso 0 (7 días, 24-sep): ca promedio 39 min, máximo 80 min (corridas previas
+      # a F-ca-ventana-volumen; el canario 6 ya terminó en 23 min). Con el tope de
+      # 150 requests a ~15 s son ~40 min más enfriamientos de 504. 25 de espera +
+      # hasta ~65 de trabajo = 90.
+      timeout_min: 90
+      esperar_lock_min: 25

@@ -1,0 +1,33 @@
+# Licitaciones activas + detalles + match + alertas, 3 veces al día (F-actions-2).
+#
+# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
+# ocupa el :05 de todas las horas). Acá: :15 de 13, 17 y 22 UTC.
+# Cron en UTC: con Chile en UTC−3 corre 10:15 / 14:15 / 19:15; con UTC−4, 1 h
+# antes. Aceptado.
+# Parte a las 10:15 y no antes: con 150 min de timeout, antes de `resumen`
+# (08:30) podría dejarlo sin lock.
+name: ciclo-activas
+
+on:
+  schedule:
+    - cron: "15 13,17,22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "activas detalles match alerts"
+      # Paso 0: activas ≤ 10,6 min, detalles ≤ 44,2 (sin tope de tiempo: hasta 200
+      # requests), match ≤ 1,6, alerts ≤ 0,1, + 3 pausas de 60 s ≈ 60 min; + 30 de
+      # espera = 90. 150 deja margen a `detalles`, que es el que más varía.
+      timeout_min: 150
+      esperar_lock_min: 30

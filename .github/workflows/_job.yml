@@ -3,6 +3,16 @@
 #
 # OJO: el repo es público y los logs de las corridas también. Nunca imprimir
 # valores de configuración; solo nombres.
+#
+# Concurrencia (F-actions-2): cada workflow que llama a este declara su PROPIO
+# grupo, `mp-${{ github.workflow }}`, con cancel-in-progress: false. GitHub guarda
+# una sola corrida pendiente por grupo y cancela la anterior si llega otra; con
+# un grupo por workflow, lo único que se descarta es una segunda corrida
+# pendiente del MISMO workflow, que haría lo mismo. Un grupo compartido entre
+# workflows (el viejo `mp-jobs`) cancelaba en silencio `resumen` o `nocturno`
+# cuando llegaba el `ca` de la hora siguiente. La serialización ENTRE workflows
+# la hace el advisory lock de Postgres (una sola llave para todos los jobs), con
+# la espera acotada de `esperar_lock_min`.
 name: _job
 
 on:
@@ -18,10 +28,17 @@ on:
         required: false
         default: ""
       timeout_min:
-        description: "Timeout del job en minutos"
+        # Tiene que cubrir la espera del lock (esperar_lock_min, por CADA job de
+        # la lista) MÁS el trabajo, más las pausas de 60 s entre jobs.
+        description: "Timeout del job en minutos: espera del lock + trabajo"
         type: number
         required: false
         default: 60
+      esperar_lock_min:
+        description: "Minutos que cada job espera el advisory lock antes de salir omitido"
+        type: number
+        required: false
+        default: 30
 
 permissions:
   contents: read
@@ -112,6 +129,7 @@ jobs:
           DETALLES_MINUTOS_DIA: ${{ vars.DETALLES_MINUTOS_DIA }}
           DETALLES_MINUTOS_NOCHE: ${{ vars.DETALLES_MINUTOS_NOCHE }}
           JOBS: ${{ inputs.jobs }}
+          ESPERAR_LOCK_MIN: ${{ inputs.esperar_lock_min }}
         # Sin -e a propósito: el default de Actions es `bash -e`, que cortaría el
         # loop en el primer job que falle (ver comentario del loop).
         shell: bash --noprofile --norc {0}
@@ -140,7 +158,7 @@ jobs:
             if [ "$primero" -eq 0 ]; then sleep 60; fi
             primero=0
             echo "::group::$j"
-            python -m app.ingest run-once --job="$j"
+            python -m app.ingest run-once --job="$j" --esperar-lock-min="$ESPERAR_LOCK_MIN"
             codigo=$?
             echo "::endgroup::"
             if [ "$codigo" -ne 0 ]; then

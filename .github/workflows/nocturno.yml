@@ -1,0 +1,35 @@
+# Ciclo nocturno: datos abiertos, lifecycle, competencia, backfill de ayer y
+# detalles-match con el presupuesto de noche (F-actions-2).
+#
+# 04:10 UTC = 01:10 Chile en UTC−3 y 00:10 en UTC−4: dentro de 22:00–07:00 con
+# los dos offsets. De todos modos `_ciclo_nocturno` valida la ventana en código
+# con America/Santiago (regla 5) y no hace nada si cae fuera.
+# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
+# ocupa el :05 de todas las horas).
+# Puede tener el lock ~3 h: por eso retencion (05:40) y catalogos (06:35) van después.
+name: nocturno
+
+on:
+  schedule:
+    - cron: "10 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "nocturno"
+      # Paso 0: datos-abiertos 1,9 min, lifecycle 2,1, competencia 0,0; backfill de
+      # ayer SIN medir. detalles-match: 120 (DETALLES_MINUTOS_NOCHE) + ~2 de un
+      # detalle en curso. ≈ 126 + backfill, + 30 de espera = 156 + backfill.
+      # 210 le deja ~50 min al backfill. Un solo proceso: sin pausas entre pasos.
+      timeout_min: 210
+      esperar_lock_min: 30
