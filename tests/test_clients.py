@@ -445,50 +445,159 @@ def test_v2_listar_ok(settings_fake, mem_engine):
     assert result.paginacion.total_paginas == 1
 
 
-@respx.mock
-def test_v2_detalle_ok(settings_fake, mem_engine):
-    """Verifica el gotcha: id_orden_compra=null aunque exista OC."""
-    respx.get(_V2_BASE + "/v2/compra-agil/CA-001").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "success": "OK",
-                "payload": {
-                    "codigo": "CA-001",
-                    "nombre": "Compra Detalle",
-                    "descripcion": "Descripcion completa",
-                    "estado": {"codigo": "cerrada"},
-                    "fechas": {
-                        "fecha_publicacion": "2026-06-01T10:00:00",
-                        "fecha_cierre": "2026-06-30T18:00:00",
-                        "fecha_ultimo_cambio": "2026-06-02T10:00:00",
-                    },
-                    "montos": {"monto_disponible_clp": 500000},
-                    "institucion": {
-                        "region": 13,
-                        "organismo_comprador": "MINSAL",
-                        "rut": "61.001.000-0",
-                    },
-                    "resumen": {"total_ofertas_recibidas": 2},
-                    "orden_compra": {"codigo_orden_compra": None, "id_orden_compra": None},
-                    "productos_solicitados": [
-                        {
-                            "codigo_producto": "ABC",
-                            "nombre": "Silla ergonómica",
-                            "cantidad": 10,
-                            "unidad_medida": "UN",
-                        }
-                    ],
-                },
-                "errors": [],
-            },
-        )
+# Forma REAL del detalle v2, según la sonda claves-ca (scripts/smoke_test.py,
+# 24-sep-2026): sin `montos` ni `orden_compra`; monto en `presupuesto`,
+# estado_convocatoria en `convocatoria`, id_orden_compra en el primer nivel y
+# codigo_producto como int. Valores inventados; las CLAVES son las observadas.
+# [I] Las subclaves de `institucion` y `resumen` del detalle no las listó la
+# sonda: se asumen iguales a las del listado.
+_DETALLE_REAL = {
+    "codigo": "CA-001",
+    "nombre": "Compra Detalle",
+    "descripcion": "Descripcion completa",
+    "estado": {"codigo": "publicada"},
+    "convocatoria": {
+        "descripcion": "Primer llamado",
+        "estado_convocatoria": 2,
+        "fecha_cierre_primer_llamado": "2026-06-30T18:00:00Z",
+        "fecha_cierre_segundo_llamado": None,
+    },
+    "fechas": {
+        "fecha_cancelacion": None,
+        "fecha_publicacion": "2026-06-01T10:00:00",
+        "fecha_cierre": "2026-06-30T18:00:00",
+        "fecha_ultimo_cambio": "2026-06-02T10:00:00Z",
+    },
+    "presupuesto": {
+        "moneda": "CLP",
+        "monto_disponible": 750000,
+        "monto_disponible_clp": 750000,
+        "presupuesto_estimado": None,
+    },
+    "institucion": {"region": 13, "organismo_comprador": "MINSAL", "rut": "61.001.000-0"},
+    "resumen": {"total_ofertas_recibidas": 2},
+    "id_orden_compra": "1234-56-SE26",
+    "documentos": [],
+    "entrega": {},
+    "flags": {},
+    "motivos": [],
+    "proveedores_cotizando": 2,
+    "productos_solicitados": [
+        {
+            "codigo_producto": 44121600,
+            "nombre": "Silla ergonómica",
+            "descripcion": "Silla con apoyo lumbar y brazos regulables",
+            "cantidad": 10,
+            "unidad_medida": "UN",
+        }
+    ],
+}
+
+# Forma VIEJA (la que asumía F1, no observada): se conserva para probar respaldos.
+_DETALLE_VIEJO = {
+    "codigo": "CA-002",
+    "nombre": "Compra Detalle vieja",
+    "descripcion": "Descripcion",
+    "estado": {"codigo": "cerrada"},
+    "estado_convocatoria": 1,
+    "fechas": {"fecha_cierre": "2026-06-30T18:00:00"},
+    "montos": {"monto_disponible_clp": 500000},
+    "institucion": {"region": 13, "organismo_comprador": "MINSAL", "rut": "61.001.000-0"},
+    "orden_compra": {"codigo_orden_compra": None, "id_orden_compra": "OC-VIEJA"},
+    "productos_solicitados": [
+        {"codigo_producto": "ABC", "nombre": "Silla", "cantidad": 1, "unidad_medida": "UN"}
+    ],
+}
+
+
+def _mock_detalle(codigo: str, payload: dict) -> None:
+    respx.get(_V2_BASE + f"/v2/compra-agil/{codigo}").mock(
+        return_value=httpx.Response(200, json={"success": "OK", "payload": payload, "errors": []})
     )
-    client = _v2_client(settings_fake, mem_engine)
-    detalle = client.detalle_compra_agil("CA-001")
-    assert detalle.id_orden_compra is None
+
+
+@respx.mock
+def test_v2_detalle_forma_real(settings_fake, mem_engine):
+    _mock_detalle("CA-001", _DETALLE_REAL)
+    detalle = _v2_client(settings_fake, mem_engine).detalle_compra_agil("CA-001")
+
+    assert detalle.id_orden_compra == "1234-56-SE26"  # 3.a: primer nivel
+    assert detalle.estado_convocatoria == 2  # 3.b: dentro de convocatoria
+    assert detalle.monto_clp == 750000  # 3.c: presupuesto
+    assert detalle.organismo_nombre == "MINSAL"
+    assert detalle.organismo_rut == "61.001.000-0"
+    assert detalle.total_ofertas == 2
     assert len(detalle.productos) == 1
-    assert detalle.productos[0].nombre == "Silla ergonómica"
+    prod = detalle.productos[0]
+    assert prod.nombre == "Silla ergonómica"
+    assert prod.codigo_producto == "44121600"  # int → str
+    assert prod.descripcion == "Silla con apoyo lumbar y brazos regulables"  # 3.d
+    # La Z falsa de fecha_ultimo_cambio se ignora (regla 6): igual que sin Z.
+    assert detalle.fecha_ultimo_cambio is not None
+
+
+@respx.mock
+def test_v2_detalle_forma_vieja_usa_los_respaldos(settings_fake, mem_engine):
+    _mock_detalle("CA-002", _DETALLE_VIEJO)
+    detalle = _v2_client(settings_fake, mem_engine).detalle_compra_agil("CA-002")
+
+    assert detalle.id_orden_compra == "OC-VIEJA"
+    assert detalle.estado_convocatoria == 1
+    assert detalle.monto_clp == 500000
+    assert detalle.productos[0].descripcion == ""
+
+
+@respx.mock
+def test_v2_detalle_id_orden_compra_null_da_none(settings_fake, mem_engine):
+    """Gotcha de la API: id_orden_compra/codigo_orden_compra pueden venir null."""
+    payload = {**_DETALLE_REAL, "id_orden_compra": None}
+    _mock_detalle("CA-001", payload)
+    detalle = _v2_client(settings_fake, mem_engine).detalle_compra_agil("CA-001")
+    assert detalle.id_orden_compra is None
+
+
+@respx.mock
+def test_v2_detalle_sin_institucion_da_none_y_no_el_texto_none(settings_fake, mem_engine):
+    """3.e: antes `str(None) or None` guardaba el texto 'None'."""
+    payload = {k: v for k, v in _DETALLE_REAL.items() if k != "institucion"}
+    _mock_detalle("CA-001", payload)
+    detalle = _v2_client(settings_fake, mem_engine).detalle_compra_agil("CA-001")
+
+    assert detalle.organismo_nombre is None
+    assert detalle.organismo_rut is None
+    assert detalle.region is None
+
+
+@respx.mock
+def test_v2_detalle_con_bloques_rotos_no_revienta(settings_fake, mem_engine):
+    """Regla 6: tipos inesperados en cada bloque → None, nunca excepción."""
+    payload = {
+        **_DETALLE_REAL,
+        "presupuesto": "raro",
+        "convocatoria": [],
+        "institucion": None,
+        "id_orden_compra": "",
+        "productos_solicitados": [None, {"nombre": "Sin código"}],
+    }
+    _mock_detalle("CA-001", payload)
+    detalle = _v2_client(settings_fake, mem_engine).detalle_compra_agil("CA-001")
+
+    assert detalle.monto_clp is None
+    assert detalle.estado_convocatoria is None
+    assert detalle.id_orden_compra is None
+    assert detalle.organismo_nombre is None
+    assert [p.nombre for p in detalle.productos] == ["Sin código"]
+    assert detalle.productos[0].codigo_producto == ""
+
+
+def test_v2_listado_sin_institucion_da_none():
+    """El mismo arreglo 3.e aplica al listado (parser compartido)."""
+    from app.clients.mp_v2 import _parse_ca_basica
+
+    item = {"codigo": "CA-9", "nombre": "x", "estado": "publicada", "institucion": {}}
+    basica = _parse_ca_basica(item)
+    assert basica.organismo_nombre is None
+    assert basica.organismo_rut is None
 
 
 @respx.mock

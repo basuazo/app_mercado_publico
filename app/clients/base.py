@@ -378,12 +378,26 @@ class BaseClient:
         except Exception as exc:
             raise MPParseError(f"Respuesta no es JSON válido: {exc}") from exc
 
-    def _request(self, method: str, url: str, **kwargs: object) -> dict[str, object]:
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        reintentar_transitorios: bool = True,
+        **kwargs: object,
+    ) -> dict[str, object]:
         # MPServerError: máx 2 intentos totales (1 reintento) — absorbe errores transitorios
         # httpx.TimeoutException: máx 3 intentos totales (2 reintentos)
         # MPConcurrencyError (429/10500): máx 4 intentos totales, backoff 30/60/120 s + jitter
         # MPRateLimitError (cualquier otro 429): nunca reintentar
         # Los tres contadores son independientes.
+        #
+        # `reintentar_transitorios=False` (F-detalles-match): 5xx y timeout NO se
+        # reintentan, se lanzan al primer fallo. Es para llamadores cuyo ítem
+        # vuelve solo a la cola en la corrida siguiente (detalles de oportunidades
+        # con match): ahí un reintento en la misma corrida gasta ~1,5 min por
+        # fallo sin ganar nada. El enfriamiento de 60 s y la política del 429 no
+        # cambian. El default conserva el comportamiento de siempre.
         #
         # 504 y timeout enfrían el limiter del proceso 60 s, se reintente o no:
         # [I] el gateway corta a ~30 s pero el backend de ChileCompra sigue con
@@ -435,7 +449,7 @@ class BaseClient:
                 if es_504:
                     self._rate_limiter.enfriar(_ENFRIAMIENTO_S, causa="HTTP 504")
                 server_attempt += 1
-                if server_attempt >= _MAX_SERVER_ATTEMPTS:
+                if not reintentar_transitorios or server_attempt >= _MAX_SERVER_ATTEMPTS:
                     raise
                 delay = min(2.0 * (2 ** (server_attempt - 1)), 30.0)
                 _log.warning(
@@ -451,7 +465,7 @@ class BaseClient:
             except httpx.TimeoutException as exc:
                 self._rate_limiter.enfriar(_ENFRIAMIENTO_S, causa="timeout")
                 timeout_attempt += 1
-                if timeout_attempt >= _MAX_TIMEOUT_ATTEMPTS:
+                if not reintentar_transitorios or timeout_attempt >= _MAX_TIMEOUT_ATTEMPTS:
                     raise MPServerError("Timeout de red", status_code=0) from exc
                 _log.warning(
                     "TimeoutException intento %d/%d; reintentando en %.1f s",

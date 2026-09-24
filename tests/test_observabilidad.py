@@ -233,7 +233,13 @@ class TestTelemetriaNoTumbaElJob:
 # ---------------------------------------------------------------------------
 
 # Nombres tal como los graba cada disparador (endpoint / scheduler / nocturno).
-_CRITICOS_FRESCOS = (("activas", 2.0), ("ca", 0.5), ("datos-abiertos", 5.0))
+_CRITICOS_FRESCOS = (
+    ("activas", 2.0),
+    ("ca", 0.5),
+    ("datos-abiertos", 5.0),
+    ("match", 0.5),
+    ("alerts", 0.5),
+)
 
 
 def _sembrar_criticos_frescos(engine) -> None:
@@ -255,9 +261,11 @@ class TestSaludJobs:
             "ca",
             "datos-abiertos",
             "resumen",
+            "match",
+            "alerts",
         }
         criticos = [j for j in body["jobs"] if j["critico"]]
-        assert len(criticos) == 3
+        assert len(criticos) == 5
         assert all(j["stale"] is False for j in criticos)
 
     def test_503_si_un_critico_esta_atrasado(self, client, engine):
@@ -292,6 +300,8 @@ class TestSaludJobs:
         _sembrar(engine, "sync_activas", "ok", 1.0)
         _sembrar(engine, "ca_incremental", "ok", 0.3)
         _sembrar(engine, "datos_abiertos", "ok", 6.0)
+        _sembrar(engine, "match_post_ca", "ok", 0.3)
+        _sembrar(engine, "alerts_post_activas", "ok", 0.3)
 
         r = client.get("/api/salud/jobs")
 
@@ -334,6 +344,8 @@ class TestSaludJobs:
         """Un OK viejo no debe opacar al fresco ni al revés."""
         _sembrar(engine, "ca", "ok", 0.5)
         _sembrar(engine, "datos-abiertos", "ok", 5.0)
+        _sembrar(engine, "match", "ok", 0.5)
+        _sembrar(engine, "alerts", "ok", 0.5)
         _sembrar(engine, "activas", "ok", 400.0)
         _sembrar(engine, "activas", "ok", 1.0)
 
@@ -358,10 +370,34 @@ class TestSaludJobs:
         """De punta a punta: _run_with_lock graba y el endpoint lo lee."""
         assert client.get("/api/salud/jobs").status_code == 503
 
-        for job in ("sync_activas", "ca_incremental", "datos_abiertos"):
+        for job in ("sync_activas", "ca_incremental", "datos_abiertos", "match", "alerts"):
             _run_with_lock(job, lambda: {"ok": 1}, engine, _LOCK_LIBRE, _UNLOCK)
 
         assert client.get("/api/salud/jobs").status_code == 200
+
+    def test_match_cancelado_en_todas_las_corridas_dispara_503(self, client, engine):
+        """El caso del canario (F-detalles-match): `ca` sale OK cada vez, pero
+        `match` muere por el timeout del workflow y no deja fila. Antes el switch
+        quedaba en verde para siempre."""
+        for job, horas in _CRITICOS_FRESCOS:
+            if job != "match":
+                _sembrar(engine, job, "ok", horas)
+        _sembrar(engine, "match", "ok", 40.0)  # último OK hace 40 h > 30 h
+
+        r = client.get("/api/salud/jobs")
+
+        assert r.status_code == 503
+        match = next(j for j in r.json()["jobs"] if j["job"] == "match")
+        assert match["critico"] is True and match["stale"] is True
+
+    def test_detalles_match_no_se_vigila(self, client, engine):
+        """Un día sin detalles no es una caída: no aparece en el watchlist."""
+        _sembrar_criticos_frescos(engine)
+
+        r = client.get("/api/salud/jobs")
+
+        assert r.status_code == 200
+        assert "detalles-match" not in {j["job"] for j in r.json()["jobs"]}
 
 
 # ---------------------------------------------------------------------------

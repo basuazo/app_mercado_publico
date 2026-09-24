@@ -253,6 +253,9 @@ class CompraAgilItem:
     nombre: str
     cantidad: float | None
     unidad: str
+    # Texto libre del comprador por producto (F-detalles-match); en la muestra
+    # real llegó a 373 caracteres. Default para no romper a quien no lo pase.
+    descripcion: str = ""
 
 
 @dataclass

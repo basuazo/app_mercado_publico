@@ -100,11 +100,19 @@ class MercadoPublicoV1Client:
         self._ticket = settings.mp_ticket
         self._client = BaseClient(ticket=settings.mp_ticket, rate_limiter=rl, quota=quota)
 
-    def _get(self, url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+    def _get(
+        self,
+        url: str,
+        params: dict[str, object] | None = None,
+        *,
+        reintentar_transitorios: bool = True,
+    ) -> dict[str, object]:
         p: dict[str, object] = {"ticket": self._ticket}
         if params:
             p.update(params)
-        return self._client._request("GET", url, params=p)
+        return self._client._request(
+            "GET", url, params=p, reintentar_transitorios=reintentar_transitorios
+        )
 
     # --- Licitaciones ---
 
@@ -137,8 +145,17 @@ class MercadoPublicoV1Client:
             _log.debug("Formato crudo FechaCierre (listado activas): %r", listado[0].get("FechaCierre"))
         return [_parse_licitacion_basica(item) for item in listado if isinstance(item, dict)]
 
-    def licitacion_detalle(self, codigo: str) -> LicitacionDetalle:
-        data = self._get(_LICITACIONES, {"codigo": codigo})
+    def licitacion_detalle(
+        self, codigo: str, *, reintentar_transitorios: bool = True
+    ) -> LicitacionDetalle:
+        """Detalle de una licitación.
+
+        `reintentar_transitorios=False`: un 5xx o timeout se lanza al primer
+        fallo, sin reintento (ver `BaseClient._request`).
+        """
+        data = self._get(
+            _LICITACIONES, {"codigo": codigo}, reintentar_transitorios=reintentar_transitorios
+        )
         return _parse_licitacion_detalle(data)
 
     # --- Órdenes de Compra ---

@@ -127,12 +127,17 @@ _FTS_LIC_EXCLUDE = (
     "AND to_tsvector('spanish', inmutable_unaccent(li.nombre)) "
     "@@ websearch_to_tsquery('spanish', :qx)))"
 )
+# Texto de un producto de CA para FTS: nombre + descripción del comprador
+# (F-detalles-match). La MISMA expresión en recall (INCLUDE/EXCLUDE) y en
+# _HITS_CA_SQL, para no romper el invariante recall/score de F9c.
+_FTS_CA_PRODUCTO = "to_tsvector('spanish', inmutable_unaccent(p.nombre || ' ' || p.descripcion))"
+
 _FTS_CA_INCLUDE = (
     "(compras_agiles.tsv @@ websearch_to_tsquery('spanish', :q) "
     "OR EXISTS ("
     "SELECT 1 FROM ca_productos p "
     "WHERE p.ca_codigo = compras_agiles.codigo "
-    "AND to_tsvector('spanish', inmutable_unaccent(p.nombre)) "
+    f"AND {_FTS_CA_PRODUCTO} "
     "@@ websearch_to_tsquery('spanish', :q)))"
 )
 _FTS_CA_EXCLUDE = (
@@ -140,7 +145,7 @@ _FTS_CA_EXCLUDE = (
     "OR EXISTS ("
     "SELECT 1 FROM ca_productos p "
     "WHERE p.ca_codigo = compras_agiles.codigo "
-    "AND to_tsvector('spanish', inmutable_unaccent(p.nombre)) "
+    f"AND {_FTS_CA_PRODUCTO} "
     "@@ websearch_to_tsquery('spanish', :qx)))"
 )
 
@@ -276,7 +281,7 @@ _HITS_LIC_SQL = text(
 )
 
 _HITS_CA_SQL = text(
-    """
+    f"""
     WITH pares AS (
         SELECT
             c.codigo AS codigo,
@@ -288,7 +293,7 @@ _HITS_CA_SQL = text(
             EXISTS (
                 SELECT 1 FROM ca_productos p
                 WHERE p.ca_codigo = c.codigo
-                AND to_tsvector('spanish', inmutable_unaccent(p.nombre))
+                AND {_FTS_CA_PRODUCTO}
                     @@ websearch_to_tsquery('spanish', kw.keyword)
             ) AS hit_producto
         FROM compras_agiles c

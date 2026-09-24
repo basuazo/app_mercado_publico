@@ -61,6 +61,35 @@ def _validar_envelope(data: dict[str, object]) -> dict[str, object]:
     raise MPParseError(f"success={success!r} errors={errors}")
 
 
+def _texto_o_none(v: object) -> str | None:
+    """`str(v)` sin espacios, o None si falta o queda vacío.
+
+    Nunca devuelve el texto 'None': `str(None) or None` daba 'None' (F-detalles-match).
+    """
+    if v is None:
+        return None
+    txt = str(v).strip()
+    return txt or None
+
+
+def _dict(v: object) -> dict[str, object]:
+    return v if isinstance(v, dict) else {}
+
+
+def _monto_clp(item: dict[str, object]) -> float | None:
+    """Monto disponible en CLP.
+
+    Ruta real del DETALLE [V, sonda claves-ca]: `presupuesto.monto_disponible_clp`
+    (el detalle no trae `montos`). El LISTADO lo trae en `montos`, que queda de
+    respaldo. Regla 6: el primero que se pueda leer gana.
+    """
+    for contenedor in ("presupuesto", "montos"):
+        monto = parse_float(_dict(item.get(contenedor)).get("monto_disponible_clp"))
+        if monto is not None:
+            return monto
+    return None
+
+
 def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
     estado_raw = item.get("estado") or {}
     estado_str = ""
@@ -70,11 +99,9 @@ def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
         estado_str = estado_raw
 
     fechas = item.get("fechas") or {}
-    montos = item.get("montos") or {}
-    institucion = item.get("institucion") or {}
+    institucion = _dict(item.get("institucion"))
 
-    region_raw = institucion.get("region") if isinstance(institucion, dict) else None
-    region = parse_int(region_raw)
+    region = parse_int(institucion.get("region"))
 
     resumen = item.get("resumen") or {}
     total_ofertas = (
@@ -96,15 +123,10 @@ def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
         fecha_ultimo_cambio=parse_fecha_v2(
             fechas.get("fecha_ultimo_cambio") if isinstance(fechas, dict) else None
         ),
-        monto_clp=parse_float(
-            montos.get("monto_disponible_clp") if isinstance(montos, dict) else None
-        ),
+        monto_clp=_monto_clp(item),
         region=region,
-        organismo_nombre=str(
-            institucion.get("organismo_comprador") if isinstance(institucion, dict) else ""
-        )
-        or None,
-        organismo_rut=str(institucion.get("rut") if isinstance(institucion, dict) else "") or None,
+        organismo_nombre=_texto_o_none(institucion.get("organismo_comprador")),
+        organismo_rut=_texto_o_none(institucion.get("rut")),
         total_ofertas=total_ofertas,
     )
 
@@ -119,19 +141,26 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
                 continue
             productos.append(
                 CompraAgilItem(
-                    codigo_producto=str(p.get("codigo_producto") or ""),
+                    # En el detalle real viene como int [V, sonda claves-ca].
+                    codigo_producto=_texto_o_none(p.get("codigo_producto")) or "",
                     nombre=str(p.get("nombre") or ""),
                     cantidad=parse_float(p.get("cantidad")),
                     unidad=str(p.get("unidad_medida") or ""),
+                    descripcion=str(p.get("descripcion") or ""),
                 )
             )
 
-    oc = payload.get("orden_compra") or {}
-    id_oc = None
-    if isinstance(oc, dict):
-        id_oc = str(oc.get("id_orden_compra") or "") or None
+    # Ruta real [V, sonda claves-ca]: primer nivel. `orden_compra.id_orden_compra`
+    # queda de respaldo (forma que asumía F1, no observada). codigo_orden_compra
+    # no se usa: viene null aunque exista OC (regla 6).
+    id_oc = _texto_o_none(payload.get("id_orden_compra")) or _texto_o_none(
+        _dict(payload.get("orden_compra")).get("id_orden_compra")
+    )
 
-    convocatoria = parse_int(payload.get("estado_convocatoria"))
+    # Ruta real: `convocatoria.estado_convocatoria`; respaldo en el primer nivel.
+    convocatoria = parse_int(_dict(payload.get("convocatoria")).get("estado_convocatoria"))
+    if convocatoria is None:
+        convocatoria = parse_int(payload.get("estado_convocatoria"))
 
     return CompraAgilDetalle(
         codigo=base.codigo,
@@ -166,8 +195,16 @@ class MercadoPublicoV2Client:
             default_headers={"ticket": settings.mp_ticket},
         )
 
-    def _get(self, url: str, params: dict[str, object] | None = None) -> dict[str, object]:
-        return self._client._request("GET", url, params=params or {})
+    def _get(
+        self,
+        url: str,
+        params: dict[str, object] | None = None,
+        *,
+        reintentar_transitorios: bool = True,
+    ) -> dict[str, object]:
+        return self._client._request(
+            "GET", url, params=params or {}, reintentar_transitorios=reintentar_transitorios
+        )
 
     def listar_compra_agil(
         self,
@@ -279,8 +316,15 @@ class MercadoPublicoV2Client:
                 break
             pagina += 1
 
-    def detalle_compra_agil(self, codigo: str) -> CompraAgilDetalle:
+    def detalle_compra_agil(
+        self, codigo: str, *, reintentar_transitorios: bool = True
+    ) -> CompraAgilDetalle:
+        """Detalle de una Compra Ágil.
+
+        `reintentar_transitorios=False`: un 5xx o timeout se lanza al primer
+        fallo, sin reintento (ver `BaseClient._request`).
+        """
         url = _DETALLE.format(codigo=codigo)
-        data = self._get(url)
+        data = self._get(url, reintentar_transitorios=reintentar_transitorios)
         payload = _validar_envelope(data)
         return _parse_ca_detalle(payload)

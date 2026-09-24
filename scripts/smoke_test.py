@@ -7,6 +7,7 @@ Uso:
     python scripts/smoke_test.py --fechas   # solo el Paso 0 de F-fecha-cierre (2 requests)
     python scripts/smoke_test.py ventana-ca # sonda de F-ca-ventana (5 variantes, ~5–15 req)
     python scripts/smoke_test.py ventana-ca --solo G1,G2,B2,B3  # prueba de huso
+    python scripts/smoke_test.py claves-ca  # ¿el LISTADO v2 trae descripción y productos? (2 req)
 """
 
 from __future__ import annotations
@@ -543,6 +544,113 @@ def sonda_ventana_ca(
     print("=== Sonda completada ===")
 
 
+# ---------------------------------------------------------------------------
+# Sonda claves-ca — ¿el listado v2 ya trae descripción y productos?
+# ---------------------------------------------------------------------------
+#
+# Si el listado los trae, bajar un detalle por CA sobra para el matching. Si no,
+# es inevitable. Regla 20: esto se resuelve mirando la respuesta real, no el doc.
+# Imprime SOLO nombres de claves, largos y conteos: ningún valor, URL ni ticket.
+
+_PISTAS = ("descrip", "product", "item", "detalle", "rubro", "catalog", "unspsc")
+
+
+def _claves_con_pista(obj: object, ruta: str = "", prof: int = 0) -> list[str]:
+    """Rutas de claves cuyo nombre sugiere descripción o productos (hasta 3 niveles)."""
+    encontradas: list[str] = []
+    if prof > 3:
+        return encontradas
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            r = f"{ruta}.{k}" if ruta else str(k)
+            if any(p in str(k).lower() for p in _PISTAS):
+                encontradas.append(f"{r} ({_forma(v)})")
+            encontradas += _claves_con_pista(v, r, prof + 1)
+    elif isinstance(obj, list) and obj:
+        encontradas += _claves_con_pista(obj[0], ruta + "[0]", prof + 1)
+    return encontradas
+
+
+def _forma(v: object) -> str:
+    """Tipo y tamaño, sin el valor."""
+    if v is None:
+        return "null"
+    if isinstance(v, str):
+        return f"str, largo {len(v)}"
+    if isinstance(v, list):
+        return f"lista de {len(v)}"
+    if isinstance(v, dict):
+        return f"objeto con claves {sorted(v)}"
+    return type(v).__name__
+
+
+def _describir_item(item: dict[str, object]) -> list[str]:
+    lineas = [f"claves de primer nivel: {sorted(item)}"]
+    for k in sorted(item):
+        if isinstance(item[k], dict):
+            lineas.append(f"  {k}: {_forma(item[k])}")
+    pistas = _claves_con_pista(item)
+    lineas.append("claves con pista de descripción/productos:")
+    lineas += [f"  {x}" for x in pistas] or ["  (ninguna)"]
+    return lineas
+
+
+def sonda_claves_ca(v2: MercadoPublicoV2Client) -> None:
+    from app.clients.base import MPConcurrencyError, MPRateLimitError
+    from app.clients.mp_v2 import _DETALLE, _LISTADO, _validar_envelope
+
+    print("=== Sonda claves-ca: listado v2 vs detalle ===\n")
+    params = {"tamano_pagina": 10, "numero_pagina": 1, "estado": "publicada"}
+    try:
+        payload = _validar_envelope(v2._get(_LISTADO, params))
+    except (MPConcurrencyError, MPRateLimitError) as exc:
+        print(f"LISTADO -> {_error_seguro(exc)}. DETENIDA.")
+        return
+    except Exception as exc:
+        print(f"LISTADO -> ERROR {_error_seguro(exc)}. Reintenta más tarde.")
+        return
+    print(f"claves del payload del listado: {sorted(payload)}")
+    items_json = payload.get("convocatorias") or payload.get("items") or []
+    items = [x for x in items_json if isinstance(x, dict)] if isinstance(items_json, list) else []
+    print(f"items en la página: {len(items)}\n")
+    if not items:
+        return
+    print("[LISTADO] primer ítem:")
+    for linea in _describir_item(items[0]):
+        print(f"  {linea}")
+    print("\n[LISTADO] por ítem: descripcion / productos_solicitados")
+    for it in items:
+        d = it.get("descripcion")
+        p = it.get("productos_solicitados")
+        print(
+            f"  {str(it.get('codigo'))[:25]:25}  descripcion={_forma(d)}"
+            f"  productos_solicitados={_forma(p)}"
+        )
+
+    codigo = str(items[0].get("codigo") or "")
+    if not codigo:
+        return
+    print(f"\n(pausa de 5 s; luego el detalle de {codigo})")
+    time.sleep(5)
+    try:
+        det = _validar_envelope(v2._get(_DETALLE.format(codigo=codigo)))
+    except Exception as exc:
+        print(f"DETALLE -> {_error_seguro(exc)}. El listado ya quedó arriba: con eso basta.")
+        return
+    print("\n[DETALLE] mismo código:")
+    for linea in _describir_item(det):
+        print(f"  {linea}")
+    li, de = items[0], det
+    for campo in ("descripcion", "productos_solicitados"):
+        a, b = li.get(campo), de.get(campo)
+        igual = "IGUALES" if a == b else "DISTINTOS"
+        print(f"  {campo}: listado={_forma(a)}  detalle={_forma(b)}  -> {igual}")
+    if isinstance(li.get("productos_solicitados"), list) and li["productos_solicitados"]:
+        print(f"  claves de un producto (listado): {sorted(li['productos_solicitados'][0])}")
+    if isinstance(de.get("productos_solicitados"), list) and de["productos_solicitados"]:
+        print(f"  claves de un producto (detalle): {sorted(de['productos_solicitados'][0])}")
+
+
 def main() -> None:
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
@@ -553,6 +661,10 @@ def main() -> None:
 
     v1 = MercadoPublicoV1Client(settings, engine)
     v2 = MercadoPublicoV2Client(settings, engine)
+
+    if "claves-ca" in sys.argv[1:]:
+        sonda_claves_ca(v2)
+        return
 
     if "ventana-ca" in sys.argv[1:]:
         sonda_ventana_ca(settings, engine, v2, solo=_leer_solo(sys.argv[1:]))

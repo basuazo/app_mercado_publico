@@ -15,7 +15,7 @@ from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.core.tiempo import ahora_utc
-from app.models.enums import estado_ca
+from app.models.enums import EstadoOportunidad, estado_ca
 from app.models.tables import CaProducto, CompraAgil, SyncState
 
 _log = get_logger(__name__)
@@ -86,12 +86,57 @@ def upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAg
     return ca, es_nueva
 
 
+# Largo de ca_productos.descripcion (String(1000) en app/models/tables.py).
+_LARGO_DESCRIPCION_PRODUCTO = 1000
+
+
+def _completar_desde_detalle(ca: CompraAgil, det: CompraAgilDetalle) -> None:
+    """Actualiza los campos básicos de una CA YA EXISTENTE con lo que trae el detalle.
+
+    El detalle no trae todo lo que trae el listado —sin `montos`, por ejemplo— y
+    lo que falta llega como None. Un None (o vacío, o DESCONOCIDO) no pisa lo que
+    ya hay: mismo criterio que `upsert_basica` de licitaciones con las fechas.
+    `total_ofertas` no distingue "falta" de 0, así que se queda con el mayor.
+    """
+    if det.nombre:
+        ca.nombre = det.nombre
+    estado = estado_ca(det.estado)
+    if estado is not EstadoOportunidad.DESCONOCIDO:
+        ca.estado = estado.value
+    if det.fecha_publicacion is not None:
+        ca.fecha_publicacion = det.fecha_publicacion
+    if det.fecha_cierre is not None:
+        ca.fecha_cierre = det.fecha_cierre
+    if det.fecha_ultimo_cambio is not None:
+        ca.fecha_ultimo_cambio = det.fecha_ultimo_cambio
+    if det.monto_clp is not None:
+        ca.monto_disponible_clp = det.monto_clp
+    if det.region is not None:
+        ca.region = det.region
+    if det.organismo_nombre is not None:
+        ca.organismo_nombre = det.organismo_nombre
+    if det.organismo_rut is not None:
+        ca.organismo_rut = det.organismo_rut
+    ca.total_ofertas = max(ca.total_ofertas or 0, det.total_ofertas)
+
+
 def upsert_ca_detalle(session: Session, det: CompraAgilDetalle) -> None:
-    """Actualiza una CA con datos de detalle y reemplaza sus productos."""
-    ca, _ = upsert_ca_basica(session, det)
+    """Actualiza una CA con datos de detalle y reemplaza sus productos.
+
+    Si la CA no existe se crea como desde el listado; si existe, el detalle no
+    pisa con None lo que ya había (ver :func:`_completar_desde_detalle`).
+    """
+    existente = session.get(CompraAgil, det.codigo)
+    if existente is None:
+        ca, _ = upsert_ca_basica(session, det)
+    else:
+        ca = existente
+        _completar_desde_detalle(ca, det)
     ca.descripcion = det.descripcion
-    ca.id_orden_compra = det.id_orden_compra
-    ca.estado_convocatoria = det.estado_convocatoria
+    if det.id_orden_compra is not None:
+        ca.id_orden_compra = det.id_orden_compra
+    if det.estado_convocatoria is not None:
+        ca.estado_convocatoria = det.estado_convocatoria
     ca.actualizado_en = ahora_utc()
 
     for prod in ca.productos:
@@ -104,7 +149,7 @@ def upsert_ca_detalle(session: Session, det: CompraAgilDetalle) -> None:
                 ca_codigo=ca.codigo,
                 codigo_producto=p.codigo_producto,
                 nombre=p.nombre,
-                descripcion="",
+                descripcion=p.descripcion[:_LARGO_DESCRIPCION_PRODUCTO],
                 cantidad=p.cantidad,
                 unidad=p.unidad,
             )

@@ -20,6 +20,7 @@ from app.ingest.orchestrator import (
     run_competencia,
     run_datos_abiertos,
     run_detalles,
+    run_detalles_match,
     run_lifecycle,
     run_match,
     run_resumen,
@@ -38,6 +39,7 @@ _JOBS = (
     "retencion",
     "match",
     "alerts",
+    "detalles-match",
     "resumen",
     "datos-abiertos",
     "competencia",
@@ -84,6 +86,9 @@ def cmd_run_once(
         "retencion": _locked("retencion", lambda: run_retencion(engine)),
         "match": _locked("match", lambda: run_match(settings, engine)),
         "alerts": _locked("alerts", lambda: run_alerts(settings, engine)),
+        "detalles-match": _locked(
+            "detalles-match", lambda: run_detalles_match(settings, engine)
+        ),
         "resumen": _locked("resumen", lambda: run_resumen(settings, engine)),
         "datos-abiertos": _locked(
             "datos-abiertos", lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes)

@@ -67,6 +67,11 @@ _JOBS_VIGILADOS: tuple[_JobVigilado, ...] = (
     _JobVigilado("ca", frozenset({"ca", "ca_incremental"}), 30, True),
     _JobVigilado("datos-abiertos", frozenset({"datos-abiertos", "datos_abiertos"}), 36, True),
     _JobVigilado("resumen", frozenset({"resumen"}), 30, False),
+    # F-detalles-match: un `match` cancelado en todas las corridas pasaba
+    # inadvertido (el canario solo dejaba OK de `ca`). `detalles-match` NO se
+    # vigila: un día sin detalles no es una caída.
+    _JobVigilado("match", frozenset({"match", "match_post_ca", "match_post_activas"}), 30, True),
+    _JobVigilado("alerts", frozenset({"alerts", "alerts_post_ca", "alerts_post_activas"}), 30, True),
 )
 
 
@@ -308,6 +313,7 @@ async def jobs_run(
         run_competencia,
         run_datos_abiertos,
         run_detalles,
+        run_detalles_match,
         run_lifecycle,
         run_match,
         run_resumen,
@@ -346,6 +352,9 @@ async def jobs_run(
         "match": _locked("match", lambda: run_match(settings, engine)),
         "competencia": _locked("competencia", lambda: run_competencia(settings, engine)),
         "alerts": _locked("alerts", lambda: run_alerts(settings, engine)),
+        "detalles-match": _locked(
+            "detalles-match", lambda: run_detalles_match(settings, engine)
+        ),
         "resumen": _locked("resumen", lambda: run_resumen(settings, engine)),
         "retencion": _locked("retencion", lambda: run_retencion(engine)),
         "catalogos": _locked("catalogos", lambda: run_catalogos(settings, engine)),
@@ -376,7 +385,8 @@ async def jobs_run(
     # Jobs compuestos: reproducen los grupos que el scheduler interno disparaba
     # junto, para que el cron externo pida la secuencia con una sola llamada
     # (F-invertir-modelo). No reemplazan a `all`: son la cadencia frecuente.
-    _jobs["ciclo-ca"] = _secuencia("ca", "match", "alerts")
+    # detalles-match al final: bajar detalles no debe demorar las alertas.
+    _jobs["ciclo-ca"] = _secuencia("ca", "match", "alerts", "detalles-match")
     _jobs["ciclo-activas"] = _secuencia("activas", "detalles", "match", "alerts")
 
     _CICLO_COMPLETO = (
@@ -388,6 +398,8 @@ async def jobs_run(
         "competencia",
         "alerts",
         "resumen",
+        # Lo que antes hacía `match` por dentro; al final para no demorar el resto.
+        "detalles-match",
     )
 
     def _full_cycle() -> None:

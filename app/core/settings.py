@@ -58,13 +58,16 @@ class Settings(BaseSettings):
         description="Tope de requests de listado por corrida de `ca`; se revisa antes de cada ventana",
     )
 
-    # --- Detalles que baja `match` (F-raw-json) ---
-    # Presupuesto de TIEMPO, no de cuota: un detalle de CA tardó ~26 s de media
-    # en el canario (504 + enfriamiento incluidos), y sin tope `match` se comió
-    # el timeout del workflow antes de que corriera `alerts`.
-    match_max_detalles_por_corrida: int = Field(
-        default=40,
-        description="Tope de detalles (licitaciones + CA juntas) que baja cada corrida de `match`",
+    # --- Detalles de oportunidades con match: job `detalles-match` (F-detalles-match) ---
+    # Presupuesto de TIEMPO, no de cantidad: en el canario 3 un detalle costó ~78 s
+    # de media por los 504 de la API. La noche es la ventana 22:00–07:00 de la regla 5.
+    detalles_minutos_dia: int = Field(
+        default=20,
+        description="Minutos máximos por corrida de `detalles-match` fuera de la ventana nocturna",
+    )
+    detalles_minutos_noche: int = Field(
+        default=120,
+        description="Minutos máximos por corrida de `detalles-match` en la ventana 22:00–07:00 Chile",
     )
 
     # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---

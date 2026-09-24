@@ -947,44 +947,29 @@ class TestOrchestratorRunners:
             result = run_resumen(settings, engine)
         assert "resumenes_enviados" in result
 
-    def test_run_match_con_sin_detalle(self, settings, engine):
+    def test_run_match_no_baja_detalles_y_devuelve_conteos(self, settings, engine):
+        """F-detalles-match: run_match solo calcula matches. No crea clientes y
+        el resultado lleva conteos, no listas de códigos (inflaban job_runs)."""
         from app.ingest.orchestrator import run_match
 
         with patch("app.matching.engine.match_todos") as mt, patch(
             "app.ingest.orchestrator._make_clients"
         ) as mk:
             mt.return_value = {
-                "perfiles_procesados": 0,
-                "nuevos": 0,
+                "perfiles_procesados": 1,
+                "nuevos": 2,
                 "actualizados": 0,
                 "descartados": 0,
-                "sin_detalle_licitaciones": ["LIC-XXX"],
+                "sin_detalle_licitaciones": ["LIC-XXX", "LIC-YYY"],
                 "sin_detalle_ca": ["CA-XXX"],
             }
-            v1 = MagicMock()
-            v1.licitacion_detalle.return_value = _lic_detalle("LIC-XXX")
-            v2 = MagicMock()
-            from app.clients.types import CompraAgilDetalle
-
-            v2.detalle_compra_agil.return_value = CompraAgilDetalle(
-                codigo="CA-XXX",
-                nombre="CA",
-                estado="publicada",
-                fecha_publicacion=None,
-                fecha_cierre=None,
-                fecha_ultimo_cambio=None,
-                monto_clp=None,
-                region=None,
-                organismo_nombre=None,
-                organismo_rut=None,
-                total_ofertas=0,
-                descripcion="",
-                productos=[],
-                id_orden_compra=None,
-            )
-            mk.return_value = (v1, v2)
             result = run_match(settings, engine)
-        assert "sin_detalle_licitaciones" in result
+
+        mk.assert_not_called()
+        assert result["sin_detalle_licitaciones"] == 2
+        assert result["sin_detalle_ca"] == 1
+        assert not any(isinstance(v, list) for v in result.values())
+        assert not any(k.startswith("detalles_") for k in result)
 
     def test_ciclo_nocturno_dentro_ventana(self, settings, engine):
         """_ciclo_nocturno ejecuta jobs cuando está dentro de la ventana 22:00–07:00."""
@@ -1148,7 +1133,13 @@ class TestCliRunOnce:
         ):
             cli.cmd_run_once("nocturno")
 
-        assert llamadas == ["datos_abiertos", "lifecycle", "competencia", "backfill_ayer"]
+        assert llamadas == [
+            "datos_abiertos",
+            "lifecycle",
+            "competencia",
+            "backfill_ayer",
+            "detalles-match",
+        ]
         assert "nocturno" not in llamadas
 
     def test_job_desconocido_sale_con_error(self, settings, engine):

@@ -19,5 +19,7 @@ jobs:
     uses: ./.github/workflows/_job.yml
     secrets: inherit
     with:
-      jobs: "ca match alerts"
+      jobs: "ca match alerts detalles-match"
+      # ca (~40 min) + match (~2) + alerts + detalles-match (tope 20 + un detalle
+      # en curso) + 3 pausas de 60 s entre jobs ≈ 70 min: 90 deja margen.
       timeout_min: 90

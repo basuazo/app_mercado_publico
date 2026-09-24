@@ -860,6 +860,7 @@ _JOB_RUNNER = {
     "resumen": "run_resumen",
     "retencion": "run_retencion",
     "catalogos": "run_catalogos",
+    "detalles-match": "run_detalles_match",
 }
 
 _RUNNERS = (*_JOB_RUNNER.values(), "run_backfill_fecha")
@@ -943,8 +944,13 @@ def test_jobs_run_job_invalido(client):
 @pytest.mark.parametrize("job", ["retencion", "catalogos", "nocturno"])
 def test_jobs_run_acepta_jobs_antes_inalcanzables(client, lock_spy, job):
     """`retencion`, `catalogos` y `nocturno` solo corrían si el proceso estaba
-    despierto a su hora; ahora son disparables desde afuera (F-jobs-endpoint)."""
-    with _runners_mockeados():
+    despierto a su hora; ahora son disparables desde afuera (F-jobs-endpoint).
+
+    Reloj fijo de DÍA en Chile (16:00 UTC ≈ 12/13 h): dentro de la ventana
+    22:00–07:00 `nocturno` corría sus pasos con el lock por defecto de Postgres
+    y el test fallaba contra SQLite según la hora a la que se corriera.
+    """
+    with freeze_time("2026-06-13 16:00:00"), _runners_mockeados():
         r = client.post(f"/api/jobs/run?job={job}", headers=_JOBS_HEADERS)
     assert r.status_code == 200
     assert r.json() == {"queued": True, "job": job}
@@ -996,10 +1002,11 @@ def test_jobs_run_all_envia_el_resumen_al_final(client, lock_spy):
         "run_competencia",
         "run_alerts",
         "run_resumen",
+        "run_detalles_match",
     ]
     # un lock por paso, tomado y liberado (igual que el scheduler interno)
-    assert lock_spy.intentos == [_LOCK_KEY] * 8
-    assert lock_spy.liberados == [_LOCK_KEY] * 8
+    assert lock_spy.intentos == [_LOCK_KEY] * 9
+    assert lock_spy.liberados == [_LOCK_KEY] * 9
 
 
 @respx.mock
@@ -1039,24 +1046,31 @@ def test_jobs_run_nocturno_en_ventana_toma_un_lock_por_paso(client):
         r = client.post("/api/jobs/run?job=nocturno", headers=_JOBS_HEADERS)
 
     assert r.status_code == 200
-    assert locks == ["datos_abiertos", "lifecycle", "competencia", "backfill_ayer"]
+    assert locks == [
+        "datos_abiertos",
+        "lifecycle",
+        "competencia",
+        "backfill_ayer",
+        "detalles-match",
+    ]
     assert "nocturno" not in locks
 
 
 @respx.mock
-def test_jobs_run_ciclo_ca_corre_ca_match_alerts_en_orden(client, lock_spy):
+def test_jobs_run_ciclo_ca_corre_ca_match_alerts_detalles_en_orden(client, lock_spy):
     """`ciclo-ca` reproduce el grupo que el scheduler disparaba cada 30 min, para
-    que el cron externo pida la secuencia con una sola llamada."""
+    que el cron externo pida la secuencia con una sola llamada. detalles-match
+    va al final: bajar detalles no demora las alertas (F-detalles-match)."""
     with _runners_mockeados() as llamadas:
         r = client.post("/api/jobs/run?job=ciclo-ca", headers=_JOBS_HEADERS)
 
     assert r.status_code == 200
     assert r.json() == {"queued": True, "job": "ciclo-ca"}
-    assert llamadas == ["run_sync_ca", "run_match", "run_alerts"]
+    assert llamadas == ["run_sync_ca", "run_match", "run_alerts", "run_detalles_match"]
     # Un lock por paso, tomado y liberado: los pasos reusan las entradas ya
     # envueltas en `_locked`, no se re-envuelve el ciclo por fuera.
-    assert lock_spy.intentos == [_LOCK_KEY] * 3
-    assert lock_spy.liberados == [_LOCK_KEY] * 3
+    assert lock_spy.intentos == [_LOCK_KEY] * 4
+    assert lock_spy.liberados == [_LOCK_KEY] * 4
 
 
 @respx.mock
@@ -1076,9 +1090,9 @@ def test_jobs_run_ciclo_ca_sigue_tras_un_paso_que_falla(client, lock_spy):
     assert r.status_code == 200
     assert r.json() == {"queued": True, "job": "ciclo-ca"}
     assert ca.call_count == 1
-    assert llamadas == ["run_match", "run_alerts"]
-    assert lock_spy.intentos == [_LOCK_KEY] * 3
-    assert lock_spy.liberados == [_LOCK_KEY] * 3
+    assert llamadas == ["run_match", "run_alerts", "run_detalles_match"]
+    assert lock_spy.intentos == [_LOCK_KEY] * 4
+    assert lock_spy.liberados == [_LOCK_KEY] * 4
 
 
 @respx.mock
@@ -1114,7 +1128,10 @@ def test_jobs_compuestos_registran_cada_paso_con_su_nombre(client, job):
     assert job not in nombres
     esperado = ["ca"] if job == "ciclo-ca" else ["activas", "detalles"]
     assert nombres[: len(esperado)] == esperado
-    assert nombres[-2:] == ["match", "alerts"]
+    if job == "ciclo-ca":
+        assert nombres[-3:] == ["match", "alerts", "detalles-match"]
+    else:
+        assert nombres[-2:] == ["match", "alerts"]
 
 
 @respx.mock
@@ -1133,6 +1150,7 @@ def test_jobs_compuestos_no_alteran_all_ni_nocturno(client, lock_spy):
         "run_competencia",
         "run_alerts",
         "run_resumen",
+        "run_detalles_match",
     ]
 
 

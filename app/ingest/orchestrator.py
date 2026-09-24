@@ -10,13 +10,26 @@ Reglas críticas:
 from __future__ import annotations
 
 import json
+import time
 import traceback
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from sqlalchemy import Engine, case, literal, select, text, union_all
+from sqlalchemy import (
+    Engine,
+    String,
+    case,
+    cast,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    text,
+    union_all,
+)
 from sqlalchemy.orm import Session
 
 from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
@@ -37,7 +50,8 @@ from app.ingest.licitaciones import (
     upsert_detalle,
 )
 from app.ingest.lifecycle import refresh_estados
-from app.models.tables import CompraAgil, JobRun, Licitacion
+from app.models.enums import EstadoOportunidad
+from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch
 
 _log = get_logger(__name__)
 
@@ -146,49 +160,61 @@ _FUENTE_LIC = "licitaciones"
 _FUENTE_CA = "compras_agiles"
 
 
-def _priorizar_detalles(
-    session: Session,
-    sin_lic: list[str],
-    sin_ca: list[str],
-    tope: int,
-    ahora: datetime,
-) -> list[tuple[str, str]]:
-    """Elige hasta `tope` detalles por bajar, como pares (fuente, código).
+def _sin_detalle(col: Any, dialecto: str) -> Any:
+    """`raw_json` sin detalle: NULL de SQL o JSON `null` guardado.
 
-    Licitaciones y CA compiten por el mismo tope. Orden: primero las que cierran
-    antes (fecha_cierre futura, ascendente), luego las sin fecha_cierre y al
-    final las ya cerradas. Así una oportunidad cuyo detalle falla siempre deja
-    de bloquear la cola cuando cierra. Una sola query parametrizada.
+    [V] Hay licitaciones con JSON `null` en vez de NULL: un `raw_json = None`
+    sobre JSONB puede escribir `null`. En SQLite (tests) no hay JSONB: basta con
+    IS NULL o el texto 'null'.
     """
-    if tope <= 0 or not (sin_lic or sin_ca):
-        return []
-    partes = []
-    if sin_lic:
-        partes.append(
-            select(
-                literal(_FUENTE_LIC).label("fuente"),
-                Licitacion.codigo.label("codigo"),
-                Licitacion.fecha_cierre.label("fecha_cierre"),
-            ).where(Licitacion.codigo.in_(sin_lic))
+    if dialecto == "postgresql":
+        return or_(col.is_(None), func.jsonb_typeof(col) == "null")
+    return or_(col.is_(None), cast(col, String) == "null")
+
+
+def _cola_detalles_match(session: Session, ahora: datetime) -> list[tuple[str, str]]:
+    """Cola de `detalles-match` como pares (fuente, código), en UNA query parametrizada.
+
+    Entran licitaciones y CA con al menos una fila en oportunidades_match, sin
+    detalle, publicadas y sin cerrar (fecha_cierre nula o futura). Orden:
+    fecha_cierre ascendente —lo que cierra antes, primero— y las sin fecha al
+    final. No hay tope de cantidad: el tope es de tiempo (ver run_detalles_match).
+    """
+    dialecto = session.get_bind().dialect.name
+    publicada = EstadoOportunidad.PUBLICADA.value
+
+    def _con_match(fuente: str, codigo: Any) -> Any:
+        return exists().where(
+            OportunidadMatch.fuente == fuente,
+            OportunidadMatch.codigo_oportunidad == codigo,
         )
-    if sin_ca:
-        partes.append(
-            select(
-                literal(_FUENTE_CA).label("fuente"),
-                CompraAgil.codigo.label("codigo"),
-                CompraAgil.fecha_cierre.label("fecha_cierre"),
-            ).where(CompraAgil.codigo.in_(sin_ca))
-        )
-    sub = (partes[0] if len(partes) == 1 else union_all(*partes)).subquery()
-    grupo = case(
-        (sub.c.fecha_cierre >= ahora, 0),
-        (sub.c.fecha_cierre.is_(None), 1),
-        else_=2,
+
+    lic = select(
+        literal(_FUENTE_LIC).label("fuente"),
+        Licitacion.codigo.label("codigo"),
+        Licitacion.fecha_cierre.label("fecha_cierre"),
+    ).where(
+        _sin_detalle(Licitacion.raw_json, dialecto),
+        Licitacion.estado == publicada,
+        or_(Licitacion.fecha_cierre.is_(None), Licitacion.fecha_cierre > ahora),
+        _con_match(_FUENTE_LIC, Licitacion.codigo),
     )
-    stmt = (
-        select(sub.c.fuente, sub.c.codigo)
-        .order_by(grupo, sub.c.fecha_cierre, sub.c.fuente, sub.c.codigo)
-        .limit(tope)
+    ca = select(
+        literal(_FUENTE_CA).label("fuente"),
+        CompraAgil.codigo.label("codigo"),
+        CompraAgil.fecha_cierre.label("fecha_cierre"),
+    ).where(
+        _sin_detalle(CompraAgil.raw_json, dialecto),
+        CompraAgil.estado == publicada,
+        or_(CompraAgil.fecha_cierre.is_(None), CompraAgil.fecha_cierre > ahora),
+        _con_match(_FUENTE_CA, CompraAgil.codigo),
+    )
+    sub = union_all(lic, ca).subquery()
+    stmt = select(sub.c.fuente, sub.c.codigo).order_by(
+        case((sub.c.fecha_cierre.is_(None), 1), else_=0),
+        sub.c.fecha_cierre,
+        sub.c.fuente,
+        sub.c.codigo,
     )
     return [(fuente, codigo) for fuente, codigo in session.execute(stmt)]
 
@@ -201,16 +227,21 @@ def _bajar_detalle(
     fuente: str,
     codigo: str,
 ) -> None:
-    """Baja un detalle y lo guarda —campos, ítems/productos y raw_json— en UN commit."""
+    """Baja un detalle y lo guarda —campos, ítems/productos y raw_json— en UN commit.
+
+    Sin reintento de 5xx ni de timeout: si falla, el detalle sigue sin raw_json
+    y vuelve solo a la cola de la corrida siguiente. El enfriamiento de 60 s
+    tras un 504 o un timeout lo sigue aplicando el cliente (regla 3).
+    """
     with Session(engine) as session:
         if fuente == _FUENTE_LIC:
-            det = v1.licitacion_detalle(codigo)
+            det = v1.licitacion_detalle(codigo, reintentar_transitorios=False)
             upsert_detalle(session, det, settings)
             lic = session.get(Licitacion, codigo)
             if lic:
                 lic.raw_json = dataclass_a_json(det)
         else:
-            det_ca = v2.detalle_compra_agil(codigo)
+            det_ca = v2.detalle_compra_agil(codigo, reintentar_transitorios=False)
             upsert_ca_detalle(session, det_ca)
             ca = session.get(CompraAgil, codigo)
             if ca:
@@ -219,36 +250,67 @@ def _bajar_detalle(
 
 
 def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
-    """Ejecuta match_todos y luego fetcha detalles de matches sin raw_json.
+    """Calcula los matches de todos los perfiles. NO baja detalles.
 
-    El engine de matching NO llama clientes HTTP. Este runner toma la lista
-    sin_detalle_* del resultado y baja a lo más MATCH_MAX_DETALLES_POR_CORRIDA
-    detalles, los que cierran antes primero (ver :func:`_priorizar_detalles`).
-    Lo que no alcanza queda para la corrida siguiente: como raw_json sigue
-    NULL, el engine lo vuelve a listar.
+    Los detalles de las oportunidades con match los baja `detalles-match`
+    (:func:`run_detalles_match`), que corre DESPUÉS de `alerts`: bajar uno
+    cuesta ~78 s de media por los 504 de la API y no debe demorar las alertas.
 
-    ``detalles_pendientes`` = total sin detalle − intentados: incluye los que
-    dejó fuera el tope y, si hubo corte del canal, los que no se alcanzaron.
+    El resultado lleva CONTEOS de lo que quedó sin detalle, no las listas de
+    códigos: se guarda en job_runs y las listas lo inflaban en cada corrida.
     """
     from app.matching.engine import match_todos
 
     with Session(engine) as session:
         result = match_todos(session)
 
-    sin_lic: list[str] = result.get("sin_detalle_licitaciones", [])
-    sin_ca: list[str] = result.get("sin_detalle_ca", [])
-    total = len(sin_lic) + len(sin_ca)
+    result["sin_detalle_licitaciones"] = len(result.get("sin_detalle_licitaciones") or [])
+    result["sin_detalle_ca"] = len(result.get("sin_detalle_ca") or [])
+    return result
+
+
+def run_detalles_match(
+    settings: Settings,
+    engine: Engine,
+    reloj: Callable[[], float] = time.monotonic,
+    now_fn: Callable[..., datetime] | None = None,
+) -> dict[str, Any]:
+    """Baja el detalle de las oportunidades con match que aún no lo tienen.
+
+    Tope por TIEMPO, no por cantidad: antes de pedir cada detalle, si lo
+    transcurrido ya alcanzó el presupuesto, corta y deja el resto para la
+    corrida siguiente. Presupuesto: DETALLES_MINUTOS_NOCHE dentro de la ventana
+    22:00–07:00 de Chile (regla 5), DETALLES_MINUTOS_DIA fuera de ella. Un
+    detalle ya empezado termina: el corte real puede pasarse en lo que dure uno
+    (~30 s de request + 60 s de enfriamiento si da 504).
+
+    Un detalle que falla (504, timeout, parseo) se cuenta y se sigue con el
+    próximo: vuelve solo a la cola. Un error del CANAL (429 que no es 10500,
+    10500 con reintentos agotados, cuota, 401) corta el loop, igual que antes
+    en run_match (regla 3). Idempotente: lo guardado ya no entra en la cola.
+
+    `reloj` y `now_fn` son inyectables para tests.
+    """
+    nocturno = en_ventana_nocturna(now_fn)
+    presupuesto_min = (
+        settings.detalles_minutos_noche if nocturno else settings.detalles_minutos_dia
+    )
+    presupuesto_s = presupuesto_min * 60
+    inicio = reloj()
+
+    with Session(engine) as session:
+        cola = _cola_detalles_match(session, ahora_utc())
+
     intentados = guardados = fallidos = 0
+    result: dict[str, Any] = {}
 
-    if total:
-        with Session(engine) as session:
-            cola = _priorizar_detalles(
-                session, sin_lic, sin_ca, settings.match_max_detalles_por_corrida, ahora_utc()
-            )
+    if cola:
         v1, v2 = _make_clients(settings, engine)
-
         try:
             for fuente, codigo in cola:
+                if reloj() - inicio >= presupuesto_s:
+                    result["cortado_por_tiempo"] = True
+                    break
                 intentados += 1
                 try:
                     _bajar_detalle(settings, engine, v1, v2, fuente, codigo)
@@ -259,19 +321,23 @@ def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
                 except Exception:
                     fallidos += 1
                     _log.error(
-                        "run_match: error bajando detalle %s %s", fuente, codigo, exc_info=True
+                        "detalles-match: error bajando detalle %s %s", fuente, codigo, exc_info=True
                     )
         except _ERRORES_DE_CANAL as exc:
-            # El match ya está hecho y comiteado; lo que falta son los raw_json.
-            # Cortar el fetch y devolver el resultado del match, anotando el corte:
-            # insistir contra una API que nos rechaza solo quema cuota (regla 3).
-            _log.warning("run_match: corte del canal al traer detalles — %s", exc)
+            # Insistir contra una API que nos rechaza solo quema cuota (regla 3).
+            _log.warning("detalles-match: corte del canal — %s", exc)
             result["detalles_interrumpidos"] = True
 
-    result["detalles_intentados"] = intentados
-    result["detalles_guardados"] = guardados
-    result["detalles_fallidos"] = fallidos
-    result["detalles_pendientes"] = total - intentados
+    result.update(
+        {
+            "detalles_intentados": intentados,
+            "detalles_guardados": guardados,
+            "detalles_fallidos": fallidos,
+            "detalles_pendientes": len(cola) - intentados,
+            "minutos_usados": round((reloj() - inicio) / 60, 1),
+            "presupuesto_minutos": presupuesto_min,
+        }
+    )
     return result
 
 
@@ -445,6 +511,13 @@ def _ciclo_nocturno(
     ítems UNSPSC estén disponibles antes del próximo ciclo de match (08:00).
     competencia va DESPUÉS de lifecycle: necesita que los estados (incl. las
     adjudicadas vía refresh_estados de seguidas) estén al día (F-competencia).
+
+    detalles-match va AL FINAL con el presupuesto nocturno (DETALLES_MINUTOS_NOCHE,
+    120 min por defecto): es el paso que más dura y el único que se puede cortar
+    sin perder nada. OJO al dimensionar el timeout del workflow nocturno
+    (F-actions-2): tiene que cubrir ese presupuesto + lo que tarde el resto del
+    ciclo + ~2 min de margen porque un detalle ya empezado termina. Con el
+    default, no menos de 120 + el resto medido.
     """
     if not en_ventana_nocturna(now_fn):
         _log.warning("ciclo_nocturno: fuera de ventana horaria — abortando")
@@ -462,6 +535,12 @@ def _ciclo_nocturno(
         engine,
     )
 
+    _run_with_lock(
+        "detalles-match",
+        lambda: run_detalles_match(settings, engine, now_fn=now_fn),
+        engine,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Scheduler principal
@@ -476,12 +555,16 @@ def build_scheduler(
     """Construye el scheduler. Separado de start() para facilitar tests."""
     sched = BlockingScheduler(timezone="America/Santiago")
 
-    # Cada 30 min: CA incremental + match + alertas inmediatas
+    # Cada 30 min: CA incremental + match + alertas inmediatas + detalles de lo
+    # que matcheó (al final: no demora las alertas; paridad con ciclo-ca).
     sched.add_job(
         lambda: (
             _run_with_lock("ca_incremental", lambda: run_sync_ca(settings, engine), engine),
             _run_with_lock("match_post_ca", lambda: run_match(settings, engine), engine),
             _run_with_lock("alerts_post_ca", lambda: run_alerts(settings, engine), engine),
+            _run_with_lock(
+                "detalles-match", lambda: run_detalles_match(settings, engine), engine
+            ),
         ),
         "interval",
         minutes=30,

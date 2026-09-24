@@ -108,14 +108,15 @@ jobs:
           CA_VENTANA_HORAS: ${{ vars.CA_VENTANA_HORAS }}
           CA_MAX_REQUESTS_POR_CORRIDA: ${{ vars.CA_MAX_REQUESTS_POR_CORRIDA }}
           RATE_LIMIT_RPS: ${{ vars.RATE_LIMIT_RPS }}
-          MATCH_MAX_DETALLES_POR_CORRIDA: ${{ vars.MATCH_MAX_DETALLES_POR_CORRIDA }}
+          DETALLES_MINUTOS_DIA: ${{ vars.DETALLES_MINUTOS_DIA }}
+          DETALLES_MINUTOS_NOCHE: ${{ vars.DETALLES_MINUTOS_NOCHE }}
           JOBS: ${{ inputs.jobs }}
         # Sin -e a propósito: el default de Actions es `bash -e`, que cortaría el
         # loop en el primer job que falle (ver comentario del loop).
         shell: bash --noprofile --norc {0}
         run: |
           # Una opcional vacía NO debe llegar a pydantic como "" (rompe int/float).
-          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA RATE_LIMIT_RPS MATCH_MAX_DETALLES_POR_CORRIDA; do
+          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA RATE_LIMIT_RPS DETALLES_MINUTOS_DIA DETALLES_MINUTOS_NOCHE; do
             if [ -z "${!v}" ]; then unset "$v"; fi
           done
 

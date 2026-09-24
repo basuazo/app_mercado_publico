@@ -47,9 +47,10 @@ def test_cada_job_de_cada_workflow_existe_en_el_cli(workflow: Path) -> None:
         assert not desconocidos, f"{workflow.name}: jobs que el CLI no conoce: {desconocidos}"
 
 
-def test_ciclo_ca_corre_ca_match_alerts() -> None:
+def test_ciclo_ca_corre_ca_match_alerts_detalles_match() -> None:
+    """detalles-match va al final: `alerts` no espera a los detalles (F-detalles-match)."""
     texto = (_WORKFLOWS / "ciclo-ca.yml").read_text(encoding="utf-8")
-    assert _LINEA_JOBS.findall(texto) == ["ca match alerts"]
+    assert _LINEA_JOBS.findall(texto) == ["ca match alerts detalles-match"]
 
 
 def test_job_reutilizable_no_trae_secret_key_ni_jobs_token_de_secrets() -> None:
@@ -70,12 +71,14 @@ def test_job_reutilizable_no_aplica_migraciones() -> None:
 
 def test_opcionales_del_job_reutilizable_se_quitan_si_vienen_vacias() -> None:
     """Una opcional que no está en el loop de `unset` llega a pydantic como "" y
-    revienta el parseo de int/float. MATCH_MAX_DETALLES_POR_CORRIDA (F-raw-json)
-    es opcional, igual que las CA_*."""
+    revienta el parseo de int/float. DETALLES_MINUTOS_DIA/NOCHE (F-detalles-match)
+    son opcionales, igual que las CA_*."""
     texto = (_WORKFLOWS / "_job.yml").read_text(encoding="utf-8")
     loop = re.search(r"for v in ([A-Z_ ]+); do\s+if \[ -z \"\$\{!v\}\" \]; then unset", texto)
     assert loop, "no encontré el loop de unset de opcionales"
     opcionales = set(loop.group(1).split())
-    assert {"CA_TAMANO_PAGINA", "MATCH_MAX_DETALLES_POR_CORRIDA"} <= opcionales
+    assert {"CA_TAMANO_PAGINA", "DETALLES_MINUTOS_DIA", "DETALLES_MINUTOS_NOCHE"} <= opcionales
+    # Reemplazada por el tope de tiempo: no debe quedar colgando.
+    assert "MATCH_MAX_DETALLES_POR_CORRIDA" not in texto
     for v in opcionales:
         assert re.search(rf"^\s*{v}: \$\{{\{{ vars\.{v} \}}\}}\s*$", texto, re.MULTILINE), v
