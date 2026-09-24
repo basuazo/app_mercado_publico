@@ -58,6 +58,15 @@ class Settings(BaseSettings):
         description="Tope de requests de listado por corrida de `ca`; se revisa antes de cada ventana",
     )
 
+    # --- Detalles que baja `match` (F-raw-json) ---
+    # Presupuesto de TIEMPO, no de cuota: un detalle de CA tardó ~26 s de media
+    # en el canario (504 + enfriamiento incluidos), y sin tope `match` se comió
+    # el timeout del workflow antes de que corriera `alerts`.
+    match_max_detalles_por_corrida: int = Field(
+        default=40,
+        description="Tope de detalles (licitaciones + CA juntas) que baja cada corrida de `match`",
+    )
+
     # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---
     brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS", repr=False)
 

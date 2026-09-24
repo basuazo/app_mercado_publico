@@ -66,3 +66,16 @@ def test_job_reutilizable_no_aplica_migraciones() -> None:
     """Las migraciones las aplica Render en el deploy; Actions solo mueve datos."""
     for p in _archivos():
         assert "alembic" not in p.read_text(encoding="utf-8"), p.name
+
+
+def test_opcionales_del_job_reutilizable_se_quitan_si_vienen_vacias() -> None:
+    """Una opcional que no está en el loop de `unset` llega a pydantic como "" y
+    revienta el parseo de int/float. MATCH_MAX_DETALLES_POR_CORRIDA (F-raw-json)
+    es opcional, igual que las CA_*."""
+    texto = (_WORKFLOWS / "_job.yml").read_text(encoding="utf-8")
+    loop = re.search(r"for v in ([A-Z_ ]+); do\s+if \[ -z \"\$\{!v\}\" \]; then unset", texto)
+    assert loop, "no encontré el loop de unset de opcionales"
+    opcionales = set(loop.group(1).split())
+    assert {"CA_TAMANO_PAGINA", "MATCH_MAX_DETALLES_POR_CORRIDA"} <= opcionales
+    for v in opcionales:
+        assert re.search(rf"^\s*{v}: \$\{{\{{ vars\.{v} \}}\}}\s*$", texto, re.MULTILINE), v

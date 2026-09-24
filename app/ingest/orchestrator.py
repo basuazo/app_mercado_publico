@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, case, literal, select, text, union_all
 from sqlalchemy.orm import Session
 
 from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
@@ -24,6 +24,7 @@ from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
 from app.core.retencion import purgar_terminales
+from app.core.serializacion import dataclass_a_json
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.ingest.catalogos import refresh_organismos
@@ -141,14 +142,94 @@ def run_retencion(engine: Engine) -> dict[str, int]:
         return resultado
 
 
+_FUENTE_LIC = "licitaciones"
+_FUENTE_CA = "compras_agiles"
+
+
+def _priorizar_detalles(
+    session: Session,
+    sin_lic: list[str],
+    sin_ca: list[str],
+    tope: int,
+    ahora: datetime,
+) -> list[tuple[str, str]]:
+    """Elige hasta `tope` detalles por bajar, como pares (fuente, código).
+
+    Licitaciones y CA compiten por el mismo tope. Orden: primero las que cierran
+    antes (fecha_cierre futura, ascendente), luego las sin fecha_cierre y al
+    final las ya cerradas. Así una oportunidad cuyo detalle falla siempre deja
+    de bloquear la cola cuando cierra. Una sola query parametrizada.
+    """
+    if tope <= 0 or not (sin_lic or sin_ca):
+        return []
+    partes = []
+    if sin_lic:
+        partes.append(
+            select(
+                literal(_FUENTE_LIC).label("fuente"),
+                Licitacion.codigo.label("codigo"),
+                Licitacion.fecha_cierre.label("fecha_cierre"),
+            ).where(Licitacion.codigo.in_(sin_lic))
+        )
+    if sin_ca:
+        partes.append(
+            select(
+                literal(_FUENTE_CA).label("fuente"),
+                CompraAgil.codigo.label("codigo"),
+                CompraAgil.fecha_cierre.label("fecha_cierre"),
+            ).where(CompraAgil.codigo.in_(sin_ca))
+        )
+    sub = (partes[0] if len(partes) == 1 else union_all(*partes)).subquery()
+    grupo = case(
+        (sub.c.fecha_cierre >= ahora, 0),
+        (sub.c.fecha_cierre.is_(None), 1),
+        else_=2,
+    )
+    stmt = (
+        select(sub.c.fuente, sub.c.codigo)
+        .order_by(grupo, sub.c.fecha_cierre, sub.c.fuente, sub.c.codigo)
+        .limit(tope)
+    )
+    return [(fuente, codigo) for fuente, codigo in session.execute(stmt)]
+
+
+def _bajar_detalle(
+    settings: Settings,
+    engine: Engine,
+    v1: MercadoPublicoV1Client,
+    v2: MercadoPublicoV2Client,
+    fuente: str,
+    codigo: str,
+) -> None:
+    """Baja un detalle y lo guarda —campos, ítems/productos y raw_json— en UN commit."""
+    with Session(engine) as session:
+        if fuente == _FUENTE_LIC:
+            det = v1.licitacion_detalle(codigo)
+            upsert_detalle(session, det, settings)
+            lic = session.get(Licitacion, codigo)
+            if lic:
+                lic.raw_json = dataclass_a_json(det)
+        else:
+            det_ca = v2.detalle_compra_agil(codigo)
+            upsert_ca_detalle(session, det_ca)
+            ca = session.get(CompraAgil, codigo)
+            if ca:
+                ca.raw_json = dataclass_a_json(det_ca)
+        session.commit()
+
+
 def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
     """Ejecuta match_todos y luego fetcha detalles de matches sin raw_json.
 
     El engine de matching NO llama clientes HTTP. Este runner toma la lista
-    sin_detalle_* del resultado y fetcha los detalles respetando el presupuesto.
-    """
-    from dataclasses import asdict
+    sin_detalle_* del resultado y baja a lo más MATCH_MAX_DETALLES_POR_CORRIDA
+    detalles, los que cierran antes primero (ver :func:`_priorizar_detalles`).
+    Lo que no alcanza queda para la corrida siguiente: como raw_json sigue
+    NULL, el engine lo vuelve a listar.
 
+    ``detalles_pendientes`` = total sin detalle − intentados: incluye los que
+    dejó fuera el tope y, si hubo corte del canal, los que no se alcanzaron.
+    """
     from app.matching.engine import match_todos
 
     with Session(engine) as session:
@@ -156,40 +237,30 @@ def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
 
     sin_lic: list[str] = result.get("sin_detalle_licitaciones", [])
     sin_ca: list[str] = result.get("sin_detalle_ca", [])
+    total = len(sin_lic) + len(sin_ca)
+    intentados = guardados = fallidos = 0
 
-    if sin_lic or sin_ca:
+    if total:
+        with Session(engine) as session:
+            cola = _priorizar_detalles(
+                session, sin_lic, sin_ca, settings.match_max_detalles_por_corrida, ahora_utc()
+            )
         v1, v2 = _make_clients(settings, engine)
 
         try:
-            for codigo in sin_lic:
+            for fuente, codigo in cola:
+                intentados += 1
                 try:
-                    with Session(engine) as session:
-                        det = v1.licitacion_detalle(codigo)
-                        upsert_detalle(session, det, settings)
-                        lic = session.get(Licitacion, codigo)
-                        if lic:
-                            lic.raw_json = asdict(det)
-                        session.commit()
+                    _bajar_detalle(settings, engine, v1, v2, fuente, codigo)
+                    guardados += 1
                 except _ERRORES_DE_CANAL:
+                    fallidos += 1
                     raise
                 except Exception:
+                    fallidos += 1
                     _log.error(
-                        "run_match: error fetching detalle licitacion %s", codigo, exc_info=True
+                        "run_match: error bajando detalle %s %s", fuente, codigo, exc_info=True
                     )
-
-            for codigo in sin_ca:
-                try:
-                    with Session(engine) as session:
-                        det_ca = v2.detalle_compra_agil(codigo)
-                        upsert_ca_detalle(session, det_ca)
-                        ca = session.get(CompraAgil, codigo)
-                        if ca:
-                            ca.raw_json = asdict(det_ca)
-                        session.commit()
-                except _ERRORES_DE_CANAL:
-                    raise
-                except Exception:
-                    _log.error("run_match: error fetching detalle CA %s", codigo, exc_info=True)
         except _ERRORES_DE_CANAL as exc:
             # El match ya está hecho y comiteado; lo que falta son los raw_json.
             # Cortar el fetch y devolver el resultado del match, anotando el corte:
@@ -197,6 +268,10 @@ def run_match(settings: Settings, engine: Engine) -> dict[str, Any]:
             _log.warning("run_match: corte del canal al traer detalles — %s", exc)
             result["detalles_interrumpidos"] = True
 
+    result["detalles_intentados"] = intentados
+    result["detalles_guardados"] = guardados
+    result["detalles_fallidos"] = fallidos
+    result["detalles_pendientes"] = total - intentados
     return result
 
 
