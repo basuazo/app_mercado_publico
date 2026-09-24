@@ -57,8 +57,8 @@ puede ser la única red.
      cron-job.org que dio 200 OK con `Server: cloudflare`; (b) [I] sin confirmar: que sea
      limitación por IP del pool compartido de cron-job.org; (c) el modelo pasó a
      Actions-driven con el CLI contra Neon directo; (d) el riesgo nuevo de los 60 días.
-   - `docs/03-roadmap.md`: `F-actions` cerrada. `F-cuota` (los tres bugs del 429 interno) y
-     `F-secretos` siguen abiertas y ahora son las siguientes.
+   - `docs/03-roadmap.md`: `F-actions` cerrada. `F-cuota`, `F-429-concurrencia` y `F-ca-ventana`
+     cerradas; `F-secretos` sigue abierta.
    - `docs/operacion.md` y `docs/despliegue.md`: el runbook cambia de raíz. Cómo disparar un
      job a mano (Actions → Run workflow, y el POST como alternativa), dónde viven los secrets
      y las variables, la trampa del branch dev/production de Neon, y qué mirar cuando algo no
@@ -92,20 +92,15 @@ para alertar ante código ≠ 200, con timeout de 30–60 s y reintentos (el pro
 primera request puede caer en un arranque en frío). Otras IPs, otro borde: hay buena chance
 de que pase donde cron-job.org rebota.
 
-**3. Borrar `_to_delete/_mp_snapshot.tar.gz`.** Sigue pendiente de la sesión del 20-sep, no
-está en `.gitignore` y contiene un `.env` con secretos de producción. En un repo **público**
-esto es lo más grave que queda abierto.
+**3. [23-sep] Ya hecho:** `_to_delete/` está vacío y `JOBS_TOKEN` se rotó el 22-sep. Si
+pausaste los crons en F-actions-2, aquí solo confirmas que siguen pausados.
 
-**4. Rotar `JOBS_TOKEN`.** Ya no bloquea nada —Actions no lo usa— pero sigue comprometido
-desde que se pegó en un chat. Ahora es más barato: con los crons pausados, basta cambiarlo en
-Render y en tu `.env`, sin sincronizar seis headers.
+## Lo que queda abierto después de esto  [23-sep]
 
-## Lo que queda abierto después de esto
-
-- **`F-cuota`** — los tres bugs encadenados del 429 interno: `licitaciones.py:246` atrapa
-  `except Exception` y sigue el loop en vez de cortar ante `MPRateLimitError`;
-  `_quota.consume()` solo corre tras un éxito, así que los 429 no se cuentan y `/api/salud`
-  informa de menos; y el 429 nunca lee `Retry-After`. Con los jobs corriendo desatendidos en
-  Actions esto pasa a ser más urgente que antes, no menos.
+- Deuda de observabilidad: `run_match` registra `ok` aunque corte los detalles por un 429.
+- Backlog de F-ca-ventana: `fecha_publicacion` NULL en CA (verificar), `organismo_*` con el texto
+  'None', arranque en frío con páginas de 50, columna "Requests hoy" de `compra_agil` siempre en 0,
+  espera de 2 s ante el 500 "Servicio no disponible" (debería enfriar como el 504), estado de
+  licitación 15 sin mapear.
 - **`F-secretos`** — rotar los 7 secretos (`docs/prompt-F-secretos.md`).
-- **Limpieza de argentinismos** en UI, docs y código.
+- Limpieza de argentinismos en UI, docs y código (estos prompts tienen voseo).

@@ -1,6 +1,17 @@
 # Prompt F-actions-1 — workflow reutilizable + canario `ciclo-ca`
 
 > Copiar íntegro en una **conversación nueva** de Claude Code, en la raíz del repo.
+> **ACTUALIZADO 23-sep-2026 — leer antes que lo de abajo.** El motivo de la fase cambió:
+> - [V] Cloudflare **ya no bloquea** a cron-job.org (desde el 23-sep sus POST llegan con 200), así
+>   que la ingesta hoy sí se dispara sola. Pero ese camino es frágil por otra razón [V]: Render
+>   duerme el proceso **15 min después de la última request entrante** aunque haya un job en
+>   background, y una corrida de `ca` en hora pico dura 20–60 min. Sin alguien haciendo ping, las
+>   corridas mueren a medias. GitHub Actions corre el CLI contra Neon directo: no depende de que
+>   Render esté despierto.
+> - F-cuota, F-429-concurrencia y F-ca-ventana ya están desplegadas (`26d6f30`, `b0ff832`,
+>   `3b6b9b9`). `ca` ahora recorre ventanas y tiene tope de requests por corrida.
+> - Los cambios respecto de la versión anterior de este prompt están marcados con **[23-sep]**.
+>
 > Origen: el 21-sep-2026 **todos** los crons de cron-job.org empezaron a recibir `429` de
 > Cloudflare (el borde de Render), incluido el `GET /api/salud/jobs` público. Verificado: la
 > app responde 200 a cualquier otro origen y el código no devuelve `429` en ninguna ruta —
@@ -50,7 +61,8 @@ CONTEXTO QUE YA ESTÁ RESUELTO (verificar, no rehacer)
      - `jobs` (string, requerido): jobs del CLI a ejecutar EN ORDEN, separados por espacio.
      - `guard_hora_chile` (string, opcional, default ''): si viene, el workflow no hace nada
        salvo que la hora local de Chile sea ésa (formato "08", con cero a la izquierda).
-     - `timeout_min` (number, opcional, default 30).
+     - `timeout_min` (number, opcional, default 60). **[23-sep]** Subido de 30: con F-ca-ventana
+       una corrida de `ca` en hora pico dura 20–60 min y `detalles` puede tardar más con 10500.
    `permissions: contents: read`. Un solo job `run`, `runs-on: ubuntu-latest`,
    `timeout-minutes: ${{ inputs.timeout_min }}`.
 
@@ -64,7 +76,10 @@ CONTEXTO QUE YA ESTÁ RESUELTO (verificar, no rehacer)
       año.
    b) **Verificar configuración.** Step que falla con un mensaje claro si falta cualquiera de
       estos, ANTES de instalar nada: secrets DATABASE_URL, MP_TICKET, BREVO_API_KEY,
-      SMTP_FROM; variables APP_BASE_URL, DIGEST_HOUR, TASA_UF, TASA_UTM, TASA_USD, TASA_EUR.
+      SMTP_FROM; variable APP_BASE_URL.
+      **[23-sep]** TASA_UF, TASA_UTM, TASA_USD, TASA_EUR y DIGEST_HOUR NO son obligatorias: tienen
+      default en settings.py y Render hoy NO las define (usa los defaults). Pásalas desde `vars`
+      solo si están definidas; si no, no las exportes. No las valides como requeridas.
       Comprobá que no estén vacíos, sin imprimir jamás su valor (solo el nombre del que
       falta). Motivo: una variable ausente llega a pydantic como cadena vacía y revienta el
       parseo de int/float con un traceback opaco; preferimos el fallo temprano y legible.
@@ -83,10 +98,21 @@ CONTEXTO QUE YA ESTÁ RESUELTO (verificar, no rehacer)
       ingestados. El patrón correcto: acumular los códigos de salida, seguir el loop, y al
       final `exit 1` si alguno falló. Así hay paridad con el endpoint Y el workflow igual
       queda en rojo.
+      **[23-sep]** Entre un job y el siguiente, `sleep 60`. Cada job es un proceso nuevo y el
+      enfriamiento tras un 504 (F-429-concurrencia) vive en memoria: sin esta pausa, `match`
+      arranca justo después de un `ca` cortado por 504 y choca con el 429/10500.
 
    `env` de ese step:
      DATABASE_URL, MP_TICKET, BREVO_API_KEY, SMTP_FROM  → desde `secrets`
      APP_BASE_URL, DIGEST_HOUR, TASA_UF, TASA_UTM, TASA_USD, TASA_EUR → desde `vars`
+     **[23-sep]** Además, desde `vars` y OPCIONALES (si faltan, rige el default del código):
+       CA_TAMANO_PAGINA, CA_VENTANA_HORAS, CA_MAX_REQUESTS_POR_CORRIDA, RATE_LIMIT_RPS.
+       Hoy Render corre con CA_TAMANO_PAGINA=10 y CA_VENTANA_HORAS=1; los defaults del código
+       son 20 y 2. Si Actions corre con valores distintos a Render, la ingesta se comporta
+       distinto según quién la dispare. Una variable opcional vacía NO debe llegar a pydantic
+       como cadena vacía: si no está definida, no la exportes.
+       Antes de cerrar este punto, compara TODOS los campos de app/core/settings.py con lo que
+       recibe el step y lista en el commit cualquier campo sin default que falte.
      SECRET_KEY y JOBS_TOKEN → **generados efímeros en el propio step**
        (p. ej. `export SECRET_KEY=$(openssl rand -hex 32)`), con un comentario explicando por
        qué: `Settings` los declara obligatorios, pero el camino del CLI no firma cookies ni
@@ -131,6 +157,7 @@ CONTEXTO QUE YA ESTÁ RESUELTO (verificar, no rehacer)
          secrets: inherit
          with:
            jobs: "ca match alerts"
+           timeout_min: 90
    `concurrency: { group: mp-jobs, cancel-in-progress: false }` a nivel de workflow — el
    advisory lock es una llave global y dos workflows simultáneos harían que uno se omita en
    silencio.
@@ -178,10 +205,12 @@ CONTEXTO QUE YA ESTÁ RESUELTO (verificar, no rehacer)
 > Si lo copias tal cual, los jobs van a escribir en dev, la app no va a mostrar nada nuevo y
 > vas a estar media hora buscando un bug que no existe. En Actions va el de **production**.
 
-**2. Cargar las variables** (misma pantalla, pestaña *Variables* — no son secretos):
-`APP_BASE_URL` = `https://app-mercado-publico.onrender.com`, `DIGEST_HOUR` = `8`,
-`TASA_UF`, `TASA_UTM`, `TASA_USD`, `TASA_EUR` con **los mismos valores que tiene Render hoy**.
-Si difieren, el scoring y los montos van a dar distinto según quién corrió el job.
+**2. Cargar las variables** (misma pantalla, pestaña *Variables* — no son secretos) **[23-sep]**:
+`APP_BASE_URL` = `https://app-mercado-publico.onrender.com`. Las tasas (`TASA_*`) y `DIGEST_HOUR`
+**no se cargan**: Render no las define y ambos usan el default del código, así que Actions queda
+igual. Si algún día se definen en Render, hay que definirlas también aquí con el mismo valor.
+**[23-sep]** Agrega también `CA_TAMANO_PAGINA` = `10` y `CA_VENTANA_HORAS` = `1`, los mismos que
+tiene Render hoy. Revisa en Render si hay otras variables de ingesta definidas y cópialas igual.
 
 **3. Disparar el canario a mano** (Actions → `ciclo-ca` → Run workflow) y verificar tres cosas:
 
@@ -193,6 +222,6 @@ Si el paso 3 falla por conexión, el sospechoso número uno es el `connect_args=
 "require"}` de `_make_engine`: ese camino del CLI nunca corrió contra Neon desde fuera de tu
 máquina. Es lo único de esta fase que no se puede verificar sin ejecutarlo.
 
-**Mientras tanto:** la ingesta sigue detenida. Para desatascarla a mano, un `POST` a
-`https://app-mercado-publico.onrender.com/api/jobs/run?job=ciclo-ca` con el header
-`X-Jobs-Token` desde tu máquina funciona — el 429 solo alcanza al scheduler de cron-job.org.
+**Mientras tanto [23-sep]:** cron-job.org sigue disparando los jobs contra Render. Funciona, pero
+una corrida larga muere si nadie hace ping. No lances el canario mientras haya una corrida de
+Render en curso (mira el advisory lock en `/salud`): quedaría `omitido`.

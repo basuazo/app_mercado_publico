@@ -5,7 +5,99 @@
 
 ---
 
-## Actualización 22-sep-2026 (F-ca-ventana) · lo más reciente
+## CÓMO RETOMAR (24-sep-2026, noche) · LEER PRIMERO
+
+**Estado.** La ingesta pasó de Render + cron-job.org a **GitHub Actions ejecutando el CLI contra
+Neon production**. En `main` (commits con push hasta `71e4a89`; `21a9ec0` listo para push):
+F-actions-1 `4e83a3a` → F-raw-json `1faf78d` → F-detalles-match `15b9b0b` → F-ca-ventana-volumen
+`71e4a89` → **F-actions-2 `21a9ec0`** (horarios: `ca` cada hora; `ciclo-match`, `ciclo-activas`,
+`nocturno`, `resumen`, `retencion`, `catalogos`; el CLI espera el lock). Canario 6 = primer ciclo
+completo en verde [V]. cron-job.org: crons de ingesta PAUSADOS, monitor de `/api/salud/jobs` activo.
+Detalle de cada fase y de cada canario en las entradas de abajo (24-sep).
+
+**Hallazgos del 23–24 sep que cambian decisiones [V]:**
+- La API v2 entrega ~42 CA/min; en punta hay ~2000 cambios/h. `ca` necesita correr cada hora.
+- El listado v2 NO trae descripción ni productos: el detalle por CA es inevitable (sonda `claves-ca`).
+- 1 de cada 3 pedidos de detalle da 504 en horas malas. Por eso `detalles-match` va aparte, con tope
+  por tiempo (20 min día / 120 noche) y sin reintento.
+- Solo 1012 de ~79 000 CA tienen productos: el match de CA por rubro solo ve CA que ya calzaron por
+  otra vía.
+- Render apaga el proceso 15 min después de la última request entrante, aunque haya un job
+  corriendo. Por eso la ingesta salió de Render.
+
+**Siguiente (Boris):**
+1. `git push` de `21a9ec0` y confirmar en Actions que aparecen los 8 workflows.
+2. Observar un día: `ca` cada hora con `atraso_horas` bajando, nada "cancelled", resumen entre
+   08:30 y 08:50, `/api/salud/jobs` fresco, cuota lejos de 9.000. Logs de fallos → `data/logs/`.
+3. Commitear `docs/` con `git add docs/` (nunca `git add -A`: `_to_delete/` tiene un `.env`).
+4. Con un día limpio → **F-actions-3** (prompt `docs/prompt-F-actions-3-cutover.md`, hay que
+   revisarlo con lo aprendido): borrar los crons de ingesta de cron-job.org, apagar el endpoint y
+   el scheduler de Render, dejar el monitor externo (cubre el riesgo de 60 días sin actividad).
+   Rollback si algo falla antes: Disable workflow en Actions + reactivar los crons de cron-job.org.
+
+**Pendientes (backlog consolidado 24-sep):**
+- *Operación / infraestructura:* F-actions-3; rotar JOBS_TOKEN (o retirarlo si se apaga el
+  endpoint); `_job.yml` exige `DIGEST_HOUR` y `TASA_*` (hoy cargadas en GitHub con los defaults del
+  código; dejarlas opcionales); `_run_with_lock` no graba fila `cancelado` y el CLI no convierte
+  SIGTERM en `SystemExit`; tope de requests en `detalles-match` si la cuota aprieta; `nocturno` y
+  `backfill_ayer` sin duración medida; ajustar el solapamiento de 5 min si las ventanas de 15 min
+  no alcanzan.
+- *Datos / parseo:* la retención escribe JSON `null` en `raw_json` en vez de NULL (599 lic); el
+  detalle v1 de licitaciones no lee fechas (inofensivo hoy); campos del detalle CA sin usar
+  (`presupuesto.moneda`, `fecha_cierre_segundo_llamado`, `proveedores_cotizando`); confirmar que
+  `fecha_publicacion` de CA ya se llena en las filas nuevas; "Requests hoy" de `compra_agil` en 0;
+  el 500 "Servicio no disponible" espera solo 2 s; estado de licitación 15 sin mapear.
+- *Producto:* match de CA por rubro (decidir a qué CA sin match bajarles detalle de noche y con qué
+  presupuesto); auditar F-feed-ui-2 (`d2758bb`); **F-ficha-modal** (reemplaza "ficha con pestañas"), F-estados-vencidos y F-organismo-lic (ver 24-sep UX); `/perfiles` vs `/cuenta`;
+  argentinismos en código y UI; F-secretos.
+- *Higiene:* `ruff format --check` marca 48 archivos (heredado); los 20 tests skipped leen
+  `DATABASE_URL` del entorno y no del `.env`.
+- Resuelto y fuera del backlog: "run_match registra ok aunque corte por un 429" (match ya no llama a
+  la API); `organismo_*` con el texto 'None' (F-detalles-match).
+
+---
+
+## Actualización 24-sep-2026 (UX: ficha en modal) · revisión en vivo
+
+- **Revisión en vivo del sitio** (Chrome con sesión de Boris; feed, filtros, ficha CA y ficha
+  licitación). `/perfiles`, seguidas, Plan Anual y móvil **quedan pendientes**.
+- **[V] Filtros:** Atrás del navegador conserva filtros y scroll; lo que los perdía eran "Volver" y
+  la miga "Dashboard" de la ficha (`href="/"`). **F-ficha-volver hecho, SIN commit**:
+  `_url_volver_feed` en `pages.py` toma el Referer solo si es `/` del mismo host; 4 tests nuevos en
+  `test_ficha_routes.py`; entrada en changelog. ruff/mypy OK; pytest 1007 OK (los 2 errores son
+  tests contra Postgres de dev, ajenos). Commit sugerido:
+  `git add app/api/routes/pages.py app/api/templates/oportunidad.html app/changelog.py tests/test_ficha_routes.py`
+  → "F-ficha-volver: Volver desde la ficha conserva los filtros del feed".
+- **Decisión:** la ficha se abre en modal sobre el feed; la URL agrega `ficha=` para que Atrás cierre
+  el modal y el enlace sea compartible; la página `/oportunidad/...` se mantiene (correos).
+  Diseño: artifact Design "Ficha en modal — MP Oportunidades". Brief: `docs/prompt-D-ficha-modal.md`
+  (plantilla reutilizable, reemplaza el flujo genérico Cowork→Design). Implementación:
+  `docs/prompt-F-ficha-modal.md` (correr en Claude Code, auditar acá).
+- **[V] Bug de datos:** 1417913-96-L126 sale "Abierta" con "Cerró el 22/07". `refresh_estados` solo
+  re-consulta cierres en −7/+3 días y `sync_activas` no cierra lo que sale del listado. Cuántas hay:
+  [I] sin contar (Neon no alcanzable desde Cowork). → fase **F-estados-vencidos**.
+- **[V] Bug de datos:** licitaciones sin organismo: `_parse_licitacion_detalle` lee `CodigoOrganismo`
+  en el primer nivel; en el detalle v1 viene bajo `Comprador` (doc 10 §2.a). Además la ficha mostraría
+  el código, no el nombre. → fase **F-organismo-lic** (confirmar campos de `Comprador` con
+  `scripts/smoke_test.py`).
+
+- **Decisión (24-sep, Boris): dashboard solo vigente + "Mi registro".** Vigente = por fecha de cierre
+  antes que por estado. Guardar unifica "Me sirve" + "Activar alertas" (= `OportunidadSeguida`; "Me
+  sirve" no alimenta el score [V]). Guardadas vigentes siguen en el dashboard con chip. Vencidas no
+  guardadas con match ≥30 visibles 14 días en el registro y luego se ocultan (no se borran). Piso 30 <
+  piso del feed 40: intencional. [V] La retención de 90 días hoy NO protege seguidas → F-guardar lo
+  corrige. Fuente $0 para estados: ZIP `lic-da` (trae `CodigoEstado`).
+- **Secuencia en Claude Code (un prompt por sesión, auditar acá entre cada una):**
+  0. commit F-ficha-volver + `git add docs/`
+  1. `docs/prompt-F-estados-vencidos.md`
+  2. `docs/prompt-F-vigencia.md`
+  3. `docs/prompt-F-guardar.md` (migración de datos)
+  4. `docs/prompt-F-registro.md`
+  5. `docs/prompt-F-ficha-modal.md` (ajustado a Guardar y Mi registro; el lienzo aún muestra los dos
+     botones viejos)
+  Independiente, sin prompt todavía: F-organismo-lic.
+
+## Actualización 22-sep-2026 (F-ca-ventana) · histórico
 
 - **F-ca-ventana implementada y commiteada, falta el deploy.** El prompt ya corrió: no volver a
   correrlo. Resultado de la sonda y diseño revisado al final de `docs/prompt-F-ca-ventana.md`.
@@ -20,60 +112,203 @@
 - Menor, sin arreglar: `_parse_ca_basica` guarda la cadena `'None'` en `organismo_nombre` y
   `organismo_rut` cuando falta `institucion` (usa `str(...)` antes del `or None`).
 
-## CÓMO RETOMAR (22-sep-2026, cierre)
+## CÓMO RETOMAR (23-sep-2026, noche) · histórico, ver 24-sep arriba
 
-**Siguiente paso: correr `docs/prompt-F-ca-ventana.md`** en una conversación nueva de Claude
-Code, con el Opus más reciente. Tiene dos paradas:
-1. Claude Code agrega `cambio_hasta` al cliente y el modo `ventana-ca` a `scripts/smoke_test.py`,
-   y se detiene.
-2. Boris corre la sonda contra producción, sin ningún job corriendo (~5 min, 5–10 requests), y
-   pega la salida. Si la ventana de 47 h da 504 y las acotadas dan 200, se implementa; si no,
-   Claude Code se detiene.
-Después se audita el diff en conversación, con el checklist que trae el mismo prompt.
+**Siguiente paso: F-actions-1** (`docs/prompt-F-actions-1-canary.md`, ajustado el 23-sep). Se corre
+en una conversación nueva de Claude Code con el Opus más reciente, se audita acá, y siguen
+F-actions-2 y F-actions-3. Antes de disparar el canario hay que cargar secrets y variables en
+GitHub (paso operativo del mismo prompt; ojo: `DATABASE_URL` = el de PRODUCCIÓN).
 
-**Por qué es lo primero [V]:** la ingesta de Compra Ágil está DETENIDA. El cursor está en
-`2026-09-20T21:05` y todo `ca` desde el 21-sep 00:29 UTC muere con 504 en la página 1. **No
-disparar `ciclo-ca` hasta desplegar F-ca-ventana**; `ciclo-activas` sí se puede correr.
+### F-actions-1 hecha (`4e83a3a`, sin push) · 23-sep noche
+- Secrets y variables cargados en GitHub por Boris. **[V] Desvío del prompt:** `_job.yml` exige
+  `DIGEST_HOUR` y `TASA_*` como obligatorias (el prompt 23-sep las pedía opcionales). Parche
+  operativo: Boris las cargó como variables en GitHub. Deben ser iguales a los defaults de
+  `settings.py` (8 / 37000 / 65000 / 950 / 1030); si cambia un default, cambiarlas también.
+  Arreglo de fondo (dejarlas opcionales como `CA_*`) → backlog.
+- **Canario corrido 23-sep 23:08–00:38 UTC [V, log en `data/logs/canario.txt`, gitignored]:**
+  - Actions ↔ Neon production funciona (sin problema de `sslmode`). Ningún secreto en el log.
+  - `ca` OK en 33 min: 979 nuevas, 1007 actualizadas, 199 requests, atraso 2,87 h, 0 ventanas partidas.
+  - `match` hizo el matching en 1 min (4 perfiles, 169 nuevos, 504 actualizados) y luego se quedó
+    bajando detalles de CA hasta que el timeout de 90 min **canceló el workflow**. `alerts` no corrió.
+  - **Bug [V] ("desde F1" corregido por el Paso 0, ver abajo):** `run_match` asigna `raw_json = asdict(det)` con `datetime` adentro → el
+    commit revienta (`datetime is not JSON serializable`) y se pierde TODO el detalle (descripción,
+    productos, id_orden_compra). 118 de 127 detalles fallaron así; el resto por 504. Como `raw_json`
+    nunca queda, cada `match` vuelve a bajar los mismos detalles sin tope: gasta cuota y tiempo (~26 s
+    por detalle con 504 y enfriamientos). Licitaciones: mismo código en línea 171 [I, no visto en log].
+    Nadie lee el contenido de `raw_json` (solo `is None`), así que guardarlo con fechas ISO es seguro.
+  - [V, código] `job_runs` graba la fila solo al terminar: una corrida cancelada desde fuera no
+    deja fila (no queda nada "corriendo"). Falta ver si el dead-man's switch lo detecta.
+- **F-raw-json hecha (`1faf78d`, sin push), auditada acá: OK.** Helper en `app/core/serializacion.py`,
+  tope `MATCH_MAX_DETALLES_POR_CORRIDA`=40 con `_priorizar_detalles`, test contra Postgres de dev
+  pasó (no skipped). Script en `data/paso0_raw_json.py` (gitignored).
+  **Paso 0 [V, prod 24-sep]:** lic con match 2200 con raw_json / 0 sin; CA con match 1012 con / 286
+  sin (las 286 sin descripción ni productos). Pendientes vigentes: 0 lic, 235 CA (≈6 corridas con
+  tope 40). Las 286 = exactamente los matches CA nuevos del 23-sep. **Corrige "bug desde F1":** el
+  detalle SÍ se guardaba; se rompió hace poco. [I] Hipótesis: antes de F-ca-ventana `parse_fecha_iso`
+  no entendía las fechas v2 → None → `asdict` serializable; con `parse_fecha_v2` salen `datetime`
+  reales y revienta. **Confirmado [V, 2ª consulta]:** en TODOS los raw_json guardados (2239 lic,
+  1012 CA) `fecha_cierre` es null. Las lic guardaban porque el detalle v1 nunca trae fechas:
+  `_parse_licitacion_detalle` hereda de la básica, que lee `FechaCierre` en el primer nivel [V,
+  código]; en el detalle vendrían bajo otra clave, p. ej. `Fechas` [I, no verificado en la API].
+  Inofensivo hoy: `upsert_basica` no pisa fechas con None y la columna viene del listado (21 de
+  9722 lic publicadas sin fecha_cierre). 599 lic tienen raw_json = JSON `null` (no SQL NULL) [V];
+  [I] vienen de la purga de retención (`values(raw_json=None)` en columna JSONB). Python lo lee
+  igual como None; solo afecta consultas SQL con `IS NULL`.
+  Matches nuevos/día (17–23 sep): 3–290, con ráfagas por atraso → 280/día alcanza.
+  **Rubro CA [V]:** solo 1012 de 79 092 CA tienen productos, las mismas que tienen detalle.
+  Hallazgos para backlog [V, código]: el dead-man's switch (`/api/salud/jobs`) NO vigila `match` ni
+  `alerts` → un `match` cancelado en cada corrida pasa inadvertido; una corrida cancelada no graba
+  fila (`KeyboardInterrupt`/SIGTERM no son `Exception`). Propuesta: vigilar `match` y `alerts` (30 h),
+  grabar `cancelado` con `BaseException`, SIGTERM→`SystemExit` en el CLI. Test que depende de la hora:
+  `test_jobs_run_acepta_jobs_antes_inalcanzables[nocturno]` falla entre 22:00–07:00 Chile. Los 20
+  skipped leen `os.environ["DATABASE_URL"]`, no el `.env`.
+- **Canario 3 (24-sep 11:32–13:02 UTC, commit `1faf78d`) [V, `data/logs/canario3/`]:** 0 errores de
+  serialización; `ca` OK en 40 min (200 nuevas, 155 req, atraso 0,21 h); matching 2 min (12 nuevos);
+  39 detalles intentados, 27 guardados, 11 fallidos (todos 504 doble). **Cancelado otra vez por el
+  timeout de 90 min**, `alerts` no corrió. Causa: ~78 s por detalle (1 de cada 3 da 504 y cada 504
+  cuesta ~3 min con reintento y dos enfriamientos de 60 s). 40 detalles ≈ 52 min + `ca` ≈ 40 min > 90.
+  Propuesta: tope por TIEMPO (p. ej. 20 min) en vez de cantidad + no reintentar 504 en detalles
+  (vuelven solos la corrida siguiente). Canario 2 no cuenta: corrió `4e83a3a` (disparado antes del push).
+- **Sonda claves-ca (24-sep, `scripts/smoke_test.py claves-ca`, sin commitear) [V, fuente primaria]:**
+  el LISTADO v2 (estado=publicada, 10 ítems) NO trae `descripcion` ni `productos_solicitados`; solo
+  `convocatoria.descripcion` (largo 14, etiqueta del llamado). El detalle es inevitable para
+  descripción y productos → sigue la opción B (separar `detalles` de `match`, tope por tiempo, sin
+  reintento de 504). Claves del detalle: `descripcion`, `productos_solicitados[]` (`codigo_producto`
+  int, `nombre`, `descripcion`, `cantidad`, `unidad_medida`), `id_orden_compra` en primer nivel,
+  `convocatoria.estado_convocatoria`, `presupuesto`, `entrega`, `proveedores_cotizando`.
+  **Bugs de parseo [V, 1 muestra vs código]:** `_parse_ca_detalle` lee `orden_compra.id_orden_compra`
+  (no existe; está en primer nivel) y `estado_convocatoria` en primer nivel (está en `convocatoria`)
+  → ambos quedan siempre None. La `descripcion` de cada producto (373 chars en la muestra) se
+  descarta: `CompraAgilItem` no la tiene y `ca_productos.descripcion` se guarda vacía.
+- **F-detalles-match hecha (`15b9b0b`, sin push), auditada acá: OK.** Job `detalles-match` (cola en 1
+  query, tope 20/120 min, `reintentar_transitorios=False` también para 500/502/503), `ciclo-ca` =
+  `ca match alerts detalles-match`, último paso del nocturno, `match`/`alerts` vigilados, parseo real
+  del detalle CA con respaldo y sin pisar datos del listado. Decisión aceptada: la descripción de
+  producto también suma al score (`hit_producto`), por coherencia recall/score (F9c). Por medir en el
+  canario: tiempo del matching con el FTS ampliado (si crece, índice GIN por expresión = migración).
+  Campos del detalle aún sin usar: `presupuesto.moneda`, `fecha_cierre_segundo_llamado`,
+  `proveedores_cotizando`.
+- **Canario 4 (24-sep 17:18–18:28 UTC, `15b9b0b`) [V, `data/logs/canario4/`]:** workflow completo en
+  71 min, sin cancelación. `match` OK en 1,5 min (el FTS con descripción de producto no lo encareció),
+  `alerts` OK, `detalles-match` OK: 30 intentados, 20 guardados, 10 fallidos (504), corte a los 20,1
+  min, 175 pendientes. **`ca` terminó en ERROR a los 46 min** → workflow rojo. Causa: ventanas de 1 h
+  en hora punta traen ~900 cambios (93 y 82 páginas de 10; ~15 s por página, plano, no crece con la
+  página). La 1ª ventana cerró (23 min, cursor guardado); la 2ª dio 504 doble en la pág. 82 y se
+  perdieron ~22 min de avance (el cursor solo avanza al cerrar la ventana). El tope de 150 requests
+  se revisa solo antes de abrir ventana, así que no la acota.
+  Propuesta: partir la ventana según `total_paginas` de la pág. 1 (p. ej. >20 páginas → mitad, mínimo
+  10 min), y que `ca` termine OK-parcial (no ERROR) si cerró al menos una ventana antes de un 5xx.
+  **Siguiente: `docs/prompt-F-ca-ventana-volumen.md`**, luego canario 5 y F-actions-2.
+- **F-ca-ventana-volumen hecha (`71e4a89`, en main), auditada acá: OK.** `CA_MAX_PAGINAS_POR_VENTANA`=20,
+  ancho que se mantiene/duplica dentro de la corrida, cierre parcial con `cortado_por_error`
+  (`sync_state.ultimo_ok` = último avance del cursor). [V, código] el dead-man's switch mira
+  `job_runs.estado='ok'`, así que el OK parcial cuenta como vivo. Costo conocido: con ventanas de
+  15 min el solapamiento de 5 min gasta 1/3 de cada ventana; con 150 req/corrida `ca` avanza ~1 h
+  por corrida en hora punta (se pone al día fuera de punta y de noche).
+  **Canario 5 (24-sep 19:04 UTC) no probó nada [V]:** los 4 jobs salieron `omitido` por advisory
+  lock ocupado. **[V, log de Render]** Lo tenía la corrida de cron-job.org → Render (POST ciclo-ca
+  19:00:11 UTC). Esa corrida ya con código nuevo: ventana de 15 min (12:50→13:05 UTC) con 33 páginas,
+  ya en el mínimo; tres 504; Render hizo "Shutting down" a las 19:15:10, 15 min después de la última
+  request entrante → murió a medias. Cursor de CA sigue en ~12:50 UTC desde el canario 4. En hora
+  punta hay ~1300 cambios/h (33 págs/15 min) vs capacidad de la API ~40 ítems/min: `ca` debe correr
+  >50 % del tiempo en punta; con `ciclo-ca` cada 2 h y 150 req/corrida (~40 min) se atrasa en el día,
+  y de noche no corre `ca`. Insumo para F-actions-2: `ca` más frecuente (p. ej. horario propio cada
+  hora) y/o `ca` de noche.
+  Lección: disparar el canario justo DESPUÉS de que termine una corrida de Render (horas impares
+  Chile), o pausar el cron de `ciclo-ca` en cron-job.org mientras se prueba.
+- **Canario 6 (24-sep 19:38–20:24 UTC, `71e4a89`, crons de Render pausados) [V]: PRIMER CICLO EN VERDE.**
+  46 min total. `ca` OK parcial en 23 min (ventana 1 h → 117 págs → partida a 15 min; ventanas de
+  32, 52 y 21 págs ya en el mínimo; 504 doble en la 3ª → `cortado_por_error`, cursor 12:50→13:15 UTC,
+  923 CA tocadas, 96 req, atraso 6,75 h). `match` OK 23 s, `alerts` OK, `detalles-match` OK
+  (19 intentados, 6 guardados, 13 fallidos por 504/500, 157 pendientes).
+  **Hallazgo [V]:** en la mañana (10:00–10:15 Chile) hubo 512 cambios en 15 min (~2000/h); la API da
+  ~42 ítems/min. `ca` apenas supera el ritmo de punta y hoy corre ~25–40 min cada 2 h y nada de
+  noche → no alcanza. Ventanas en el mínimo de 15 min con 50+ páginas (~13 min) siguen expuestas a
+  perder avance ante un 504. Para F-actions-2: `ca` en workflow propio cada hora (y de noche),
+  separado de `match alerts detalles-match`.
+- **Siguiente: `docs/prompt-F-actions-2-horarios.md` (reescrito 24-sep).** Antes, Boris corre
+  `data/paso0_duraciones.py` y pega la salida. Esquema: `ca` en workflow propio cada hora (24 h);
+  `ciclo-match` (match alerts detalles-match) c/2 h de día; `ciclo-activas`, `nocturno`, `resumen`
+  (con guardia DST), `retencion`, `catalogos`; un grupo de concurrencia por workflow y el CLI
+  ESPERA el lock (`--esperar-lock-min`) en vez de omitir. `ciclo-ca.yml` queda manual para canarios.
+  Versión anterior del prompt guardada fuera del repo (no se necesita).
+- **F-actions-2 hecha (`21a9ec0`, sin push), auditada acá: OK.** `_adquirir_lock` reintenta
+  `pg_try_advisory_lock` cada 30 s sin retener conexión mientras espera; `--esperar-lock-min`;
+  un grupo de concurrencia por workflow. Horario (UTC): `ca` :05 cada hora (90/25), `ciclo-match`
+  :50 impares 11–23 (75/25), `ciclo-activas` 13:15/17:15/22:15 (150/30), `nocturno` 04:10 (210/30),
+  `retencion` 08:40, `catalogos` lun 09:35, `resumen` 11:30+12:30 con guardia "08" (60/45),
+  `ciclo-ca` manual. Paso 0 [V, 7 días]: `ca` prom 39 / máx 80 min (previo a ventana-volumen),
+  `ciclo-activas` ~60 min, `detalles` hasta 44. Cuota estimada 5.500–6.000/día de 9.000. Sin medir:
+  `nocturno` y `backfill_ayer` (no corrieron en 7 días). Pendiente si la cuota aprieta: tope de
+  requests en `detalles-match`.
+  **Siguiente:** push, observar un día (atraso de `ca` bajando, resumen 08:30–08:50, nada cancelado
+  por GitHub, cuota), luego F-actions-3.
+- (histórico) **Siguiente era: `docs/prompt-F-detalles-match.md`** (job `detalles-match` separado de `match`,
+  tope por tiempo 20 min día / 120 noche, sin reintento de 504, parseo real del detalle de CA,
+  vigilar `match` y `alerts`). Bug extra [V, código + claves reales]: el detalle no trae `montos`
+  → `upsert_ca_detalle` pisa `monto_disponible_clp` con None en toda CA con detalle.
+- (histórico) Siguiente era: correr `docs/prompt-F-raw-json.md` (serialización, test contra Postgres, tope
+  `MATCH_MAX_DETALLES_POR_CORRIDA`=40), re-disparar el canario, y recién ahí F-actions-2.
 
-### Estado del árbol
-- `main` = `origin/main`, con F-429-concurrencia pusheada (`b0ff832` código, `81a66b4` docs).
-  Confirmar en Render que el deploy terminó antes de correr la sonda.
-- `docs/prompt-F-ca-ventana.md` quedó en stage (`A`), sin commitear: lo commitea Claude Code en
-  el `docs:` de esa fase.
+### Estado de la ingesta [V, 23-sep 22:45 UTC]
+- F-ca-ventana desplegada y funcionando. El cursor de `compra_agil` pasó de 20-sep 21:05 a
+  23-sep 17:10 UTC en ~1 día de corridas; quedaban ~5 h de atraso y bajando.
+- Variables en Render: `CA_TAMANO_PAGINA=10` (con 20 daba 504 en hora pico) y `CA_VENTANA_HORAS=1`
+  (ventanas cortas = el cursor avanza aunque la corrida muera). `RATE_LIMIT_RPS` sigue en 1.
+- cron-job.org volvió a pasar Cloudflare [V] y ya dispara `ciclo-ca` y `ciclo-activas` con el
+  token nuevo. Boris actualizó algunos crons; falta confirmar el token en los 6.
+- **Riesgo vigente [V]:** Render mata el job 15 min después de la última request entrante. Una
+  corrida de `ca` en hora pico dura 20–60 min. Mientras no exista F-actions, las corridas largas
+  necesitan un ping manual (script de 4 min en PowerShell) o mueren a medias. Con ventanas de 1 h
+  lo ya cerrado queda guardado.
 
-### Cerrado en esta sesión
-- F-cuota (`26d6f30`): auditada y aprobada.
-- F-429-concurrencia (`b0ff832`): auditada y aprobada. El 10500 se reintenta a los 30/60/120 s;
-  tras un 504 o un timeout, pausa de 60 s en un limiter compartido por v1 y v2 dentro del
-  proceso; `check_budget` y `acquire` corren en cada intento; regla 3 de `Claude.md` reescrita.
-  De paso se corrigió que el reintento tras un timeout no esperaba nada.
-- Boris corrió `activas` en producción y rotó `JOBS_TOKEN`. `_to_delete/` está vacío.
-- CORREGIDO: el handoff anterior decía que cada job tenía su propio lock. Es falso: hay uno
-  solo (`_LOCK_KEY`), y el Paso 0 confirmó que funciona.
+### Decisión de automatización (23-sep)
+Se compararon cuatro caminos y se sigue con **GitHub Actions ejecutando el CLI contra Neon**:
+- cron-job.org → Render: gratis y hoy funciona, pero depende de que Render esté despierto y de
+  que Cloudflare no lo vuelva a bloquear. Queda como escotilla hasta F-actions-2.
+- Render Cron Job o instancia pagada sin sueño: lo más simple y robusto, pero sale del objetivo
+  de costo $0 (precio no verificado; ver docs/12-free-vs-pago.md si se reconsidera).
+- Programador de tareas de Windows: depende del PC encendido. Descartado.
+- **GitHub Actions:** no depende de Render, minutos gratis (repo público), corre hasta 6 h por
+  job, correo automático si falla. Riesgos: GitHub deshabilita los workflows programados tras
+  60 días sin actividad (se cubre con monitor externo, F-actions-3) y los horarios pueden
+  atrasarse unos minutos.
 
-### Hipótesis vigente [I]
-Un 504 de la v2 ("Endpoint request timed out") es un corte del gateway a ~30 s mientras el
-backend sigue con la consulta; lo que mandamos en ese intervalo con el mismo ticket sale
-como 429/10500. La respalda que 3 de los 4 `match` cortados arrancaron justo después de un
-`ca` con 504. No la explica el id 50, un 429 sin 504 previo. Desde `b0ff832` el log guarda
-`codigo=` en cada 429: el próximo lo aclara.
+### Ajustes hechos hoy a los prompts de F-actions
+- F-actions-1: timeouts 60/90, `sleep 60` entre jobs (el enfriamiento no cruza procesos),
+  variables `CA_*`/`RATE_LIMIT_RPS` iguales a Render, contexto nuevo.
+- F-actions-2: `ciclo-activas` con 120 min; pausar cron-job.org el mismo día del merge (si un
+  disparo de Render tiene el lock, el de Actions queda omitido).
+- F-actions-3: pendientes ya resueltos marcados; backlog actualizado.
 
-### Cola, en orden
-1. **F-ca-ventana** (arriba).
-2. **F-actions 1→3** (`docs/prompt-F-actions-*.md`). Agregar a F-actions-2: el enfriamiento
-   vive en la memoria del proceso, así que dos workflows seguidos no lo heredan. Separar los
-   horarios de los workflows que usan la API.
-3. Deuda de observabilidad: `run_match` registra `ok` aunque corte los detalles por un 429
-   (`detalles_interrumpidos`). `job_runs` y `/api/salud/jobs` no lo ven.
-4. Auditar F-feed-ui-2 (`d2758bb`).
-5. Producto: ficha con pestañas, separar `/perfiles` de `/cuenta`, widget de organismos,
-   argentinismos, `app.admin crear-usuario`, recalibrar `feed_min_score_default`.
-6. `F-secretos` (rotar los 7 secretos) y monitor externo sobre `/api/salud/jobs` (con GET).
+### Hallazgos del 22–23 sep que cambian decisiones [V]
+- La API v2 entrega **todas** sus fechas en hora de Chile; la `Z` es falsa. Se lee con
+  `parse_fecha_v2` (regla 6 de `Claude.md`).
+- El 504 depende de ítems por página (~0,5 s por ítem; el gateway corta a ~30 s), no del
+  tamaño de la ventana. La API tiene un tope de 10.000 resultados por consulta.
+- Hay un solo advisory lock para todos los jobs: lanzar uno mientras otro corre lo deja
+  `omitido` sin aviso.
+- Los avisos "posible salto" en ventanas pasadas son inofensivos: el ítem que cambia vuelve a
+  aparecer en una ventana posterior.
+- 429/10500 volvió a aparecer el 23-sep con `detalles` (v1) sin 504 previo; con `ca` solo (v2)
+  no apareció. Causa sin cerrar [I]; se recupera solo con los reintentos.
 
-### Método
-El asistente redacta el prompt de la fase en `docs/`, Boris lo corre en Claude Code (**todo
-cambio de código va por prompt**) y se audita el diff en conversación. Mientras no exista
-F-actions, la ingesta se dispara a mano con `scripts/ingesta_manual.ps1 -Ciclo manana|tarde|noche`.
+### Backlog (después de F-actions)
+- **[V, código] Huevo y gallina en el match de CA por rubro:** `_candidatos_ca` incluye por rubro
+  vía `ca_productos`, que solo se llena con el detalle, y el detalle solo se baja para CA con match.
+  Una CA que calza solo por rubro nunca matchea; por keyword solo se ve el título hasta el detalle.
+  [V, Paso 0] Solo 1012 de 79 092 CA tienen productos (las que ya tenían match). Fase aparte tras F-raw-json: decidir a qué CA bajar detalle sin match (p. ej. regiones de
+  los perfiles) y su costo de cuota.
+- **Capacidad de detalles:** con tope 40 × 7 corridas de `ciclo-ca` ≈ 280/día. Si
+  `detalles_pendientes` no baja entre corridas, agregar en F-actions-2 un job nocturno (22–07) que
+  vacíe la cola con tope alto. Los matches y alertas no dependen del detalle [V].
+- `run_match` registra `ok` aunque corte por un 429.
+- `fecha_publicacion` NULL en todas las CA: verificar si ya se llena con las filas nuevas.
+- `organismo_*` guarda el texto 'None'; arranque en frío con páginas de 50; "Requests hoy" de
+  `compra_agil` en 0; el 500 "Servicio no disponible" espera solo 2 s; estado de licitación 15
+  sin mapear.
+- Auditar F-feed-ui-2 (`d2758bb`); ficha con pestañas; `/perfiles` vs `/cuenta`; argentinismos;
+  F-secretos.
 
 ### Resultado del Paso 0 de F-429-concurrencia (22-sep-2026, `job_runs` de producción)
 
@@ -180,7 +415,7 @@ con **GET**, porque `HEAD /` devuelve 405 y varios monitores usan HEAD por defec
 
 ---
 
-## Última sesión — 22-sep-2026 · LEER ESTO PRIMERO
+## Última sesión — 22-sep-2026 · histórico
 
 **Qué fue esta sesión:** auditoría UX/accesibilidad de la interfaz y rediseño del feed, ejecutado
 en seis fases, más dos hallazgos de datos que aparecieron en el camino y resultaron más graves que
