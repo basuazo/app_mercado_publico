@@ -7,7 +7,7 @@ import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request
@@ -617,6 +617,24 @@ async def descartadas_get(
 # ---------------------------------------------------------------------------
 
 
+def _url_volver_feed(request: Request) -> str:
+    """URL del feed desde la que se abrió la ficha, con sus filtros intactos.
+
+    La ficha no conoce el estado del feed: lo toma del Referer, pero solo si
+    apunta a la raíz de ESTE mismo host (evita open-redirect y no inventa
+    filtros). Cualquier otro caso vuelve al feed limpio, como antes.
+    """
+    ref = request.headers.get("referer", "")
+    if not ref:
+        return "/"
+    partes = urlsplit(ref)
+    if partes.netloc and partes.netloc != request.url.netloc:
+        return "/"
+    if partes.path != "/":
+        return "/"
+    return "/?" + partes.query if partes.query else "/"
+
+
 @router.get("/oportunidad/{fuente}/{codigo}", response_class=HTMLResponse)
 async def oportunidad_detalle(
     request: Request,
@@ -706,6 +724,7 @@ async def oportunidad_detalle(
             feedback_item=feedback_item,
             competencia_resumen=competencia_resumen,
             competencia_detalle=competencia_detalle,
+            url_volver=_url_volver_feed(request),
         ),
     )
 

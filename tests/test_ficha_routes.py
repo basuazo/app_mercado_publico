@@ -277,3 +277,40 @@ def test_dashboard_descartar_via_htmx_sigue_vacio_sin_origen(client, usuario, se
     )
     assert r.status_code == 200
     assert r.text == ""
+
+
+# ---------------------------------------------------------------------------
+# Volver al feed conserva los filtros (F-ficha-volver)
+# ---------------------------------------------------------------------------
+
+
+def test_ficha_volver_conserva_filtros_del_feed(client, usuario, settings, engine):
+    _crear_match_lic_con_items(engine, usuario)
+    ref = "http://testserver/?cierre_desde=2026-09-24&cierre_hasta=2026-10-01&fuente=licitaciones"
+    r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario), headers={"Referer": ref})
+    assert r.status_code == 200
+    esperado = 'href="/?cierre_desde=2026-09-24&amp;cierre_hasta=2026-10-01&amp;fuente=licitaciones"'
+    assert r.text.count(esperado) == 2  # migas "Dashboard" + botón "Volver"
+
+
+def test_ficha_volver_sin_referer_va_al_feed_limpio(client, usuario, settings, engine):
+    _crear_match_lic_con_items(engine, usuario)
+    r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
+    assert r.status_code == 200
+    assert '>Volver</a>' in r.text
+    assert 'href="/" class="btn btn-outline-secondary ms-2">Volver' in r.text
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "https://evil.example/?fuente=licitaciones",  # otro host: no se sigue
+        "http://testserver/perfiles?x=1",  # otra página propia: no es el feed
+    ],
+)
+def test_ficha_volver_ignora_referer_ajeno(client, usuario, settings, engine, ref):
+    _crear_match_lic_con_items(engine, usuario)
+    r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario), headers={"Referer": ref})
+    assert r.status_code == 200
+    assert "evil.example" not in r.text
+    assert 'href="/" class="btn btn-outline-secondary ms-2">Volver' in r.text

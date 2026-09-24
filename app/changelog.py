@@ -16,6 +16,15 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 24),
+        titulo="Volver desde una ficha ya no borra los filtros",
+        descripcion=(
+            "Al abrir una oportunidad desde la lista y apretar Volver, o el enlace "
+            "Dashboard, se regresaba a la lista sin filtros. Ahora se vuelve a la "
+            "misma búsqueda que se tenía puesta."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 24),
         titulo="Las Compras Ágiles se revisan cada hora, también de noche",
         descripcion=(
             "Las descargas de Mercado Público ahora corren solas desde fuera del "

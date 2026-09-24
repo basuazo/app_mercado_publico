@@ -4,7 +4,7 @@
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="/">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_volver }}">Dashboard</a></li>
     <li class="breadcrumb-item active">Detalle</li>
   </ol>
 </nav>
@@ -186,7 +186,7 @@
     Proceso {{ oportunidad.estado }}: la ficha oficial solo está disponible para la unidad compradora.
   </span>
   {% endif %}
-  <a href="/" class="btn btn-outline-secondary ms-2">Volver</a>
+  <a href="{{ url_volver }}" class="btn btn-outline-secondary ms-2">Volver</a>
 
   <span class="d-inline-block ms-2">
     {% if seguimiento and not seguimiento.archivada %}
