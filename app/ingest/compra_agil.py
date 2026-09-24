@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.clients.base import MPRateLimitError
+from app.clients.base import MPRateLimitError, MPServerError
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.clients.types import CompraAgilBasica, CompraAgilDetalle, RespuestaListadoV2
 from app.core.db_retry import commit_con_retry
@@ -38,6 +38,7 @@ _MARGEN_PRESENTE = timedelta(minutes=10)
 # deja pasar de ahí; una ventana que llega al tope no se puede recorrer entera.
 _TOPE_RESULTADOS = 10_000
 # Una ventana que llega al tope se parte a la mitad, pero nunca por debajo de esto.
+# Rige también para la partición por volumen (ca_max_paginas_por_ventana).
 _VENTANA_MINIMA = timedelta(minutes=10)
 
 
@@ -277,7 +278,9 @@ def sync_incremental(
       ``ca_ventana_horas`` (ver :func:`_sync_en_ventanas`).
 
     Ante cualquier error el cursor queda en la última ventana completa, se
-    registra el intento en sync_state y se re-lanza.
+    registra el intento en sync_state y se re-lanza. Única excepción: un error
+    transitorio (5xx o timeout) con al menos una ventana ya cerrada en la
+    corrida termina OK con ``cortado_por_error`` (ver :func:`_sync_en_ventanas`).
     """
     cursor = _leer_cursor(session)
     try:
@@ -341,16 +344,28 @@ def _sync_en_ventanas(
     Siempre se manda cambio_hasta. Se paginan TODAS las páginas de la ventana y,
     al completarla, el cursor pasa a `hasta` y se commitea. La corrida termina OK
     al alcanzar el presente o, antes de abrir una ventana, al llegar al tope de
-    requests; lo que falte lo recorre la corrida siguiente.
+    requests; lo que falte lo recorre la corrida siguiente. El tope no corta una
+    ventana ya abierta: el cursor no puede avanzar sin cerrarla.
+
+    Partición por volumen (F-ca-ventana-volumen): si la página 1 informa más de
+    ``ca_max_paginas_por_ventana`` páginas, la ventana se parte a la mitad ANTES
+    de paginarla, hasta quedar bajo el umbral o en ``_VENTANA_MINIMA``; en el
+    mínimo se pagina igual (tope blando). El ancho reducido sigue para la
+    ventana siguiente de la misma corrida y se duplica, hasta
+    ``ca_ventana_horas``, cuando una ventana trae menos de la mitad del umbral.
+    Cada corrida parte de nuevo en ``ca_ventana_horas``.
 
     `requests_usadas` cuenta las llamadas de listado de esta corrida; los
     reintentos internos del cliente (504, 429/10500) no se ven desde acá.
     """
     estados = _filtros_listado(cursor)
-    ancho = timedelta(hours=settings.ca_ventana_horas)
+    ancho_max = timedelta(hours=settings.ca_ventana_horas)
+    ancho = ancho_max
+    max_paginas = settings.ca_max_paginas_por_ventana
     tamano = settings.ca_tamano_pagina
     totales = _Totales()
-    ventanas = partidas = requests = 0
+    ventanas = partidas = partidas_volumen = requests = 0
+    cortado_por_error: str | None = None
 
     def listar(desde: datetime, hasta: datetime, pagina: int) -> RespuestaListadoV2:
         nonlocal requests
@@ -363,42 +378,59 @@ def _sync_en_ventanas(
             numero_pagina=pagina,
         )
 
-    while True:
-        desde = cursor - _SOLAPAMIENTO
-        hasta = min(desde + ancho, ahora_utc() - _MARGEN_PRESENTE)
-        # `hasta <= cursor`, no `hasta <= desde`: por el solapamiento, al llegar al
-        # presente desde queda 5 min antes que hasta y la corrida volvería a pedir
-        # la misma ventana sin avanzar hasta agotar el tope de requests.
-        if hasta <= cursor:
-            break
-        if requests >= settings.ca_max_requests_por_corrida:
-            _log.info(
-                "sync_incremental CA: tope de %d requests por corrida alcanzado; "
-                "el resto lo recorre la corrida siguiente",
-                settings.ca_max_requests_por_corrida,
-            )
-            break
+    def abrir(desde: datetime, hasta: datetime) -> tuple[datetime, RespuestaListadoV2, bool]:
+        """Pide la página 1 y parte la ventana mientras haga falta.
 
-        # Página 1; si la ventana llega al tope de resultados, se parte a la mitad.
+        Devuelve (hasta final, página 1, si se partió por volumen).
+        """
+        nonlocal partidas, partidas_volumen
         resp = listar(desde, hasta, 1)
-        while resp.paginacion.total_resultados >= _TOPE_RESULTADOS:
+        por_volumen = False
+        while True:
+            en_tope = resp.paginacion.total_resultados >= _TOPE_RESULTADOS
+            if not en_tope and resp.paginacion.total_paginas <= max_paginas:
+                break
             mitad = (hasta - desde) / 2
             if mitad < _VENTANA_MINIMA:
-                raise CompraAgilIngestaError(
-                    f"CA: la ventana {desde.isoformat()} → {hasta.isoformat()} sigue en el "
-                    f"tope de {_TOPE_RESULTADOS} resultados y no se puede partir por debajo "
-                    f"de {_VENTANA_MINIMA}; cursor sin avanzar"
+                if en_tope:
+                    raise CompraAgilIngestaError(
+                        f"CA: la ventana {desde.isoformat()} → {hasta.isoformat()} sigue en "
+                        f"el tope de {_TOPE_RESULTADOS} resultados y no se puede partir por "
+                        f"debajo de {_VENTANA_MINIMA}; cursor sin avanzar"
+                    )
+                # Tope blando: no puede frenar la ingesta. Se pagina igual.
+                _log.warning(
+                    "CA: ventana %s → %s trae %d páginas (umbral %d) y ya está en el ancho "
+                    "mínimo; se pagina igual",
+                    desde.isoformat(),
+                    hasta.isoformat(),
+                    resp.paginacion.total_paginas,
+                    max_paginas,
                 )
-            _log.warning(
-                "CA: ventana %s → %s en el tope de %d resultados; se parte a la mitad",
-                desde.isoformat(),
-                hasta.isoformat(),
-                _TOPE_RESULTADOS,
-            )
+                break
+            if en_tope:
+                _log.warning(
+                    "CA: ventana %s → %s en el tope de %d resultados; se parte a la mitad",
+                    desde.isoformat(),
+                    hasta.isoformat(),
+                    _TOPE_RESULTADOS,
+                )
+                partidas += 1
+            else:
+                _log.info(
+                    "CA: ventana %s → %s trae %d páginas (umbral %d); se parte a la mitad",
+                    desde.isoformat(),
+                    hasta.isoformat(),
+                    resp.paginacion.total_paginas,
+                    max_paginas,
+                )
+                partidas_volumen += 1
+                por_volumen = True
             hasta = desde + mitad
-            partidas += 1
             resp = listar(desde, hasta, 1)
+        return hasta, resp, por_volumen
 
+    def paginar(desde: datetime, hasta: datetime, resp: RespuestaListadoV2) -> None:
         total_informado = resp.paginacion.total_resultados
         codigos: set[str] = set()
         pagina = 1
@@ -424,12 +456,64 @@ def _sync_en_ventanas(
                 total_informado,
             )
 
+    while True:
+        desde = cursor - _SOLAPAMIENTO
+        hasta = min(desde + ancho, ahora_utc() - _MARGEN_PRESENTE)
+        # `hasta <= cursor`, no `hasta <= desde`: por el solapamiento, al llegar al
+        # presente desde queda 5 min antes que hasta y la corrida volvería a pedir
+        # la misma ventana sin avanzar hasta agotar el tope de requests.
+        if hasta <= cursor:
+            break
+        if requests >= settings.ca_max_requests_por_corrida:
+            _log.info(
+                "sync_incremental CA: tope de %d requests por corrida alcanzado; "
+                "el resto lo recorre la corrida siguiente",
+                settings.ca_max_requests_por_corrida,
+            )
+            break
+
+        try:
+            hasta, resp, por_volumen = abrir(desde, hasta)
+            paginas_informadas = resp.paginacion.total_paginas
+            paginar(desde, hasta, resp)
+        except MPServerError as exc:
+            # Cierre parcial. MPServerError cubre 5xx y timeout: el cliente ya agotó
+            # sus reintentos y convierte el timeout de red en MPServerError(0).
+            # Si la corrida ya cerró ventanas, hizo trabajo útil y lo guardó: `ca`
+            # termina OK. Si no cerró ninguna, un "OK" escondería una caída y se
+            # re-lanza. El dead-man's switch de /api/salud/jobs mira el último OK
+            # de `ca`, así que una corrida parcial con avance cuenta como viva, y
+            # `atraso_horas` muestra si se va quedando atrás. Los 429, el tope de
+            # 10 000, los commits fallidos y el resto de excepciones no pasan por acá.
+            if ventanas == 0:
+                raise
+            cortado_por_error = type(exc).__name__
+            _log.warning(
+                "sync_incremental CA: %s en la ventana %s tras cerrar %d ventana(s); "
+                "corrida terminada con avance parcial, cursor en %s",
+                cortado_por_error,
+                desde.isoformat(),
+                ventanas,
+                cursor.isoformat(),
+            )
+            break
+
+        # Ancho para la ventana siguiente: el partido por volumen se mantiene; con
+        # poco volumen se duplica, sin pasar del configurado.
+        if por_volumen:
+            ancho = hasta - desde
+        elif paginas_informadas * 2 < max_paginas:
+            ancho = min(ancho * 2, ancho_max)
+
         cursor = hasta
         _guardar_cursor(session, cursor, ok=True)
         session.commit()
         ventanas += 1
 
-    _registrar_intento(session, ok=True)
+    # En un cierre parcial, ultimo_ok de sync_state queda en el cierre de la última
+    # ventana (lo puso _guardar_cursor) y solo se actualiza ultima_ejecucion: la
+    # diferencia entre ambos deja ver el corte en /salud.
+    _registrar_intento(session, ok=cortado_por_error is None)
     return {
         **totales.como_dict(),
         "ventanas_completadas": ventanas,
@@ -437,6 +521,9 @@ def _sync_en_ventanas(
         "cursor_final": cursor.isoformat(),
         "atraso_horas": round((ahora_utc() - cursor).total_seconds() / 3600, 2),
         "ventanas_partidas": partidas,
+        "ventanas_partidas_volumen": partidas_volumen,
+        "ancho_final_min": round(ancho.total_seconds() / 60, 1),
+        "cortado_por_error": cortado_por_error,
     }
 
 

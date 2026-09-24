@@ -107,6 +107,7 @@ jobs:
           CA_TAMANO_PAGINA: ${{ vars.CA_TAMANO_PAGINA }}
           CA_VENTANA_HORAS: ${{ vars.CA_VENTANA_HORAS }}
           CA_MAX_REQUESTS_POR_CORRIDA: ${{ vars.CA_MAX_REQUESTS_POR_CORRIDA }}
+          CA_MAX_PAGINAS_POR_VENTANA: ${{ vars.CA_MAX_PAGINAS_POR_VENTANA }}
           RATE_LIMIT_RPS: ${{ vars.RATE_LIMIT_RPS }}
           DETALLES_MINUTOS_DIA: ${{ vars.DETALLES_MINUTOS_DIA }}
           DETALLES_MINUTOS_NOCHE: ${{ vars.DETALLES_MINUTOS_NOCHE }}
@@ -116,7 +117,7 @@ jobs:
         shell: bash --noprofile --norc {0}
         run: |
           # Una opcional vacía NO debe llegar a pydantic como "" (rompe int/float).
-          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA RATE_LIMIT_RPS DETALLES_MINUTOS_DIA DETALLES_MINUTOS_NOCHE; do
+          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA CA_MAX_PAGINAS_POR_VENTANA RATE_LIMIT_RPS DETALLES_MINUTOS_DIA DETALLES_MINUTOS_NOCHE; do
             if [ -z "${!v}" ]; then unset "$v"; fi
           done
 

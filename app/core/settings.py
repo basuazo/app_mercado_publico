@@ -57,6 +57,12 @@ class Settings(BaseSettings):
         default=150,
         description="Tope de requests de listado por corrida de `ca`; se revisa antes de cada ventana",
     )
+    # Canario 4 (24-sep-2026): en hora punta 1 h trae ~90 páginas de 10 y cada página
+    # tarda ~15 s. Con 20, una ventana dura ~5 min y un 504 pierde poco avance.
+    ca_max_paginas_por_ventana: int = Field(
+        default=20,
+        description="Páginas máximas por ventana de `ca`; sobre eso se parte antes de paginar",
+    )
 
     # --- Detalles de oportunidades con match: job `detalles-match` (F-detalles-match) ---
     # Presupuesto de TIEMPO, no de cantidad: en el canario 3 un detalle costó ~78 s

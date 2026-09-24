@@ -77,7 +77,12 @@ def test_opcionales_del_job_reutilizable_se_quitan_si_vienen_vacias() -> None:
     loop = re.search(r"for v in ([A-Z_ ]+); do\s+if \[ -z \"\$\{!v\}\" \]; then unset", texto)
     assert loop, "no encontré el loop de unset de opcionales"
     opcionales = set(loop.group(1).split())
-    assert {"CA_TAMANO_PAGINA", "DETALLES_MINUTOS_DIA", "DETALLES_MINUTOS_NOCHE"} <= opcionales
+    assert {
+        "CA_TAMANO_PAGINA",
+        "CA_MAX_PAGINAS_POR_VENTANA",
+        "DETALLES_MINUTOS_DIA",
+        "DETALLES_MINUTOS_NOCHE",
+    } <= opcionales
     # Reemplazada por el tope de tiempo: no debe quedar colgando.
     assert "MATCH_MAX_DETALLES_POR_CORRIDA" not in texto
     for v in opcionales:
