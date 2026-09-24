@@ -1048,6 +1048,7 @@ def test_jobs_run_nocturno_en_ventana_toma_un_lock_por_paso(client):
     assert r.status_code == 200
     assert locks == [
         "datos_abiertos",
+        "estados-vencidos",
         "lifecycle",
         "competencia",
         "backfill_ayer",

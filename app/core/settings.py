@@ -76,6 +76,15 @@ class Settings(BaseSettings):
         description="Minutos máximos por corrida de `detalles-match` en la ventana 22:00–07:00 Chile",
     )
 
+    # --- Estados vencidos (F-estados-vencidos) ---
+    estados_vencidos_max_requests: int = Field(
+        default=150,
+        description=(
+            "Tope de detalles por API, por noche, para licitaciones con match que "
+            "cerraron hace más de 7 días y datos abiertos no cubre"
+        ),
+    )
+
     # --- Brevo REST API (preferido en producción; Render bloquea TCP/SMTP) ---
     brevo_api_key: str = Field(default="", description="API key de Brevo para envío de correos vía HTTPS", repr=False)
 

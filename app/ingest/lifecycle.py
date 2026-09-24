@@ -1,8 +1,9 @@
-"""Lifecycle: refresca estados de oportunidades próximas a cierre."""
+"""Lifecycle: refresca estados de oportunidades próximas a cierre y de las ya vencidas."""
 
 from __future__ import annotations
 
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
@@ -12,11 +13,18 @@ from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
 from app.core.settings import Settings
-from app.core.tiempo import ahora_utc
+from app.core.tiempo import ahora_utc, en_ventana_nocturna
 from app.ingest.compra_agil import upsert_ca_detalle
+from app.ingest.datos_abiertos import CacheZipsDA, sync_estados_datos_abiertos
 from app.ingest.licitaciones import upsert_detalle
 from app.models.enums import ESTADOS_TERMINALES, EstadoOportunidad
-from app.models.tables import CompraAgil, Licitacion, OportunidadSeguida
+from app.models.tables import (
+    CompraAgil,
+    Licitacion,
+    OportunidadMatch,
+    OportunidadSeguida,
+    SyncState,
+)
 
 _log = get_logger(__name__)
 
@@ -146,3 +154,132 @@ def refresh_estados(
         "actualizadas_ca": actualizadas_ca,
         "errores": errores,
     }
+
+
+# ---------------------------------------------------------------------------
+# Estados vencidos (F-estados-vencidos)
+# ---------------------------------------------------------------------------
+
+_FUENTE_VENCIDOS = "estados_vencidos"
+_DIAS_VENCIDA = 7
+
+
+def _guardar_vencidos(session: Session, resultado: dict[str, int], *, ok: bool) -> None:
+    state = session.get(SyncState, _FUENTE_VENCIDOS)
+    if state is None:
+        state = SyncState(fuente=_FUENTE_VENCIDOS)
+        session.add(state)
+    state.ultima_ejecucion = ahora_utc()
+    if ok:
+        state.ultimo_ok = state.ultima_ejecucion
+    state.notas = (
+        f"datos_abiertos={resultado['actualizadas_da']} consultadas_api={resultado['consultadas_api']} "
+        f"cambiadas_api={resultado['cambiadas_api']} rezagadas={resultado['rezagadas']} "
+        f"errores_api={resultado['errores_api']}"
+        + ("" if ok else " (cortado por el canal)")
+    )
+
+
+def _rezagadas(session: Session, excluir: set[str]) -> list[str]:
+    """Licitaciones con match, no terminales, cerradas hace más de 7 días.
+
+    La menos refrescada primero (`actualizado_en`), y entre iguales la que cerró
+    más tarde: una que sigue legítimamente `cerrada` esperando adjudicación queda
+    al fondo tras consultarla, y el tope va rotando por todas en noches seguidas.
+    Fuera las que datos abiertos dejó terminales en esta corrida.
+    """
+    tiene_match = exists().where(
+        OportunidadMatch.fuente == "licitaciones",
+        OportunidadMatch.codigo_oportunidad == Licitacion.codigo,
+    )
+    codigos = session.execute(
+        select(Licitacion.codigo)
+        .where(
+            Licitacion.estado.not_in([e.value for e in ESTADOS_TERMINALES]),
+            Licitacion.fecha_cierre < ahora_utc() - timedelta(days=_DIAS_VENCIDA),
+            tiene_match,
+        )
+        .order_by(Licitacion.actualizado_en.asc(), Licitacion.fecha_cierre.desc())
+    ).scalars()
+    return [c for c in codigos if c not in excluir]
+
+
+def refresh_estados_vencidos(
+    session: Session,
+    v1_client: MercadoPublicoV1Client,
+    settings: Settings,
+    zips: CacheZipsDA | None = None,
+    now_fn: Callable[..., datetime] | None = None,
+) -> dict[str, int]:
+    """Pone al día licitaciones que cerraron y quedaron con su último estado.
+
+    `sync_activas` solo ve lo que sigue en el listado de activas y
+    `refresh_estados` mira −7/+3 días del cierre: lo que cerró antes y nadie
+    sigue quedaba "publicada" para siempre. Dos pasos:
+
+    1. Datos abiertos (cuota 0): todas las no terminales que aparezcan en lic-da.
+    2. API, con tope ESTADOS_VENCIDOS_MAX_REQUESTS: las que tienen match y lic-da
+       no dejó terminales. Solo dentro de 22:00–07:00 Chile (regla 5), validado acá y no
+       en el cron. Ante 429/cuota/auth corta igual que `refresh_estados`
+       (regla 3), dejando grabado lo avanzado.
+    """
+    da, resueltas_da = sync_estados_datos_abiertos(session, settings, zips)
+    resultado = {
+        "actualizadas_da": da["actualizadas"],
+        "vistas_da": da["vistas"],
+        "desconocidos_da": da["desconocidos"],
+        "meses_da": da["meses_escaneados"],
+        "meses_fallidos_da": da["meses_fallidos"],
+        # Consultadas ≠ cambiadas: muchas siguen `cerrada` esperando adjudicación.
+        "consultadas_api": 0,
+        "cambiadas_api": 0,
+        "errores_api": 0,
+        "rezagadas": 0,
+        "api_fuera_de_ventana": 0,
+    }
+
+    pendientes = _rezagadas(session, resueltas_da)
+    if not en_ventana_nocturna(now_fn):
+        _log.info("refresh_estados_vencidos: fuera de 22:00–07:00 Chile — sin API")
+        resultado["api_fuera_de_ventana"] = 1
+    else:
+        tope = max(settings.estados_vencidos_max_requests, 0)
+        for codigo in pendientes[:tope]:
+            try:
+                antes = session.get(Licitacion, codigo)
+                estado_antes = antes.estado if antes is not None else None
+                det = v1_client.licitacion_detalle(codigo)
+                upsert_detalle(session, det, settings)
+                session.commit()
+                resultado["consultadas_api"] += 1
+                despues = session.get(Licitacion, codigo)
+                if despues is not None and despues.estado != estado_antes:
+                    resultado["cambiadas_api"] += 1
+            except (MPRateLimitError, QuotaExceededError, MPAuthError):
+                session.rollback()
+                resultado["rezagadas"] = len(pendientes) - resultado["consultadas_api"]
+                _log.warning(
+                    "refresh_estados_vencidos: corte del canal tras api=%d — progreso parcial guardado",
+                    resultado["consultadas_api"],
+                )
+                _guardar_vencidos(session, resultado, ok=False)
+                session.commit()
+                raise
+            except Exception as exc:
+                _log.warning("refresh_estados_vencidos: error lic %s: %s", codigo, exc)
+                session.rollback()
+                resultado["errores_api"] += 1
+
+    resultado["rezagadas"] = len(pendientes) - resultado["consultadas_api"]
+    _guardar_vencidos(session, resultado, ok=True)
+    session.commit()
+    _log.info(
+        "refresh_estados_vencidos: datos_abiertos=%d consultadas_api=%d cambiadas_api=%d "
+        "rezagadas=%d errores_api=%d",
+        resultado["actualizadas_da"],
+        resultado["consultadas_api"],
+        resultado["cambiadas_api"],
+        resultado["rezagadas"],
+        resultado["errores_api"],
+    )
+    return resultado

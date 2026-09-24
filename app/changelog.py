@@ -16,6 +16,18 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 9, 24),
+        titulo="Las licitaciones ya cerradas dejan de figurar como abiertas",
+        descripcion=(
+            "Una licitación que había cerrado hace más de una semana, y que nadie "
+            "estaba siguiendo, se quedaba con el último estado que conocíamos: podía "
+            "aparecer como abierta aunque hubiera cerrado en julio o ya estuviera "
+            "adjudicada. Ahora, cada noche, los estados se ponen al día con los datos "
+            "abiertos que publica ChileCompra, y las que coinciden con algún perfil y "
+            "no aparecen ahí se consultan una por una. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 9, 24),
         titulo="Volver desde una ficha ya no borra los filtros",
         descripcion=(
             "Al abrir una oportunidad desde la lista y apretar Volver, o el enlace "

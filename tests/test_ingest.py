@@ -1135,6 +1135,7 @@ class TestCliRunOnce:
 
         assert llamadas == [
             "datos_abiertos",
+            "estados-vencidos",
             "lifecycle",
             "competencia",
             "backfill_ayer",

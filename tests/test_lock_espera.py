@@ -253,6 +253,7 @@ class TestCli:
 
         assert [n for n, _ in vistos] == [
             "datos_abiertos",
+            "estados-vencidos",
             "lifecycle",
             "competencia",
             "backfill_ayer",

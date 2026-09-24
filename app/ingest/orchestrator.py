@@ -39,17 +39,21 @@ from app.core.logging import get_logger
 from app.core.retencion import purgar_terminales
 from app.core.serializacion import dataclass_a_json
 from app.core.settings import Settings
-from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.core.tiempo import ahora_utc, en_ventana_nocturna
 from app.ingest.catalogos import refresh_organismos
 from app.ingest.compra_agil import sync_incremental, upsert_ca_detalle
-from app.ingest.datos_abiertos import capturar_competencia, sync_items_datos_abiertos
+from app.ingest.datos_abiertos import (
+    CacheZipsDA,
+    capturar_competencia,
+    sync_items_datos_abiertos,
+)
 from app.ingest.licitaciones import (
     fetch_detalles_pendientes,
     sync_activas,
     sync_por_fecha,
     upsert_detalle,
 )
-from app.ingest.lifecycle import refresh_estados
+from app.ingest.lifecycle import refresh_estados, refresh_estados_vencidos
 from app.models.enums import EstadoOportunidad
 from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch
 
@@ -78,21 +82,6 @@ def _pg_try_lock(conn: Any, key: int) -> bool:
 def _pg_unlock(conn: Any, key: int) -> None:
     """Libera pg_advisory_lock."""
     conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
-
-
-# ---------------------------------------------------------------------------
-# Guard de ventana nocturna
-# ---------------------------------------------------------------------------
-
-
-def en_ventana_nocturna(now_fn: Callable[..., datetime] | None = None) -> bool:
-    """True si la hora actual en Chile está entre 22:00 y 07:00.
-
-    `now_fn` es inyectable para tests (ej. lambda tz: frozen_datetime).
-    """
-    ahora = now_fn(TZ_CHILE) if now_fn is not None else datetime.now(TZ_CHILE)
-    hora = ahora.hour
-    return hora >= 22 or hora < 7
 
 
 # ---------------------------------------------------------------------------
@@ -128,18 +117,36 @@ def run_lifecycle(settings: Settings, engine: Engine) -> dict[str, int]:
         return refresh_estados(session, v1, v2, settings)
 
 
+def run_estados_vencidos(
+    settings: Settings,
+    engine: Engine,
+    zips: CacheZipsDA | None = None,
+    now_fn: Callable[..., datetime] | None = None,
+) -> dict[str, int]:
+    """Estados de licitaciones ya cerradas: datos abiertos y, de noche, API con tope."""
+    v1, _ = _make_clients(settings, engine)
+    with Session(engine) as session:
+        return refresh_estados_vencidos(session, v1, settings, zips=zips, now_fn=now_fn)
+
+
 def run_datos_abiertos(
-    settings: Settings, engine: Engine, anio: int | None = None, mes: int | None = None
+    settings: Settings,
+    engine: Engine,
+    anio: int | None = None,
+    mes: int | None = None,
+    zips: CacheZipsDA | None = None,
 ) -> dict[str, int]:
     """Completa licitacion_items desde datos abiertos (sin cuota de API)."""
     with Session(engine) as session:
-        return sync_items_datos_abiertos(session, settings, anio=anio, mes=mes)
+        return sync_items_datos_abiertos(session, settings, anio=anio, mes=mes, zips=zips)
 
 
-def run_competencia(settings: Settings, engine: Engine) -> dict[str, int]:
+def run_competencia(
+    settings: Settings, engine: Engine, zips: CacheZipsDA | None = None
+) -> dict[str, int]:
     """Captura ofertas (lic-da) de licitaciones seguidas y adjudicadas (sin cuota de API)."""
     with Session(engine) as session:
-        return capturar_competencia(session, settings)
+        return capturar_competencia(session, settings, zips=zips)
 
 
 def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
@@ -575,12 +582,15 @@ def _ciclo_nocturno(
     now_fn: Callable[..., datetime] | None = None,
     esperar_lock_s: int = 0,
 ) -> None:
-    """Datos abiertos + lifecycle + competencia + backfill del día anterior.
+    """Datos abiertos + estados vencidos + lifecycle + competencia + backfill del día anterior.
 
     Solo ejecuta en ventana 22:00–07:00. datos_abiertos va primero para que sus
     ítems UNSPSC estén disponibles antes del próximo ciclo de match (08:00).
-    competencia va DESPUÉS de lifecycle: necesita que los estados (incl. las
-    adjudicadas vía refresh_estados de seguidas) estén al día (F-competencia).
+    competencia va DESPUÉS de estados-vencidos y lifecycle: necesita que los
+    estados (incl. las adjudicadas) estén al día (F-competencia).
+
+    Los tres pasos que leen lic-da comparten una `CacheZipsDA`: cada mes se baja
+    una sola vez por noche aunque lo usen ítems, estados y competencia.
 
     detalles-match va AL FINAL con el presupuesto nocturno (DETALLES_MINUTOS_NOCHE,
     120 min por defecto): es el paso que más dura y el único que se puede cortar
@@ -596,24 +606,31 @@ def _ciclo_nocturno(
         _log.warning("ciclo_nocturno: fuera de ventana horaria — abortando")
         return
 
-    _run_with_lock(
-        "datos_abiertos",
-        lambda: run_datos_abiertos(settings, engine),
-        engine,
-        esperar_lock_s=esperar_lock_s,
-    )
-    _run_with_lock(
-        "lifecycle",
-        lambda: run_lifecycle(settings, engine),
-        engine,
-        esperar_lock_s=esperar_lock_s,
-    )
-    _run_with_lock(
-        "competencia",
-        lambda: run_competencia(settings, engine),
-        engine,
-        esperar_lock_s=esperar_lock_s,
-    )
+    with CacheZipsDA(settings) as zips:
+        _run_with_lock(
+            "datos_abiertos",
+            lambda: run_datos_abiertos(settings, engine, zips=zips),
+            engine,
+            esperar_lock_s=esperar_lock_s,
+        )
+        _run_with_lock(
+            "estados-vencidos",
+            lambda: run_estados_vencidos(settings, engine, zips=zips, now_fn=now_fn),
+            engine,
+            esperar_lock_s=esperar_lock_s,
+        )
+        _run_with_lock(
+            "lifecycle",
+            lambda: run_lifecycle(settings, engine),
+            engine,
+            esperar_lock_s=esperar_lock_s,
+        )
+        _run_with_lock(
+            "competencia",
+            lambda: run_competencia(settings, engine, zips=zips),
+            engine,
+            esperar_lock_s=esperar_lock_s,
+        )
 
     # Backfill: ayer (simple, se puede extender a rangos mayores)
     ayer = (datetime.now(UTC) - timedelta(days=1)).date()

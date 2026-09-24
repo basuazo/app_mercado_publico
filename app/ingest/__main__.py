@@ -21,6 +21,7 @@ from app.ingest.orchestrator import (
     run_datos_abiertos,
     run_detalles,
     run_detalles_match,
+    run_estados_vencidos,
     run_lifecycle,
     run_match,
     run_resumen,
@@ -43,6 +44,7 @@ _JOBS = (
     "resumen",
     "datos-abiertos",
     "competencia",
+    "estados-vencidos",
     "nocturno",
 )
 
@@ -102,6 +104,10 @@ def cmd_run_once(
             "datos-abiertos", lambda: run_datos_abiertos(settings, engine, anio=anio, mes=mes)
         ),
         "competencia": _locked("competencia", lambda: run_competencia(settings, engine)),
+        # Datos abiertos siempre; la parte por API solo si cae en 22:00–07:00 Chile.
+        "estados-vencidos": _locked(
+            "estados-vencidos", lambda: run_estados_vencidos(settings, engine)
+        ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.

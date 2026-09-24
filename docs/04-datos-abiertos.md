@@ -69,7 +69,7 @@ El CSV es **plano/desnormalizado**: una fila por combinación
 | Índice | Columna | Uso |
 |---|---|---|
 | 2 | `CodigoExterno` | **Código público de la licitación** — mismo valor que `Licitacion.codigo` en nuestra BD (ej. `1233623-31-LR25`, `2409-189-LE25`). Es la clave de enlace. |
-| 12/13 | `CodigoEstado` / `Estado` | Igual semántica que `licitaciones_activas` (5=Publicada, 6=Cerrada, etc., texto en español) |
+| 12/13 | `CodigoEstado` / `Estado` | **Códigos propios, NO los de la API v1** [V] 24-sep-2026 (ver §8): 6/11/12/13/14=Cerrada, 7=Desierta, 8/9=Adjudicada, 15=Revocada, 16=Suspendida. No trae publicadas |
 | 38–46 | `FechaCreacion`, `FechaCierre`, `FechaPublicacion`, etc. | En formato `YYYY-MM-DD` (ISO, sin hora) — distinto del `ddmmaaaa` de v1 y consistente con el bug que motivó la regla 6 reforzada en `parse_fecha_v1` |
 | 83 | `Codigoitem` | Código de línea/ítem dentro de la licitación (≈ `LicitacionItem` por ítem) |
 | **84** | **`CodigoProductoONU`** | **El código UNSPSC a nivel de ítem.** Nombre exacto de columna: `CodigoProductoONU` |
@@ -172,5 +172,23 @@ cuando ya no quedan licitaciones objetivo sin ítems. El cursor legacy `datos_ab
 queda como resumen visible en `/salud`.
 
 ---
+
+## 8. Estados de licitación desde lic-da (F-estados-vencidos, 24-sep-2026)
+
+Medido [V] leyendo `lic-da/2026-{6,7,8,9}.zip` completos el 24-sep-2026:
+
+- **`CodigoEstado` no usa los códigos de la API v1.** Cruzado contra la columna `Estado`:
+  6, 11, 12, 13 y 14 = Cerrada; 7 = Desierta; 8 y 9 = Adjudicada; **15 = Revocada** (v1: 18);
+  **16 = Suspendida** (v1: 19). El mapeo vive en `estado_licitacion_da()` (`app/models/enums.py`);
+  `Licitacion.estado_codigo` sigue guardando el código v1 equivalente.
+- **No hay filas con 5 = Publicada** en ninguno de los 4 meses: lic-da solo trae licitaciones ya
+  cerradas o resueltas. El 5 queda mapeado por si aparece, pero es [I].
+- **Los 4 meses tenían `Last-Modified` del mismo día** (14:31 a 20:21 UTC): no solo el mes en curso y
+  el anterior se republican (corrige §5, que lo observó el 27-jun con 2 meses).
+- Un `CodigoExterno` **nunca aparece en dos meses** y dentro de un mes todas sus filas traen el
+  mismo estado. El mes del archivo sigue ~la `FechaCreacion` (con cola de meses anteriores).
+- Cobertura sobre producción: de 11.632 licitaciones no terminales con cierre hace más de 7 días,
+  10.776 aparecen en esos 4 meses (1.715 de las 1.852 con match).
+- Leer los 4 ZIP (~480 mil filas) tomó ~70 s en local con pico de memoria de ~4 MB.
 
 *Fuente: Dirección ChileCompra — datos abiertos (https://datos-abiertos.chilecompra.cl/descargas).*

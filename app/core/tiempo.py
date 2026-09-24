@@ -8,7 +8,7 @@ importa ``ZoneInfo``: un ``ZoneInfo`` en cualquier otro archivo es un error, y
 también lo es un ``datetime.now(...)`` que no salga de :func:`ahora_utc`.
 
 Quienes necesitan el DÍA CALENDARIO chileno —el corte de cuota de
-``app/clients/base.py``, la ventana 22:00–07:00 de ``app/ingest/orchestrator.py``
+``app/clients/base.py``, la ventana 22:00–07:00 (:func:`en_ventana_nocturna`, acá)
 y ``app/ingest/datos_abiertos.py``, el digest de ``app/alerts/email.py``—
 importan :data:`TZ_CHILE` de acá. Eso es otra cosa que convertir un instante y
 está bien: no pasan por :func:`a_utc_naive`.
@@ -30,6 +30,7 @@ necesario es ``_TZ_SIN_OFFSET``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -37,6 +38,16 @@ TZ_CHILE = ZoneInfo("America/Santiago")
 
 # Huso con el que se interpreta un valor de la API que llega SIN offset. [I]
 _TZ_SIN_OFFSET = TZ_CHILE
+
+
+def en_ventana_nocturna(now_fn: Callable[..., datetime] | None = None) -> bool:
+    """True si la hora actual en Chile está entre 22:00 y 07:00 (regla 5).
+
+    `now_fn` es inyectable para tests (ej. lambda tz: frozen_datetime).
+    """
+    ahora = now_fn(TZ_CHILE) if now_fn is not None else datetime.now(TZ_CHILE)
+    hora = ahora.hour
+    return hora >= 22 or hora < 7
 
 
 def ahora_utc() -> datetime:

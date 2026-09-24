@@ -6,11 +6,16 @@ Esta ingesta lee el ZIP mensual público (sin ticket, sin cuota — ver
 docs/04-datos-abiertos.md) y completa SOLO licitaciones activas que aún no
 tienen ítems. No marca detalle_obtenido ni toca los demás campos del detalle
 (Descripcion, MontoEstimado, etc.) — eso sigue viniendo de la API.
+
+Del mismo ZIP salen también las ofertas (competencia) y, desde
+F-estados-vencidos, el estado de licitaciones que ya salieron del listado de
+activas. `CacheZipsDA` evita bajar el mismo mes dos veces en una corrida.
 """
 
 from __future__ import annotations
 
 import tempfile
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +28,7 @@ from app.clients.datos_abiertos import (
     OfertaDA,
     descargar_zip,
     head_last_modified,
+    stream_estados,
     stream_items,
     stream_ofertas,
     url_lic_da,
@@ -31,7 +37,12 @@ from app.core.db_retry import commit_con_retry
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
-from app.models.enums import EstadoOportunidad
+from app.models.enums import (
+    ESTADOS_TERMINALES,
+    EstadoOportunidad,
+    codigo_v1_licitacion,
+    estado_licitacion_da,
+)
 from app.models.tables import (
     Licitacion,
     LicitacionItem,
@@ -59,6 +70,47 @@ _VACIO_COMPETENCIA: dict[str, int] = {
 }
 
 _MESES_FALLBACK = 4
+
+
+class CacheZipsDA:
+    """ZIPs lic-da ya descargados en una corrida, para no bajar dos veces el mismo mes.
+
+    El ciclo nocturno crea UNA y la pasa a ítems, estados y competencia
+    (F-estados-vencidos). Vive en un directorio temporal que se borra al cerrar:
+    el disco de Render es efímero y nada de acá tiene que sobrevivir (regla 10).
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._base_url = settings.datos_abiertos_base_url
+        self._tmp = tempfile.TemporaryDirectory(prefix="mp_datos_abiertos_")
+        self._rutas: dict[tuple[int, int], Path] = {}
+        self.descargados = 0
+
+    def ruta(self, anio: int, mes: int) -> Path:
+        """Ruta local del ZIP del mes; lo descarga si esta corrida aún no lo tiene."""
+        clave = (anio, mes)
+        if clave not in self._rutas:
+            destino = Path(self._tmp.name) / f"lic-{anio}-{mes}.zip"
+            descargar_zip(url_lic_da(anio, mes, self._base_url), str(destino))
+            self.descargados += 1
+            self._rutas[clave] = destino
+        return self._rutas[clave]
+
+    def cerrar(self) -> None:
+        self._tmp.cleanup()
+
+    def __enter__(self) -> CacheZipsDA:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.cerrar()
+
+
+def _cache_de_corrida(
+    zips: CacheZipsDA | None, settings: Settings
+) -> AbstractContextManager[CacheZipsDA]:
+    """La caché que viene de afuera (sin cerrarla) o una propia de esta llamada."""
+    return nullcontext(zips) if zips is not None else CacheZipsDA(settings)
 
 
 def _mes_actual_chile() -> tuple[int, int]:
@@ -226,8 +278,12 @@ def sync_items_datos_abiertos(
     settings: Settings,
     anio: int | None = None,
     mes: int | None = None,
+    zips: CacheZipsDA | None = None,
 ) -> dict[str, int]:
-    """Completa licitacion_items desde lic-da del mes base y meses anteriores."""
+    """Completa licitacion_items desde lic-da del mes base y meses anteriores.
+
+    `zips`: caché de la corrida nocturna; sin ella, los ZIP viven solo en esta llamada.
+    """
     if not settings.datos_abiertos_habilitado:
         return dict(_VACIO)
 
@@ -251,7 +307,7 @@ def sync_items_datos_abiertos(
     meses_visitados: list[str] = []
     meses = _meses_anteriores(anio, mes, max(settings.datos_abiertos_meses_atras, 0) + 1)
 
-    with tempfile.TemporaryDirectory(prefix="mp_datos_abiertos_") as tmp_dir:
+    with _cache_de_corrida(zips, settings) as cache:
         for idx, (anio_mes, mes_mes) in enumerate(meses):
             if not objetivo:
                 break
@@ -277,9 +333,9 @@ def sync_items_datos_abiertos(
             vistos: set[tuple[str, str]] = set()
             lote: list[ItemDA] = []
 
-            zip_path = Path(tmp_dir) / f"lic-{anio_mes}-{mes_mes}.zip"
-            descargar_zip(url, str(zip_path))
-            descargados += 1
+            antes = cache.descargados
+            zip_path = cache.ruta(anio_mes, mes_mes)
+            descargados += cache.descargados - antes
 
             for item in stream_items(str(zip_path)):
                 if item.codigo_externo not in objetivo:
@@ -410,7 +466,9 @@ def _insertar_lote_ofertas(session: Session, lote: list[OfertaDA], contexto: str
     return commit_con_retry(session, _aplicar, contexto=contexto)
 
 
-def capturar_competencia(session: Session, settings: Settings) -> dict[str, int]:
+def capturar_competencia(
+    session: Session, settings: Settings, zips: CacheZipsDA | None = None
+) -> dict[str, int]:
     """Captura las ofertas (lic-da) de licitaciones SEGUIDAS y adjudicadas, sin cuota de API.
 
     Idempotente: una licitación que ya tiene OfertaCompetencia no se vuelve a
@@ -435,24 +493,23 @@ def capturar_competencia(session: Session, settings: Settings) -> dict[str, int]
     sin_encontrar = 0
     descargados = 0
 
-    with tempfile.TemporaryDirectory(prefix="mp_competencia_") as tmp_dir:
-        cache: dict[tuple[int, int], Path | None] = {}
+    with _cache_de_corrida(zips, settings) as cache:
+        fallidos: set[tuple[int, int]] = set()
 
         def _zip_para(anio: int, mes: int) -> Path | None:
             nonlocal descargados
-            clave = (anio, mes)
-            if clave in cache:
-                return cache[clave]
-            url = url_lic_da(anio, mes, settings.datos_abiertos_base_url)
-            destino = Path(tmp_dir) / f"comp-{anio}-{mes}.zip"
+            if (anio, mes) in fallidos:
+                return None
+            antes = cache.descargados
             try:
-                descargar_zip(url, str(destino))
-                descargados += 1
-                cache[clave] = destino
+                ruta = cache.ruta(anio, mes)
             except (httpx.HTTPError, OSError) as exc:
+                url = url_lic_da(anio, mes, settings.datos_abiertos_base_url)
                 _log.warning("capturar_competencia: no se pudo descargar %s: %s", url, exc)
-                cache[clave] = None
-            return cache[clave]
+                fallidos.add((anio, mes))
+                return None
+            descargados += cache.descargados - antes
+            return ruta
 
         for codigo, fecha_publicacion in objetivo:
             encontrado = False
@@ -504,3 +561,155 @@ def capturar_competencia(session: Session, settings: Settings) -> dict[str, int]
         "sin_encontrar": sin_encontrar,
         "descargados": descargados,
     }
+
+
+# ---------------------------------------------------------------------------
+# Estados de licitaciones (F-estados-vencidos)
+# ---------------------------------------------------------------------------
+
+# Cuánto avanzó una licitación. lic-da trae el estado del día en que se generó
+# el archivo, que puede ir por detrás de lo que ya nos dio la API: solo se
+# acepta un estado que AVANZA, nunca uno que retrocede (cerrada → publicada).
+_AVANCE_LICITACION: dict[EstadoOportunidad, int] = {
+    EstadoOportunidad.PUBLICADA: 0,
+    EstadoOportunidad.SUSPENDIDA: 1,
+    EstadoOportunidad.CERRADA: 2,
+    **{e: 3 for e in ESTADOS_TERMINALES},
+}
+
+
+def _es_avance(actual: str, nuevo: EstadoOportunidad) -> bool:
+    # Un código que no entendemos no borra un estado bueno (regla 6: no romper,
+    # tampoco pisar); al revés, cualquier estado conocido reemplaza a desconocido.
+    if actual == nuevo.value or nuevo is EstadoOportunidad.DESCONOCIDO:
+        return False
+    try:
+        actual_enum = EstadoOportunidad(actual)
+    except ValueError:
+        return True
+    if actual_enum in ESTADOS_TERMINALES:
+        return False
+    if actual_enum is EstadoOportunidad.DESCONOCIDO:
+        return True
+    return _AVANCE_LICITACION.get(nuevo, -1) > _AVANCE_LICITACION.get(actual_enum, -1)
+
+
+def _aplicar_lote_estados(session: Session, lote: list[tuple[str, EstadoOportunidad]]) -> list[str]:
+    """Aplica un lote de estados nuevos; devuelve los códigos que cambiaron."""
+    nuevos = dict(lote)
+    aplicadas: list[str] = []
+
+    def _aplicar() -> None:
+        # Se relee todo en cada intento: tras un rollback lo anterior no cuenta.
+        aplicadas.clear()
+        for lic in session.execute(
+            select(Licitacion).where(Licitacion.codigo.in_(list(nuevos)))
+        ).scalars():
+            nuevo = nuevos[lic.codigo]
+            if not _es_avance(lic.estado, nuevo):
+                continue
+            lic.estado = nuevo.value
+            lic.estado_codigo = codigo_v1_licitacion(nuevo)
+            lic.actualizado_en = ahora_utc()
+            aplicadas.append(lic.codigo)
+
+    if not commit_con_retry(session, _aplicar, contexto="datos_abiertos lote estados"):
+        return []
+    return list(aplicadas)
+
+
+def sync_estados_datos_abiertos(
+    session: Session,
+    settings: Settings,
+    zips: CacheZipsDA | None = None,
+) -> tuple[dict[str, int], set[str]]:
+    """Actualiza el estado de licitaciones propias no terminales desde lic-da (cuota 0).
+
+    Recorre el mes en curso y `DATOS_ABIERTOS_MESES_ATRAS` anteriores, del más
+    nuevo al más viejo. Primera fila por código: el CSV repite la licitación por
+    ítem × oferta, y en los meses medidos (2026-6..9) un código nunca aparece en
+    dos archivos ni con dos estados. Un mes que no se puede bajar o leer se salta:
+    los demás siguen valiendo.
+
+    Devuelve los contadores y los códigos que lic-da dejó en estado TERMINAL: solo
+    esos salen del fallback por API. Una que lic-da trae como `cerrada` puede venir
+    de un mes que ya no se republica, así que la API la sigue mirando.
+    """
+    vacio = {
+        "actualizadas": 0,
+        "vistas": 0,
+        "desconocidos": 0,
+        "meses_escaneados": 0,
+        "meses_fallidos": 0,
+        "descargados": 0,
+    }
+    if not settings.datos_abiertos_habilitado:
+        return vacio, set()
+
+    objetivo: dict[str, str] = {
+        codigo: estado
+        for codigo, estado in session.execute(
+            select(Licitacion.codigo, Licitacion.estado).where(
+                Licitacion.estado.not_in([e.value for e in ESTADOS_TERMINALES])
+            )
+        ).all()
+    }
+    if not objetivo:
+        return vacio, set()
+
+    anio, mes = _mes_actual_chile()
+    meses = _meses_anteriores(anio, mes, max(settings.datos_abiertos_meses_atras, 0) + 1)
+    batch_size = settings.ingest_batch_size
+    vistas: set[str] = set()
+    resueltas: set[str] = set()
+    lote: list[tuple[str, EstadoOportunidad]] = []
+    contadores = dict(vacio)
+
+    def _aplicar(lote_: list[tuple[str, EstadoOportunidad]]) -> None:
+        aplicadas = _aplicar_lote_estados(session, lote_)
+        contadores["actualizadas"] += len(aplicadas)
+        terminales = {c for c, e in lote_ if e in ESTADOS_TERMINALES}
+        resueltas.update(c for c in aplicadas if c in terminales)
+
+    with _cache_de_corrida(zips, settings) as cache:
+        for anio_mes, mes_mes in meses:
+            antes = cache.descargados
+            try:
+                ruta = cache.ruta(anio_mes, mes_mes)
+                for fila in stream_estados(str(ruta)):
+                    codigo = fila.codigo_externo
+                    if codigo in vistas or codigo not in objetivo:
+                        continue
+                    vistas.add(codigo)
+                    nuevo = estado_licitacion_da(fila.codigo_estado)
+                    if nuevo is EstadoOportunidad.DESCONOCIDO:
+                        # Ya logueado por estado_licitacion_da; queda para la API.
+                        contadores["desconocidos"] += 1
+                    if not _es_avance(objetivo[codigo], nuevo):
+                        continue
+                    lote.append((codigo, nuevo))
+                    if len(lote) >= batch_size:
+                        _aplicar(lote)
+                        lote = []
+            except Exception as exc:
+                # Descarga, ZIP o CSV roto: es un mes de una fuente secundaria, no
+                # vale la pena perder los otros por él.
+                _log.warning("sync_estados_datos_abiertos: %s-%s no se pudo leer: %s", anio_mes, mes_mes, exc)
+                contadores["meses_fallidos"] += 1
+            else:
+                contadores["meses_escaneados"] += 1
+            contadores["descargados"] += cache.descargados - antes
+
+        if lote:
+            _aplicar(lote)
+
+    contadores["vistas"] = len(vistas)
+    _log.info(
+        "sync_estados_datos_abiertos: actualizadas=%d vistas=%d desconocidos=%d meses=%d fallidos=%d",
+        contadores["actualizadas"],
+        contadores["vistas"],
+        contadores["desconocidos"],
+        contadores["meses_escaneados"],
+        contadores["meses_fallidos"],
+    )
+    return contadores, resueltas

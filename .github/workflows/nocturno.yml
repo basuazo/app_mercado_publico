@@ -1,4 +1,4 @@
-# Ciclo nocturno: datos abiertos, lifecycle, competencia, backfill de ayer y
+# Ciclo nocturno: datos abiertos, estados vencidos, lifecycle, competencia, backfill de ayer y
 # detalles-match con el presupuesto de noche (F-actions-2).
 #
 # 04:10 UTC = 01:10 Chile en UTC−3 y 00:10 en UTC−4: dentro de 22:00–07:00 con
@@ -30,6 +30,8 @@ jobs:
       # Paso 0: datos-abiertos 1,9 min, lifecycle 2,1, competencia 0,0; backfill de
       # ayer SIN medir. detalles-match: 120 (DETALLES_MINUTOS_NOCHE) + ~2 de un
       # detalle en curso. ≈ 126 + backfill, + 30 de espera = 156 + backfill.
-      # 210 le deja ~50 min al backfill. Un solo proceso: sin pausas entre pasos.
-      timeout_min: 210
+      # estados-vencidos (F-estados-vencidos): ~1,2 min de leer 4 meses de lic-da
+      # (medido local, 24-sep) + hasta 150 detalles v1 a ~1,3 s (lifecycle) ≈ 5.
+      # 220 le deja ~55 min al backfill. Un solo proceso: sin pausas entre pasos.
+      timeout_min: 220
       esperar_lock_min: 30

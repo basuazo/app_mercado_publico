@@ -162,6 +162,39 @@ def stream_ofertas(zip_path: str, codigo_externo: str) -> Iterator[OfertaDA]:
                 )
 
 
+@dataclass
+class EstadoDA:
+    """Estado de una licitación tal como viene en lic-da (código crudo, sin mapear)."""
+
+    codigo_externo: str
+    codigo_estado: str
+
+
+def stream_estados(zip_path: str) -> Iterator[EstadoDA]:
+    """Stream de (CodigoExterno, CodigoEstado) desde el CSV del ZIP (RAM-safe).
+
+    Una fila por fila del CSV: la licitación se repite por ítem × oferta, así
+    que deduplicar por código es cosa del caller. `CodigoEstado` sale crudo: sus
+    códigos NO son los de la API v1 (ver `estado_licitacion_da`).
+    """
+    with zipfile.ZipFile(zip_path) as zf:
+        nombres_csv = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        if not nombres_csv:
+            _log.warning("stream_estados: %s no contiene ningún CSV", zip_path)
+            return
+        with zf.open(nombres_csv[0]) as raw:
+            texto = io.TextIOWrapper(raw, encoding=_ENCODING, newline="")
+            reader = csv.DictReader(texto, delimiter=_DELIMITER)
+            for fila in reader:
+                codigo_externo = (fila.get("CodigoExterno") or "").strip()
+                if not codigo_externo:
+                    continue
+                yield EstadoDA(
+                    codigo_externo=codigo_externo,
+                    codigo_estado=(fila.get("CodigoEstado") or "").strip(),
+                )
+
+
 def stream_items(zip_path: str) -> Iterator[ItemDA]:
     """Stream de ítems desde el CSV de licitaciones dentro del ZIP (RAM-safe).
 

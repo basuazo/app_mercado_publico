@@ -152,6 +152,49 @@ def estado_licitacion(codigo: object) -> EstadoOportunidad:
     return estado
 
 
+# `CodigoEstado` de datos abiertos (lic-da) NO usa los códigos de la API v1:
+# revocada es 15 (no 18), suspendida 16 (no 19), y hay variantes de cerrada y
+# adjudicada. [V] contra el texto de `Estado` en lic-da 2026-6..9 (24-sep-2026).
+# El 5 no apareció en ningún mes (lic-da no trae publicadas): [I], se deja por
+# el doc 04 §2.
+_MAP_LICITACION_DA: dict[int, EstadoOportunidad] = {
+    5: EstadoOportunidad.PUBLICADA,
+    6: EstadoOportunidad.CERRADA,
+    7: EstadoOportunidad.DESIERTA,
+    8: EstadoOportunidad.ADJUDICADA,
+    9: EstadoOportunidad.ADJUDICADA,
+    11: EstadoOportunidad.CERRADA,
+    12: EstadoOportunidad.CERRADA,
+    13: EstadoOportunidad.CERRADA,
+    14: EstadoOportunidad.CERRADA,
+    15: EstadoOportunidad.REVOCADA,
+    16: EstadoOportunidad.SUSPENDIDA,
+}
+
+# Inversa de _MAP_LICITACION: `Licitacion.estado_codigo` guarda siempre el
+# código de la v1, venga de donde venga el estado.
+_CODIGO_V1_LICITACION: dict[EstadoOportunidad, int] = {e: c for c, e in _MAP_LICITACION.items()}
+
+
+def estado_licitacion_da(codigo: object) -> EstadoOportunidad:
+    """Como `estado_licitacion`, pero con los códigos de datos abiertos."""
+    try:
+        key = int(str(codigo))
+    except (TypeError, ValueError):
+        _log.warning("Estado licitacion (datos abiertos) desconocido: %r", codigo)
+        return EstadoOportunidad.DESCONOCIDO
+    estado = _MAP_LICITACION_DA.get(key)
+    if estado is None:
+        _log.warning("Estado licitacion (datos abiertos) sin mapeo: %d", key)
+        return EstadoOportunidad.DESCONOCIDO
+    return estado
+
+
+def codigo_v1_licitacion(estado: EstadoOportunidad) -> int | None:
+    """Código v1 de un estado de licitación; None si la v1 no tiene uno."""
+    return _CODIGO_V1_LICITACION.get(estado)
+
+
 def estado_oc(codigo: object) -> EstadoOportunidad:
     try:
         key = int(str(codigo))
