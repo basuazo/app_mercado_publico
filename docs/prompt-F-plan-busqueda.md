@@ -9,6 +9,48 @@
 > - En esa búsqueda **se puede elegir el o los organismos** que interesen (y acotar por sector).
 > - Guardar completo **solo el año en curso**; los años anteriores siguen por organismo, on-demand.
 
+## Ejecución en paralelo (agregado 26-sep, leer antes que el resto)
+
+**Modelo:** correr con **Sonnet** (`/model sonnet` en Claude Code): la fase está especificada de
+punta a punta y es sobre todo ingesta, índice y UI. Cambiar a Opus solo si el Paso 0 obliga a
+rediseñar (tope del 60 % de Neon, carga de más de ~15 min) o si el reemplazo sin ventana vacía se
+complica. Para buscar en el código, subagentes con Haiku.
+
+Esta fase se programa en Claude Code **mientras en otra conversación se define F-ca-rubro**
+(detalles nocturnos de CA sin match para el match por rubro). F-ca-rubro todavía no tiene prompt,
+así que esta fase parte de `main` (`8068b87` o posterior) y la otra la toma después. Para que no
+choquen:
+
+- **Base [V, 26-sep]:** cabeza de Alembic `c7e3a9f1d5b2` (F-detalles-fallos). La migración nueva
+  usa `down_revision = "c7e3a9f1d5b2"`. **Antes del commit, `alembic heads` debe mostrar UNA sola
+  cabeza**: Render corre `alembic upgrade head` al arrancar y con dos cabezas el deploy se cae.
+- **Archivos que esta fase NO toca** (son de F-ca-rubro): `app/matching/*`,
+  `app/ingest/compra_agil.py`, `app/clients/mp_v1.py`, `app/clients/mp_v2.py`, `nocturno.yml`,
+  `ciclo-*.yml`, `ca.yml`, y en `app/ingest/orchestrator.py` todo lo de `detalles-match` y
+  `_ciclo_nocturno`. En `orchestrator.py`, `__main__.py` (`_JOBS`), `settings.py`, `tables.py` y
+  `app/changelog.py` solo **agregar** (función, job, setting o modelo nuevos al final del bloque),
+  sin mover ni reformatear lo existente. Nada de `ruff format` masivo (hay 48 archivos heredados).
+- **Sin llamadas a la API de Mercado Público:** `pac-files.da.mercadopublico.cl` no usa ticket ni
+  cuota. La descarga va en `app/clients/plan_compra.py` (capa anti-corrupción) y **nunca dentro de
+  una request web** (Render = 512 MB).
+- **Lock:** el job `plan-anual` usa el advisory lock único (`_run_with_lock`, regla 13), igual que
+  los demás. No crear otra clave de lock.
+- **Disparo [V, F-actions-3]:** los workflows no tienen `schedule`; los dispara cron-job.org
+  (`docs/operacion-disparos.md`). Preferencia: agregar `plan-anual` al workflow `catalogos.yml`
+  (lunes 06:35 Chile) como `jobs: "catalogos plan-anual"`, subiendo `timeout_min` según lo medido
+  en el Paso 0, **sin cron nuevo**. Si el Paso 0 mide más de ~15 min de carga, detenerse y proponer:
+  con el lock tomado a las 06:35, el `ca` de las 07:05 esperaría.
+- **Paso 0 contra producción: solo lectura y lo corre Boris.** Escribir `data/paso0_plan_anual.py`
+  (gitignored, estilo `data/paso0_duraciones.py`) con `tamano_bd`/`pg_database_size` y el tamaño
+  de `plan_compra_lineas`. La descarga, el parseo y la carga de prueba van en local y en la BD de
+  **dev**.
+- **BD de dev compartida:** al migrarla, dev queda en la revisión nueva. Alembic no lee el `.env`
+  (ver handoff §3): exportar `DATABASE_URL` antes de `alembic upgrade head`. Nunca correr Alembic
+  a mano contra producción.
+- **Cierre:** commit en `main` sin push. Se audita en Cowork antes del push, y el push se hace
+  justo después de que arranque un `ca` de los :05 (Render migra al arrancar y Actions no).
+  `git add` solo de los archivos de la fase, nunca `-A` (`_to_delete/` tiene un `.env`).
+
 Reglas del proyecto: CLAUDE.md completo, en especial 8 (atribución), 10 (estado en Postgres), 11
 (Neon 0,5 GB: `/salud` muestra el tamaño), 12 (lotes, 512 MB), 13 (lock), queries 100 %
 parametrizadas. Español de Chile; entrada en `app/changelog.py`; `ruff check .`,
