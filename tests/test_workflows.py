@@ -71,8 +71,8 @@ def test_job_reutilizable_no_aplica_migraciones() -> None:
 
 def test_opcionales_del_job_reutilizable_se_quitan_si_vienen_vacias() -> None:
     """Una opcional que no está en el loop de `unset` llega a pydantic como "" y
-    revienta el parseo de int/float. DETALLES_MINUTOS_DIA/NOCHE (F-detalles-match)
-    son opcionales, igual que las CA_*."""
+    revienta el parseo de int/float. DETALLES_MINUTOS_DIA/NOCHE (F-detalles-match) y
+    DETALLES_FALLOS_MAX/ESPERA_HORAS (F-detalles-fallos) son opcionales, igual que las CA_*."""
     texto = (_WORKFLOWS / "_job.yml").read_text(encoding="utf-8")
     loop = re.search(r"for v in ([A-Z_ ]+); do\s+if \[ -z \"\$\{!v\}\" \]; then unset", texto)
     assert loop, "no encontré el loop de unset de opcionales"
@@ -82,6 +82,8 @@ def test_opcionales_del_job_reutilizable_se_quitan_si_vienen_vacias() -> None:
         "CA_MAX_PAGINAS_POR_VENTANA",
         "DETALLES_MINUTOS_DIA",
         "DETALLES_MINUTOS_NOCHE",
+        "DETALLES_FALLOS_MAX",
+        "DETALLES_ESPERA_HORAS",
     } <= opcionales
     # Reemplazada por el tope de tiempo: no debe quedar colgando.
     assert "MATCH_MAX_DETALLES_POR_CORRIDA" not in texto

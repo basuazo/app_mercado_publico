@@ -111,6 +111,12 @@ class Licitacion(Base):
     codigo_organismo: Mapped[str | None] = mapped_column(String(50), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, default=None)
     detalle_obtenido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Fallos seguidos de `detalles-match` y el último (F-detalles-fallos): con
+    # DETALLES_FALLOS_MAX o más, la oportunidad espera antes de volver a la cola.
+    detalle_fallos: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    detalle_ultimo_fallo: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -185,6 +191,11 @@ class CompraAgil(Base):
     total_ofertas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     id_orden_compra: Mapped[str | None] = mapped_column(String(50), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, default=None)
+    # Ídem Licitacion (F-detalles-fallos).
+    detalle_fallos: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    detalle_ultimo_fallo: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc

@@ -75,6 +75,19 @@ class Settings(BaseSettings):
         default=120,
         description="Minutos máximos por corrida de `detalles-match` en la ventana 22:00–07:00 Chile",
     )
+    # F-detalles-fallos: el primer día en Actions (25-sep-2026) los mismos detalles
+    # dieron 504/500 en todas las corridas, ~90 s cada uno, siempre al frente de la cola.
+    detalles_fallos_max: int = Field(
+        default=3,
+        description="Fallos seguidos de un detalle desde los que `detalles-match` lo deja en espera",
+    )
+    detalles_espera_horas: int = Field(
+        default=6,
+        description=(
+            "Espera en horas al llegar a DETALLES_FALLOS_MAX; se duplica por cada "
+            "fallo extra, con techo de 48 h"
+        ),
+    )
 
     # --- Estados vencidos (F-estados-vencidos) ---
     estados_vencidos_max_requests: int = Field(

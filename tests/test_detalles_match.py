@@ -116,7 +116,7 @@ class TestPresupuestoDeTiempo:
         from app.ingest.orchestrator import run_detalles_match
 
         with (
-            patch("app.ingest.orchestrator._cola_detalles_match", return_value=cola),
+            patch("app.ingest.orchestrator._cola_detalles_match", return_value=(cola, 0)),
             patch("app.ingest.orchestrator._make_clients", return_value=(MagicMock(), MagicMock())),
             patch("app.ingest.orchestrator._bajar_detalle", side_effect=bajar),
         ):
@@ -203,7 +203,7 @@ class TestPresupuestoDeTiempo:
         from app.ingest.orchestrator import run_detalles_match
 
         with (
-            patch("app.ingest.orchestrator._cola_detalles_match", return_value=[]),
+            patch("app.ingest.orchestrator._cola_detalles_match", return_value=([], 0)),
             patch("app.ingest.orchestrator._make_clients") as mk,
         ):
             r = run_detalles_match(settings, sqlite_engine, reloj=_Reloj(), now_fn=_DIA)
@@ -537,12 +537,28 @@ def _solo_propios(cola: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return [x for x in cola if x[1].startswith(_PREFIJO)]
 
 
+def _solo_candidatas_propias() -> Any:
+    """Deja la query real de candidatas pero solo con las filas del test.
+
+    Así el filtro de espera y el conteo `detalles_en_espera` corren tal cual,
+    sin que las filas del resto de la base de dev los ensucien.
+    """
+    import app.ingest.orchestrator as orq
+
+    real = orq._candidatas_detalles_match
+    return patch.object(
+        orq,
+        "_candidatas_detalles_match",
+        side_effect=lambda s, a: [x for x in real(s, a) if x[1].startswith(_PREFIJO)],
+    )
+
+
 class TestDetallesMatchPostgres:
     def test_cola_filtra_y_ordena(self, pg_engine, escenario_pg):
         from app.ingest.orchestrator import _cola_detalles_match
 
         with Session(pg_engine) as s:
-            cola = _solo_propios(_cola_detalles_match(s, escenario_pg["ahora"]))
+            cola = _solo_propios(_cola_detalles_match(s, escenario_pg["ahora"], 3, 6)[0])
 
         c = _CODIGOS
         assert cola == [
@@ -558,7 +574,6 @@ class TestDetallesMatchPostgres:
 
         ahora: datetime = escenario_pg["ahora"]
         c = _CODIGOS
-        cola_real = orq._cola_detalles_match
         v1, v2 = MagicMock(), MagicMock()
         v1.licitacion_detalle.side_effect = lambda cod, **kw: LicitacionDetalle(
             codigo=cod,
@@ -578,7 +593,7 @@ class TestDetallesMatchPostgres:
         )
 
         with (
-            patch.object(orq, "_cola_detalles_match", side_effect=lambda s, a: _solo_propios(cola_real(s, a))),
+            _solo_candidatas_propias(),
             patch.object(orq, "_make_clients", return_value=(v1, v2)),
         ):
             r1 = orq.run_detalles_match(pg_settings, pg_engine, now_fn=_DIA)
@@ -663,3 +678,347 @@ class TestFtsDescripcionProducto:
 
         assert _CA_FTS in cands
         assert _CA_FTS_EXCL not in cands
+
+
+# ---------------------------------------------------------------------------
+# 6. F-detalles-fallos: contador de fallos por oportunidad y cola con espera
+# ---------------------------------------------------------------------------
+
+
+class TestEsperaDetalle:
+    @pytest.mark.parametrize(
+        ("fallos", "horas"),
+        [(0, None), (2, None), (3, 6), (4, 12), (5, 24), (6, 48), (7, 48), (40, 48)],
+    )
+    def test_se_duplica_desde_el_maximo_con_techo_de_48_h(self, fallos, horas):
+        from app.ingest.orchestrator import _espera_detalle
+
+        esperado = None if horas is None else timedelta(hours=horas)
+        assert _espera_detalle(fallos, 3, 6) == esperado
+
+    def test_el_techo_rige_aunque_la_espera_base_sea_mayor(self):
+        from app.ingest.orchestrator import _espera_detalle
+
+        assert _espera_detalle(3, 3, 30) == timedelta(hours=30)
+        assert _espera_detalle(4, 3, 30) == timedelta(hours=48)
+
+
+class TestContadorSinBase:
+    """El contador nunca bota el job, y los errores del canal no lo tocan."""
+
+    def test_si_el_update_del_contador_falla_el_job_sigue(self, settings, caplog):
+        from app.ingest.orchestrator import run_detalles_match
+
+        sin_tablas = create_engine("sqlite:///:memory:")  # el UPDATE revienta
+        with (
+            patch("app.ingest.orchestrator._cola_detalles_match", return_value=(_cola(3), 0)),
+            patch("app.ingest.orchestrator._make_clients", return_value=(MagicMock(), MagicMock())),
+            patch(
+                "app.ingest.orchestrator._bajar_detalle",
+                side_effect=MPServerError("504", status_code=504),
+            ),
+            caplog.at_level("WARNING", logger="app.ingest.orchestrator"),
+        ):
+            r = run_detalles_match(settings, sin_tablas, reloj=_Reloj(), now_fn=_DIA)
+        sin_tablas.dispose()
+
+        assert r["detalles_intentados"] == 3
+        assert r["detalles_fallidos"] == 3
+        assert r["detalles_llegaron_al_maximo"] == 0
+        assert caplog.text.count("no pude registrar el fallo") == 3
+
+    def test_un_error_del_canal_no_registra_fallo(self, settings, sqlite_engine):
+        from app.ingest.orchestrator import run_detalles_match
+
+        with (
+            patch("app.ingest.orchestrator._cola_detalles_match", return_value=(_cola(3), 0)),
+            patch("app.ingest.orchestrator._make_clients", return_value=(MagicMock(), MagicMock())),
+            patch(
+                "app.ingest.orchestrator._bajar_detalle",
+                side_effect=MPRateLimitError("tope diario", retry_after_seconds=3600),
+            ),
+            patch("app.ingest.orchestrator._registrar_fallo_detalle") as registrar,
+        ):
+            r = run_detalles_match(settings, sqlite_engine, reloj=_Reloj(), now_fn=_DIA)
+
+        registrar.assert_not_called()
+        assert r["detalles_interrumpidos"] is True
+
+
+def test_migracion_detalle_fallos_agrega_y_revierte_columnas(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    ruta = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "c7e3a9f1d5b2_detalle_fallos.py"
+    )
+    spec = importlib.util.spec_from_file_location("mig_c7e3a9f1d5b2", ruta)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    llamadas: list[tuple[str, str, str]] = []
+    columnas: dict[tuple[str, str], Any] = {}
+
+    class FakeOp:
+        def add_column(self, table: str, column: Any) -> None:
+            llamadas.append(("add", table, column.name))
+            columnas[(table, column.name)] = column
+
+        def drop_column(self, table: str, column_name: str) -> None:
+            llamadas.append(("drop", table, column_name))
+
+    monkeypatch.setattr(migration, "op", FakeOp())
+    migration.upgrade()
+    migration.downgrade()
+
+    assert migration.down_revision == "b8d4e2a91c07"
+    for tabla in ("licitaciones", "compras_agiles"):
+        fallos = columnas[(tabla, "detalle_fallos")]
+        assert fallos.nullable is False
+        assert fallos.server_default.arg == "0"
+        assert columnas[(tabla, "detalle_ultimo_fallo")].nullable is True
+        for col in ("detalle_fallos", "detalle_ultimo_fallo"):
+            assert ("add", tabla, col) in llamadas
+            assert ("drop", tabla, col) in llamadas
+    assert len(llamadas) == 8
+
+
+_EMAIL_FALLOS = "detalles_fallos_test@test.com"
+
+
+@pytest.fixture()
+def opps_pg(pg_engine) -> Iterator[Any]:
+    """Crea oportunidades propias (prefijo DM-TEST-F-) con match y sin detalle."""
+    from types import SimpleNamespace
+
+    from app.matching.perfiles import crear_perfil
+
+    def _limpiar() -> None:
+        _limpiar_pg(pg_engine)
+        with Session(pg_engine) as s:
+            u = s.execute(select(Usuario).where(Usuario.email == _EMAIL_FALLOS)).scalar_one_or_none()
+            if u:
+                s.delete(u)
+            s.commit()
+
+    _limpiar()
+    ahora = ahora_utc().replace(microsecond=0)
+    with Session(pg_engine) as s:
+        u = Usuario(email=_EMAIL_FALLOS, password_hash="$2b$12$fakehashfordetallesfallos.xyz", activo=True)
+        s.add(u)
+        s.flush()
+        perfil_id = crear_perfil(s, u.id, "Detalles fallos (test)", keywords=["zorglubfallos"]).id
+        s.commit()
+
+    def crear(
+        nombre: str,
+        fuente: str = "compras_agiles",
+        cierre_dias: float | None = 1.0,
+        fallos: int = 0,
+        hace_h: float | None = None,
+    ) -> str:
+        codigo = f"{_PREFIJO}F-{nombre}"
+        campos: dict[str, Any] = {
+            "codigo": codigo,
+            "nombre": codigo,
+            "estado": "publicada",
+            "fecha_cierre": None if cierre_dias is None else ahora + timedelta(days=cierre_dias),
+            "detalle_fallos": fallos,
+            "detalle_ultimo_fallo": None if hace_h is None else ahora - timedelta(hours=hace_h),
+            "actualizado_en": ahora - timedelta(days=3),
+        }
+        with Session(pg_engine) as s:
+            s.add(Licitacion(**campos) if fuente == "licitaciones" else CompraAgil(**campos))
+            s.flush()
+            s.add(
+                OportunidadMatch(
+                    perfil_id=perfil_id, fuente=fuente, codigo_oportunidad=codigo, score=50.0, razones={}
+                )
+            )
+            s.commit()
+        return codigo
+
+    try:
+        yield SimpleNamespace(ahora=ahora, crear=crear)
+    finally:
+        _limpiar()
+
+
+def _estado_fallos(engine: Any, modelo: Any, codigo: str) -> tuple[int, datetime | None, datetime]:
+    with Session(engine) as s:
+        fila = s.get(modelo, codigo)
+        assert fila is not None
+        return fila.detalle_fallos, fila.detalle_ultimo_fallo, fila.actualizado_en
+
+
+class TestFallosPostgres:
+    @pytest.fixture()
+    def cfg(self, pg_settings: Settings) -> Settings:
+        return pg_settings.model_copy(update={"detalles_fallos_max": 3, "detalles_espera_horas": 6})
+
+    def _correr(self, cfg: Settings, engine: Any, v1: Any = None, v2: Any = None) -> dict[str, Any]:
+        import app.ingest.orchestrator as orq
+
+        with (
+            _solo_candidatas_propias(),
+            patch.object(orq, "_make_clients", return_value=(v1 or MagicMock(), v2 or MagicMock())),
+        ):
+            return orq.run_detalles_match(cfg, engine, now_fn=_DIA)
+
+    @staticmethod
+    def _v2_que_falla(exc: Exception | None = None) -> MagicMock:
+        v2 = MagicMock()
+        v2.detalle_compra_agil.side_effect = exc or MPServerError("504", status_code=504)
+        return v2
+
+    def test_un_fallo_sube_el_contador_y_la_fecha(self, pg_engine, cfg, opps_pg):
+        codigo = opps_pg.crear("UNO")
+        _, _, actualizado_antes = _estado_fallos(pg_engine, CompraAgil, codigo)
+        antes = ahora_utc()
+
+        r = self._correr(cfg, pg_engine, v2=self._v2_que_falla())
+
+        fallos, ultimo, actualizado = _estado_fallos(pg_engine, CompraAgil, codigo)
+        assert r["detalles_fallidos"] == 1
+        assert fallos == 1
+        assert ultimo is not None and antes <= ultimo <= ahora_utc()
+        # Un fallo nuestro no es un cambio de la oportunidad (la retención purga por esta fecha).
+        assert actualizado == actualizado_antes
+
+    def test_un_fallo_de_licitacion_tambien_cuenta(self, pg_engine, cfg, opps_pg):
+        codigo = opps_pg.crear("LIC", fuente="licitaciones", fallos=1, hace_h=1)
+        v1 = MagicMock()
+        v1.licitacion_detalle.side_effect = MPServerError("500", status_code=500)
+
+        self._correr(cfg, pg_engine, v1=v1)
+
+        assert _estado_fallos(pg_engine, Licitacion, codigo)[0] == 2
+
+    def test_un_exito_resetea_en_el_mismo_commit_que_el_detalle(self, pg_engine, cfg, opps_pg):
+        codigo = opps_pg.crear("EXITO", fallos=2, hace_h=1)
+        v2 = MagicMock()
+        v2.detalle_compra_agil.side_effect = lambda cod, **kw: _ca_det(cod, opps_pg.ahora + timedelta(days=1))
+
+        r = self._correr(cfg, pg_engine, v2=v2)
+
+        assert r["detalles_guardados"] == 1
+        with Session(pg_engine) as s:
+            ca = s.get(CompraAgil, codigo)
+            assert ca is not None
+            assert ca.raw_json is not None
+            assert ca.detalle_fallos == 0
+            assert ca.detalle_ultimo_fallo is None
+
+    def test_si_el_guardado_falla_no_queda_ni_detalle_ni_reset(self, pg_engine, cfg, opps_pg):
+        """Detalle y reset van en el mismo commit: si se deshace uno, se deshacen los dos."""
+        codigo = opps_pg.crear("MEDIO", fallos=1, hace_h=1)
+        v2 = MagicMock()
+        v2.detalle_compra_agil.side_effect = lambda cod, **kw: _ca_det(cod, None)
+
+        with patch("app.ingest.orchestrator.upsert_ca_detalle", side_effect=ValueError("parseo")):
+            self._correr(cfg, pg_engine, v2=v2)
+
+        with Session(pg_engine) as s:
+            ca = s.get(CompraAgil, codigo)
+            assert ca is not None
+            assert ca.raw_json is None
+            assert ca.detalle_fallos == 2  # el parseo cuenta como fallo del detalle
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            MPRateLimitError("tope diario", retry_after_seconds=3600),
+            MPConcurrencyError("10500 agotado", retry_after_seconds=900),
+        ],
+        ids=["429-no-10500", "10500-agotado"],
+    )
+    def test_un_error_del_canal_no_toca_el_contador(self, pg_engine, cfg, opps_pg, exc):
+        codigo = opps_pg.crear("CANAL", fallos=1, hace_h=1)
+
+        r = self._correr(cfg, pg_engine, v2=self._v2_que_falla(exc))
+
+        assert r["detalles_interrumpidos"] is True
+        fallos, ultimo, _ = _estado_fallos(pg_engine, CompraAgil, codigo)
+        assert fallos == 1
+        assert ultimo == opps_pg.ahora - timedelta(hours=1)
+
+    @pytest.mark.parametrize(
+        ("fallos", "hace_h", "entra"),
+        [
+            (2, 0.1, True),  # bajo el máximo: sin espera
+            (3, 1, False),
+            (3, 7, True),
+            (4, 7, False),
+            (4, 13, True),
+            (5, 23, False),
+            (5, 25, True),
+            (6, 47, False),
+            (6, 49, True),
+            (12, 47, False),  # techo de 48 h
+            (12, 49, True),
+        ],
+    )
+    def test_espera_en_la_cola(self, pg_engine, opps_pg, fallos, hace_h, entra):
+        import app.ingest.orchestrator as orq
+
+        codigo = opps_pg.crear("ESPERA", fallos=fallos, hace_h=hace_h)
+
+        with _solo_candidatas_propias(), Session(pg_engine) as s:
+            cola, en_espera = orq._cola_detalles_match(s, opps_pg.ahora, 3, 6)
+
+        assert (("compras_agiles", codigo) in cola) is entra
+        assert en_espera == (0 if entra else 1)
+
+    def test_orden_sin_fallos_primero_y_cada_grupo_por_cierre(self, pg_engine, opps_pg):
+        import app.ingest.orchestrator as orq
+
+        c = opps_pg.crear
+        a = c("A", cierre_dias=3)
+        b = c("B", fuente="licitaciones", cierre_dias=1)
+        e = c("E", cierre_dias=None)
+        f1 = c("F1", cierre_dias=0.5, fallos=1, hace_h=1)
+        f2 = c("F2", fuente="licitaciones", cierre_dias=2, fallos=2, hace_h=1)
+        f3 = c("F3", cierre_dias=None, fallos=1, hace_h=1)
+        f4 = c("F4", cierre_dias=0.2, fallos=4, hace_h=13)  # ya cumplió su espera
+        c("F5", cierre_dias=0.1, fallos=3, hace_h=1)  # en espera: fuera
+
+        with _solo_candidatas_propias(), Session(pg_engine) as s:
+            cola, en_espera = orq._cola_detalles_match(s, opps_pg.ahora, 3, 6)
+
+        assert [cod for _f, cod in cola] == [b, a, e, f4, f1, f2, f3]
+        assert en_espera == 1
+
+    def test_contadores_del_resultado_cuadran(self, pg_engine, cfg, opps_pg):
+        c = opps_pg.crear
+        cruza = c("CRUZA", fallos=2, hace_h=1)  # falla → 3: cruza el máximo
+        c("ESPERA", fallos=3, hace_h=1)  # en espera: no se pide
+        nuevo = c("NUEVO")  # falla → 1
+        vuelve = c("VUELVE", fallos=5, hace_h=25)  # cumplió 24 h, falla → 6: ya estaba sobre el máximo
+
+        r = self._correr(cfg, pg_engine, v2=self._v2_que_falla())
+
+        assert r["detalles_en_espera"] == 1
+        assert r["detalles_llegaron_al_maximo"] == 1
+        assert r["detalles_intentados"] == 3
+        assert r["detalles_fallidos"] == 3
+        assert _estado_fallos(pg_engine, CompraAgil, cruza)[0] == 3
+        assert _estado_fallos(pg_engine, CompraAgil, nuevo)[0] == 1
+        assert _estado_fallos(pg_engine, CompraAgil, vuelve)[0] == 6
+
+    def test_reejecutar_no_duplica_incrementos(self, pg_engine, cfg, opps_pg, caplog):
+        codigo = opps_pg.crear("IDEM")
+        v2 = self._v2_que_falla()
+
+        with caplog.at_level("WARNING", logger="app.ingest.orchestrator"):
+            resultados = [self._correr(cfg, pg_engine, v2=v2) for _ in range(5)]
+
+        # Una corrida = un intento = +1. Al tercero cruza el máximo y queda en
+        # espera: las corridas 4 y 5 ni lo piden ni lo cuentan.
+        assert v2.detalle_compra_agil.call_count == 3
+        assert _estado_fallos(pg_engine, CompraAgil, codigo)[0] == 3
+        assert [r["detalles_llegaron_al_maximo"] for r in resultados] == [0, 0, 1, 0, 0]
+        assert [r["detalles_en_espera"] for r in resultados] == [0, 0, 0, 1, 1]
+        assert caplog.text.count("llegó a 3 fallos seguidos") == 1

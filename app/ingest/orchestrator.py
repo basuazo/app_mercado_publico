@@ -29,6 +29,7 @@ from sqlalchemy import (
     select,
     text,
     union_all,
+    update,
 )
 from sqlalchemy.orm import Session
 
@@ -179,13 +180,31 @@ def _sin_detalle(col: Any, dialecto: str) -> Any:
     return or_(col.is_(None), cast(col, String) == "null")
 
 
-def _cola_detalles_match(session: Session, ahora: datetime) -> list[tuple[str, str]]:
-    """Cola de `detalles-match` como pares (fuente, código), en UNA query parametrizada.
+# Techo de la espera exponencial de un detalle que sigue fallando (F-detalles-fallos).
+_ESPERA_TECHO_HORAS = 48
+
+
+def _espera_detalle(fallos: int, fallos_max: int, espera_horas: int) -> timedelta | None:
+    """Espera tras el último fallo de un detalle con `fallos` fallos seguidos.
+
+    None bajo el máximo. Desde ahí `espera_horas`, duplicada por cada fallo
+    extra, con techo de 48 h: con 3 y 6 h, 3 → 6 h, 4 → 12 h, 5 → 24 h, 6+ → 48 h.
+    """
+    if fallos < fallos_max:
+        return None
+    return timedelta(hours=min(espera_horas * 2 ** (fallos - fallos_max), _ESPERA_TECHO_HORAS))
+
+
+def _candidatas_detalles_match(
+    session: Session, ahora: datetime
+) -> list[tuple[str, str, int, datetime | None]]:
+    """Candidatas de `detalles-match` como (fuente, código, fallos, último fallo), en UNA query.
 
     Entran licitaciones y CA con al menos una fila en oportunidades_match, sin
-    detalle, publicadas y sin cerrar (fecha_cierre nula o futura). Orden:
+    detalle, publicadas y sin cerrar (fecha_cierre nula o futura). Orden: primero
+    las que no tienen fallos, luego las que sí; dentro de cada grupo,
     fecha_cierre ascendente —lo que cierra antes, primero— y las sin fecha al
-    final. No hay tope de cantidad: el tope es de tiempo (ver run_detalles_match).
+    final. La espera por fallos la aplica :func:`_cola_detalles_match`.
     """
     dialecto = session.get_bind().dialect.name
     publicada = EstadoOportunidad.PUBLICADA.value
@@ -200,6 +219,8 @@ def _cola_detalles_match(session: Session, ahora: datetime) -> list[tuple[str, s
         literal(_FUENTE_LIC).label("fuente"),
         Licitacion.codigo.label("codigo"),
         Licitacion.fecha_cierre.label("fecha_cierre"),
+        Licitacion.detalle_fallos.label("fallos"),
+        Licitacion.detalle_ultimo_fallo.label("ultimo_fallo"),
     ).where(
         _sin_detalle(Licitacion.raw_json, dialecto),
         Licitacion.estado == publicada,
@@ -210,6 +231,8 @@ def _cola_detalles_match(session: Session, ahora: datetime) -> list[tuple[str, s
         literal(_FUENTE_CA).label("fuente"),
         CompraAgil.codigo.label("codigo"),
         CompraAgil.fecha_cierre.label("fecha_cierre"),
+        CompraAgil.detalle_fallos.label("fallos"),
+        CompraAgil.detalle_ultimo_fallo.label("ultimo_fallo"),
     ).where(
         _sin_detalle(CompraAgil.raw_json, dialecto),
         CompraAgil.estado == publicada,
@@ -217,13 +240,70 @@ def _cola_detalles_match(session: Session, ahora: datetime) -> list[tuple[str, s
         _con_match(_FUENTE_CA, CompraAgil.codigo),
     )
     sub = union_all(lic, ca).subquery()
-    stmt = select(sub.c.fuente, sub.c.codigo).order_by(
+    stmt = select(sub.c.fuente, sub.c.codigo, sub.c.fallos, sub.c.ultimo_fallo).order_by(
+        case((sub.c.fallos > 0, 1), else_=0),
         case((sub.c.fecha_cierre.is_(None), 1), else_=0),
         sub.c.fecha_cierre,
         sub.c.fuente,
         sub.c.codigo,
     )
-    return [(fuente, codigo) for fuente, codigo in session.execute(stmt)]
+    return [(f, c, n, u) for f, c, n, u in session.execute(stmt)]
+
+
+def _cola_detalles_match(
+    session: Session, ahora: datetime, fallos_max: int, espera_horas: int
+) -> tuple[list[tuple[str, str]], int]:
+    """Cola de `detalles-match` como pares (fuente, código), y cuántas quedaron en espera.
+
+    Las candidatas y su orden salen de UNA query parametrizada
+    (:func:`_candidatas_detalles_match`); la espera de las que llegaron a
+    `fallos_max` (:func:`_espera_detalle`) se filtra acá, en Python: en SQL el
+    2^n con techo queda ilegible y distinto por dialecto, y las candidatas son
+    pocas (solo las con match y sin detalle). No hay tope de cantidad: el tope
+    es de tiempo (ver run_detalles_match).
+    """
+    cola: list[tuple[str, str]] = []
+    en_espera = 0
+    for fuente, codigo, fallos, ultimo_fallo in _candidatas_detalles_match(session, ahora):
+        espera = _espera_detalle(fallos, fallos_max, espera_horas)
+        if espera is not None and ultimo_fallo is not None and ahora < ultimo_fallo + espera:
+            en_espera += 1
+            continue
+        cola.append((fuente, codigo))
+    return cola, en_espera
+
+
+def _registrar_fallo_detalle(engine: Engine, fuente: str, codigo: str) -> int | None:
+    """Suma un fallo al detalle, en una transacción corta y aparte. Devuelve el total.
+
+    UPDATE atómico (`detalle_fallos + 1`), no leer-sumar-escribir. No toca
+    `actualizado_en`: un fallo nuestro no es un cambio de la oportunidad (y la
+    retención purga por esa fecha). Si el UPDATE falla, log y None: el contador
+    nunca bota el job.
+    """
+    modelo: type[Licitacion] | type[CompraAgil] = (
+        Licitacion if fuente == _FUENTE_LIC else CompraAgil
+    )
+    stmt = (
+        update(modelo)
+        .where(modelo.codigo == codigo)
+        .values(
+            detalle_fallos=modelo.detalle_fallos + 1,
+            detalle_ultimo_fallo=ahora_utc(),
+            actualizado_en=modelo.actualizado_en,
+        )
+        .returning(modelo.detalle_fallos)
+    )
+    try:
+        with Session(engine) as session:
+            fallos = session.execute(stmt).scalar_one_or_none()
+            session.commit()
+    except Exception:
+        _log.warning(
+            "detalles-match: no pude registrar el fallo de %s %s", fuente, codigo, exc_info=True
+        )
+        return None
+    return fallos
 
 
 def _bajar_detalle(
@@ -237,8 +317,10 @@ def _bajar_detalle(
     """Baja un detalle y lo guarda —campos, ítems/productos y raw_json— en UN commit.
 
     Sin reintento de 5xx ni de timeout: si falla, el detalle sigue sin raw_json
-    y vuelve solo a la cola de la corrida siguiente. El enfriamiento de 60 s
-    tras un 504 o un timeout lo sigue aplicando el cliente (regla 3).
+    y vuelve a la cola de la corrida siguiente, salvo que haya llegado al máximo
+    de fallos (ver :func:`_cola_detalles_match`). El enfriamiento de 60 s tras
+    un 504 o un timeout lo sigue aplicando el cliente (regla 3). En el mismo
+    commit, el éxito resetea el contador de fallos.
     """
     with Session(engine) as session:
         if fuente == _FUENTE_LIC:
@@ -247,12 +329,16 @@ def _bajar_detalle(
             lic = session.get(Licitacion, codigo)
             if lic:
                 lic.raw_json = dataclass_a_json(det)
+                lic.detalle_fallos = 0
+                lic.detalle_ultimo_fallo = None
         else:
             det_ca = v2.detalle_compra_agil(codigo, reintentar_transitorios=False)
             upsert_ca_detalle(session, det_ca)
             ca = session.get(CompraAgil, codigo)
             if ca:
                 ca.raw_json = dataclass_a_json(det_ca)
+                ca.detalle_fallos = 0
+                ca.detalle_ultimo_fallo = None
         session.commit()
 
 
@@ -291,10 +377,14 @@ def run_detalles_match(
     detalle ya empezado termina: el corte real puede pasarse en lo que dure uno
     (~30 s de request + 60 s de enfriamiento si da 504).
 
-    Un detalle que falla (504, timeout, parseo) se cuenta y se sigue con el
-    próximo: vuelve solo a la cola. Un error del CANAL (429 que no es 10500,
-    10500 con reintentos agotados, cuota, 401) corta el loop, igual que antes
-    en run_match (regla 3). Idempotente: lo guardado ya no entra en la cola.
+    Un detalle que falla (504, timeout, parseo) se cuenta, suma un fallo a la
+    oportunidad y se sigue con el próximo. Con DETALLES_FALLOS_MAX fallos
+    seguidos sale de la cola por una espera creciente (ver
+    :func:`_espera_detalle`); un éxito resetea el contador. Un error del CANAL
+    (429 que no es 10500, 10500 con reintentos agotados, cuota, 401) corta el
+    loop sin sumar fallos —no es culpa de la oportunidad— (regla 3).
+    Idempotente: lo guardado ya no entra en la cola, y lo que está en espera
+    no se vuelve a pedir ni a contar.
 
     `reloj` y `now_fn` son inyectables para tests.
     """
@@ -305,10 +395,13 @@ def run_detalles_match(
     presupuesto_s = presupuesto_min * 60
     inicio = reloj()
 
+    fallos_max = settings.detalles_fallos_max
     with Session(engine) as session:
-        cola = _cola_detalles_match(session, ahora_utc())
+        cola, en_espera = _cola_detalles_match(
+            session, ahora_utc(), fallos_max, settings.detalles_espera_horas
+        )
 
-    intentados = guardados = fallidos = 0
+    intentados = guardados = fallidos = llegaron_al_maximo = 0
     result: dict[str, Any] = {}
 
     if cola:
@@ -330,6 +423,15 @@ def run_detalles_match(
                     _log.error(
                         "detalles-match: error bajando detalle %s %s", fuente, codigo, exc_info=True
                     )
+                    # Solo al cruzar el máximo: los fallos siguientes no repiten el aviso.
+                    if _registrar_fallo_detalle(engine, fuente, codigo) == fallos_max:
+                        llegaron_al_maximo += 1
+                        _log.warning(
+                            "detalles-match: %s %s llegó a %d fallos seguidos; queda en espera",
+                            fuente,
+                            codigo,
+                            fallos_max,
+                        )
         except _ERRORES_DE_CANAL as exc:
             # Insistir contra una API que nos rechaza solo quema cuota (regla 3).
             _log.warning("detalles-match: corte del canal — %s", exc)
@@ -341,6 +443,8 @@ def run_detalles_match(
             "detalles_guardados": guardados,
             "detalles_fallidos": fallidos,
             "detalles_pendientes": len(cola) - intentados,
+            "detalles_en_espera": en_espera,
+            "detalles_llegaron_al_maximo": llegaron_al_maximo,
             "minutos_usados": round((reloj() - inicio) / 60, 1),
             "presupuesto_minutos": presupuesto_min,
         }
