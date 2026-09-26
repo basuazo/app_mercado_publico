@@ -5,17 +5,17 @@
 # de noche (poco volumen) se pone al día. Los jobs que dependen de los datos
 # (match, alerts, detalles-match) van en ciclo-match.yml.
 #
-# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows. `ca`
-# ocupa el :05 de TODAS las horas; los demás usan otros minutos.
-# Cron en UTC: cuando Chile cambia de hora esto no se corre (es cada hora).
+# Disparo (F-actions-3): desde cron-job.org, hora de Chile, cada hora a las :05,
+# con la API de GitHub (workflow_dispatch). El horario vive en cron-job.org y está
+# documentado en docs/operacion-disparos.md. Sin `schedule` a propósito: el de
+# GitHub llegaba horas tarde y descartaba corridas, y tenerlo además del externo
+# dispararía dos veces.
 #
 # Si el lock está ocupado (nocturno, ciclo-activas, detalles-match) espera hasta
 # 25 min; si vence, sale `omitido` y la hora siguiente vuelve a intentarlo.
 name: ca
 
 on:
-  schedule:
-    - cron: "5 * * * *"
   workflow_dispatch:
 
 concurrency:

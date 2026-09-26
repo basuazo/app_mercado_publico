@@ -1,14 +1,12 @@
 # Retención: purga de terminales > 90 días (regla 11), diaria (F-actions-2).
 #
-# 08:40 UTC = 05:40 Chile en UTC−3 (04:40 en UTC−4; el corrimiento se acepta).
+# Disparo (F-actions-3): desde cron-job.org, hora de Chile, a las 05:40, con la API
+# de GitHub (workflow_dispatch). El horario vive en cron-job.org y está documentado
+# en docs/operacion-disparos.md. Sin `schedule` a propósito (evita disparos dobles).
 # Va después de `nocturno` (01:10), que puede tener el lock ~3 h.
-# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
-# ocupa el :05 de todas las horas).
 name: retencion
 
 on:
-  schedule:
-    - cron: "40 8 * * *"
   workflow_dispatch:
 
 concurrency:

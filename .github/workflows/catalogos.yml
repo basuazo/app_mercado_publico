@@ -1,14 +1,12 @@
 # Catálogos (organismos), semanal los lunes (F-actions-2).
 #
-# 09:35 UTC = lunes 06:35 Chile en UTC−3, dentro de 22:00–07:00; con UTC−4 cae
-# 05:35 (el corrimiento se acepta). Va después de `nocturno` y de `retencion`.
-# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
-# ocupa el :05 de todas las horas).
+# Disparo (F-actions-3): desde cron-job.org, hora de Chile, los lunes a las 06:35
+# (dentro de 22:00–07:00), con la API de GitHub (workflow_dispatch). El horario vive
+# en cron-job.org y está documentado en docs/operacion-disparos.md. Sin `schedule`
+# a propósito (evita disparos dobles). Va después de `nocturno` y de `retencion`.
 name: catalogos
 
 on:
-  schedule:
-    - cron: "35 9 * * 1"
   workflow_dispatch:
 
 concurrency:

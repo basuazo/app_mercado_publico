@@ -1,16 +1,14 @@
 # Licitaciones activas + detalles + match + alertas, 3 veces al día (F-actions-2).
 #
-# Horario escalonado: ningún par minuto/hora UTC se repite entre workflows (`ca`
-# ocupa el :05 de todas las horas). Acá: :15 de 13, 17 y 22 UTC.
-# Cron en UTC: con Chile en UTC−3 corre 10:15 / 14:15 / 19:15; con UTC−4, 1 h
-# antes. Aceptado.
+# Disparo (F-actions-3): desde cron-job.org, hora de Chile, a las 10:15, 14:15 y
+# 19:15, con la API de GitHub (workflow_dispatch). El horario vive en cron-job.org
+# y está documentado en docs/operacion-disparos.md. Sin `schedule` a propósito:
+# un disparo doble gastaría cuota de la API.
 # Parte a las 10:15 y no antes: con 150 min de timeout, antes de `resumen`
 # (08:30) podría dejarlo sin lock.
 name: ciclo-activas
 
 on:
-  schedule:
-    - cron: "15 13,17,22 * * *"
   workflow_dispatch:
 
 concurrency:

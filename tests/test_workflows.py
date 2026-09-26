@@ -90,7 +90,7 @@ def test_opcionales_del_job_reutilizable_se_quitan_si_vienen_vacias() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Horarios y concurrencia (F-actions-2)
+# Disparo externo (F-actions-3) y concurrencia (F-actions-2)
 # ---------------------------------------------------------------------------
 
 _PROGRAMADOS = {
@@ -102,7 +102,6 @@ _PROGRAMADOS = {
     "catalogos.yml",
     "resumen.yml",
 }
-_CRON = re.compile(r'^\s*-\s*cron:\s*"([^"]+)"\s*$', re.MULTILINE)
 
 
 def _llamadores() -> list[Path]:
@@ -114,36 +113,32 @@ def _texto(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
-def _expandir(campo: str, rango: range) -> set[int]:
-    if campo == "*":
-        return set(rango)
-    return {int(x) for x in campo.split(",")}
+def _bloque_on(texto: str) -> str:
+    """El bloque `on:` de nivel superior, hasta la siguiente clave sin sangría."""
+    m = re.search(r"^on:\s*\n((?:[ \t]+.*\n|\s*\n)*)", texto, re.MULTILINE)
+    assert m, "no encontré el bloque `on:`"
+    return m.group(1)
 
 
 def test_estan_los_ocho_workflows() -> None:
     assert {p.name for p in _llamadores()} == _PROGRAMADOS | {"ciclo-ca.yml"}
 
 
-@pytest.mark.parametrize("workflow", _llamadores(), ids=lambda p: p.name)
-def test_todos_tienen_dispatch_y_schedule_salvo_ciclo_ca(workflow: Path) -> None:
+@pytest.mark.parametrize("workflow", _archivos(), ids=lambda p: p.name)
+def test_ningun_workflow_tiene_schedule(workflow: Path) -> None:
+    """Los disparos vienen de cron-job.org (docs/operacion-disparos.md). Un
+    `schedule` de vuelta dispararía dos veces: cuota doble o dos correos."""
     texto = _texto(workflow)
-    assert re.search(r"^\s*workflow_dispatch:", texto, re.MULTILINE), workflow.name
-    tiene_schedule = bool(re.search(r"^\s*schedule:", texto, re.MULTILINE))
-    assert tiene_schedule == (workflow.name != "ciclo-ca.yml"), workflow.name
-    assert bool(_CRON.findall(texto)) == tiene_schedule, workflow.name
+    assert not re.search(r"^\s*schedule:", texto, re.MULTILINE), workflow.name
+    assert not re.search(r"^\s*-?\s*cron:", texto, re.MULTILINE), workflow.name
 
 
-def test_ningun_par_minuto_hora_se_repite_entre_workflows() -> None:
-    ocupado_por: dict[tuple[int, int], str] = {}
-    for p in _llamadores():
-        for cron in _CRON.findall(_texto(p)):
-            minuto, hora = cron.split()[:2]
-            for m in _expandir(minuto, range(60)):
-                for h in _expandir(hora, range(24)):
-                    previo = ocupado_por.setdefault((m, h), p.name)
-                    assert previo == p.name, f"{m:02d} {h:02d} UTC: {previo} y {p.name}"
-    # Sanidad: `ca` ocupa el :05 de las 24 horas.
-    assert all(ocupado_por[(5, h)] == "ca.yml" for h in range(24))
+@pytest.mark.parametrize("workflow", _llamadores(), ids=lambda p: p.name)
+def test_todos_se_disparan_por_dispatch_sin_inputs(workflow: Path) -> None:
+    """cron-job.org llama a la API solo con {"ref": "main"}: un input obligatorio
+    haría fallar el disparo, y uno opcional quedaría siempre en su default."""
+    on = _bloque_on(_texto(workflow))
+    assert re.fullmatch(r"\s*workflow_dispatch:\s*", on), f"{workflow.name}: {on!r}"
 
 
 @pytest.mark.parametrize("workflow", _llamadores(), ids=lambda p: p.name)
@@ -169,10 +164,3 @@ def test_el_job_reutilizable_pasa_la_espera_al_cli() -> None:
     assert re.search(r"^\s*esperar_lock_min:\s*$", texto, re.MULTILINE)
     assert "ESPERAR_LOCK_MIN: ${{ inputs.esperar_lock_min }}" in texto
     assert '--esperar-lock-min="$ESPERAR_LOCK_MIN"' in texto
-
-
-def test_resumen_corre_con_guardia_de_las_08() -> None:
-    """Dos crons (UTC−3 y UTC−4) y el guardia: solo corre el que cae a las 08 Chile."""
-    texto = _texto(_WORKFLOWS / "resumen.yml")
-    assert sorted(_CRON.findall(texto)) == ["30 11 * * *", "30 12 * * *"]
-    assert re.search(r'^\s*guard_hora_chile:\s*"08"\s*$', texto, re.MULTILINE)

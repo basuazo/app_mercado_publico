@@ -15,6 +15,18 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 25),
+        titulo="Las descargas vuelven a correr a su hora",
+        descripcion=(
+            "El primer día con los horarios nuevos, el programador que usábamos "
+            "arrancaba las descargas con dos a cinco horas de atraso y se saltaba "
+            "la mayoría de las revisiones de Compra Ágil; el correo de resumen de "
+            "la mañana no alcanzó a salir. Ahora las descargas las dispara un "
+            "servicio externo, puntual y en hora de Chile, con los mismos horarios "
+            "de antes."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 24),
         titulo="Las licitaciones ya cerradas dejan de figurar como abiertas",
         descripcion=(
