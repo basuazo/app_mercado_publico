@@ -414,6 +414,11 @@ class PlanCompraLinea(Base):
         String(30), nullable=False, default=EstadoPlanificacionPAC.DESCONOCIDO.value
     )
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    # Marca de lote del job `plan-anual` (F-plan-busqueda): NULL = fila cacheada
+    # on-demand por institución (get_plan de app/ingest/plan_compra.py); con
+    # valor = fila del año completo, reemplazada atómicamente en cada corrida
+    # (ver sync_plan_anual_completo).
+    lote_id: Mapped[int | None] = mapped_column(BigInt, nullable=True)
 
 
 class PlanCompraSync(Base):
@@ -497,3 +502,9 @@ Index("ix_instituciones_pac_razon_social", InstitucionPAC.razon_social)
 Index("ix_match_feedback_usuario", MatchFeedback.usuario_id)
 # Sirve al switch (último "ok" por job) y a la purga de retención.
 Index("ix_job_runs_job_iniciado", JobRun.job, JobRun.iniciado_en.desc())
+# F-plan-busqueda: orden (agno, codigo_entidad) para la búsqueda por palabra
+# acotada por año/organismo, y monto para el orden "mayor monto primero". El
+# índice GIN de expresión sobre descripcion_producto vive en la migración
+# (d7f2a4c8b6e1), no en el ORM: es funcional, sin columna generada.
+Index("ix_plan_compra_lineas_agno_entidad", PlanCompraLinea.agno, PlanCompraLinea.codigo_entidad)
+Index("ix_plan_compra_lineas_monto", PlanCompraLinea.monto_estimado_clp)

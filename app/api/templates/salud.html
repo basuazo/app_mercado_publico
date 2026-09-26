@@ -46,6 +46,16 @@
   {% endif %}
 </div>
 
+<!-- Plan Anual (F-plan-busqueda) -->
+<h5>Plan Anual de Compra ({{ salud.plan_anual.agno }})</h5>
+<p class="small text-muted mb-4">
+  {{ salud.plan_anual.filas_cargadas | numero }} línea(s) cargadas —
+  actualizado al {{ salud.plan_anual.actualizado_al or '—' }}
+  {% if salud.plan_anual.tamano_tabla_bytes %}
+  — tabla: {{ (salud.plan_anual.tamano_tabla_bytes / 1024 / 1024) | round(1) }} MB
+  {% endif %}
+</p>
+
 <!-- SyncState -->
 <h5>Estado de sincronización</h5>
 <table class="table table-sm table-bordered">

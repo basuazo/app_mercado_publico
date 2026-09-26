@@ -24,6 +24,7 @@ from app.ingest.orchestrator import (
     run_estados_vencidos,
     run_lifecycle,
     run_match,
+    run_plan_anual,
     run_resumen,
     run_retencion,
     run_scheduler,
@@ -46,6 +47,7 @@ _JOBS = (
     "competencia",
     "estados-vencidos",
     "nocturno",
+    "plan-anual",
 )
 
 
@@ -108,6 +110,7 @@ def cmd_run_once(
         "estados-vencidos": _locked(
             "estados-vencidos", lambda: run_estados_vencidos(settings, engine)
         ),
+        "plan-anual": _locked("plan-anual", lambda: run_plan_anual(settings, engine)),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.

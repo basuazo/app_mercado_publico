@@ -55,6 +55,7 @@ from app.ingest.licitaciones import (
     upsert_detalle,
 )
 from app.ingest.lifecycle import refresh_estados, refresh_estados_vencidos
+from app.ingest.plan_compra import sync_plan_anual_completo
 from app.models.enums import EstadoOportunidad
 from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch
 
@@ -162,6 +163,13 @@ def run_retencion(engine: Engine) -> dict[str, int]:
         # Sin commit, el cierre de la sesión revierte la purga entera.
         session.commit()
         return resultado
+
+
+def run_plan_anual(settings: Settings, engine: Engine) -> dict[str, int]:
+    """Job `plan-anual` (F-plan-busqueda): PAC completo del año en curso, sin
+    ticket ni cuota (datos abiertos). Ver app.ingest.plan_compra.sync_plan_anual_completo."""
+    with Session(engine) as session:
+        return sync_plan_anual_completo(session, settings)
 
 
 _FUENTE_LIC = "licitaciones"

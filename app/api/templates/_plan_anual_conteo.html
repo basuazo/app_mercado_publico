@@ -1,0 +1,7 @@
+{% if conteo.n_lineas == 0 %}
+<span class="text-muted">Sin coincidencias en el Plan Anual.</span>
+{% else %}
+<strong>{{ conteo.n_lineas | numero }}</strong> línea{{ 's' if conteo.n_lineas != 1 else '' }}
+en <strong>{{ conteo.n_organismos | numero }}</strong> organismo{{ 's' if conteo.n_organismos != 1 else '' }}
+· <span class="num">{{ conteo.monto_total | clp }}</span>
+{% endif %}

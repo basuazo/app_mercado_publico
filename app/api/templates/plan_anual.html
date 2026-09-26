@@ -1,13 +1,262 @@
 {% extends "base.html" %}
 {% block title %}Plan Anual de Compra — MP Oportunidades{% endblock %}
 {% block content %}
+
+{% macro link_busqueda(vista=vista, orden=orden, pagina_lineas=1, todo_el_anio=todo_el_anio, organismos_sel=organismos_sel, codigo_unico=None) -%}
+?tab=palabra&agno={{ agno }}&q={{ q|urlencode }}&sector={{ (sector_sel or '')|urlencode }}&monto_min={{ monto_min or '' }}&monto_max={{ monto_max or '' }}&vista={{ vista }}&orden={{ orden }}&pagina_lineas={{ pagina_lineas }}{% if todo_el_anio %}&todo_el_anio=true{% endif %}{% if codigo_unico %}&organismos={{ codigo_unico }}{% else %}{% for o in organismos_sel %}&organismos={{ o }}{% endfor %}{% endif %}
+{%- endmacro %}
+
 <h2 class="mb-1">Plan Anual de Compra</h2>
-<p class="text-muted small mb-4">
+<p class="text-muted small mb-3">
   Lo que cada organismo planea comprar en el año. Dato de consulta pública, sin alertas.
   No incluye rubro/UNSPSC ni mecanismo de compra (no vienen en esta fuente).
+  Fuente: Dirección ChileCompra.
+  {% if tab == "palabra" and actualizado_al %}Actualizado al {{ actualizado_al }}.{% endif %}
 </p>
 
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'palabra' %}active{% endif %}" href="/plan-anual?tab=palabra&agno={{ agno }}">
+      Por producto o palabra
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'organismo' %}active{% endif %}"
+       href="/plan-anual?tab=organismo&agno={{ agno }}{% if codigo_entidad %}&codigo_entidad={{ codigo_entidad }}{% endif %}">
+      Por organismo
+    </a>
+  </li>
+</ul>
+
+{% if tab == "palabra" %}
+
+{% if cargando_completo %}
+<div class="alert alert-info">
+  El Plan Anual {{ agno }} completo se está cargando; mientras tanto busca por
+  <a href="/plan-anual?tab=organismo&agno={{ agno }}">organismo</a>.
+</div>
+{% else %}
+
+<form method="get" action="/plan-anual" id="form-busqueda-plan"
+      hx-get="/plan-anual/conteo" hx-trigger="keyup changed delay:400ms, change"
+      hx-target="#conteo-vivo" hx-swap="innerHTML">
+  <input type="hidden" name="tab" value="palabra">
+  <input type="hidden" name="vista" value="{{ vista }}">
+  <input type="hidden" name="orden" value="{{ orden }}">
+  <input type="hidden" name="pagina_lineas" value="1">
+
+  <div class="row g-2 mb-2">
+    <div class="col-md-5">
+      <label class="form-label small">Buscar producto o palabra</label>
+      <input type="text" name="q" class="form-control" autocomplete="off"
+             placeholder='ej: resma papel, "papel fotocopia", -impresora'
+             value="{{ q }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small">Año</label>
+      <select name="agno" class="form-select">
+        {% for a in anios_disponibles %}
+        <option value="{{ a }}" {% if a == agno %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small">Sector</label>
+      <select name="sector" class="form-select">
+        <option value="">Todos los sectores</option>
+        {% for s in sectores_disponibles %}
+        <option value="{{ s }}" {% if s == sector_sel %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2 d-flex align-items-end">
+      <button type="submit" class="btn btn-primary w-100">Buscar</button>
+    </div>
+  </div>
+
+  <div class="row g-2 mb-2">
+    <div class="col-md-5">
+      <label class="form-label small">Organismo(s)</label>
+      <input type="text" class="form-control form-control-sm mb-1" id="filtro-organismos"
+             placeholder="Filtrar la lista de organismos..." autocomplete="off">
+      <select name="organismos" id="select-organismos" class="form-select" multiple size="5">
+        {% for o in organismos_json %}
+        <option value="{{ o.id }}" data-nombre="{{ o.nombre | lower }}"
+                {% if o.id in organismos_sel %}selected{% endif %}>{{ o.nombre }} ({{ o.sector }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small">Monto mín. (CLP)</label>
+      <input type="number" name="monto_min" class="form-control" value="{{ monto_min }}" min="0">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small">Monto máx. (CLP)</label>
+      <input type="number" name="monto_max" class="form-control" value="{{ monto_max }}" min="0">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small d-block">Periodo</label>
+      {% if todo_el_anio %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ link_busqueda(todo_el_anio=False) }}">Desde este mes</a>
+      <span class="small text-muted">(mostrando todo el año)</span>
+      {% else %}
+      <span class="small text-muted">Desde este mes</span>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ link_busqueda(todo_el_anio=True) }}">Todo el año</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if chips_perfiles %}
+  <div class="mb-2">
+    <span class="small text-muted me-1">Usar palabras de mis perfiles:</span>
+    {% for p in chips_perfiles %}
+    {% if p.keywords %}
+    <a class="badge text-bg-light border me-1 text-decoration-none"
+       href="?tab=palabra&agno={{ agno }}&q={{ (p.keywords | join(' ')) | urlencode }}">{{ p.nombre }}</a>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <p class="mb-3" id="conteo-vivo" aria-live="polite">
+    {% if conteo.n_lineas == 0 %}
+    <span class="text-muted">Sin coincidencias en el Plan Anual {{ agno }}.</span>
+    {% else %}
+    <strong>{{ conteo.n_lineas | numero }}</strong> línea{{ 's' if conteo.n_lineas != 1 else '' }}
+    en <strong>{{ conteo.n_organismos | numero }}</strong> organismo{{ 's' if conteo.n_organismos != 1 else '' }}
+    · <span class="num">{{ conteo.monto_total | clp }}</span>
+    {% endif %}
+  </p>
+</form>
+
+{% if sin_busqueda %}
+<div class="alert alert-info">
+  {% if sin_perfiles %}
+  Escribe algo arriba para buscar, o <a href="/perfiles">crea un perfil</a> para ver resultados
+  automáticamente cada vez que abras esta página.
+  {% else %}
+  Escribe algo arriba para buscar.
+  {% endif %}
+</div>
+{% else %}
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div>
+    <a class="btn btn-sm {% if vista == 'organismo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+       href="{{ link_busqueda(vista='organismo') }}">Por organismo</a>
+    <a class="btn btn-sm {% if vista == 'lineas' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+       href="{{ link_busqueda(vista='lineas', orden='monto') }}">Líneas</a>
+  </div>
+  <a class="small" href="/plan-anual/export.csv{{ link_busqueda() }}">Exportar CSV</a>
+</div>
+
+{% if vista == "lineas" %}
+{% if lineas %}
+<p class="text-muted small">
+  {{ total_lineas }} línea(s) — página {{ pagina_lineas }}/{{ total_paginas_lineas }} —
+  orden:
+  <a href="{{ link_busqueda(vista='lineas', orden='relevancia') }}" class="{% if orden == 'relevancia' %}fw-bold{% endif %}">relevancia</a> ·
+  <a href="{{ link_busqueda(vista='lineas', orden='monto') }}" class="{% if orden == 'monto' %}fw-bold{% endif %}">mayor monto primero</a> ·
+  <a href="{{ link_busqueda(vista='lineas', orden='mes') }}" class="{% if orden == 'mes' %}fw-bold{% endif %}">mes</a>
+</p>
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th scope="col">Descripción</th>
+        <th scope="col">Institución</th>
+        <th scope="col" class="text-end">Cantidad</th>
+        <th scope="col" class="text-end">Monto estimado</th>
+        <th scope="col">Mes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in lineas %}
+      <tr>
+        <td>{{ l.descripcion_producto }}</td>
+        <td><a href="/plan-anual?tab=organismo&agno={{ agno }}&codigo_entidad={{ l.codigo_entidad }}">{{ l.institucion_nombre }}</a></td>
+        <td class="text-end num">{{ l.cantidad_estimada | numero }}</td>
+        <td class="text-end num">{% if l.monto_estimado_clp is not none %}{{ l.monto_estimado_clp | clp }}{% else %}—{% endif %}</td>
+        <td>{{ l.mes_estimado or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if total_paginas_lineas > 1 %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm">
+    {% if pagina_lineas > 1 %}
+    <li class="page-item"><a class="page-link" href="{{ link_busqueda(vista='lineas', orden=orden, pagina_lineas=pagina_lineas - 1) }}">Anterior</a></li>
+    {% endif %}
+    {% if pagina_lineas < total_paginas_lineas %}
+    <li class="page-item"><a class="page-link" href="{{ link_busqueda(vista='lineas', orden=orden, pagina_lineas=pagina_lineas + 1) }}">Siguiente</a></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+{% else %}
+<div class="alert alert-info">Sin coincidencias en el Plan Anual {{ agno }}.</div>
+{% endif %}
+
+{% else %}
+{% if resultados_organismo %}
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th scope="col">Institución</th>
+        <th scope="col" class="text-end">Líneas</th>
+        <th scope="col" class="text-end">Monto estimado</th>
+        <th scope="col">Meses</th>
+        <th scope="col"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in resultados_organismo %}
+      <tr>
+        <td>{{ r.institucion_nombre }}</td>
+        <td class="text-end num">{{ r.n_lineas | numero }}</td>
+        <td class="text-end num">{{ r.monto_total | clp }}</td>
+        <td>{{ r.meses | join(', ') if r.meses else '—' }}</td>
+        <td class="text-end">
+          <a class="small" href="{{ link_busqueda(vista='lineas', orden='monto', codigo_unico=r.codigo_entidad) }}">Ver líneas</a>
+          ·
+          <a class="small" href="/plan-anual?tab=organismo&agno={{ agno }}&codigo_entidad={{ r.codigo_entidad }}">Ver este organismo</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">Sin coincidencias en el Plan Anual {{ agno }}.</div>
+{% endif %}
+{% endif %}
+
+{% endif %}
+{% endif %}
+
+<script>
+(function () {
+  const filtro = document.getElementById("filtro-organismos");
+  const sel = document.getElementById("select-organismos");
+  if (!filtro || !sel) return;
+  filtro.addEventListener("input", function () {
+    const q = filtro.value.trim().toLowerCase();
+    for (const opt of sel.options) {
+      const nombre = opt.getAttribute("data-nombre") || "";
+      opt.hidden = q.length > 0 && nombre.indexOf(q) === -1;
+    }
+  });
+})();
+</script>
+
+{% else %}
+{# --- tab == "organismo": modo original F-plan, sin cambios --- #}
+
 <form class="row g-2 mb-4" method="get" action="/plan-anual">
+  <input type="hidden" name="tab" value="organismo">
   <div class="col-md-6">
     <label class="form-label small">Institución</label>
     <input type="text" name="institucion" class="form-control" placeholder="Buscar por nombre..."
@@ -30,7 +279,7 @@
 <div class="list-group mb-4">
   {% for s in sugerencias %}
   <a class="list-group-item list-group-item-action {% if codigo_entidad == s.codigo_entidad %}active{% endif %}"
-     href="/plan-anual?institucion={{ institucion_texto }}&codigo_entidad={{ s.codigo_entidad }}&agno={{ agno }}">
+     href="/plan-anual?tab=organismo&institucion={{ institucion_texto | urlencode }}&codigo_entidad={{ s.codigo_entidad }}&agno={{ agno }}">
     {{ s.razon_social }}
   </a>
   {% endfor %}
@@ -83,12 +332,12 @@
   <ul class="pagination pagination-sm">
     {% if pagina > 1 %}
     <li class="page-item">
-      <a class="page-link" href="?institucion={{ institucion_texto }}&codigo_entidad={{ codigo_entidad }}&agno={{ agno }}&pagina={{ pagina - 1 }}">Anterior</a>
+      <a class="page-link" href="?tab=organismo&institucion={{ institucion_texto | urlencode }}&codigo_entidad={{ codigo_entidad }}&agno={{ agno }}&pagina={{ pagina - 1 }}">Anterior</a>
     </li>
     {% endif %}
     {% if pagina < total_paginas %}
     <li class="page-item">
-      <a class="page-link" href="?institucion={{ institucion_texto }}&codigo_entidad={{ codigo_entidad }}&agno={{ agno }}&pagina={{ pagina + 1 }}">Siguiente</a>
+      <a class="page-link" href="?tab=organismo&institucion={{ institucion_texto | urlencode }}&codigo_entidad={{ codigo_entidad }}&agno={{ agno }}&pagina={{ pagina + 1 }}">Siguiente</a>
     </li>
     {% endif %}
   </ul>
@@ -96,6 +345,7 @@
 {% endif %}
 {% else %}
 <div class="alert alert-info">Sin líneas para esta institución/año.</div>
+{% endif %}
 {% endif %}
 {% endif %}
 {% endblock %}

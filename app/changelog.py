@@ -15,6 +15,18 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 26),
+        titulo="Buscar en el Plan Anual por lo que se compra, no solo por organismo",
+        descripcion=(
+            "Hasta ahora, para ver qué planeaba comprar un organismo en el año había que "
+            "buscarlo uno por uno. Ahora se puede partir al revés: escribir qué se necesita "
+            "(por ejemplo 'resmas de papel') y ver en qué organismos aparece, con el monto "
+            "estimado y el mes. Al entrar sin escribir nada, se muestran directamente las "
+            "coincidencias con las palabras de tus perfiles activos. Fuente: Dirección "
+            "ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 25),
         titulo="Las descargas vuelven a correr a su hora",
         descripcion=(

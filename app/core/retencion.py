@@ -138,3 +138,20 @@ def tamano_bd(session: Session) -> int | None:
         return int(row[0]) if row else None
     except Exception:
         return None
+
+
+def tamano_tabla(session: Session, nombre_tabla: str) -> int | None:
+    """Tamaño de una tabla (datos + índices + TOAST) en bytes vía
+    pg_total_relation_size. None si no está disponible (SQLite en tests).
+
+    `nombre_tabla` nunca viene de un usuario final (siempre un literal fijo
+    en el código que llama), pero igual se pasa como bindparam — cast a
+    regclass no admite parámetros preparados normales en algunas versiones,
+    así que se arma con to_regclass, que sí acepta texto parametrizado."""
+    try:
+        row = session.execute(
+            text("SELECT pg_total_relation_size(to_regclass(:t))"), {"t": nombre_tabla}
+        ).fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+    except Exception:
+        return None

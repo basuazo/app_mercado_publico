@@ -36,6 +36,11 @@ def url_pac(agno: int, codigo_entidad: int, base_url: str = _BASE_URL_PAC_DEFAUL
     return f"{base_url.rstrip('/')}/{agno}/pacorganismos_{agno}_{codigo_entidad}.zip"
 
 
+def url_pac_completo(agno: int, base_url: str = _BASE_URL_PAC_DEFAULT) -> str:
+    """URL del ZIP del PAC completo del año (todas las instituciones, F-plan-busqueda)."""
+    return f"{base_url.rstrip('/')}/{agno}/pacorganismos_{agno}.zip"
+
+
 def descargar_pac(
     codigo_entidad: int,
     agno: int,
@@ -50,6 +55,41 @@ def descargar_pac(
     excepción. Cualquier otro código de error sí se propaga (no es un caso esperado).
     """
     url = url_pac(agno, codigo_entidad, base_url)
+    resp = httpx.get(url, timeout=timeout, follow_redirects=True)
+    if resp.status_code == 403:
+        return None
+    resp.raise_for_status()
+    return resp.content
+
+
+def head_pac_completo(
+    agno: int,
+    *,
+    base_url: str = _BASE_URL_PAC_DEFAULT,
+    timeout: float = 30.0,
+) -> str | None:
+    """`Last-Modified` del ZIP completo del año (sin descargarlo). None si no hay
+    archivo publicado para ese año (403, ver docs/07-plan-anual.md §5-bis f)."""
+    url = url_pac_completo(agno, base_url)
+    resp = httpx.head(url, timeout=timeout, follow_redirects=True)
+    if resp.status_code == 403:
+        return None
+    resp.raise_for_status()
+    last_modified: str | None = resp.headers.get("Last-Modified")
+    return last_modified
+
+
+def descargar_pac_completo(
+    agno: int,
+    *,
+    base_url: str = _BASE_URL_PAC_DEFAULT,
+    timeout: float = 120.0,
+) -> bytes | None:
+    """Descarga el ZIP del PAC completo del año (todas las instituciones).
+
+    None si el año no tiene archivo publicado (403). Cualquier otro código de
+    error se propaga (regla 6: no es un caso esperado, no se silencia)."""
+    url = url_pac_completo(agno, base_url)
     resp = httpx.get(url, timeout=timeout, follow_redirects=True)
     if resp.status_code == 403:
         return None

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import calendar
+import csv
+import io
 import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -11,7 +13,7 @@ from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -55,7 +57,12 @@ from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.changelog import entradas_changelog, fecha_ultima_novedad
 from app.core.logging import get_logger
 from app.core.tiempo import TZ_CHILE
-from app.ingest.plan_compra import get_plan, sync_instituciones_pac, sync_sectores_organismos
+from app.ingest.plan_compra import (
+    anio_completo_cargado,
+    get_plan,
+    sync_instituciones_pac,
+    sync_sectores_organismos,
+)
 from app.matching.engine import match_perfil
 from app.matching.feedback import alternar_me_sirve, deshacer_descarte, listar_descartadas
 from app.matching.feedback import descartar as marcar_descarte
@@ -73,7 +80,8 @@ from app.matching.seguimiento import (
     obtener_seguimiento,
     seguir_oportunidad,
 )
-from app.models.enums import EstadoOportunidad, FamiliaEstado, RolUsuario
+from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
+from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, FamiliaEstado, RolUsuario
 from app.models.seeds import REGIONES
 from app.models.tables import (
     CaProducto,
@@ -83,7 +91,15 @@ from app.models.tables import (
     LicitacionItem,
     PerfilBusqueda,
     PlanCompraLinea,
+    SyncState,
     Usuario,
+)
+from app.plan_busqueda import (
+    FiltrosPlanBusqueda,
+    buscar_lineas,
+    buscar_por_organismo,
+    contar_plan,
+    lineas_para_exportar,
 )
 
 router = APIRouter()
@@ -1391,13 +1407,90 @@ async def salud_get(
 
 
 # ---------------------------------------------------------------------------
-# Plan Anual de Compra (F-plan) — consulta pública, sin scoping de ownership
+# Plan Anual de Compra (F-plan / F-plan-busqueda) — consulta pública, sin
+# scoping de ownership. Dos pestañas en la misma ruta: "palabra" (búsqueda
+# inversa por descripción, nueva) y "organismo" (la de F-plan, sin cambios).
 # ---------------------------------------------------------------------------
+
+_PALABRA_PAGE_SIZE = 50
+
+
+def _mes_actual_chile() -> int:
+    return datetime.now(TZ_CHILE).month
+
+
+def _parse_organismos_ids(valores: list[str]) -> list[int]:
+    return [int(v.strip()) for v in valores if v.strip().isdigit()]
+
+
+def _keywords_union_perfiles(perfiles: list[PerfilBusqueda]) -> tuple[list[str], list[str]]:
+    """Une keywords/keywords_excluir de varios perfiles, sin duplicados y en
+    orden estable — usado por la vista "Para mis perfiles" (§3-bis)."""
+    incluir: list[str] = []
+    excluir: list[str] = []
+    vistos_i: set[str] = set()
+    vistos_e: set[str] = set()
+    for p in perfiles:
+        for k in p.keywords or []:
+            if k and k not in vistos_i:
+                vistos_i.add(k)
+                incluir.append(k)
+        for k in p.keywords_excluir or []:
+            if k and k not in vistos_e:
+                vistos_e.add(k)
+                excluir.append(k)
+    return incluir, excluir
+
+
+def _filtros_desde_query(
+    session: Session,
+    user: Usuario,
+    *,
+    agno: int,
+    q: str,
+    organismos: list[str],
+    sector: str,
+    todo_el_anio: bool,
+    monto_min: str,
+    monto_max: str,
+) -> FiltrosPlanBusqueda:
+    """Arma los filtros de búsqueda por palabra. Sin texto escrito, cae a la
+    vista "Para mis perfiles" (unión de keywords/exclusiones de los perfiles
+    ACTIVOS de este usuario — nunca los de otro, regla 17)."""
+    q_strip = q.strip()
+    q_include: str | None = q_strip or None
+    q_exclude: str | None = None
+    if not q_strip:
+        perfiles_activos = [p for p in listar_perfiles(session, user.id) if p.activo]
+        incluir, excluir = _keywords_union_perfiles(perfiles_activos)
+        q_include = build_tsquery(incluir) if keywords_validas(incluir) else None
+        q_exclude = build_exclude_tsquery(excluir) if keywords_validas(excluir) else None
+
+    return FiltrosPlanBusqueda(
+        agno=agno,
+        organismos=_parse_organismos_ids(organismos) or None,
+        sector=sector.strip() or None,
+        desde_mes=None if todo_el_anio else _mes_actual_chile(),
+        monto_min=_parse_monto(monto_min),
+        monto_max=_parse_monto(monto_max),
+        q_include=q_include,
+        q_exclude=q_exclude,
+    )
 
 
 @router.get("/plan-anual", response_class=HTMLResponse)
 async def plan_anual_get(
     request: Request,
+    tab: str = "palabra",
+    q: str = "",
+    organismos: list[str] = Query(default=[]),
+    sector: str = "",
+    todo_el_anio: bool = False,
+    monto_min: str = "",
+    monto_max: str = "",
+    vista: str = "organismo",
+    orden: str = "relevancia",
+    pagina_lineas: int = 1,
     institucion: str = "",
     codigo_entidad: str = "",
     agno: str = "",
@@ -1406,32 +1499,114 @@ async def plan_anual_get(
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     settings = request.app.state.settings
-    sync_instituciones_pac(session, settings)
-    sync_sectores_organismos(session, settings)
+    try:
+        sync_instituciones_pac(session, settings)
+        sync_sectores_organismos(session, settings)
+    except httpx.HTTPError:
+        _log.warning("plan_anual_get: no se pudo sincronizar el catálogo de organismos", exc_info=True)
 
     anio_actual = datetime.now(TZ_CHILE).year
     anios_disponibles = list(range(settings.plan_compra_anio_inicio, anio_actual + 1))
-
     agno_int = int(agno) if agno.strip().isdigit() else anio_actual
-    codigo_entidad_int = int(codigo_entidad) if codigo_entidad.strip().isdigit() else None
 
-    sugerencias = buscar_instituciones_pac(session, institucion) if institucion.strip() else []
+    organismos_catalogo = listar_organismos_catalogo(session)
+    organismos_json = [
+        {"id": o.codigo_entidad, "nombre": o.razon_social, "sector": o.sector or SECTOR_SIN_CLASIFICACION}
+        for o in organismos_catalogo
+    ]
+    sectores_disponibles = sorted({o.sector or SECTOR_SIN_CLASIFICACION for o in organismos_catalogo})
 
-    institucion_seleccionada: InstitucionPAC | None = None
-    lineas_totales: list[PlanCompraLinea] = []
-    sin_plan = False
-    if codigo_entidad_int is not None:
-        institucion_seleccionada = session.get(InstitucionPAC, codigo_entidad_int)
-        resultado = get_plan(session, settings, codigo_entidad_int, agno_int)
-        sin_plan = resultado.estado == "sin_plan"
-        lineas_totales = resultado.lineas
+    if tab == "organismo":
+        codigo_entidad_int = int(codigo_entidad) if codigo_entidad.strip().isdigit() else None
+        sugerencias = buscar_instituciones_pac(session, institucion) if institucion.strip() else []
 
-    total_estimado = sum(linea.monto_estimado_clp or 0.0 for linea in lineas_totales)
-    total_filas = len(lineas_totales)
-    total_paginas = max(1, (total_filas + _PAC_PAGE_SIZE - 1) // _PAC_PAGE_SIZE)
-    pagina = max(1, min(pagina, total_paginas))
-    offset = (pagina - 1) * _PAC_PAGE_SIZE
-    lineas_pagina = lineas_totales[offset : offset + _PAC_PAGE_SIZE]
+        institucion_seleccionada: InstitucionPAC | None = None
+        lineas_totales: list[PlanCompraLinea] = []
+        sin_plan = False
+        if codigo_entidad_int is not None:
+            institucion_seleccionada = session.get(InstitucionPAC, codigo_entidad_int)
+            resultado = get_plan(session, settings, codigo_entidad_int, agno_int)
+            sin_plan = resultado.estado == "sin_plan"
+            lineas_totales = resultado.lineas
+
+        total_estimado = sum(linea.monto_estimado_clp or 0.0 for linea in lineas_totales)
+        total_filas = len(lineas_totales)
+        total_paginas = max(1, (total_filas + _PAC_PAGE_SIZE - 1) // _PAC_PAGE_SIZE)
+        pagina = max(1, min(pagina, total_paginas))
+        offset = (pagina - 1) * _PAC_PAGE_SIZE
+        lineas_pagina = lineas_totales[offset : offset + _PAC_PAGE_SIZE]
+
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "plan_anual.html",
+            _ctx(
+                request,
+                user,
+                tab="organismo",
+                agno=agno_int,
+                anios_disponibles=anios_disponibles,
+                organismos_json=organismos_json,
+                sectores_disponibles=sectores_disponibles,
+                institucion_texto=institucion,
+                sugerencias=sugerencias,
+                codigo_entidad=codigo_entidad_int,
+                institucion_seleccionada=institucion_seleccionada,
+                sin_plan=sin_plan,
+                lineas=lineas_pagina,
+                total_filas=total_filas,
+                total_estimado=total_estimado,
+                pagina=pagina,
+                total_paginas=total_paginas,
+            ),
+        )
+
+    # --- tab == "palabra" (F-plan-busqueda) ---------------------------------
+    cargando_completo = not anio_completo_cargado(session, agno_int)
+    sync_anual = session.get(SyncState, f"plan_compra_anual_{agno_int}")
+    actualizado_al = sync_anual.cursor if sync_anual else None
+
+    perfiles_activos = [p for p in listar_perfiles(session, user.id) if p.activo]
+    q_strip = q.strip()
+    modo_mis_perfiles = not q_strip
+    incluir_mis_perfiles, excluir_mis_perfiles = (
+        _keywords_union_perfiles(perfiles_activos) if modo_mis_perfiles else ([], [])
+    )
+    sin_busqueda = (
+        modo_mis_perfiles
+        and not incluir_mis_perfiles
+        and not excluir_mis_perfiles
+        and not organismos
+        and not sector.strip()
+    )
+
+    resultados_organismo: list[Any] = []
+    lineas_lista: list[PlanCompraLinea] = []
+    total_lineas_vista = 0
+    conteo = {"n_lineas": 0, "monto_total": 0.0, "n_organismos": 0}
+    if not cargando_completo and not sin_busqueda:
+        filtros = _filtros_desde_query(
+            session,
+            user,
+            agno=agno_int,
+            q=q,
+            organismos=organismos,
+            sector=sector,
+            todo_el_anio=todo_el_anio,
+            monto_min=monto_min,
+            monto_max=monto_max,
+        )
+        conteo = contar_plan(session, filtros)
+        if vista == "lineas":
+            lineas_lista, total_lineas_vista = buscar_lineas(
+                session, filtros, orden=orden, pagina=pagina_lineas, page_size=_PALABRA_PAGE_SIZE
+            )
+        else:
+            resultados_organismo = buscar_por_organismo(session, filtros)
+
+    chips_perfiles = [
+        {"id": p.id, "nombre": p.nombre, "keywords": list(p.keywords or [])} for p in perfiles_activos
+    ]
+    total_paginas_lineas = max(1, (total_lineas_vista + _PALABRA_PAGE_SIZE - 1) // _PALABRA_PAGE_SIZE)
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -1439,17 +1614,128 @@ async def plan_anual_get(
         _ctx(
             request,
             user,
-            institucion_texto=institucion,
-            sugerencias=sugerencias,
-            codigo_entidad=codigo_entidad_int,
-            institucion_seleccionada=institucion_seleccionada,
+            tab="palabra",
             agno=agno_int,
             anios_disponibles=anios_disponibles,
-            sin_plan=sin_plan,
-            lineas=lineas_pagina,
-            total_filas=total_filas,
-            total_estimado=total_estimado,
-            pagina=pagina,
-            total_paginas=total_paginas,
+            organismos_json=organismos_json,
+            sectores_disponibles=sectores_disponibles,
+            organismos_sel=_parse_organismos_ids(organismos),
+            sector_sel=sector,
+            q=q,
+            todo_el_anio=todo_el_anio,
+            monto_min=monto_min,
+            monto_max=monto_max,
+            vista=vista,
+            orden=orden,
+            pagina_lineas=pagina_lineas,
+            total_paginas_lineas=total_paginas_lineas,
+            modo_mis_perfiles=modo_mis_perfiles,
+            sin_busqueda=sin_busqueda,
+            sin_perfiles=not perfiles_activos,
+            cargando_completo=cargando_completo,
+            actualizado_al=actualizado_al,
+            chips_perfiles=chips_perfiles,
+            resultados_organismo=resultados_organismo,
+            lineas=lineas_lista,
+            total_lineas=total_lineas_vista,
+            conteo=conteo,
         ),
+    )
+
+
+@router.get("/plan-anual/conteo", response_class=HTMLResponse)
+async def plan_anual_conteo(
+    request: Request,
+    agno: str = "",
+    q: str = "",
+    organismos: list[str] = Query(default=[]),
+    sector: str = "",
+    todo_el_anio: bool = False,
+    monto_min: str = "",
+    monto_max: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Conteo en vivo (HTMX): solo números, respeta los mismos filtros que la
+    búsqueda principal — nunca expone filas."""
+    anio_actual = datetime.now(TZ_CHILE).year
+    agno_int = int(agno) if agno.strip().isdigit() else anio_actual
+    filtros = _filtros_desde_query(
+        session,
+        user,
+        agno=agno_int,
+        q=q,
+        organismos=organismos,
+        sector=sector,
+        todo_el_anio=todo_el_anio,
+        monto_min=monto_min,
+        monto_max=monto_max,
+    )
+    conteo = contar_plan(session, filtros)
+    return _TEMPLATES.TemplateResponse(request, "_plan_anual_conteo.html", {"conteo": conteo})
+
+
+@router.get("/plan-anual/export.csv")
+async def plan_anual_export_csv(
+    agno: str = "",
+    q: str = "",
+    organismos: list[str] = Query(default=[]),
+    sector: str = "",
+    todo_el_anio: bool = False,
+    monto_min: str = "",
+    monto_max: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> Response:
+    """CSV de lo filtrado (tope `_EXPORT_MAX_FILAS` en app.plan_busqueda), con
+    la leyenda de fuente como primera línea."""
+    anio_actual = datetime.now(TZ_CHILE).year
+    agno_int = int(agno) if agno.strip().isdigit() else anio_actual
+    filtros = _filtros_desde_query(
+        session,
+        user,
+        agno=agno_int,
+        q=q,
+        organismos=organismos,
+        sector=sector,
+        todo_el_anio=todo_el_anio,
+        monto_min=monto_min,
+        monto_max=monto_max,
+    )
+    lineas = lineas_para_exportar(session, filtros)
+
+    buf = io.StringIO()
+    buf.write("Fuente: Dirección ChileCompra\n")
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "institucion",
+            "codigo_entidad",
+            "descripcion_producto",
+            "cantidad_estimada",
+            "monto_unitario_clp",
+            "monto_estimado_clp",
+            "mes_estimado",
+            "trimestre_estimado",
+            "estado_planificacion",
+        ]
+    )
+    for linea in lineas:
+        writer.writerow(
+            [
+                linea.institucion_nombre,
+                linea.codigo_entidad,
+                linea.descripcion_producto,
+                linea.cantidad_estimada,
+                linea.monto_unitario_clp,
+                linea.monto_estimado_clp,
+                linea.mes_estimado,
+                linea.trimestre_estimado,
+                linea.estado_planificacion,
+            ]
+        )
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="plan-anual-{agno_int}.csv"'},
     )

@@ -182,14 +182,14 @@ def test_plan_anual_busca_institucion_muestra_sugerencias(client, usuario, setti
         )
         s.commit()
 
-    r = client.get("/plan-anual?institucion=MINISTERIO", cookies=_cookie(settings, usuario))
+    r = client.get("/plan-anual?tab=organismo&institucion=MINISTERIO", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "MINISTERIO  PUBLICO" in r.text
 
 
 def test_plan_anual_busqueda_sin_resultados(client, usuario, settings, engine):
     _marcar_catalogo_instituciones_fresco(engine)
-    r = client.get("/plan-anual?institucion=NO+EXISTE+ESTO", cookies=_cookie(settings, usuario))
+    r = client.get("/plan-anual?tab=organismo&institucion=NO+EXISTE+ESTO", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "No se encontraron instituciones" in r.text
 
@@ -203,7 +203,7 @@ def test_plan_anual_institucion_seleccionada_muestra_lineas(client, usuario, set
     _marcar_catalogo_instituciones_fresco(engine)
     _cachear_plan_ok(engine, 224060, 2026, n_lineas=2)
 
-    r = client.get("/plan-anual?codigo_entidad=224060&agno=2026", cookies=_cookie(settings, usuario))
+    r = client.get("/plan-anual?tab=organismo&codigo_entidad=224060&agno=2026", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "MINISTERIO PUBLICO" in r.text
     assert "Compra de prueba 0" in r.text
@@ -215,7 +215,7 @@ def test_plan_anual_sin_plan_publicado_muestra_mensaje(client, usuario, settings
     _marcar_catalogo_instituciones_fresco(engine)
     _cachear_sin_plan(engine, 7055, 2024)
 
-    r = client.get("/plan-anual?codigo_entidad=7055&agno=2024", cookies=_cookie(settings, usuario))
+    r = client.get("/plan-anual?tab=organismo&codigo_entidad=7055&agno=2024", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Sin plan publicado este año" in r.text
 
@@ -226,13 +226,13 @@ def test_plan_anual_agno_invalido_usa_default_sin_error(client, usuario, setting
         respx.get(url__regex=r"https://pac-files\.da\.mercadopublico\.cl/\d{4}/pacorganismos_\d{4}_224060\.zip").mock(
             return_value=httpx.Response(403)
         )
-        r = client.get("/plan-anual?codigo_entidad=224060&agno=no-es-un-anio", cookies=_cookie(settings, usuario))
+        r = client.get("/plan-anual?tab=organismo&codigo_entidad=224060&agno=no-es-un-anio", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
 
 
 def test_plan_anual_codigo_entidad_invalido_no_rompe(client, usuario, settings, engine):
     _marcar_catalogo_instituciones_fresco(engine)
-    r = client.get("/plan-anual?codigo_entidad=no-es-un-codigo", cookies=_cookie(settings, usuario))
+    r = client.get("/plan-anual?tab=organismo&codigo_entidad=no-es-un-codigo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Plan Anual de Compra" in r.text
 
@@ -241,7 +241,7 @@ def test_plan_anual_pagina_fuera_de_rango_se_acota(client, usuario, settings, en
     _marcar_catalogo_instituciones_fresco(engine)
     _cachear_plan_ok(engine, 224060, 2026, n_lineas=2)
 
-    r = client.get("/plan-anual?codigo_entidad=224060&agno=2026&pagina=999", cookies=_cookie(settings, usuario))
+    r = client.get("/plan-anual?tab=organismo&codigo_entidad=224060&agno=2026&pagina=999", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Compra de prueba 0" in r.text
 

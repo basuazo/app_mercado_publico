@@ -5,14 +5,16 @@ IMPORTANTE: get_salud_data() NUNCA debe incluir MP_TICKET, SECRET_KEY ni JOBS_TO
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.core.retencion import tamano_bd
+from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
-from app.models.tables import SyncState
+from app.core.tiempo import TZ_CHILE
+from app.models.tables import PlanCompraLinea, SyncState
 
 # Clave del advisory lock (igual que orchestrator._LOCK_KEY)
 _LOCK_KEY = 7_891_011
@@ -81,4 +83,22 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
         },
         "lock_activo": _advisory_lock_activo(session),
         "errores_recientes": errores,
+        "plan_anual": _plan_anual_salud(session),
+    }
+
+
+def _plan_anual_salud(session: Session) -> dict[str, Any]:
+    """F-plan-busqueda: filas del PAC completo cargadas, año, `Last-Modified`
+    de la fuente y tamaño de `plan_compra_lineas` (regla 11: Neon 0,5 GB)."""
+    agno = datetime.now(TZ_CHILE).year
+    state = session.get(SyncState, f"plan_compra_anual_{agno}")
+    n_filas = session.execute(
+        select(func.count()).select_from(PlanCompraLinea).where(PlanCompraLinea.agno == agno)
+    ).scalar_one()
+    return {
+        "agno": agno,
+        "filas_cargadas": n_filas,
+        "actualizado_al": state.cursor if state else None,
+        "ultimo_ok": state.ultimo_ok.isoformat() if state and state.ultimo_ok else None,
+        "tamano_tabla_bytes": tamano_tabla(session, "plan_compra_lineas"),
     }
