@@ -35,6 +35,31 @@ Detalle de cada fase y de cada canario en las entradas de abajo (24-sep).
    el scheduler de Render, dejar el monitor externo (cubre el riesgo de 60 días sin actividad).
    Rollback si algo falla antes: Disable workflow en Actions + reactivar los crons de cron-job.org.
 
+**Primer día en Actions (25-sep, logs en `data/logs/test_ciclo1/`) [V]:** todo lo que corrió salió OK
+(ca, ciclo-match, ciclo-activas, nocturno, retencion; la espera del lock funcionó: esperas de 9–18 min
+y lock conseguido). **Pero los `schedule` de GitHub llegaron 2 a 5,5 h tarde** (nocturno 04:10→09:34
+UTC, retencion 08:40→14:07, resumen 11:30/12:30→15:54/17:21, ciclo-activas 13:15→17:56) y `ca` corrió
+**6 veces en ~24 h en vez de 24** [V, lista de Actions: 20:50, 01:46, 07:08, 12:47, 16:59, 20:15 Chile]:
+GitHub descartó ~18 disparos. Consecuencias: **el resumen no se envió**
+(el guardia "08" rechazó ambos disparos), el atraso de `ca` subió de 14 h a 25 h, y el nocturno corrió
+a las 06:34 Chile, a minutos de salir de la ventana 22–07. GitHub documenta que `schedule` se atrasa
+con carga alta y puede descartar corridas.
+Otro hallazgo: `detalles-match` repite los mismos códigos que fallan siempre (p. ej. 2792-842,
+4468-125/126, 2917-262, 1274189-440): ~90 s cada uno por corrida, sin avanzar.
+**Propuesta:** disparar los workflows desde cron-job.org vía API de GitHub (`workflow_dispatch`, PAT
+fine-grained con solo Actions:write en el repo), que es puntual y además evita la regla de 60 días de
+los `schedule`; y un contador de fallos por oportunidad para dejar de reintentar detalles que fallan
+siempre.
+
+**Siguiente (25-sep):** correr `docs/prompt-F-actions-3-disparo-externo.md` (quita los `schedule`),
+push, y configurar cron-job.org según `docs/operacion-disparos.md` (token fine-grained Actions:write,
+7 crons en hora de Chile). F-actions-3 (`e4a0b7a`) en main y crons de cron-job.org → GitHub configurados (25-sep).
+Siguiente: observar un día con disparo externo; en paralelo `docs/prompt-F-detalles-fallos.md`
+(columnas `detalle_fallos` / `detalle_ultimo_fallo`, espera 6→48 h tras 3 fallos). OJO deploy: Render
+migra al arrancar y Actions no → push justo después de un `ca` de los :05 y confirmar la migración en
+el log de Render antes del siguiente disparo.
+`docs/prompt-F-actions-3-cutover.md` quedó obsoleto.
+
 **Pendientes (backlog consolidado 24-sep):**
 - *Operación / infraestructura:* F-actions-3; rotar JOBS_TOKEN (o retirarlo si se apaga el
   endpoint); `_job.yml` exige `DIGEST_HOUR` y `TASA_*` (hoy cargadas en GitHub con los defaults del
@@ -96,6 +121,11 @@ Detalle de cada fase y de cada canario en las entradas de abajo (24-sep).
   5. `docs/prompt-F-ficha-modal.md` (ajustado a Guardar y Mi registro; el lienzo aún muestra los dos
      botones viejos)
   Independiente, sin prompt todavía: F-organismo-lic.
+- **Decisión (24-sep): búsqueda inversa en el Plan Anual** por palabra/producto en todos los
+  organismos, con selector de organismo(s) y sector. Solo el año en curso completo en Neon (~90–120 MB
+  estimados [I], medir en Paso 0); años anteriores siguen on-demand. [V] `codigo_producto` del PAC no es
+  catálogo ni UNSPSC: "buscar por ítems" = buscar en la descripción. Prompt:
+  `docs/prompt-F-plan-busqueda.md` (independiente de la serie). Incluye vista de entrada "Para mis perfiles" (keywords de los perfiles, cero tipeo), "desde este mes" por defecto y conteo en vivo.
 
 ## Actualización 22-sep-2026 (F-ca-ventana) · histórico
 

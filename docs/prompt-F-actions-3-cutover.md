@@ -1,3 +1,6 @@
+> **OBSOLETO (25-sep-2026).** Reemplazado por `docs/prompt-F-actions-3-disparo-externo.md` y
+> `docs/operacion-disparos.md`. No correr.
+
 # Prompt F-actions-3 — cutover, vigilancia y cierre documental
 
 > Copiar íntegro en una **conversación nueva** de Claude Code, en la raíz del repo.
