@@ -5,6 +5,9 @@
 
 ---
 
+> **26-sep-2026: resumen de retomada en `docs/handoff-2026-09-26.md` (leer primero).** Disparo
+> externo cron-job.org → GitHub Actions en marcha; F-detalles-fallos escrita pero SIN COMMIT.
+
 ## CÓMO RETOMAR (24-sep-2026, noche) · LEER PRIMERO
 
 **Estado.** La ingesta pasó de Render + cron-job.org a **GitHub Actions ejecutando el CLI contra
