@@ -131,6 +131,7 @@ jobs:
           DETALLES_FALLOS_MAX: ${{ vars.DETALLES_FALLOS_MAX }}
           DETALLES_ESPERA_HORAS: ${{ vars.DETALLES_ESPERA_HORAS }}
           ESTADOS_VENCIDOS_MAX_REQUESTS: ${{ vars.ESTADOS_VENCIDOS_MAX_REQUESTS }}
+          PLAN_ANUAL_DIAS_MIN_ENTRE_CARGAS: ${{ vars.PLAN_ANUAL_DIAS_MIN_ENTRE_CARGAS }}
           JOBS: ${{ inputs.jobs }}
           ESPERAR_LOCK_MIN: ${{ inputs.esperar_lock_min }}
         # Sin -e a propósito: el default de Actions es `bash -e`, que cortaría el
@@ -138,7 +139,7 @@ jobs:
         shell: bash --noprofile --norc {0}
         run: |
           # Una opcional vacía NO debe llegar a pydantic como "" (rompe int/float).
-          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA CA_MAX_PAGINAS_POR_VENTANA RATE_LIMIT_RPS DETALLES_MINUTOS_DIA DETALLES_MINUTOS_NOCHE DETALLES_FALLOS_MAX DETALLES_ESPERA_HORAS ESTADOS_VENCIDOS_MAX_REQUESTS; do
+          for v in CA_TAMANO_PAGINA CA_VENTANA_HORAS CA_MAX_REQUESTS_POR_CORRIDA CA_MAX_PAGINAS_POR_VENTANA RATE_LIMIT_RPS DETALLES_MINUTOS_DIA DETALLES_MINUTOS_NOCHE DETALLES_FALLOS_MAX DETALLES_ESPERA_HORAS ESTADOS_VENCIDOS_MAX_REQUESTS PLAN_ANUAL_DIAS_MIN_ENTRE_CARGAS; do
             if [ -z "${!v}" ]; then unset "$v"; fi
           done
 

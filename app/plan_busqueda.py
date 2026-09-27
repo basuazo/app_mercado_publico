@@ -26,6 +26,7 @@ from typing import Any
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
+from app.ingest.plan_compra import lote_vigente
 from app.models.tables import InstitucionPAC, PlanCompraLinea
 
 # Misma expresión que el índice GIN de la migración d7f2a4c8b6e1 — tienen que
@@ -64,8 +65,16 @@ class ResultadoOrganismo:
     meses: list[int]
 
 
-def _condiciones_base(filtros: FiltrosPlanBusqueda) -> list[Any]:
+def _condiciones_base(session: Session, filtros: FiltrosPlanBusqueda) -> list[Any]:
     conds: list[Any] = [PlanCompraLinea.agno == filtros.agno]
+    # F-plan-busqueda-fix: si una carga del año completo murió a medias, la
+    # tabla puede tener temporalmente dos lotes del mismo año — sin este
+    # filtro, filas duplicadas y montos sumados dos veces. Sin lote vigente
+    # registrado se deja sin filtrar (compatibilidad con datos on-demand /
+    # de test que no pasan por sync_plan_anual_completo).
+    lote = lote_vigente(session, filtros.agno)
+    if lote is not None:
+        conds.append(PlanCompraLinea.lote_id == lote)
     if filtros.organismos:
         conds.append(PlanCompraLinea.codigo_entidad.in_(filtros.organismos))
     if filtros.desde_mes is not None:
@@ -108,7 +117,7 @@ def buscar_por_organismo(session: Session, filtros: FiltrosPlanBusqueda) -> list
             func.sum(PlanCompraLinea.monto_estimado_clp).label("monto_total"),
             func.array_agg(func.distinct(PlanCompraLinea.mes_estimado)).label("meses"),
         )
-        .where(*_condiciones_base(filtros))
+        .where(*_condiciones_base(session, filtros))
         .group_by(PlanCompraLinea.codigo_entidad, PlanCompraLinea.institucion_nombre)
         .order_by(func.sum(PlanCompraLinea.monto_estimado_clp).desc().nulls_last())
         .limit(_MAX_ORGANISMOS)
@@ -133,7 +142,7 @@ def contar_plan(session: Session, filtros: FiltrosPlanBusqueda) -> dict[str, Any
         func.count(),
         func.sum(PlanCompraLinea.monto_estimado_clp),
         func.count(func.distinct(PlanCompraLinea.codigo_entidad)),
-    ).where(*_condiciones_base(filtros))
+    ).where(*_condiciones_base(session, filtros))
     stmt = _aplicar_fts(stmt, filtros)
     n_lineas, monto_total, n_organismos = session.execute(stmt).one()
     return {
@@ -152,7 +161,7 @@ def buscar_lineas(
     page_size: int = 50,
 ) -> tuple[list[PlanCompraLinea], int]:
     """Vista "Líneas": paginada en SQL (LIMIT/OFFSET), nunca trae todo a memoria."""
-    conds = _condiciones_base(filtros)
+    conds = _condiciones_base(session, filtros)
 
     total = session.execute(_aplicar_fts(select(func.count()).where(*conds), filtros)).scalar_one()
 
@@ -175,6 +184,6 @@ def buscar_lineas(
 def lineas_para_exportar(session: Session, filtros: FiltrosPlanBusqueda) -> list[PlanCompraLinea]:
     """Hasta `_EXPORT_MAX_FILAS` líneas para el CSV, en el mismo orden que la
     vista de líneas por defecto (monto descendente)."""
-    stmt = _aplicar_fts(select(PlanCompraLinea).where(*_condiciones_base(filtros)), filtros)
+    stmt = _aplicar_fts(select(PlanCompraLinea).where(*_condiciones_base(session, filtros)), filtros)
     stmt = stmt.order_by(PlanCompraLinea.monto_estimado_clp.desc().nulls_last()).limit(_EXPORT_MAX_FILAS)
     return list(session.execute(stmt).scalars())

@@ -170,6 +170,14 @@ class Settings(BaseSettings):
         default=2025,
         description="Primer año con PAC publicado en datos abiertos (verificado en el spike)",
     )
+    plan_anual_dias_min_entre_cargas: int = Field(
+        default=28,
+        description=(
+            "Días mínimos entre cargas del PAC completo (job `plan-anual`): el "
+            "archivo se regenera ~mensualmente aunque el contenido casi no cambie "
+            "(decisión de Boris, 27-sep, ver docs/07-plan-anual.md §5-bis g)"
+        ),
+    )
 
     # --- Umbral de relevancia del feed (F-feed-umbral) ---
     feed_min_score_default: int = Field(

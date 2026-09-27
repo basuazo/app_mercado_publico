@@ -16,16 +16,23 @@ import pytest
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
 
-from app.models.tables import InstitucionPAC, PlanCompraLinea
+from app.core.db import normalizar_url_driver
+from app.ingest.plan_compra import _fuente_lote_vigente
+from app.models.tables import InstitucionPAC, PlanCompraLinea, SyncState
 from app.plan_busqueda import (
     FiltrosPlanBusqueda,
     buscar_lineas,
     buscar_por_organismo,
     contar_plan,
+    lineas_para_exportar,
 )
 
 _DB_URL = os.environ.get("DATABASE_URL", "")
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
+# La app siempre normaliza el driver a psycopg v3 (app/core/db.py); un
+# create_engine con la URL cruda busca psycopg2, que no está en el stack
+# (F-plan-busqueda-fix, 11 errores el 27-sep contra dev).
+_DB_URL_ENGINE = normalizar_url_driver(_DB_URL)
 
 needs_postgres = pytest.mark.skipif(
     not _TIENE_POSTGRES,
@@ -43,7 +50,7 @@ class TestBuscarPlan:
         import app.models.tables  # noqa: F401
         from app.models.base import Base
 
-        e = create_engine(_DB_URL)
+        e = create_engine(_DB_URL_ENGINE)
         Base.metadata.create_all(e, checkfirst=True)
         yield e
         e.dispose()
@@ -59,6 +66,9 @@ class TestBuscarPlan:
             pg_session.execute(delete(PlanCompraLinea).where(PlanCompraLinea.agno == _AGNO_TEST))
             pg_session.execute(
                 delete(InstitucionPAC).where(InstitucionPAC.codigo_entidad.in_([111, 222, 333]))
+            )
+            pg_session.execute(
+                delete(SyncState).where(SyncState.fuente == _fuente_lote_vigente(_AGNO_TEST))
             )
             pg_session.commit()
 
@@ -167,3 +177,39 @@ class TestBuscarPlan:
         filtros = FiltrosPlanBusqueda(agno=_AGNO_TEST, monto_min=150000, monto_max=250000)
         _, total = buscar_lineas(pg_session, filtros)
         assert total == 1  # solo el de 200000
+
+    def test_dos_lotes_del_mismo_anio_solo_ve_el_vigente(self, pg_session, datos):
+        """F-plan-busqueda-fix: una carga interrumpida a medias puede dejar un
+        segundo lote (huérfano) del mismo año en la tabla. Todas las vistas
+        deben seguir viendo solo el lote vigente (lote_id=1, ver `datos`)."""
+        pg_session.add(SyncState(fuente=_fuente_lote_vigente(_AGNO_TEST), cursor="1"))
+        pg_session.add(
+            PlanCompraLinea(
+                codigo_entidad=111,
+                agno=_AGNO_TEST,
+                institucion_nombre="MINISTERIO DE PRUEBA",
+                codigo_producto="9",
+                descripcion_producto="fila huérfana de un lote viejo que no debe verse",
+                monto_estimado_clp=999999.0,
+                mes_estimado=3,
+                lote_id=2,
+            )
+        )
+        pg_session.commit()
+
+        filtros = FiltrosPlanBusqueda(agno=_AGNO_TEST)
+
+        _, total = buscar_lineas(pg_session, filtros)
+        assert total == 3
+
+        conteo = contar_plan(pg_session, filtros)
+        assert conteo["n_lineas"] == 3
+        assert conteo["monto_total"] == 800000.0
+
+        resultados = buscar_por_organismo(pg_session, filtros)
+        por_codigo = {r.codigo_entidad: r for r in resultados}
+        assert por_codigo[111].n_lineas == 1
+        assert por_codigo[111].monto_total == 100000.0
+
+        exportadas = lineas_para_exportar(pg_session, filtros)
+        assert len(exportadas) == 3

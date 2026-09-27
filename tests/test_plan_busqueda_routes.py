@@ -21,6 +21,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.main import create_app
 from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token
+from app.core.db import normalizar_url_driver
 from app.core.settings import Settings
 from app.models.base import Base
 from app.models.enums import RolUsuario
@@ -31,6 +32,9 @@ _AGNO = 2026
 
 _DB_URL = os.environ.get("DATABASE_URL", "")
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
+# La app siempre normaliza el driver a psycopg v3 (app/core/db.py); un
+# create_engine con la URL cruda busca psycopg2, que no está en el stack.
+_DB_URL_ENGINE = normalizar_url_driver(_DB_URL)
 needs_postgres = pytest.mark.skipif(
     not _TIENE_POSTGRES,
     reason="Requiere DATABASE_URL apuntando a Postgres (con migración aplicada)",
@@ -252,7 +256,7 @@ class TestParaMisPerfilesEndToEnd:
     def pg_engine(self):
         import app.models.tables  # noqa: F401
 
-        e = create_engine(_DB_URL)
+        e = create_engine(_DB_URL_ENGINE)
         Base.metadata.create_all(e, checkfirst=True)
         yield e
         e.dispose()

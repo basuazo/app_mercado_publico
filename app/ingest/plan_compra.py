@@ -27,6 +27,7 @@ from app.clients.plan_compra import (
     parse_pac_csv,
 )
 from app.core.logging import get_logger
+from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.models.enums import (
@@ -48,6 +49,14 @@ _FUENTE_SECTORES = "plan_compra_sectores"
 # completo, ver sync_plan_anual_completo).
 _LOTE_INSERT = 5000
 
+# Guarda de espacio (F-plan-busqueda-fix, regla 11 CLAUDE.md — Neon 0,5 GB):
+# durante el reemplazo del año completo conviven dos lotes (pico ~58% medido
+# en el Paso 0 del 27-sep, ver docs/handoff-2026-09-27.md). Mismo límite que
+# /salud (500 MB); no se comparte el literal para no acoplar app/ingest a
+# app/api.
+_LIMITE_BD_BYTES = 500 * 1024 * 1024
+_UMBRAL_ESPACIO = 0.70
+
 
 @dataclass
 class ResultadoPlan:
@@ -60,21 +69,56 @@ def _fresco(fetched_at: datetime, ttl_dias: int, ahora: datetime) -> bool:
     return (ahora - fetched_at) < timedelta(days=ttl_dias)
 
 
-def _lineas_cacheadas(session: Session, codigo_entidad: int, agno: int) -> list[PlanCompraLinea]:
+def _lineas_cacheadas(
+    session: Session, codigo_entidad: int, agno: int, lote_id: int | None = None
+) -> list[PlanCompraLinea]:
+    conds = [
+        PlanCompraLinea.codigo_entidad == codigo_entidad,
+        PlanCompraLinea.agno == agno,
+    ]
+    if lote_id is not None:
+        # Filtra al lote vigente (F-plan-busqueda-fix): si una carga del año
+        # completo murió a medias, la tabla puede tener temporalmente dos
+        # lotes del mismo año — sin este filtro, filas duplicadas.
+        conds.append(PlanCompraLinea.lote_id == lote_id)
     return list(
-        session.execute(
-            select(PlanCompraLinea)
-            .where(
-                PlanCompraLinea.codigo_entidad == codigo_entidad,
-                PlanCompraLinea.agno == agno,
-            )
-            .order_by(PlanCompraLinea.id)
-        ).scalars()
+        session.execute(select(PlanCompraLinea).where(*conds).order_by(PlanCompraLinea.id)).scalars()
     )
 
 
 def _fuente_anual_completo(agno: int) -> str:
     return f"plan_compra_anual_{agno}"
+
+
+def _fuente_lote_vigente(agno: int) -> str:
+    return f"plan_compra_anual_lote_{agno}"
+
+
+def lote_vigente(session: Session, agno: int) -> int | None:
+    """`lote_id` de la última carga completa y exitosa del PAC del año (job
+    `plan-anual`), o None si nunca terminó una carga con éxito.
+
+    Vive en su PROPIA fila de SyncState (campo `cursor`, texto con el id —
+    no dentro de `notas` como log de texto libre) para que las consultas
+    puedan filtrar de forma confiable aunque la tabla tenga temporalmente dos
+    lotes del mismo año (carga interrumpida a medias). No comparte fila con
+    `_fuente_anual_completo`, que usa `cursor` para el `Last-Modified` de
+    detección de cambios — son dos señales distintas que solo coinciden
+    porque ambas se escriben juntas al terminar bien una carga."""
+    state = session.get(SyncState, _fuente_lote_vigente(agno))
+    if state is None or state.cursor is None:
+        return None
+    return int(state.cursor)
+
+
+def _marcar_lote_vigente(session: Session, agno: int, lote_id: int, ahora: datetime) -> None:
+    state = session.get(SyncState, _fuente_lote_vigente(agno))
+    if state is None:
+        state = SyncState(fuente=_fuente_lote_vigente(agno))
+        session.add(state)
+    state.cursor = str(lote_id)
+    state.ultima_ejecucion = ahora
+    state.ultimo_ok = ahora
 
 
 def anio_completo_cargado(session: Session, agno: int) -> bool:
@@ -104,7 +148,7 @@ def get_plan(
     if anio_completo_cargado(session, agno):
         state = session.get(SyncState, _fuente_anual_completo(agno))
         assert state is not None and state.ultimo_ok is not None  # anio_completo_cargado ya lo garantiza
-        lineas = _lineas_cacheadas(session, codigo_entidad, agno)
+        lineas = _lineas_cacheadas(session, codigo_entidad, agno, lote_vigente(session, agno))
         return ResultadoPlan(
             estado="ok" if lineas else "sin_plan",
             lineas=lineas,
@@ -327,15 +371,21 @@ def sync_plan_anual_completo(
     agno: int | None = None,
 ) -> dict[str, int]:
     """Job `plan-anual`: descarga el ZIP completo del año (todas las
-    instituciones) si `Last-Modified` cambió, y reemplaza las filas de ese año
+    instituciones) si `Last-Modified` cambió y no se cargó hace menos de
+    `PLAN_ANUAL_DIAS_MIN_ENTRE_CARGAS` días, y reemplaza las filas de ese año
     sin dejar la tabla a medias.
 
     Idempotente: inserta las filas nuevas con un `lote_id` fresco (streaming
     por lotes de `_LOTE_INSERT`, regla 12) y solo al final borra, en una sola
     sentencia, las filas viejas de ese año (`lote_id` distinto o NULL —
-    incluye cualquier caché on-demand previa de este mismo año). El corte lo
-    da un índice (agno, codigo_entidad); no hay ventana sin datos porque las
-    filas nuevas ya están insertadas antes del borrado.
+    incluye cualquier caché on-demand previa de este mismo año). Mientras
+    dura la carga conviven dos lotes del mismo año en la tabla (regla 12: no
+    se puede tener 300k+ filas nuevas en memoria antes de decidir el corte);
+    `lote_vigente()` es la que le dice al resto de la app cuál de los dos leer
+    (ver `app/plan_busqueda.py` y `get_plan`), y si la corrida muere a medias
+    (excepción, SIGTERM, OOM) el lote nuevo se borra o queda huérfano para que
+    lo limpie la corrida siguiente — nunca queda como vigente ni se cuenta dos
+    veces.
 
     Corre en GitHub Actions (workflow `catalogos`), no en Render: sin el techo
     de RAM de 512 MB de la regla 12, pero igual se inserta en lotes para no
@@ -344,16 +394,67 @@ def sync_plan_anual_completo(
     if agno is None:
         agno = datetime.now(TZ_CHILE).year
 
+    ahora = ahora_utc()
     fuente = _fuente_anual_completo(agno)
+
+    # Huérfanos de una corrida anterior que murió sin llegar al `except` de
+    # más abajo (SIGTERM, OOM, reinicio del host): se limpian ANTES de
+    # decidir si esta corrida descarga algo, porque si `Last-Modified` no
+    # cambió, la función corta más abajo sin llegar a ningún otro punto de
+    # limpieza y el huérfano quedaría para siempre.
+    vigente_antes = lote_vigente(session, agno)
+    cond_huerfanos: list[Any] = [PlanCompraLinea.agno == agno, PlanCompraLinea.lote_id.is_not(None)]
+    if vigente_antes is not None:
+        cond_huerfanos.append(PlanCompraLinea.lote_id != vigente_antes)
+    huerfanos = session.execute(delete(PlanCompraLinea).where(*cond_huerfanos)).rowcount  # type: ignore[attr-defined]
+    if huerfanos:
+        session.commit()
+        _log.warning(
+            "sync_plan_anual_completo: agno=%d huérfanos de una corrida anterior borrados=%d",
+            agno,
+            huerfanos,
+        )
+
     last_modified = head_pac_completo(agno, base_url=settings.plan_compra_pac_base_url)
     if last_modified is None:
         _log.warning("sync_plan_anual_completo: agno=%d sin archivo publicado (403)", agno)
         return {"actualizado": 0, "filas": 0}
 
     state = session.get(SyncState, fuente)
+
+    if state is not None and state.ultimo_ok is not None:
+        dias_desde_ultima_carga = (ahora - state.ultimo_ok).days
+        if dias_desde_ultima_carga < settings.plan_anual_dias_min_entre_cargas:
+            _log.info(
+                "sync_plan_anual_completo: agno=%d omitido por frecuencia (última carga OK hace %d días)",
+                agno,
+                dias_desde_ultima_carga,
+            )
+            return {"actualizado": 0, "filas": 0, "omitido_por_frecuencia": 1}
+
     if state is not None and state.cursor == last_modified:
         _log.info("sync_plan_anual_completo: agno=%d sin cambios (Last-Modified igual)", agno)
         return {"actualizado": 0, "filas": 0}
+
+    tam_bd = tamano_bd(session)
+    tam_tabla = tamano_tabla(session, "plan_compra_lineas")
+    if (
+        tam_bd is not None
+        and tam_tabla is not None
+        and (tam_bd + tam_tabla) > _LIMITE_BD_BYTES * _UMBRAL_ESPACIO
+    ):
+        motivo = (
+            f"omitido por espacio: bd={tam_bd} + plan_compra_lineas={tam_tabla} "
+            f"bytes > {_UMBRAL_ESPACIO:.0%} de {_LIMITE_BD_BYTES} (regla 11)"
+        )
+        _log.warning("sync_plan_anual_completo: agno=%d %s", agno, motivo)
+        if state is None:
+            state = SyncState(fuente=fuente)
+            session.add(state)
+        state.ultima_ejecucion = ahora
+        state.notas = motivo
+        session.commit()
+        return {"actualizado": 0, "filas": 0, "omitido_por_espacio": 1}
 
     zip_bytes = descargar_pac_completo(agno, base_url=settings.plan_compra_pac_base_url)
     if zip_bytes is None:
@@ -361,27 +462,41 @@ def sync_plan_anual_completo(
         return {"actualizado": 0, "filas": 0}
 
     lineas = parse_pac_csv(zip_bytes)
-    ahora = ahora_utc()
     nuevo_lote = int(ahora.timestamp() * 1000)
 
     total = 0
     descartadas = 0
-    buffer: list[dict[str, Any]] = []
-    for linea in lineas:
-        fila = _fila_pac_dict(linea, agno, nuevo_lote, ahora)
-        if fila is None:
-            descartadas += 1
-            continue
-        buffer.append(fila)
-        if len(buffer) >= _LOTE_INSERT:
+    try:
+        buffer: list[dict[str, Any]] = []
+        for linea in lineas:
+            fila = _fila_pac_dict(linea, agno, nuevo_lote, ahora)
+            if fila is None:
+                descartadas += 1
+                continue
+            buffer.append(fila)
+            if len(buffer) >= _LOTE_INSERT:
+                session.execute(insert(PlanCompraLinea), buffer)
+                session.commit()
+                total += len(buffer)
+                buffer = []
+        if buffer:
             session.execute(insert(PlanCompraLinea), buffer)
             session.commit()
             total += len(buffer)
-            buffer = []
-    if buffer:
-        session.execute(insert(PlanCompraLinea), buffer)
+    except Exception:
+        # No dejar el lote nuevo a medias (regla del prompt): lo que ya se
+        # alcanzó a commitear de este intento se borra, el lote vigente
+        # anterior queda intacto y visible, y la excepción sigue su curso
+        # para que el job se marque como fallido.
+        session.rollback()
+        session.execute(
+            delete(PlanCompraLinea).where(
+                PlanCompraLinea.agno == agno,
+                PlanCompraLinea.lote_id == nuevo_lote,
+            )
+        )
         session.commit()
-        total += len(buffer)
+        raise
 
     session.execute(
         delete(PlanCompraLinea).where(
@@ -396,7 +511,8 @@ def sync_plan_anual_completo(
     state.cursor = last_modified
     state.ultima_ejecucion = ahora
     state.ultimo_ok = ahora
-    state.notas = f"filas={total} descartadas={descartadas} lote_id={nuevo_lote}"
+    state.notas = f"filas={total} descartadas={descartadas}"
+    _marcar_lote_vigente(session, agno, nuevo_lote, ahora)
     session.commit()
 
     _log.info(
