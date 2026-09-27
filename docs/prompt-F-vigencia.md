@@ -80,6 +80,20 @@ Documentar la regla en el docstring con este párrafo.
 - El atajo "Fecha de cierre" no debe ofrecer rangos en el pasado; `cierre_desde` anterior a hoy
   se acota a hoy.
 
+### 3-bis. Filtrar por perfil y por palabra clave (pedido de Boris, 27-sep)
+Boris no logra filtrar el feed por perfil ni por los "conceptos" de sus perfiles.
+- [V] El panel ya tiene un `<select name="perfil_id">` (sección 1 de `_panel_filtros.html`) y
+  `get_oportunidades_usuario` acepta `perfil_id`. **Primero reproducir** por qué no le sirve
+  (¿no aplica?, ¿se pierde al paginar o al volver de la ficha?, ¿solo permite uno?) y arreglarlo.
+  Pasar a **selección múltiple** de perfiles (checkboxes con conteo, como las demás facetas).
+- **Faceta nueva "Palabra clave":** las `keywords` de los perfiles del usuario (de los
+  seleccionados, si hay filtro de perfil), con conteo; filtra por `razones["keywords_hit"]` del
+  match [V: `_score_licitacion`/`_score_ca` lo guardan en `OportunidadMatch.razones`]. Se calcula
+  en Python con el mismo patrón leave-one-out de `calcular_facetas`. Parámetro URL `kw`
+  (múltiple), incluido en la URL que reconstruye "Volver" (F-ficha-volver).
+- Tests: filtrar por perfil (uno y varios), por palabra clave, combinados; conteos de faceta
+  correctos; `kw` que no es de mis perfiles se ignora (regla 17).
+
 ### 4. Correo de resumen
 `_matches_nuevos_usuario` excluye lo no vigente al momento de enviar (una oportunidad que cerró
 entre el match y el correo no se anuncia).

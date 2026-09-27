@@ -82,3 +82,35 @@ Actions que corran con el código nuevo antes del deploy no chocan con el esquem
 revisar en `/salud` que no salió una ráfaga de correos.
 
 *Fuente de los datos de dominio: Dirección ChileCompra.*
+
+## Agregado 27-sep — Descartar abre un modal con "Excluir palabra" (pedido de Boris)
+Cuando Boris descarta suele ser porque una keyword amplia ("salud") trae cosas que no le sirven
+("medicamentos", "ortodoncia"). Quiere excluir esas palabras ahí mismo, sin ir a `/perfiles`.
+
+**Modal "Descartar"** (Bootstrap, accesible, se abre desde la tarjeta y desde la ficha):
+- Muestra qué lo trajo: perfil(es) y `razones["keywords_hit"]` del match ("Llegó por *salud* en
+  el perfil *Hospitales*").
+- **Palabras sugeridas** como chips seleccionables: términos del nombre de la oportunidad (sin
+  stopwords ni las keywords del propio perfil). Campo para escribir otra.
+- **En qué perfil excluir:** por defecto el que generó el match; si hay varios, elegir.
+- **Vista previa:** "Esto también saca N oportunidades más de tu feed" (cuenta con la misma
+  tsquery de exclusión, sin tocar nada todavía; endpoint HTMX solo con números).
+- Botones: "Descartar" (solo descarta, como hoy) y "Descartar y excluir".
+- Tras "Descartar y excluir": anuncio con **Deshacer** (quita las palabras agregadas y restaura
+  los matches borrados, o re-ejecuta `match_perfil`).
+
+**Backend** (`app/matching/perfiles.py`, función nueva `excluir_palabras(session, owner_id,
+perfil_id, palabras)`):
+- Ownership del perfil verificado en servidor (regla 17); CSRF (regla 18). Palabras validadas y
+  normalizadas; sin duplicar en `keywords_excluir`.
+- **[V] Hoy nada borra matches viejos:** `match_perfil` hace upsert de candidatos pero nunca
+  elimina `oportunidades_match` que dejaron de calzar (ni al editar el perfil en `/perfiles`). Por
+  eso agregar una exclusión no limpia el feed. `excluir_palabras` debe borrar los matches de ESE
+  perfil cuya oportunidad calza con la exclusión nueva (misma `build_exclude_tsquery` que el
+  motor). Las `alertas` de esos matches se van por `ON DELETE CASCADE` [V]; las guardadas
+  (`OportunidadSeguida`) NO se tocan.
+- Aplicar la misma limpieza al guardar un perfil en `/perfiles` cuando cambian `keywords` o
+  `keywords_excluir` (borrar los matches del perfil que ya no calzan, después del automatch).
+- Tests: exclusión agrega la palabra y saca del feed las que calzan (incluida la descartada);
+  no toca otro perfil ni otro usuario; guardadas intactas; deshacer; CSRF; vista previa = lo que
+  realmente se borra; editar exclusiones en `/perfiles` también limpia.
