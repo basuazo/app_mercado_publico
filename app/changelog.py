@@ -15,6 +15,19 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 27),
+        titulo="El tablero solo muestra lo que todavía se puede postular",
+        descripcion=(
+            "Hasta ahora la lista mezclaba oportunidades abiertas con otras ya cerradas, "
+            "adjudicadas o vencidas que se habían quedado con un estado atrasado. Ahora "
+            "el tablero muestra solo lo vigente; lo guardado, seguido o vencido se revisa "
+            "en otra pantalla más adelante. De paso, el filtro por perfil de búsqueda ahora "
+            "permite elegir varios a la vez (antes solo uno), se agregó un filtro nuevo por "
+            "palabra clave de tus perfiles, y el filtro por estado del proceso se saca del "
+            "panel porque dejó de aportar: todo lo que se ve ya está abierto."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 26),
         titulo="Buscar en el Plan Anual por lo que se compra, no solo por organismo",
         descripcion=(

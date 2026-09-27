@@ -33,7 +33,7 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token
 from app.core.settings import Settings
 from app.models.base import Base
-from app.models.enums import EstadoOportunidad, FamiliaEstado, RolUsuario
+from app.models.enums import EstadoOportunidad, RolUsuario
 from app.models.tables import Licitacion, OportunidadMatch, PerfilBusqueda, Usuario
 
 _PW = "contraseña-segura-test"
@@ -55,13 +55,15 @@ def _item(
     estado: str = EstadoOportunidad.PUBLICADA.value,
     region: int | None = None,
     fecha_match: datetime | None = None,
+    perfil_id: int = 1,
+    razones: dict | None = None,
 ) -> dict:
     match = OportunidadMatch(
-        perfil_id=1,
+        perfil_id=perfil_id,
         fuente=fuente,
         codigo_oportunidad=codigo,
         score=score,
-        razones={},
+        razones=razones if razones is not None else {},
     )
     if fecha_match is not None:
         match.fecha_match = fecha_match
@@ -181,25 +183,40 @@ def test_cierre_borde_naive_se_interpreta_como_hora_de_chile() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3.3 Filtro por familia de estado
+# 3.3 Filtro por perfil y por palabra clave (F-vigencia 3-bis)
 # ---------------------------------------------------------------------------
 
 
-def test_familias_filtra_por_situacion_no_por_estado_crudo() -> None:
+def test_perfiles_filtra_por_los_elegidos() -> None:
     items = [
-        _item("ABIERTA", estado=EstadoOportunidad.PUBLICADA.value),
-        _item("EVAL-1", estado=EstadoOportunidad.CERRADA.value),
-        _item("EVAL-2", estado=EstadoOportunidad.EN_PROCESO.value),
-        _item("ADJ", estado=EstadoOportunidad.ADJUDICADA.value),
+        _item("P1", perfil_id=1),
+        _item("P2", perfil_id=2),
+        _item("P3", perfil_id=3),
     ]
-    filtrados = _aplicar_filtros(items, FiltrosFeed(familias=frozenset({FamiliaEstado.EN_EVALUACION})))
+    filtrados = _aplicar_filtros(items, FiltrosFeed(perfiles=frozenset({1, 3})))
 
-    assert _codigos(filtrados) == ["EVAL-1", "EVAL-2"]
+    assert _codigos(filtrados) == ["P1", "P3"]
 
 
-def test_familias_none_no_filtra() -> None:
-    items = [_item("A"), _item("B", estado=EstadoOportunidad.DESIERTA.value)]
-    assert len(_aplicar_filtros(items, FiltrosFeed(familias=None))) == 2
+def test_perfiles_none_no_filtra() -> None:
+    items = [_item("A", perfil_id=1), _item("B", perfil_id=2)]
+    assert len(_aplicar_filtros(items, FiltrosFeed(perfiles=None))) == 2
+
+
+def test_keywords_filtra_por_interseccion_con_keywords_hit() -> None:
+    items = [
+        _item("CON-ASEO", razones={"keywords_hit": ["aseo"]}),
+        _item("CON-COMPUTO", razones={"keywords_hit": ["computo", "notebook"]}),
+        _item("SIN", razones={}),
+    ]
+    filtrados = _aplicar_filtros(items, FiltrosFeed(keywords=frozenset({"aseo"})))
+
+    assert _codigos(filtrados) == ["CON-ASEO"]
+
+
+def test_keywords_none_no_filtra() -> None:
+    items = [_item("A", razones={"keywords_hit": ["x"]}), _item("B", razones={})]
+    assert len(_aplicar_filtros(items, FiltrosFeed(keywords=None))) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -252,10 +269,16 @@ def test_orden_desconocido_cae_a_score() -> None:
 
 def _mixto() -> list[dict]:
     return [
-        _item("LIC-1", fuente="licitaciones", estado=EstadoOportunidad.PUBLICADA.value),
-        _item("LIC-2", fuente="licitaciones", estado=EstadoOportunidad.ADJUDICADA.value),
-        _item("CA-1", fuente="compras_agiles", estado=EstadoOportunidad.PUBLICADA.value, region=13),
-        _item("CA-2", fuente="compras_agiles", estado=EstadoOportunidad.PUBLICADA.value, region=5),
+        _item("LIC-1", fuente="licitaciones", perfil_id=1),
+        _item("LIC-2", fuente="licitaciones", perfil_id=2, razones={"keywords_hit": ["aseo"]}),
+        _item(
+            "CA-1",
+            fuente="compras_agiles",
+            region=13,
+            perfil_id=1,
+            razones={"keywords_hit": ["aseo", "computo"]},
+        ),
+        _item("CA-2", fuente="compras_agiles", region=5, perfil_id=2),
     ]
 
 
@@ -263,7 +286,8 @@ def test_facetas_sin_filtros_cuentan_todo() -> None:
     facetas = calcular_facetas(_mixto(), FiltrosFeed())
 
     assert facetas["fuente"] == {"compras_agiles": 2, "licitaciones": 2}
-    assert facetas["estado"] == {"abierta": 3, "adjudicada": 1}
+    assert facetas["perfil"] == {"1": 2, "2": 2}
+    assert facetas["keyword"] == {"aseo": 2, "computo": 1}
     # Las licitaciones no guardan región: caen en "sin_region".
     assert facetas["region"] == {"sin_region": 2, "13": 1, "5": 1}
 
@@ -279,15 +303,25 @@ def test_faceta_no_se_aplica_su_propio_filtro() -> None:
 
 def test_faceta_si_aplica_los_demas_filtros() -> None:
     """La otra mitad de la regla: el conteo de fuente SÍ respeta el filtro de
-    estado, así que no promete resultados que el usuario no vería."""
+    perfil, así que no promete resultados que el usuario no vería."""
     facetas = calcular_facetas(
         _mixto(),
-        FiltrosFeed(fuente="licitaciones", familias=frozenset({FamiliaEstado.ABIERTA})),
+        FiltrosFeed(fuente="licitaciones", perfiles=frozenset({1})),
     )
 
-    assert facetas["fuente"] == {"compras_agiles": 2, "licitaciones": 1}
-    # Y la faceta de estado ignora la suya propia, pero respeta la de fuente.
-    assert facetas["estado"] == {"abierta": 1, "adjudicada": 1}
+    assert facetas["fuente"] == {"compras_agiles": 1, "licitaciones": 1}
+    # Y la faceta de perfil ignora la suya propia, pero respeta la de fuente.
+    assert facetas["perfil"] == {"1": 1, "2": 1}
+
+
+def test_faceta_keyword_cuenta_un_item_en_varias_claves() -> None:
+    """A diferencia de fuente/región/perfil (siempre una clave por item): un
+    match que matcheó por 2 keywords suma en las 2 — misma repetición
+    intencional que "motivo" en `agrupar_oportunidades`."""
+    facetas = calcular_facetas(_mixto(), FiltrosFeed())
+
+    assert facetas["keyword"]["aseo"] == 2
+    assert facetas["keyword"]["computo"] == 1
 
 
 def test_faceta_region_ignora_su_propio_filtro() -> None:
@@ -299,7 +333,7 @@ def test_faceta_region_ignora_su_propio_filtro() -> None:
 def test_facetas_de_lista_vacia_tienen_la_forma_completa() -> None:
     facetas = calcular_facetas([], FiltrosFeed())
 
-    assert facetas == {"fuente": {}, "estado": {}, "region": {}}
+    assert facetas == {"fuente": {}, "region": {}, "perfil": {}, "keyword": {}}
 
 
 # ---------------------------------------------------------------------------

@@ -35,13 +35,16 @@
       </h3>
       <div id="{{ panel_id }}-sec-perfil" class="accordion-collapse collapse show">
         <div class="accordion-body">
-          <label class="form-label small" for="{{ panel_id }}-perfil">Perfil</label>
-          <select class="form-select form-select-sm" name="perfil_id" id="{{ panel_id }}-perfil">
-            <option value="">Todos los perfiles</option>
-            {% for p in perfiles %}
-            <option value="{{ p.id }}" {% if perfil_id == p.id %}selected{% endif %}>{{ p.nombre }}</option>
-            {% endfor %}
-          </select>
+          {% for op in opciones_perfil %}
+          <div class="form-check d-flex align-items-center gap-2">
+            <input class="form-check-input" type="checkbox" name="perfil_id" value="{{ op.valor }}"
+                   id="{{ panel_id }}-perfil-{{ op.valor }}" {% if op.marcada %}checked{% endif %}>
+            <label class="form-check-label flex-grow-1" for="{{ panel_id }}-perfil-{{ op.valor }}">
+              {{ op.etiqueta }}
+            </label>
+            {% if op.n is not none %}<span class="panel-filtros__conteo num">{{ op.n }}</span>{% endif %}
+          </div>
+          {% endfor %}
         </div>
       </div>
     </div>
@@ -174,30 +177,33 @@
       </div>
     </div>
 
-    {# --- 6. Estado --- #}
+    {# --- 6. Palabra clave (F-vigencia 3-bis) ---
+      La sección "Estado" de F-feed-ui-1 se saca de acá: con solo_vigentes=True
+      (F-vigencia) lo único que queda siempre es "Abierta", así que la casilla
+      dejó de aportar nada. `?estado=...` en la URL se sigue aceptando y se
+      ignora — no rompe un enlace compartido viejo. #}
     <div class="accordion-item">
       <h3 class="accordion-header">
         <button class="accordion-button" type="button" data-bs-toggle="collapse"
-                data-bs-target="#{{ panel_id }}-sec-estado" aria-expanded="true"
-                aria-controls="{{ panel_id }}-sec-estado">Estado</button>
+                data-bs-target="#{{ panel_id }}-sec-keyword" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-keyword">Palabra clave</button>
       </h3>
-      <div id="{{ panel_id }}-sec-estado" class="accordion-collapse collapse show">
+      <div id="{{ panel_id }}-sec-keyword" class="accordion-collapse collapse show">
         <div class="accordion-body">
-          {% for op in opciones_familia %}
-          {# "Estado no informado" va al final y separado: no es una situación
-             del proceso, es la ausencia del dato. #}
-          {% if op.valor == 'desconocido' %}<hr class="my-2">{% endif %}
+          {% if opciones_keyword %}
+          {% for op in opciones_keyword %}
           <div class="form-check d-flex align-items-center gap-2">
-            <input class="form-check-input" type="checkbox" name="estado" value="{{ op.valor }}"
-                   id="{{ panel_id }}-estado-{{ op.valor }}" {% if op.marcada %}checked{% endif %}>
-            <label class="form-check-label flex-grow-1 d-flex align-items-center gap-2"
-                   for="{{ panel_id }}-estado-{{ op.valor }}">
-              <span class="punto-familia punto-familia--{{ op.clase }}" aria-hidden="true"></span>
+            <input class="form-check-input" type="checkbox" name="kw" value="{{ op.valor }}"
+                   id="{{ panel_id }}-kw-{{ loop.index }}" {% if op.marcada %}checked{% endif %}>
+            <label class="form-check-label flex-grow-1" for="{{ panel_id }}-kw-{{ loop.index }}">
               {{ op.etiqueta }}
             </label>
             {% if op.n is not none %}<span class="panel-filtros__conteo num">{{ op.n }}</span>{% endif %}
           </div>
           {% endfor %}
+          {% else %}
+          <p class="text-muted small mb-0">Tus perfiles todavía no tienen palabras clave.</p>
+          {% endif %}
         </div>
       </div>
     </div>

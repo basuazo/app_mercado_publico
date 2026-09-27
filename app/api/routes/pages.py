@@ -31,7 +31,6 @@ from app.api.presentacion import (
     formato_clp,
     nombre_region,
     presentacion_estado,
-    presentacion_familia,
     razones_tipificadas,
     registrar_filtros,
     texto_cierre,
@@ -81,7 +80,7 @@ from app.matching.seguimiento import (
     seguir_oportunidad,
 )
 from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
-from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, FamiliaEstado, RolUsuario
+from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, RolUsuario
 from app.models.seeds import REGIONES
 from app.models.tables import (
     CaProducto,
@@ -187,10 +186,14 @@ def _hay_novedades_pendientes(user: Usuario) -> bool:
 
 _FUENTES_VALIDAS = ("licitaciones", "compras_agiles")
 _ETIQUETA_FUENTE = {"licitaciones": "Licitaciones", "compras_agiles": "Compra Ágil"}
-_FAMILIAS_VALIDAS = {f.value for f in FamiliaEstado}
 
 # Orden fijo de los parámetros en la URL: dos estados iguales producen la MISMA
 # URL, que es lo que la hace compartible y comparable.
+#
+# F-vigencia: "estado" ya NO filtra (la sección "Estado" del panel perdió
+# sentido — con solo_vigentes=True lo único que queda siempre es "Abierta"),
+# así que sale de acá; un enlace viejo con `?estado=...` lo sigue aceptando
+# FastAPI (parámetro declarado en `index`) pero ya no se re-serializa.
 _ORDEN_PARAMS = (
     "perfil_id",
     "texto",
@@ -202,7 +205,7 @@ _ORDEN_PARAMS = (
     "cierre_desde",
     "cierre_hasta",
     "excluir_sin_cierre",
-    "estado",
+    "kw",
     "min_score",
     "orden",
     "agrupar_por",
@@ -257,6 +260,16 @@ def _entero(valor: str) -> int | None:
     return int(v) if v.isdigit() else None
 
 
+def _enteros(valores: list[str]) -> list[int]:
+    """Como `_entero`, para un `Query(default=[])` multivaluado."""
+    out: list[int] = []
+    for v in valores:
+        n = _entero(v)
+        if n is not None:
+            out.append(n)
+    return out
+
+
 def _monto(valor: str) -> float | None:
     """"$5.000.000", "5.000.000" o "5000000" -> 5000000.0; basura -> None.
 
@@ -286,8 +299,8 @@ def _chips_filtro(  # noqa: PLR0913 - un filtro activo = un chip
     estado_qs: dict[str, Any],
     *,
     texto: str,
-    nombre_perfil: str | None,
-    perfil_id: int | None,
+    perfil_ids: list[int],
+    nombres_perfil: dict[int, str],
     fuentes: list[str],
     region: int | None,
     monto_min: float | None,
@@ -297,7 +310,7 @@ def _chips_filtro(  # noqa: PLR0913 - un filtro activo = un chip
     cierre_hasta: datetime | None,
     incluir_sin_cierre: bool,
     preset_activo: dict[str, Any] | None,
-    familias: set[FamiliaEstado],
+    keywords_sel: list[str],
     min_score: int,
     relevancia_media: int,
 ) -> list[dict[str, str]]:
@@ -310,8 +323,14 @@ def _chips_filtro(  # noqa: PLR0913 - un filtro activo = un chip
     def agregar(etiqueta: str, **quitar: Any) -> None:
         chips.append({"etiqueta": etiqueta, "href": _url_feed(estado_qs, **quitar)})
 
-    if perfil_id is not None:
-        agregar(f"Perfil: {nombre_perfil or perfil_id}", perfil_id=None)
+    for pid in perfil_ids:
+        restantes = [p for p in perfil_ids if p != pid]
+        chips.append(
+            {
+                "etiqueta": f"Perfil: {nombres_perfil.get(pid, str(pid))}",
+                "href": _url_feed(estado_qs, perfil_id=restantes),
+            }
+        )
     if texto:
         agregar(f"Texto: {texto}", texto=None)
     if len(fuentes) == 1:
@@ -340,13 +359,12 @@ def _chips_filtro(  # noqa: PLR0913 - un filtro activo = un chip
         agregar(f"Cierra: {glosa}", cierre_desde=None, cierre_hasta=None)
     if not incluir_sin_cierre:
         agregar("Cierre: solo con fecha informada", excluir_sin_cierre=None)
-    for familia in sorted(familias, key=lambda f: f.value):
-        etiqueta = presentacion_familia(familia)["etiqueta"]
-        restantes = sorted(f.value for f in familias if f is not familia)
+    for kw in keywords_sel:
+        restantes_kw = [k for k in keywords_sel if k != kw]
         chips.append(
             {
-                "etiqueta": f"Estado: {etiqueta}",
-                "href": _url_feed(estado_qs, estado=restantes),
+                "etiqueta": f"Palabra clave: {kw}",
+                "href": _url_feed(estado_qs, kw=restantes_kw),
             }
         )
     if min_score != relevancia_media:
@@ -378,7 +396,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     request: Request,
     fuente: list[str] = Query(default=[]),
     texto: str = "",
-    perfil_id: str = "",
+    perfil_id: list[str] = Query(default=[]),
     region: str = "",
     monto_min: str = "",
     monto_max: str = "",
@@ -386,7 +404,11 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     cierre_desde: str = "",
     cierre_hasta: str = "",
     excluir_sin_cierre: str = "",
-    estado: list[str] = Query(default=[]),
+    # F-vigencia: "estado" ya no filtra (ver `_ORDEN_PARAMS`); se sigue
+    # declarando para que un enlace compartido antiguo con `?estado=...` no
+    # rompa con un 422, aunque el valor se ignore.
+    estado: list[str] = Query(default=[]),  # noqa: ARG001
+    kw: list[str] = Query(default=[]),
     orden: str = "score",
     min_score: int | None = None,
     agrupar_por: str = "ninguno",
@@ -399,12 +421,31 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     settings = request.app.state.settings
-    perfil_id_int = _entero(perfil_id)
     orden = orden if orden in _ORDENES_VALIDOS else "score"
     agrupar_por = agrupar_por if agrupar_por in AGRUPAR_POR_VALIDOS else "ninguno"
     min_score_efectivo = (
         min_score if min_score is not None and min_score >= 0 else settings.feed_min_score_default
     )
+
+    # Perfiles y palabras clave del usuario, antes de parsear sus filtros: la
+    # faceta de palabra clave (F-vigencia 3-bis) solo ofrece las de los
+    # perfiles SELECCIONADOS (si hay filtro de perfil), pero una `kw` inválida
+    # se descarta contra TODOS sus perfiles (regla 17 — nunca contra un
+    # subconjunto que dependa de otro filtro ya aplicado).
+    perfiles = listar_perfiles(session, user.id)
+    perfil_ids_propios = {p.id for p in perfiles}
+    nombres_perfil = {p.id: p.nombre for p in perfiles}
+    keywords_propias = {palabra for p in perfiles for palabra in (p.keywords or [])}
+
+    perfil_ids_sel: list[int] = []
+    for pid in _enteros(perfil_id):
+        if pid in perfil_ids_propios and pid not in perfil_ids_sel:
+            perfil_ids_sel.append(pid)
+
+    kw_sel: list[str] = []
+    for k in kw:
+        if k in keywords_propias and k not in kw_sel:
+            kw_sel.append(k)
 
     # Las dos casillas "incluir…" van MARCADAS por defecto. Una URL que no
     # dice nada tiene que incluir: al revés, cualquier enlace pelado escondería
@@ -427,17 +468,24 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     # Las dos marcadas (o ninguna) es "sin filtro": el modelo de datos tiene una
     # sola fuente por match y no existe el conjunto vacío.
     fuente_filtro = fuentes_sel[0] if len(fuentes_sel) == 1 else None
-    familias_sel = {FamiliaEstado(e) for e in estado if e in _FAMILIAS_VALIDAS}
     region_int = _entero(region)
     monto_min_val = _monto(monto_min)
     monto_max_val = _monto(monto_max)
+    hoy_chile = datetime.now(TZ_CHILE).date()
     cierre_desde_dt = _fecha_borde(cierre_desde, fin_de_dia=False)
+    if cierre_desde_dt is not None and cierre_desde_dt.date() < hoy_chile:
+        # El atajo "Fecha de cierre" no ofrece rangos en el pasado (F-vigencia):
+        # con el feed ya filtrado a lo vigente, un "desde" atrasado no escondía
+        # nada que no filtrara ya la vigencia, pero sí confundía al mostrarse
+        # tal cual se escribió. Se acota a hoy y la URL/el campo reflejan eso.
+        cierre_desde_dt = datetime.combine(hoy_chile, time(0, 0, 0))
+        cierre_desde = hoy_chile.isoformat()
     cierre_hasta_dt = _fecha_borde(cierre_hasta, fin_de_dia=True)
 
     # Estado de la URL: solo lo activo. De acá salen TODOS los enlaces.
     estado_qs: dict[str, Any] = {}
-    if perfil_id_int is not None:
-        estado_qs["perfil_id"] = perfil_id_int
+    if perfil_ids_sel:
+        estado_qs["perfil_id"] = perfil_ids_sel
     if texto:
         estado_qs["texto"] = texto
     if fuentes_sel:
@@ -456,8 +504,8 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         estado_qs["cierre_hasta"] = cierre_hasta.strip()
     if not incluir_sin_fecha_cierre:
         estado_qs["excluir_sin_cierre"] = "1"
-    if familias_sel:
-        estado_qs["estado"] = sorted(f.value for f in familias_sel)
+    if kw_sel:
+        estado_qs["kw"] = kw_sel
     if min_score_efectivo != settings.feed_min_score_default:
         estado_qs["min_score"] = min_score_efectivo
     if orden != "score":
@@ -477,7 +525,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         fuente=fuente_filtro,
         region=region_int,
         texto=texto or None,
-        perfil_id=perfil_id_int,
+        perfil_ids=perfil_ids_sel or None,
         orden=orden,
         min_score=min_score_efectivo,
         monto_min=monto_min_val,
@@ -486,7 +534,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         cierre_desde=cierre_desde_dt,
         cierre_hasta=cierre_hasta_dt,
         incluir_sin_fecha_cierre=incluir_sin_fecha_cierre,
-        familias=familias_sel or None,
+        keywords=kw_sel or None,
         limit=limite,
         offset=offset_efectivo,
     )
@@ -496,11 +544,15 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     grupos, total_unico, total_apariciones = agrupar_oportunidades(
         items, agrupar_por, grupo_expandido=grupo_expandido or None
     )
-    perfiles = listar_perfiles(session, user.id)
     n_descartadas = len(listar_descartadas(session, user.id))
-    nombre_perfil_activo = next((p.nombre for p in perfiles if p.id == perfil_id_int), None)
 
-    presets_cierre = _presets_cierre(datetime.now(TZ_CHILE).date())
+    # Opciones de la faceta "Palabra clave" (F-vigencia 3-bis): las de los
+    # perfiles SELECCIONADOS si hay filtro de perfil, si no las de todos los
+    # perfiles del usuario.
+    perfiles_para_kw = [p for p in perfiles if not perfil_ids_sel or p.id in perfil_ids_sel]
+    keywords_opciones = sorted({k for p in perfiles_para_kw for k in (p.keywords or [])})
+
+    presets_cierre = _presets_cierre(hoy_chile)
     for preset in presets_cierre:
         preset["activo"] = (
             cierre_desde.strip() == preset["desde"].isoformat()
@@ -517,8 +569,8 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     chips = _chips_filtro(
         estado_qs,
         texto=texto,
-        nombre_perfil=nombre_perfil_activo,
-        perfil_id=perfil_id_int,
+        perfil_ids=perfil_ids_sel,
+        nombres_perfil=nombres_perfil,
         fuentes=fuentes_sel,
         region=region_int,
         monto_min=monto_min_val,
@@ -528,7 +580,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         cierre_hasta=cierre_hasta_dt,
         incluir_sin_cierre=incluir_sin_fecha_cierre,
         preset_activo=preset_activo,
-        familias=familias_sel,
+        keywords_sel=kw_sel,
         min_score=min_score_efectivo,
         relevancia_media=settings.feed_min_score_default,
     )
@@ -551,7 +603,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             # --- estado de los filtros, ya parseado ---
             fuentes_sel=fuentes_sel,
             texto=texto,
-            perfil_id=perfil_id_int,
+            perfil_ids_sel=perfil_ids_sel,
             region=region_int,
             monto_min=int(monto_min_val) if monto_min_val is not None else None,
             monto_max=int(monto_max_val) if monto_max_val is not None else None,
@@ -559,7 +611,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             cierre_desde=cierre_desde.strip(),
             cierre_hasta=cierre_hasta.strip(),
             incluir_sin_cierre=incluir_sin_fecha_cierre,
-            familias_sel=familias_sel,
+            kw_sel=kw_sel,
             orden=orden,
             min_score=min_score_efectivo,
             agrupar_por=agrupar_por,
@@ -573,14 +625,23 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
                 }
                 for f in _FUENTES_VALIDAS
             ],
-            opciones_familia=[
+            opciones_perfil=[
                 {
-                    **presentacion_familia(f),
-                    "valor": f.value,
-                    "n": facetas.get("estado", {}).get(f.value),
-                    "marcada": f in familias_sel,
+                    "valor": p.id,
+                    "etiqueta": p.nombre,
+                    "n": facetas.get("perfil", {}).get(str(p.id)),
+                    "marcada": p.id in perfil_ids_sel,
                 }
-                for f in FamiliaEstado
+                for p in perfiles
+            ],
+            opciones_keyword=[
+                {
+                    "valor": k,
+                    "etiqueta": k,
+                    "n": facetas.get("keyword", {}).get(k),
+                    "marcada": k in kw_sel,
+                }
+                for k in keywords_opciones
             ],
             opciones_region=[
                 {
@@ -602,7 +663,6 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             relevancia_media=settings.feed_min_score_default,
             n_descartadas=n_descartadas,
             perfiles=perfiles,
-            nombre_perfil_activo=nombre_perfil_activo,
             mostrar_tutorial=not user.tutorial_visto,
             mostrar_novedades=_hay_novedades_pendientes(user),
         ),

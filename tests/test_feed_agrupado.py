@@ -5,6 +5,8 @@ que los tests de la vista agrupada piden `?agrupar_por=...` explícitamente."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -83,6 +85,12 @@ def _session(settings: Settings, user_id: int) -> tuple[dict[str, str], dict[str
     return cookies, headers
 
 
+def _cierre_futuro() -> datetime:
+    """F-vigencia: sin `fecha_cierre` en el futuro el feed ya no muestra la
+    oportunidad (solo_vigentes=True es el default de la ruta)."""
+    return datetime.now(UTC).replace(tzinfo=None) + timedelta(days=5)
+
+
 def _crear_match_licitacion(
     engine,
     owner_id: int,
@@ -98,6 +106,7 @@ def _crear_match_licitacion(
                 nombre=f"Licitación {codigo}",
                 descripcion="",
                 estado="publicada",
+                fecha_cierre=_cierre_futuro(),
             )
         )
         perfil = PerfilBusqueda(
@@ -140,6 +149,7 @@ def _crear_match_ca(
                 descripcion="",
                 estado="publicada",
                 region=region,
+                fecha_cierre=_cierre_futuro(),
             )
         )
         perfil = PerfilBusqueda(

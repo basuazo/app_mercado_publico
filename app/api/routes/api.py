@@ -173,7 +173,7 @@ async def listar_oportunidades(
         user.id,
         fuente=fuente or None,
         texto=texto or None,
-        perfil_id=perfil_id,
+        perfil_ids=[perfil_id] if perfil_id is not None else None,
         limit=limit,
         offset=offset,
     )

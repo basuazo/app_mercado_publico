@@ -342,12 +342,32 @@ def test_la_tarjeta_con_score_bajo_usa_banda_baja(client, settings, usuario, eng
 def test_la_tarjeta_pinta_las_seis_familias(
     client, settings, usuario, engine, estado, clase, etiqueta
 ):
+    """F-vigencia: 4 de las 6 familias (todo menos ABIERTA/DESCONOCIDO) ya no
+    aparecen en el feed (`GET /` solo muestra lo vigente) — se re-renderiza la
+    tarjeta vía el mismo HTMX que usa "me sirve", que no filtra por vigencia
+    (re-renderiza LA oportunidad puntual, no el feed)."""
+    from app.auth.csrf import generate_csrf_token
+    from app.auth.session import decode_session_token
+
     _crear_lic(engine, usuario, estado=estado)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
-    assert f"badge-estado--{clase}" in html
-    assert etiqueta in html
+    token = create_session_token(settings.secret_key, usuario)
+    decoded = decode_session_token(settings.secret_key, token)
+    assert decoded is not None
+    _, nonce = decoded
+    cookies = {COOKIE_NAME: token}
+    headers = {
+        "X-CSRF-Token": generate_csrf_token(settings.secret_key, nonce),
+        "HX-Request": "true",
+    }
+
+    r = client.post(
+        "/oportunidad/licitaciones/LIC-1/me-sirve", data={}, cookies=cookies, headers=headers
+    )
+    assert r.status_code == 200
+    assert f"badge-estado--{clase}" in r.text
+    assert etiqueta in r.text
     # Nunca solo color: el badge siempre lleva icono y texto.
-    assert "<svg" in html
+    assert "<svg" in r.text
 
 
 @pytest.mark.parametrize(

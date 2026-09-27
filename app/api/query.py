@@ -8,22 +8,17 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.presentacion import nombre_region, razones_legibles, texto_cierre
 from app.catalogos.unspsc import nombre_rubro
 from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_naive
+from app.core.vigencia import CA_SIN_CIERRE_VIGENCIA_DIAS, es_vigente
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import listar_seguidas, obtener_seguimiento
-from app.models.enums import (
-    SECTOR_SIN_CLASIFICACION,
-    EstadoOportunidad,
-    FamiliaEstado,
-    ValorFeedback,
-    familia_de_estado,
-)
+from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, ValorFeedback
 from app.models.tables import (
     CompraAgil,
     InstitucionPAC,
@@ -179,6 +174,10 @@ class FiltrosFeed:
 
     `None` (o el default) siempre significa "sin filtro". Los dos `incluir_*`
     van en `True` a propósito: ver `_pasa_monto` y `_pasa_cierre`.
+
+    La vigencia (F-vigencia) NO vive acá: es un prefiltro de SQL + `es_vigente`
+    aplicado ANTES de armar los items (ver `get_oportunidades_usuario`), no una
+    faceta con leave-one-out — por eso tampoco tiene predicado en `_PREDICADOS`.
     """
 
     fuente: str | None = None
@@ -190,7 +189,8 @@ class FiltrosFeed:
     cierre_desde: datetime | None = None
     cierre_hasta: datetime | None = None
     incluir_sin_fecha_cierre: bool = True
-    familias: frozenset[FamiliaEstado] | None = None
+    perfiles: frozenset[int] | None = None
+    keywords: frozenset[str] | None = None
     min_score: int = 0
 
 
@@ -253,10 +253,17 @@ def _pasa_cierre(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
     )
 
 
-def _pasa_familia(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
-    if filtros.familias is None:
+def _pasa_perfiles(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    return filtros.perfiles is None or item["match"].perfil_id in filtros.perfiles
+
+
+def _pasa_keywords(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    """Filtra por `razones["keywords_hit"]` del match (F-vigencia 3-bis):
+    cualquier intersección con las palabras clave elegidas hace pasar el item."""
+    if filtros.keywords is None:
         return True
-    return familia_de_estado(item["estado"]) in filtros.familias
+    hits = set((item["match"].razones or {}).get("keywords_hit") or [])
+    return bool(hits & filtros.keywords)
 
 
 def _pasa_min_score(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
@@ -271,7 +278,8 @@ _PREDICADOS: dict[str, Callable[[dict[str, Any], FiltrosFeed], bool]] = {
     "texto": _pasa_texto,
     "monto": _pasa_monto,
     "cierre": _pasa_cierre,
-    "familias": _pasa_familia,
+    "perfiles": _pasa_perfiles,
+    "keywords": _pasa_keywords,
     "min_score": _pasa_min_score,
 }
 
@@ -287,29 +295,40 @@ def _aplicar_filtros(
     return [item for item in items if all(p(item, filtros) for p in predicados)]
 
 
-def _clave_faceta_fuente(item: dict[str, Any]) -> str:
-    return str(item["match"].fuente)
+def _clave_faceta_fuente(item: dict[str, Any]) -> list[str]:
+    return [str(item["match"].fuente)]
 
 
-def _clave_faceta_estado(item: dict[str, Any]) -> str:
-    return familia_de_estado(item["estado"]).value
-
-
-def _clave_faceta_region(item: dict[str, Any]) -> str:
+def _clave_faceta_region(item: dict[str, Any]) -> list[str]:
     """Código de región como string; los nombres los resuelve
     `presentacion.nombre_region` en la capa de plantilla, no acá.
 
     Las licitaciones caen todas en "sin_region" porque el modelo no guarda su
     región (ver `_pasa_region`)."""
     reg = item["region"]
-    return "sin_region" if reg is None else str(reg)
+    return ["sin_region" if reg is None else str(reg)]
 
 
-# faceta -> (clave del filtro PROPIO que no se le aplica, extractor de la clave)
-_FACETAS: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
+def _clave_faceta_perfil(item: dict[str, Any]) -> list[str]:
+    return [str(item["match"].perfil_id)]
+
+
+def _clave_faceta_keyword(item: dict[str, Any]) -> list[str]:
+    """Un item puede pertenecer a VARIAS claves (repetición intencional: si
+    matcheó por 2 keywords, cuenta para las 2), a diferencia de fuente/región/
+    perfil (siempre una)."""
+    razones = item["match"].razones or {}
+    return [str(kw) for kw in (razones.get("keywords_hit") or [])]
+
+
+# faceta -> (clave del filtro PROPIO que no se le aplica, extractor de claves).
+# El extractor devuelve una LISTA porque "keyword" puede sumar un item a más
+# de un conteo a la vez (ver `_clave_faceta_keyword`).
+_FACETAS: dict[str, tuple[str, Callable[[dict[str, Any]], list[str]]]] = {
     "fuente": ("fuente", _clave_faceta_fuente),
-    "estado": ("familias", _clave_faceta_estado),
     "region": ("region", _clave_faceta_region),
+    "perfil": ("perfiles", _clave_faceta_perfil),
+    "keyword": ("keywords", _clave_faceta_keyword),
 }
 
 
@@ -326,11 +345,11 @@ def calcular_facetas(
     """
     items = list(items)
     facetas: dict[str, dict[str, int]] = {}
-    for faceta, (filtro_propio, clave_de) in _FACETAS.items():
+    for faceta, (filtro_propio, claves_de) in _FACETAS.items():
         conteo: dict[str, int] = {}
         for item in _aplicar_filtros(items, filtros, excepto=filtro_propio):
-            clave = clave_de(item)
-            conteo[clave] = conteo.get(clave, 0) + 1
+            for clave in claves_de(item):
+                conteo[clave] = conteo.get(clave, 0) + 1
         # Orden estable y útil para la UI: más frecuentes primero.
         facetas[faceta] = dict(sorted(conteo.items(), key=lambda kv: (-kv[1], kv[0])))
     return facetas
@@ -374,7 +393,7 @@ def get_oportunidades_usuario(
     fuente: str | None = None,
     region: int | None = None,
     texto: str | None = None,
-    perfil_id: int | None = None,
+    perfil_ids: list[int] | frozenset[int] | None = None,
     orden: str = "score",
     min_score: int = 0,
     monto_min: float | None = None,
@@ -383,7 +402,8 @@ def get_oportunidades_usuario(
     cierre_desde: datetime | None = None,
     cierre_hasta: datetime | None = None,
     incluir_sin_fecha_cierre: bool = True,
-    familias: set[FamiliaEstado] | frozenset[FamiliaEstado] | None = None,
+    keywords: list[str] | frozenset[str] | None = None,
+    solo_vigentes: bool = True,
     limit: int = LIMITE_PAGINA_DEFAULT,
     offset: int = 0,
 ) -> ResultadoFeed:
@@ -409,7 +429,13 @@ def get_oportunidades_usuario(
       borde naive se interpreta como hora de Chile, igual que el resto del
       proyecto). Los dos `incluir_*` en `True` evitan que el filtro se coma las
       oportunidades sin el dato.
-    - `familias`: familias de `EstadoOportunidad` (F-feed-ui-1); None = todas.
+    - `perfil_ids`: subconjunto de perfiles del usuario a mostrar (F-vigencia
+      3-bis, selección múltiple); None = todos sus perfiles activos.
+    - `keywords`: palabras clave de sus perfiles a exigir en
+      `razones["keywords_hit"]` del match; None = todas.
+    - `solo_vigentes`: True (default) deja solo lo que todavía se puede
+      postular (`app/core/vigencia.es_vigente`); F-registro lo pasa en False
+      para revisar también lo guardado/vencido.
 
     El feed carga todos los matches del usuario en memoria y recién después
     filtra y corta. A la escala de un equipo de 3-10 usuarios aguanta de sobra
@@ -425,7 +451,8 @@ def get_oportunidades_usuario(
         cierre_desde=cierre_desde,
         cierre_hasta=cierre_hasta,
         incluir_sin_fecha_cierre=incluir_sin_fecha_cierre,
-        familias=frozenset(familias) if familias is not None else None,
+        perfiles=frozenset(perfil_ids) if perfil_ids is not None else None,
+        keywords=frozenset(keywords) if keywords is not None else None,
         min_score=min_score,
     )
     vacio = ResultadoFeed(
@@ -436,30 +463,59 @@ def get_oportunidades_usuario(
     if not perfiles:
         return vacio
 
-    perfil_ids = [p.id for p in perfiles]
+    perfil_ids_usuario = [p.id for p in perfiles]
 
-    stmt = select(OportunidadMatch).where(OportunidadMatch.perfil_id.in_(perfil_ids))
+    stmt = select(OportunidadMatch).where(OportunidadMatch.perfil_id.in_(perfil_ids_usuario))
 
-    # `fuente` NO se filtra en SQL: la faceta de fuente tiene que poder contar
-    # la fuente descartada (regla de leave-one-out de `calcular_facetas`), y
-    # para eso los items de ambas fuentes tienen que estar cargados.
+    ahora = ahora_utc()
+
+    # Prefiltro de vigencia EN SQL (F-vigencia): candidatos por fecha, antes de
+    # cargar un solo match en memoria — el beneficio real es que el feed deja
+    # de crecer con el histórico (techo de los 512 MB de Render). No es la
+    # decisión final: la familia del estado (ABIERTA/DESCONOCIDO) no es una
+    # comparación SQL simple, así que `es_vigente` la confirma en Python más
+    # abajo sobre este subconjunto ya angosto.
+    if solo_vigentes:
+        lic_candidatos = select(Licitacion.codigo).where(Licitacion.fecha_cierre > ahora)
+        ca_candidatos = select(CompraAgil.codigo).where(
+            or_(
+                CompraAgil.fecha_cierre > ahora,
+                and_(
+                    CompraAgil.fecha_cierre.is_(None),
+                    CompraAgil.fecha_publicacion
+                    >= ahora - timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS),
+                ),
+            )
+        )
+        stmt = stmt.where(
+            or_(
+                and_(
+                    OportunidadMatch.fuente == "licitaciones",
+                    OportunidadMatch.codigo_oportunidad.in_(lic_candidatos),
+                ),
+                and_(
+                    OportunidadMatch.fuente == "compras_agiles",
+                    OportunidadMatch.codigo_oportunidad.in_(ca_candidatos),
+                ),
+            )
+        )
+
+    # `fuente`, `perfiles` y `keywords` NO se filtran en SQL: sus facetas
+    # tienen que poder contar lo que el propio filtro esconde (leave-one-out
+    # de `calcular_facetas`), y para eso los items de todas las fuentes/
+    # perfiles/keywords tienen que estar cargados primero.
     #
     # F-coherencia revisó si la faceta podía salir de UNA consulta agregada
     # (`GROUP BY fuente`) para dejar de pagar esa memoria, y NO se puede sin
-    # mentir: de los siete filtros del feed, cinco (region, texto, monto,
-    # cierre, familias) dependen de las filas de Licitacion/CompraAgil, no de
-    # oportunidades_match, y `familias` además del mapa de 16 estados de
-    # `app/models/enums.py`. Una agregada que solo respete perfil, min_score y
-    # descartadas devuelve un número MAYOR que el real apenas el usuario usa
-    # cualquiera de esos cinco — y F-feed-ui-2 los expone todos. Respetarlos en
-    # SQL sería reimplementar el pipeline completo sobre dos tablas y duplicar
-    # el mapa de familias: dos fuentes de verdad para el mismo número.
-    # Se mantiene el cálculo en Python. Ver el resumen de F-coherencia.
-    if perfil_id is not None:
-        if perfil_id not in perfil_ids:
-            return vacio
-        stmt = stmt.where(OportunidadMatch.perfil_id == perfil_id)
-
+    # mentir: de los filtros del feed, varios (region, texto, monto, cierre)
+    # dependen de las filas de Licitacion/CompraAgil, no de oportunidades_match.
+    # Una agregada que solo respete perfil, min_score y descartadas devuelve un
+    # número MAYOR que el real apenas el usuario usa cualquiera de esos otros
+    # filtros — y F-feed-ui-2 los expone todos. Respetarlos en SQL sería
+    # reimplementar el pipeline completo sobre dos tablas: dos fuentes de
+    # verdad para el mismo número. Se mantiene el cálculo en Python (ver el
+    # resumen de F-coherencia). La vigencia es la excepción: es un prefiltro
+    # duro (arriba), no una faceta — no necesita leave-one-out.
     stmt = stmt.order_by(OportunidadMatch.score.desc())
     matches = list(session.execute(stmt).scalars())
 
@@ -484,7 +540,6 @@ def get_oportunidades_usuario(
         ).scalars():
             cas[c.codigo] = c
 
-    ahora = ahora_utc()
     result: list[dict[str, Any]] = []
 
     for m in matches:
@@ -495,6 +550,11 @@ def get_oportunidades_usuario(
             op = cas.get(m.codigo_oportunidad)
 
         if op is None:
+            continue
+
+        if solo_vigentes and not es_vigente(
+            op.estado, op.fecha_cierre, m.fuente, ahora, op.fecha_publicacion
+        ):
             continue
 
         feedback = feedback_map.get((m.fuente, m.codigo_oportunidad))

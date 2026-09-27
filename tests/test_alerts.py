@@ -311,6 +311,26 @@ class TestResumenConsolidado:
         assert result["resumenes_sin_nuevos"] == 1
         assert spy.sent == []
 
+    def test_match_nuevo_pero_ya_vencido_no_entra_al_correo(self, session: Session, monkeypatch):
+        """F-vigencia: una oportunidad que cerró entre el match y el envío del
+        resumen no se anuncia — misma definición de "vigente" que el feed. Sin
+        nada vigente, cuenta como sin_nuevos y NO se mueve `ultimo_resumen_en`
+        (mismo comportamiento de hoy cuando no hay matches nuevos)."""
+        spy = _MailSpy()
+        monkeypatch.setattr("app.alerts.email._smtp_send", spy)
+        ultimo = _AHORA - timedelta(days=4)
+        u = _user(session, ultimo_resumen_en=ultimo)
+        p = _perfil(session, u)
+        _lic(session, "LIC-VENCIDA", dias=-1)
+        _match(session, p, "LIC-VENCIDA", score=90, fecha_match=_AHORA - timedelta(hours=1))
+
+        result = enviar_resumen(session, _fake_settings(), ahora=_AHORA)
+
+        assert result["resumenes_enviados"] == 0
+        assert result["resumenes_sin_nuevos"] == 1
+        assert spy.sent == []
+        assert session.get(Usuario, u.id).ultimo_resumen_en == ultimo
+
 
 class TestInmediatasSoloSeguidas:
     def test_match_no_seguido_no_genera_alerta_de_correo(self, session: Session):

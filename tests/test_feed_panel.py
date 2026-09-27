@@ -58,7 +58,7 @@ def test_url_feed_borra_con_none_y_con_vacio() -> None:
 
     assert "region" not in _url_feed(base, region=None)
     assert "texto" not in _url_feed(base, texto="")
-    assert "estado" not in _url_feed({"estado": ["abierta"]}, estado=[])
+    assert "fuente" not in _url_feed({"fuente": ["licitaciones"]}, fuente=[])
 
 
 def test_url_feed_resetea_la_paginacion_ante_cualquier_cambio() -> None:
@@ -80,11 +80,11 @@ def test_url_feed_ordena_siempre_igual() -> None:
 
 
 def test_url_alternar_agrega_y_saca_de_un_multivaluado() -> None:
-    con_una = _url_alternar({}, "estado", "abierta")
-    assert parse_qs(urlparse(con_una).query)["estado"] == ["abierta"]
+    con_una = _url_alternar({}, "kw", "aseo")
+    assert parse_qs(urlparse(con_una).query)["kw"] == ["aseo"]
 
-    sin_ninguna = _url_alternar({"estado": ["abierta"]}, "estado", "abierta")
-    assert "estado" not in sin_ninguna
+    sin_ninguna = _url_alternar({"kw": ["aseo"]}, "kw", "aseo")
+    assert "kw" not in sin_ninguna
 
 
 @pytest.mark.parametrize(
@@ -148,11 +148,11 @@ def _cookie(settings: Settings, user_id: int) -> dict[str, str]:
     return {COOKIE_NAME: create_session_token(settings.secret_key, user_id)}
 
 
-def _perfil(session: Session, owner_id: int) -> int:
+def _perfil(session: Session, owner_id: int, *, nombre: str = "Perfil test", keywords=None) -> int:
     p = PerfilBusqueda(
         owner_id=owner_id,
-        nombre="Perfil test",
-        keywords=["test"],
+        nombre=nombre,
+        keywords=keywords if keywords is not None else ["test"],
         keywords_excluir=[],
         regiones=[],
         fuentes=["licitaciones", "compras_agiles"],
@@ -174,7 +174,10 @@ def _crear(
     dias: float | None = 5,
     estado: str = "publicada",
     region: int | None = None,
-) -> None:
+    perfil_id: int | None = None,
+    razones: dict | None = None,
+) -> int:
+    """Retorna el `perfil_id` usado (nuevo, salvo que se pase uno existente)."""
     ahora = datetime.now(UTC).replace(tzinfo=None)
     cierre = ahora + timedelta(days=dias, hours=1) if dias is not None else None
     with Session(engine) as s:
@@ -201,17 +204,18 @@ def _crear(
                     region=region,
                 )
             )
-        perfil_id = _perfil(s, owner_id)
+        pid = perfil_id if perfil_id is not None else _perfil(s, owner_id)
         s.add(
             OportunidadMatch(
-                perfil_id=perfil_id,
+                perfil_id=pid,
                 fuente=fuente,
                 codigo_oportunidad=codigo,
                 score=score,
-                razones={},
+                razones=razones if razones is not None else {},
             )
         )
         s.commit()
+        return pid
 
 
 # ---------------------------------------------------------------------------
@@ -231,14 +235,18 @@ def test_filtro_de_monto_desde_el_querystring(client, settings, usuario, engine)
     assert "Oportunidad BARATA" not in html
 
 
-def test_filtro_de_estado_desde_el_querystring(client, settings, usuario, engine) -> None:
+def test_filtro_de_estado_ya_no_filtra_y_se_ignora(client, settings, usuario, engine) -> None:
+    """F-vigencia: la sección "Estado" del panel se sacó (con solo_vigentes=True
+    lo único que queda siempre es "Abierta"). Un enlace viejo con `?estado=...`
+    no rompe ni filtra: ADJUDICADA no aparece porque dejó de ser vigente, no
+    porque el parámetro la haya excluido."""
     _crear(engine, usuario, "ABIERTA", estado="publicada")
     _crear(engine, usuario, "ADJUDICADA", estado="adjudicada")
 
     html = client.get("/?estado=adjudicada", cookies=_cookie(settings, usuario)).text
 
-    assert "Oportunidad ADJUDICADA" in html
-    assert "Oportunidad ABIERTA" not in html
+    assert "Oportunidad ABIERTA" in html
+    assert "Oportunidad ADJUDICADA" not in html
 
 
 def test_filtro_de_fuente_desde_el_querystring(client, settings, usuario, engine) -> None:
@@ -323,16 +331,15 @@ def test_los_chips_reflejan_exactamente_los_filtros_activos(
     _crear(engine, usuario, "CA-1", fuente="compras_agiles", region=5)
 
     html = client.get(
-        "/?fuente=compras_agiles&region=5&monto_min=1000000&monto_max=50000000&estado=abierta",
+        "/?fuente=compras_agiles&region=5&monto_min=1000000&monto_max=50000000",
         cookies=_cookie(settings, usuario),
     ).text
 
     assert "Fuente: Compra Ágil" in html
     assert "Región: Valparaíso" in html
     assert "Monto: $1.000.000 – $50.000.000" in html
-    assert "Estado: Abierta" in html
-    # Cuatro, no cinco: el mínimo y el máximo de monto son UN rango, un chip.
-    assert "Limpiar todo (4)" in html
+    # Tres, no cuatro: el mínimo y el máximo de monto son UN rango, un chip.
+    assert "Limpiar todo (3)" in html
 
 
 def test_el_chip_quita_solo_su_filtro(client, settings, usuario, engine) -> None:
@@ -498,3 +505,83 @@ def test_el_feed_vacio_con_filtros_ofrece_limpiarlos(client, settings, usuario, 
 
     assert "No hay oportunidades con estos filtros." in html
     assert "Limpiar los filtros" in html
+
+
+# ---------------------------------------------------------------------------
+# F-vigencia 3-bis: perfil (selección múltiple) y palabra clave
+# ---------------------------------------------------------------------------
+
+
+def test_sin_seccion_estado_en_el_panel(client, settings, usuario, engine) -> None:
+    """La sección "Estado" del panel se saca por completo (F-vigencia): con
+    solo_vigentes=True lo único que quedaría siempre es "Abierta"."""
+    _crear(engine, usuario, "LIC-1")
+    html = client.get("/", cookies=_cookie(settings, usuario)).text
+
+    assert 'id="filtros-escritorio-sec-estado"' not in html
+
+
+def test_filtro_de_perfil_admite_varios_seleccionados(client, settings, usuario, engine) -> None:
+    """Reproduce el pedido de Boris (27-sep): antes solo se podía elegir UN
+    perfil a la vez. Con selección múltiple, marcar dos perfiles muestra las
+    oportunidades de ambos y deja fuera las del tercero."""
+    p1 = _crear(engine, usuario, "P1")
+    p2 = _crear(engine, usuario, "P2")
+    _crear(engine, usuario, "P3")
+
+    html = client.get(
+        f"/?perfil_id={p1}&perfil_id={p2}", cookies=_cookie(settings, usuario)
+    ).text
+
+    assert "Oportunidad P1" in html
+    assert "Oportunidad P2" in html
+    assert "Oportunidad P3" not in html
+
+
+def test_filtro_de_perfil_de_otro_usuario_se_ignora(client, settings, usuario, engine) -> None:
+    """Regla 17: un `perfil_id` que no es del usuario no filtra nada (ni
+    rompe), no se cuela desde otra cuenta."""
+    with Session(engine) as s:
+        otro = Usuario(
+            email="otro@test.cl",
+            password_hash=hash_password(_PW),
+            rol=RolUsuario.USUARIO,
+            activo=True,
+        )
+        s.add(otro)
+        s.commit()
+        s.refresh(otro)
+        perfil_ajeno = _perfil(s, otro.id)
+        s.commit()
+
+    _crear(engine, usuario, "PROPIA")
+
+    html = client.get(
+        f"/?perfil_id={perfil_ajeno}", cookies=_cookie(settings, usuario)
+    ).text
+
+    assert "Oportunidad PROPIA" in html
+
+
+def test_faceta_de_palabra_clave_filtra_y_cuenta(client, settings, usuario, engine) -> None:
+    """`kw` se valida contra las keywords CONFIGURADAS del perfil (no contra
+    `razones`), así que el perfil de la fixture necesita "aseo" entre las
+    suyas para que el filtro no se descarte como ajena (regla 17)."""
+    with Session(engine) as s:
+        perfil_id = _perfil(s, usuario, keywords=["aseo"])
+        s.commit()
+
+    _crear(engine, usuario, "CON-ASEO", perfil_id=perfil_id, razones={"keywords_hit": ["aseo"]})
+    _crear(engine, usuario, "SIN-ASEO", perfil_id=perfil_id, razones={})
+
+    html = client.get("/?kw=aseo", cookies=_cookie(settings, usuario)).text
+
+    assert "Oportunidad CON-ASEO" in html
+    assert "Oportunidad SIN-ASEO" not in html
+
+
+def test_una_kw_que_no_es_de_mis_perfiles_se_ignora(client, settings, usuario, engine) -> None:
+    _crear(engine, usuario, "LIC-1")
+    html = client.get("/?kw=palabra-inventada", cookies=_cookie(settings, usuario)).text
+
+    assert "Oportunidad LIC-1" in html

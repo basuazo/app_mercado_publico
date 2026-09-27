@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -77,14 +79,24 @@ def _session(settings: Settings, user_id: int) -> tuple[dict[str, str], dict[str
     return cookies, headers
 
 
+_SIN_FECHA_CIERRE = object()  # sentinel: pedir explícitamente fecha_cierre=None
+
+
 def _crear_match_propio(
     engine,
     owner_id: int,
     codigo: str = "LIC-001",
     score: int = 80,
-    fecha_cierre=None,
+    fecha_cierre=_SIN_FECHA_CIERRE,
 ) -> None:
-    """Crea una licitación + perfil + match del owner indicado."""
+    """Crea una licitación + perfil + match del owner indicado.
+
+    F-vigencia: sin argumento, `fecha_cierre` cae a una fecha futura relativa
+    a "ahora" (si no, la licitación no es vigente y el feed la excluye por
+    completo). Pasar `fecha_cierre=None` explícito para el caso "sin fecha".
+    """
+    if fecha_cierre is _SIN_FECHA_CIERRE:
+        fecha_cierre = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=5)
     with Session(engine) as s:
         s.add(
             Licitacion(
@@ -294,10 +306,10 @@ def test_descartar_sobre_match_ajeno_404(client, usuario, settings, engine):
 
 
 def test_orden_score_vs_cierre(client, usuario, settings, engine):
-    from datetime import datetime
+    ahora = datetime.now(UTC).replace(tzinfo=None)
 
-    _crear_match_propio(engine, usuario, "LIC-ALTO", score=90, fecha_cierre=datetime(2030, 1, 1))
-    _crear_match_propio(engine, usuario, "LIC-BAJO", score=30, fecha_cierre=datetime(2026, 1, 1))
+    _crear_match_propio(engine, usuario, "LIC-ALTO", score=90, fecha_cierre=ahora + timedelta(days=1500))
+    _crear_match_propio(engine, usuario, "LIC-BAJO", score=30, fecha_cierre=ahora + timedelta(days=10))
 
     with Session(engine) as s:
         items_score = get_oportunidades_usuario(s, usuario, orden="score").items
@@ -308,12 +320,13 @@ def test_orden_score_vs_cierre(client, usuario, settings, engine):
 
 
 def test_orden_cierre_nulos_al_final(client, usuario, settings, engine):
+    """Una licitación sin `fecha_cierre` ya no es vigente (F-vigencia) — el
+    orden se prueba con `solo_vigentes=False`, que es justo lo que usará
+    F-registro para revisar también lo que el feed vigente no muestra."""
     _crear_match_propio(engine, usuario, "LIC-SIN-FECHA", score=90, fecha_cierre=None)
     _crear_match_propio(engine, usuario, "LIC-CON-FECHA", score=10)
 
     with Session(engine) as s:
-        from datetime import datetime
-
         m = s.execute(
             select(OportunidadMatch).where(OportunidadMatch.codigo_oportunidad == "LIC-CON-FECHA")
         ).scalar_one()
@@ -324,7 +337,7 @@ def test_orden_cierre_nulos_al_final(client, usuario, settings, engine):
         del m
 
     with Session(engine) as s:
-        items = get_oportunidades_usuario(s, usuario, orden="cierre").items
+        items = get_oportunidades_usuario(s, usuario, orden="cierre", solo_vigentes=False).items
         assert [i["match"].codigo_oportunidad for i in items] == ["LIC-CON-FECHA", "LIC-SIN-FECHA"]
 
 

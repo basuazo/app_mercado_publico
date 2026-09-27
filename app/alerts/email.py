@@ -26,6 +26,7 @@ from app.api.presentacion import fecha_cierre_legible
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.core.vigencia import es_vigente
 from app.models.enums import EstadoAlerta
 from app.models.tables import (
     Alerta,
@@ -115,6 +116,7 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
                 "region": None,
                 "monto": None,
                 "fecha_cierre": None,
+                "fecha_publicacion": None,
                 "estado": "",
             }
         return {
@@ -123,6 +125,7 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
             "region": None,
             "monto": lic.monto_clp,
             "fecha_cierre": lic.fecha_cierre,
+            "fecha_publicacion": lic.fecha_publicacion,
             "estado": lic.estado,
         }
     ca = session.get(CompraAgil, codigo)
@@ -133,6 +136,7 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
             "region": None,
             "monto": None,
             "fecha_cierre": None,
+            "fecha_publicacion": None,
             "estado": "",
         }
     return {
@@ -141,6 +145,7 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
         "region": ca.region,
         "monto": ca.monto_disponible_clp,
         "fecha_cierre": ca.fecha_cierre,
+        "fecha_publicacion": ca.fecha_publicacion,
         "estado": ca.estado,
     }
 
@@ -340,7 +345,9 @@ def _usuario_elegible_resumen(usuario: Usuario, ahora: datetime) -> bool:
     )
 
 
-def _matches_nuevos_usuario(session: Session, usuario: Usuario) -> list[OportunidadMatch]:
+def _matches_nuevos_usuario(
+    session: Session, usuario: Usuario, ahora: datetime
+) -> list[OportunidadMatch]:
     stmt = (
         select(OportunidadMatch)
         .join(PerfilBusqueda, OportunidadMatch.perfil_id == PerfilBusqueda.id)
@@ -353,7 +360,16 @@ def _matches_nuevos_usuario(session: Session, usuario: Usuario) -> list[Oportuni
     )
     if usuario.ultimo_resumen_en is not None:
         stmt = stmt.where(OportunidadMatch.fecha_match > usuario.ultimo_resumen_en)
-    return list(session.execute(stmt).scalars())
+    matches = list(session.execute(stmt).scalars())
+
+    # F-vigencia: una oportunidad que cerró entre el match y el envío del
+    # resumen no se anuncia (misma definición de "vigente" que el feed).
+    vigentes = []
+    for m in matches:
+        op = _datos_oportunidad(session, m.fuente, m.codigo_oportunidad)
+        if es_vigente(op["estado"], op["fecha_cierre"], m.fuente, ahora, op["fecha_publicacion"]):
+            vigentes.append(m)
+    return vigentes
 
 
 def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None = None) -> dict[str, int]:
@@ -368,7 +384,7 @@ def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None 
         if not _usuario_elegible_resumen(usuario, ahora):
             no_elegibles += 1
             continue
-        matches = _matches_nuevos_usuario(session, usuario)
+        matches = _matches_nuevos_usuario(session, usuario, ahora)
         if not matches:
             sin_nuevos += 1
             continue
