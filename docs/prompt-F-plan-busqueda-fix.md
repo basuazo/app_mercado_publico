@@ -31,7 +31,20 @@ commit "F-plan-busqueda-fix: …" sin push; nunca `git add -A`.
 - **Tests con la URL normalizada:** usar la misma función de normalización que la app (o el
   fixture de `tests/conftest.py`); nunca `create_engine` con la URL cruda.
 
+- **Carga como máximo una vez al mes (decisión de Boris, 27-sep):** el Plan Anual cambia poco y
+  ChileCompra regenera todos los archivos ~mensualmente aunque el contenido casi no cambie
+  [V, `docs/07-plan-anual.md` §5-bis g]. Setting `PLAN_ANUAL_DIAS_MIN_ENTRE_CARGAS` (default 28,
+  opcional en `_job.yml`): si la última carga OK fue hace menos, el job solo hace el HEAD y
+  termina (`omitido_por_frecuencia` en el resultado), aunque `Last-Modified` haya cambiado. El
+  primer lunes sin carga reciente, carga. El workflow sigue semanal (un HEAD no cuesta cuota).
+- **Pico de espacio [V, Paso 0 27-sep]:** un año ocupa 84,6 MB con índices; producción quedaría en
+  ~203 MB (40,6 %). Durante el reemplazo conviven dos lotes: pico estimado ~290 MB (~58 %) [I].
+  Antes de insertar, si `tamano_bd + tamaño actual de plan_compra_lineas` supera el 70 % de
+  500 MB, no cargar y registrar el motivo (`/salud` lo muestra). Documentarlo en el docstring.
+
 ## Tests (mínimo)
+- Última carga hace 10 días y `Last-Modified` nuevo → no descarga ni carga; hace 30 días → carga.
+- Guarda de espacio: sobre el 70 % no carga y lo informa.
 - Con dos lotes del mismo año en la tabla, búsqueda, conteo, vista por organismo y export ven solo
   el vigente.
 - Carga que falla a mitad (mock que lanza en el segundo lote) → no quedan filas del lote nuevo y el
