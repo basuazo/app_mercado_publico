@@ -56,6 +56,14 @@
   {% endif %}
 </p>
 
+<!-- Vocabulario por rubro (F-ca-explorar) -->
+<h5>Vocabulario por rubro</h5>
+<p class="small text-muted mb-4">
+  {{ salud.vocabulario_rubros.filas | numero }} lexema(s) en
+  {{ salud.vocabulario_rubros.familias | numero }} familia(s) —
+  actualizado {{ salud.vocabulario_rubros.actualizado_en or 'nunca (job vocabulario-rubros pendiente)' }}
+</p>
+
 <!-- SyncState -->
 <h5>Estado de sincronización</h5>
 <table class="table table-sm table-bordered">

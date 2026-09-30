@@ -30,6 +30,7 @@ Postgres (Neon)       ← toda la persistencia; proceso es desechable
 | `nocturno`        | 23:30 Chile             | lifecycle ≤100 + backfill ≤200 |
 | `retencion`       | 03:00 Chile (diario)    | 0 req (solo SQL)        |
 | `catalogos`       | lunes 02:00 Chile       | 1 req/semana            |
+| `vocabulario-rubros` | lunes, tras `plan-anual` (F-ca-explorar) | 0 req (solo SQL) |
 
 **Peor caso diario:**
 - CA incremental: 48 ciclos × 3 páginas × 50 items = 144 req

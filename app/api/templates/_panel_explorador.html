@@ -1,0 +1,155 @@
+{#
+  Panel de filtros del explorador de Compras Ágiles (F-ca-explorar).
+
+  Se INCLUYE dos veces —barra lateral en escritorio y offcanvas en móvil— así que
+  todo lo que lleva `id` se prefija con `panel_id`. Es un único <form method="get">:
+  los controles no navegan solos, se aplican juntos con "Aplicar filtros". El
+  conteo en vivo (HTMX) solo muestra un número y no cambia la lista.
+
+  `panel=1` marca que el envío vino de este formulario (casilla ausente =
+  desmarcada); `sin_favoritos=1` evita que los favoritos vuelvan a entrar cuando
+  el usuario quita todos los rubros.
+#}
+{% from "_rubros_widget.html" import rubros_widget %}
+<form id="{{ panel_id }}-form" method="get" action="/compras-agiles" class="panel-filtros__form"
+      hx-get="/compras-agiles/conteo" hx-trigger="change, keyup changed delay:400ms"
+      hx-target="#{{ panel_id }}-conteo" hx-swap="innerHTML">
+  <input type="hidden" name="panel" value="1">
+  <input type="hidden" name="sin_favoritos" value="1">
+  <input type="hidden" name="orden" value="{{ filtros.orden if filtros.orden != 'cierre' else '' }}">
+
+  <div class="accordion accordion-flush" id="{{ panel_id }}-acordeon">
+
+    {# --- 1. Rubro --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-rubro" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-rubro">Rubro</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-rubro" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          {{ rubros_widget(panel_id ~ "-rubros", rubros_agrupados, rubros_preseleccion, rubros_extra) }}
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="solo_confirmados" value="1"
+                   id="{{ panel_id }}-solo-confirmados" {% if filtros.solo_confirmados %}checked{% endif %}>
+            <label class="form-check-label small" for="{{ panel_id }}-solo-confirmados">
+              Solo confirmados
+            </label>
+          </div>
+          <p class="text-muted small mt-1 mb-0">
+            <strong>Confirmado</strong>: la CA trae productos de ese rubro.
+            <strong>Posible</strong>: su nombre calza con palabras típicas del rubro.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# --- 2. Región --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-region" aria-expanded="false"
+                aria-controls="{{ panel_id }}-sec-region">Región</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-region" class="accordion-collapse collapse{% if filtros.regiones %} show{% endif %}">
+        <div class="accordion-body">
+          {% for codigo, nombre in regiones_disponibles %}
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="region" value="{{ codigo }}"
+                   id="{{ panel_id }}-region-{{ codigo }}" {% if codigo in filtros.regiones %}checked{% endif %}>
+            <label class="form-check-label" for="{{ panel_id }}-region-{{ codigo }}">{{ nombre }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# --- 3. Monto --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-monto" aria-expanded="false"
+                aria-controls="{{ panel_id }}-sec-monto">Monto disponible (CLP)</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-monto"
+           class="accordion-collapse collapse{% if monto_min is not none or monto_max is not none or not filtros.incluir_sin_monto %} show{% endif %}">
+        <div class="accordion-body">
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label small" for="{{ panel_id }}-monto-min">Desde</label>
+              <input class="form-control form-control-sm num" type="text" inputmode="numeric"
+                     name="monto_min" id="{{ panel_id }}-monto-min"
+                     value="{% if monto_min is not none %}{{ monto_min | numero }}{% endif %}">
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="{{ panel_id }}-monto-max">Hasta</label>
+              <input class="form-control form-control-sm num" type="text" inputmode="numeric"
+                     name="monto_max" id="{{ panel_id }}-monto-max"
+                     value="{% if monto_max is not none %}{{ monto_max | numero }}{% endif %}">
+            </div>
+          </div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="incluir_sin_monto" value="1"
+                   id="{{ panel_id }}-sin-monto" {% if filtros.incluir_sin_monto %}checked{% endif %}>
+            <label class="form-check-label small" for="{{ panel_id }}-sin-monto">
+              Incluir monto no informado
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# --- 4. Cierre --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-cierre" aria-expanded="false"
+                aria-controls="{{ panel_id }}-sec-cierre">Cierre</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-cierre" class="accordion-collapse collapse{% if filtros.cierre %} show{% endif %}">
+        <div class="accordion-body">
+          <div id="{{ panel_id }}-etiqueta-cierre" class="form-label small">Cierra…</div>
+          <div role="group" aria-labelledby="{{ panel_id }}-etiqueta-cierre">
+            {% for valor, etiqueta in [("", "Cuando sea"), ("hoy", "Hoy"), ("3d", "En 3 días"), ("7d", "En una semana")] %}
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="cierre" value="{{ valor }}"
+                     id="{{ panel_id }}-cierre-{{ valor or 'todas' }}"
+                     {% if (filtros.cierre or '') == valor %}checked{% endif %}>
+              <label class="form-check-label small" for="{{ panel_id }}-cierre-{{ valor or 'todas' }}">{{ etiqueta }}</label>
+            </div>
+            {% endfor %}
+          </div>
+          <p class="text-muted small mt-2 mb-0">
+            Las CA sin fecha de cierre informada no aparecen cuando eliges un plazo.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# --- 5. Texto y organismo --- #}
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ panel_id }}-sec-texto" aria-expanded="true"
+                aria-controls="{{ panel_id }}-sec-texto">Texto y organismo</button>
+      </h3>
+      <div id="{{ panel_id }}-sec-texto" class="accordion-collapse collapse show">
+        <div class="accordion-body">
+          <label class="form-label small" for="{{ panel_id }}-texto">Palabras del título o la descripción</label>
+          <input class="form-control form-control-sm" type="text" name="texto" id="{{ panel_id }}-texto"
+                 maxlength="200" value="{{ filtros.texto }}">
+          <label class="form-label small mt-2" for="{{ panel_id }}-organismo">Organismo</label>
+          <input class="form-control form-control-sm" type="text" name="organismo" id="{{ panel_id }}-organismo"
+                 maxlength="200" value="{{ filtros.organismo }}" placeholder="Parte del nombre">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-filtros__pie">
+    <p class="mb-2 small" id="{{ panel_id }}-conteo" aria-live="polite"></p>
+    <button type="submit" class="btn btn-primary w-100">Aplicar filtros</button>
+    <a class="btn btn-outline-secondary w-100 mt-2" href="{{ url_limpiar }}">Limpiar</a>
+  </div>
+</form>

@@ -21,8 +21,12 @@ almacenamiento de `app/core/tiempo.py`); `ahora` sale de `ahora_utc()`.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
-from app.models.enums import FamiliaEstado, familia_de_estado
+from sqlalchemy import and_, func, or_
+
+from app.models.enums import FamiliaEstado, familia_de_estado, valores_de_estado_en
+from app.models.tables import CompraAgil
 
 # [V, Paso 0 de F-ca-rubro, 26-sep-2026]: ver docstring del módulo.
 CA_SIN_CIERRE_VIGENCIA_DIAS = 7
@@ -47,3 +51,32 @@ def es_vigente(
     if fecha_publicacion is None:
         return False
     return fecha_publicacion >= ahora - timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS)
+
+
+def condicion_ca_vigente(ahora: datetime) -> Any:
+    """`es_vigente` para Compra Ágil, escrita en SQL (F-ca-explorar).
+
+    El explorador pagina en la base (regla 12: nunca el universo en Python), así
+    que necesita la MISMA decisión como cláusula. Cualquier cambio a `es_vigente`
+    se replica acá; tests/test_vigencia.py compara ambas sobre una matriz de casos.
+    El estado se normaliza como en `familia_de_estado` (minúsculas, sin espacios);
+    un valor sin mapear cuenta como DESCONOCIDO, o sea, "no está en las demás familias".
+    """
+    estado = func.lower(func.trim(CompraAgil.estado))
+    con_cierre_futuro_no_valido = valores_de_estado_en(
+        [f for f in FamiliaEstado if f not in _FAMILIAS_CON_CIERRE_FUTURO]
+    )
+    abiertas = valores_de_estado_en([FamiliaEstado.ABIERTA])
+    return or_(
+        and_(
+            CompraAgil.fecha_cierre.is_not(None),
+            CompraAgil.fecha_cierre > ahora,
+            estado.not_in(sorted(con_cierre_futuro_no_valido)),
+        ),
+        and_(
+            CompraAgil.fecha_cierre.is_(None),
+            estado.in_(sorted(abiertas)),
+            CompraAgil.fecha_publicacion.is_not(None),
+            CompraAgil.fecha_publicacion >= ahora - timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS),
+        ),
+    )

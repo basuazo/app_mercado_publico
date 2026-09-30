@@ -15,6 +15,22 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 9, 30),
+        titulo="Explorar todas las Compras Ágiles vigentes, por rubro y más",
+        descripcion=(
+            "Hasta ahora solo veías las Compras Ágiles que calzaban con tus perfiles. La "
+            "pantalla nueva 'Explorar CA' muestra todas las que siguen abiertas y las filtra "
+            "por rubro, región, monto, plazo de cierre, texto y organismo. En el rubro, "
+            "'Confirmado' quiere decir que la compra trae productos de ese rubro, y 'Posible' "
+            "que su nombre se parece a lo que suele comprarse en él: como la mayoría de las "
+            "Compras Ágiles aún no tiene detalle, verás algunas que no corresponden. Puedes "
+            "marcar rubros favoritos (con la estrella, o en Perfiles) y vienen elegidos al "
+            "entrar. Desde acá puedes abrir la ficha de cualquiera, aunque no coincida con tus "
+            "perfiles; seguirla o descartarla sigue disponible solo para las que sí coinciden. "
+            "Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 27),
         titulo="El tablero solo muestra lo que todavía se puede postular",
         descripcion=(

@@ -71,7 +71,7 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH ciclo-activas | `ciclo-activas.yml` | 10:15, 14:15, 19:15 |
 | GH nocturno | `nocturno.yml` | 01:10 |
 | GH retencion | `retencion.yml` | 05:40 |
-| GH catalogos | `catalogos.yml` | lunes 06:35 |
+| GH catalogos | `catalogos.yml` | lunes 06:35 (catalogos + plan-anual + vocabulario-rubros, en ese orden) |
 | GH resumen | `resumen.yml` | 08:30 |
 
 Consejo: crea `GH ca` completo, pruébalo (sección 4) y después usa **Copy/Clone** para los

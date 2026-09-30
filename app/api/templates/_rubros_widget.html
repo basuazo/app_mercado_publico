@@ -1,0 +1,47 @@
+{#
+  Selector de rubros UNSPSC (buscador + acordeón por segmento + chips).
+  Compartido por /perfiles y por el explorador de Compras Ágiles (F-ca-explorar).
+  El comportamiento vive en /static/rubros_widget.js; los checkboxes se llaman
+  `categorias_unspsc`, igual que el campo de prefijos finos del final.
+#}
+{% macro rubros_widget(form_id, rubros_agrupados, preseleccion, prefijos_extra='') %}
+<div class="js-rubros-widget" data-form="{{ form_id }}">
+  <input type="text" class="form-control form-control-sm mb-2 js-rubro-buscador"
+         placeholder="Buscar rubro o segmento...">
+  <div class="js-rubro-chips d-flex flex-wrap gap-1 mb-2"></div>
+  <div class="accordion js-rubro-accordion" id="rubrosAcc_{{ form_id }}">
+    {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
+    <div class="accordion-item js-rubro-segmento" data-buscar="{{ (seg_codigo ~ ' ' ~ seg_nombre) | lower }}">
+      <h2 class="accordion-header d-flex align-items-center">
+        <div class="form-check ms-2 me-1">
+          <input class="form-check-input js-rubro-seg-toggle" type="checkbox"
+                 id="segall_{{ form_id }}_{{ seg_codigo }}" data-seg="{{ seg_codigo }}"
+                 title="Seleccionar todo el segmento">
+        </div>
+        <button class="accordion-button collapsed py-2" type="button"
+                data-bs-toggle="collapse" data-bs-target="#rubroColapso_{{ form_id }}_{{ seg_codigo }}">
+          {{ seg_codigo }} — {{ seg_nombre }}
+        </button>
+      </h2>
+      <div id="rubroColapso_{{ form_id }}_{{ seg_codigo }}" class="accordion-collapse collapse"
+           data-bs-parent="#rubrosAcc_{{ form_id }}">
+        <div class="accordion-body py-2">
+          {% for fam_codigo, fam_nombre in fams %}
+          <div class="form-check js-rubro-familia" data-buscar="{{ (fam_codigo ~ ' ' ~ fam_nombre) | lower }}">
+            <input class="form-check-input js-rubro-fam-check" type="checkbox" name="categorias_unspsc"
+                   value="{{ fam_codigo }}" id="fam_{{ form_id }}_{{ fam_codigo }}" data-seg="{{ seg_codigo }}"
+                   data-nombre="{{ fam_codigo }} — {{ fam_nombre }}"
+                   {% if fam_codigo in preseleccion %}checked{% endif %}>
+            <label class="form-check-label" for="fam_{{ form_id }}_{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <input type="text" name="categorias_unspsc" class="form-control form-control-sm mt-2"
+         value="{{ prefijos_extra }}"
+         placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma: 43211500,43211503">
+</div>
+{% endmacro %}

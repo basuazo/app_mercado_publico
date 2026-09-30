@@ -33,6 +33,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
+from app.catalogos.vocabulario_rubro import construir_vocabulario
 from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
@@ -170,6 +171,15 @@ def run_plan_anual(settings: Settings, engine: Engine) -> dict[str, int]:
     ticket ni cuota (datos abiertos). Ver app.ingest.plan_compra.sync_plan_anual_completo."""
     with Session(engine) as session:
         return sync_plan_anual_completo(session, settings)
+
+
+def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
+    """Job `vocabulario-rubros` (F-ca-explorar): regenera `rubro_vocabulario` desde
+    `licitacion_items`. Solo base de datos: sin ticket, sin cuota, sin red."""
+    with Session(engine) as session:
+        return construir_vocabulario(
+            session, k=settings.rubro_vocab_k, lift_min=settings.rubro_vocab_lift
+        )
 
 
 _FUENTE_LIC = "licitaciones"

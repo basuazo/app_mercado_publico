@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE
-from app.models.tables import PlanCompraLinea, SyncState
+from app.models.tables import PlanCompraLinea, RubroVocabulario, SyncState
 
 # Clave del advisory lock (igual que orchestrator._LOCK_KEY)
 _LOCK_KEY = 7_891_011
@@ -84,6 +84,7 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
         "lock_activo": _advisory_lock_activo(session),
         "errores_recientes": errores,
         "plan_anual": _plan_anual_salud(session),
+        "vocabulario_rubros": _vocabulario_salud(session),
     }
 
 
@@ -101,4 +102,21 @@ def _plan_anual_salud(session: Session) -> dict[str, Any]:
         "actualizado_al": state.cursor if state else None,
         "ultimo_ok": state.ultimo_ok.isoformat() if state and state.ultimo_ok else None,
         "tamano_tabla_bytes": tamano_tabla(session, "plan_compra_lineas"),
+    }
+
+
+def _vocabulario_salud(session: Session) -> dict[str, Any]:
+    """F-ca-explorar: qué tan al día está el vocabulario por rubro que usa el
+    explorador de Compras Ágiles para marcar las CA como "posibles"."""
+    filas, familias, actualizado = session.execute(
+        select(
+            func.count(),
+            func.count(func.distinct(RubroVocabulario.prefijo)),
+            func.max(RubroVocabulario.actualizado_en),
+        )
+    ).one()
+    return {
+        "filas": int(filas),
+        "familias": int(familias),
+        "actualizado_en": actualizado.isoformat() if actualizado else None,
     }

@@ -1,0 +1,5 @@
+{% if total == 0 %}
+<span class="text-muted">Sin CA vigentes con estos filtros.</span>
+{% else %}
+<strong class="num">{{ total | numero }}</strong> CA
+{% endif %}

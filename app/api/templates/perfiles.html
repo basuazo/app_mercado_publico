@@ -1,46 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Perfiles — MP Oportunidades{% endblock %}
 
-{% macro rubros_widget(form_id, rubros_agrupados, preseleccion) %}
-<div class="js-rubros-widget" data-form="{{ form_id }}">
-  <input type="text" class="form-control form-control-sm mb-2 js-rubro-buscador"
-         placeholder="Buscar rubro o segmento...">
-  <div class="js-rubro-chips d-flex flex-wrap gap-1 mb-2"></div>
-  <div class="accordion js-rubro-accordion" id="rubrosAcc_{{ form_id }}">
-    {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
-    <div class="accordion-item js-rubro-segmento" data-buscar="{{ (seg_codigo ~ ' ' ~ seg_nombre) | lower }}">
-      <h2 class="accordion-header d-flex align-items-center">
-        <div class="form-check ms-2 me-1">
-          <input class="form-check-input js-rubro-seg-toggle" type="checkbox"
-                 id="segall_{{ form_id }}_{{ seg_codigo }}" data-seg="{{ seg_codigo }}"
-                 title="Seleccionar todo el segmento">
-        </div>
-        <button class="accordion-button collapsed py-2" type="button"
-                data-bs-toggle="collapse" data-bs-target="#rubroColapso_{{ form_id }}_{{ seg_codigo }}">
-          {{ seg_codigo }} — {{ seg_nombre }}
-        </button>
-      </h2>
-      <div id="rubroColapso_{{ form_id }}_{{ seg_codigo }}" class="accordion-collapse collapse"
-           data-bs-parent="#rubrosAcc_{{ form_id }}">
-        <div class="accordion-body py-2">
-          {% for fam_codigo, fam_nombre in fams %}
-          <div class="form-check js-rubro-familia" data-buscar="{{ (fam_codigo ~ ' ' ~ fam_nombre) | lower }}">
-            <input class="form-check-input js-rubro-fam-check" type="checkbox" name="categorias_unspsc"
-                   value="{{ fam_codigo }}" id="fam_{{ form_id }}_{{ fam_codigo }}" data-seg="{{ seg_codigo }}"
-                   data-nombre="{{ fam_codigo }} — {{ fam_nombre }}"
-                   {% if fam_codigo in preseleccion %}checked{% endif %}>
-            <label class="form-check-label" for="fam_{{ form_id }}_{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</label>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  <input type="text" name="categorias_unspsc" class="form-control form-control-sm mt-2"
-         placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma: 43211500,43211503">
-</div>
-{% endmacro %}
+{% from "_rubros_widget.html" import rubros_widget %}
 
 {% macro organismos_widget(form_id, preseleccion, catalogo_disponible) %}
 {% if catalogo_disponible %}
@@ -200,6 +161,58 @@
   </div>
 </div>
 
+<!-- Rubros favoritos (F-ca-explorar). Fuera de los formularios de perfiles a propósito. -->
+<div class="card mb-4" id="rubros-favoritos">
+  <div class="card-header">Rubros favoritos</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">
+      Vienen preseleccionados en <a href="/compras-agiles">Explorar Compras Ágiles</a>.
+      No cambian tus perfiles ni tus alertas.
+    </p>
+    {% if rubros_favoritos %}
+    <ul class="list-unstyled d-flex flex-wrap gap-2 mb-3">
+      {% for r in rubros_favoritos %}
+      <li>
+        <form method="post" action="/rubros-favoritos/quitar" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="prefijo" value="{{ r.prefijo }}">
+          <input type="hidden" name="next" value="/perfiles#rubros-favoritos">
+          <span class="badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-2">
+            <span aria-hidden="true">★</span> {{ r.prefijo }} — {{ r.nombre }}
+            <button type="submit" class="btn-close btn-close-white" style="font-size: 0.55rem;"
+                    aria-label="Quitar de favoritos: {{ r.nombre }}"></button>
+          </span>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-muted small">Todavía no marcas ninguno.</p>
+    {% endif %}
+    <form method="post" action="/rubros-favoritos/agregar" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="/perfiles#rubros-favoritos">
+      <div class="col-md-8">
+        <label class="form-label" for="rubro-favorito-nuevo">Agregar un rubro</label>
+        <select name="prefijo" id="rubro-favorito-nuevo" class="form-select" required>
+          <option value="">Elige un segmento o una familia…</option>
+          {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
+          <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
+            <option value="{{ seg_codigo }}">Todo el segmento {{ seg_codigo }}</option>
+            {% for fam_codigo, fam_nombre in fams %}
+            <option value="{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">Agregar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Lista de perfiles -->
 {% if perfiles %}
 <div class="list-group">
@@ -312,6 +325,7 @@
 <div class="alert alert-info">Aún no tienes perfiles. Crea uno para recibir alertas.</div>
 {% endif %}
 
+<script src="/static/rubros_widget.js?v={{ version_estaticos }}" defer></script>
 <script>
 const MP_ORGANISMOS_CATALOGO = {{ organismos_json | tojson }};
 </script>
@@ -343,91 +357,6 @@ const MP_ORGANISMOS_CATALOGO = {{ organismos_json | tojson }};
     quitarChip(boton, texto, alQuitar);
     chip.appendChild(boton);
     return chip;
-  }
-
-  // ---- Rubros: acordeón + chips + buscador (en cliente, sin red) ----
-  function initRubrosWidget(widget) {
-    const buscador = widget.querySelector(".js-rubro-buscador");
-    const chipsBox = widget.querySelector(".js-rubro-chips");
-    const segmentos = Array.from(widget.querySelectorAll(".js-rubro-segmento"));
-    const famChecks = Array.from(widget.querySelectorAll(".js-rubro-fam-check"));
-    const segToggles = Array.from(widget.querySelectorAll(".js-rubro-seg-toggle"));
-
-    function famsDeSegmento(segCodigo) {
-      return famChecks.filter((c) => c.dataset.seg === segCodigo);
-    }
-
-    function actualizarSegToggle(segToggle) {
-      if (!segToggle) return;
-      const fams = famsDeSegmento(segToggle.dataset.seg);
-      const marcados = fams.filter((c) => c.checked).length;
-      segToggle.checked = fams.length > 0 && marcados === fams.length;
-      segToggle.indeterminate = marcados > 0 && marcados < fams.length;
-    }
-
-    function renderChips() {
-      chipsBox.innerHTML = "";
-      famChecks.filter((c) => c.checked).forEach((c) => {
-        chipsBox.appendChild(
-          crearChip(c.dataset.nombre, () => {
-            c.checked = false;
-            actualizarSegToggle(segToggles.find((s) => s.dataset.seg === c.dataset.seg));
-            renderChips();
-          })
-        );
-      });
-    }
-
-    famChecks.forEach((c) => {
-      c.addEventListener("change", () => {
-        actualizarSegToggle(segToggles.find((s) => s.dataset.seg === c.dataset.seg));
-        renderChips();
-      });
-    });
-
-    segToggles.forEach((seg) => {
-      seg.addEventListener("change", () => {
-        famsDeSegmento(seg.dataset.seg).forEach((c) => {
-          c.checked = seg.checked;
-        });
-        seg.indeterminate = false;
-        renderChips();
-      });
-      actualizarSegToggle(seg);
-    });
-
-    if (buscador) {
-      buscador.addEventListener(
-        "input",
-        debounce(() => {
-          const q = buscador.value.trim().toLowerCase();
-          segmentos.forEach((seg) => {
-            const familias = Array.from(seg.querySelectorAll(".js-rubro-familia"));
-            if (!q) {
-              seg.classList.remove("d-none");
-              familias.forEach((f) => f.classList.remove("d-none"));
-              return;
-            }
-            const segCoincide = seg.dataset.buscar.includes(q);
-            let algunaFamilia = false;
-            familias.forEach((f) => {
-              const coincide = segCoincide || f.dataset.buscar.includes(q);
-              f.classList.toggle("d-none", !coincide);
-              if (coincide) algunaFamilia = true;
-            });
-            seg.classList.toggle("d-none", !algunaFamilia);
-            if (algunaFamilia && window.bootstrap) {
-              const collapseEl = seg.querySelector(".accordion-collapse");
-              if (collapseEl) {
-                window.bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
-              }
-            }
-          });
-        }, 150)
-      );
-    }
-
-    renderChips();
   }
 
   // ---- Organismos: buscador + lista filtrada agrupada por sector + chips ----
@@ -516,7 +445,6 @@ const MP_ORGANISMOS_CATALOGO = {{ organismos_json | tojson }};
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".js-rubros-widget").forEach(initRubrosWidget);
     document.querySelectorAll(".js-org-widget").forEach((w) => initOrganismosWidget(w, MP_ORGANISMOS_CATALOGO));
   });
 })();

@@ -55,7 +55,26 @@ from app.auth.password import hash_password, verify_password
 from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.changelog import entradas_changelog, fecha_ultima_novedad
 from app.core.logging import get_logger
-from app.core.tiempo import TZ_CHILE
+from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.explorador_ca import (
+    CIERRES as CIERRES_EXPLORADOR,
+)
+from app.explorador_ca import (
+    ORDENES as ORDENES_EXPLORADOR,
+)
+from app.explorador_ca import (
+    PAGE_SIZE as PAGE_SIZE_EXPLORADOR,
+)
+from app.explorador_ca import (
+    FiltrosExplorador,
+    agregar_favorito,
+    listar_favoritos,
+    prefijos_validos,
+    quitar_favorito,
+    vocabulario_de_prefijos,
+)
+from app.explorador_ca import buscar as buscar_explorador
+from app.explorador_ca import contar as contar_explorador
 from app.ingest.plan_compra import (
     anio_completo_cargado,
     get_plan,
@@ -706,9 +725,10 @@ def _url_volver_feed(request: Request) -> str:
     partes = urlsplit(ref)
     if partes.netloc and partes.netloc != request.url.netloc:
         return "/"
-    if partes.path != "/":
+    # El explorador (F-ca-explorar) también manda a la ficha: volver conserva sus filtros.
+    if partes.path not in ("/", "/compras-agiles"):
         return "/"
-    return "/?" + partes.query if partes.query else "/"
+    return partes.path + ("?" + partes.query if partes.query else "")
 
 
 @router.get("/oportunidad/{fuente}/{codigo}", response_class=HTMLResponse)
@@ -720,7 +740,11 @@ async def oportunidad_detalle(
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     match = check_oportunidad_access(session, user.id, fuente, codigo)
-    if match is None:
+    # Solo la Compra Ágil se puede abrir sin match: el explorador (F-ca-explorar)
+    # lista TODAS las vigentes, no solo las que calzan con un perfil. Los datos
+    # son públicos; lo que sigue siendo del dueño (regla 17) son sus acciones,
+    # que en esa ficha no se ofrecen (ver `oportunidad.html`).
+    if match is None and fuente != "compras_agiles":
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
 
     op: Licitacion | CompraAgil | None = None
@@ -769,7 +793,13 @@ async def oportunidad_detalle(
     ]
 
     feedback_item = get_item_oportunidad(session, user.id, fuente, codigo)
-    dias_al_cierre = feedback_item["dias_al_cierre"] if feedback_item else None
+    if feedback_item:
+        dias_al_cierre = feedback_item["dias_al_cierre"]
+    elif op.fecha_cierre is not None:
+        # Sin match no hay item armado (explorador): mismo calculo que `_construir_item`.
+        dias_al_cierre = max(0.0, (op.fecha_cierre - ahora_utc()).total_seconds() / 86400)
+    else:
+        dias_al_cierre = None
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -780,8 +810,10 @@ async def oportunidad_detalle(
             match=match,
             # Misma definición de "alta"/"media" que los presets del feed:
             # el badge de la ficha ya no puede contradecir al filtro (2.2).
-            banda=banda_relevancia(
-                match.score, _RELEVANCIA_ALTA, settings.feed_min_score_default
+            banda=(
+                banda_relevancia(match.score, _RELEVANCIA_ALTA, settings.feed_min_score_default)
+                if match is not None
+                else None
             ),
             # El cierre lo deciden las MISMAS funciones puras que en la tarjeta
             # (F-coherencia): la ficha tenía una copia divergente que mostraba
@@ -795,12 +827,17 @@ async def oportunidad_detalle(
             items=items,
             organismo=organismo,
             region_nombre=region_nombre,
-            razones=razones_legibles(match.razones),
+            razones=razones_legibles(match.razones) if match is not None else [],
             seguimiento=seguimiento,
             feedback_item=feedback_item,
             competencia_resumen=competencia_resumen,
             competencia_detalle=competencia_detalle,
             url_volver=_url_volver_feed(request),
+            volver_etiqueta=(
+                "Explorar Compras Ágiles"
+                if _url_volver_feed(request).startswith("/compras-agiles")
+                else "Dashboard"
+            ),
         ),
     )
 
@@ -1113,6 +1150,10 @@ async def perfiles_get(
             regiones_disponibles=REGIONES,
             rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
             rubros_por_perfil=rubros_por_perfil,
+            rubros_favoritos=[
+                {"prefijo": p, "nombre": nombre_rubro(p) or p}
+                for p in listar_favoritos(session, user.id)
+            ],
             organismos_catalogo_disponible=bool(organismos_json),
             organismos_json=organismos_json,
             mensaje=mensaje,
@@ -1799,3 +1840,296 @@ async def plan_anual_export_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="plan-anual-{agno_int}.csv"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Explorador de Compras Ágiles (F-ca-explorar) — todo desde la base, sin API.
+# Universo, filtros y paginación viven en app.explorador_ca; acá solo se lee la
+# query, se arma el estado normalizado (para URLs y chips) y se pinta.
+# ---------------------------------------------------------------------------
+
+_EXPLORADOR_ORDEN_PARAMS = (
+    "categorias_unspsc",
+    "solo_confirmados",
+    "region",
+    "monto_min",
+    "monto_max",
+    "excluir_sin_monto",
+    "cierre",
+    "texto",
+    "organismo",
+    "orden",
+    "pagina",
+)
+_ETIQUETA_CIERRE_EXPLORADOR = {"hoy": "hoy", "3d": "en 3 días", "7d": "en una semana"}
+_REGIONES_VALIDAS = {codigo for codigo, _ in REGIONES}
+
+
+def _url_explorador(actual: dict[str, Any], **cambios: Any) -> str:
+    """Único lugar donde se arma el querystring del explorador (mismo criterio
+    que `_url_feed`: `urlencode` sobre la estructura completa, un valor vacío
+    borra el parámetro y cualquier cambio vuelve a la página 1).
+
+    `sin_favoritos=1` viaja SIEMPRE: sin él, un enlace que deja la lista de
+    rubros vacía (quitar el último chip) haría reaparecer los favoritos."""
+    nuevo = dict(actual)
+    nuevo.pop("pagina", None)
+    for clave, valor in cambios.items():
+        if valor is None or valor == "" or valor == []:
+            nuevo.pop(clave, None)
+        else:
+            nuevo[clave] = valor
+    pares = [(k, nuevo[k]) for k in _EXPLORADOR_ORDEN_PARAMS if k in nuevo]
+    pares.append(("sin_favoritos", "1"))
+    return "/compras-agiles?" + urlencode(pares, doseq=True, quote_via=quote)
+
+
+def _armar_filtros_explorador(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
+    session: Session,
+    user: Usuario,
+    *,
+    categorias_unspsc: list[str],
+    solo_confirmados: str,
+    region: list[str],
+    monto_min: str,
+    monto_max: str,
+    excluir_sin_monto: str,
+    incluir_sin_monto: str,
+    cierre: str,
+    texto: str,
+    organismo: str,
+    orden: str,
+    panel: str,
+    sin_favoritos: str,
+) -> tuple[FiltrosExplorador, dict[str, Any], list[str]]:
+    """Filtros normalizados + su forma canónica en querystring + favoritos del usuario.
+
+    Rubros: si la URL trae `categorias_unspsc` mandan; si no, y la URL no dice
+    `sin_favoritos=1`, entran los favoritos del usuario (al llegar a la pantalla
+    vienen preseleccionados)."""
+    favoritos = listar_favoritos(session, user.id)
+    prefijos = prefijos_validos(categorias_unspsc)
+    if not prefijos and sin_favoritos != "1":
+        prefijos = list(favoritos)
+
+    # Igual que el feed: un envío del panel (`panel=1`) trae la casilla ausente =
+    # desmarcada; en los enlaces canónicos viaja solo lo excepcional.
+    incluir_monto = incluir_sin_monto == "1" if panel == "1" else excluir_sin_monto != "1"
+    regiones = [r for r in _enteros(region) if r in _REGIONES_VALIDAS]
+    m_min, m_max = _monto(monto_min), _monto(monto_max)
+    orden = orden if orden in ORDENES_EXPLORADOR else "cierre"
+    cierre = cierre if cierre in CIERRES_EXPLORADOR else ""
+
+    filtros = FiltrosExplorador(
+        usuario_id=user.id,
+        prefijos=prefijos,
+        solo_confirmados=solo_confirmados == "1" and bool(prefijos),
+        regiones=regiones,
+        monto_min=m_min,
+        monto_max=m_max,
+        incluir_sin_monto=incluir_monto,
+        cierre=cierre or None,
+        texto=texto.strip(),
+        organismo=organismo.strip(),
+        orden=orden,
+    )
+    estado_qs: dict[str, Any] = {
+        "categorias_unspsc": prefijos,
+        "solo_confirmados": "1" if filtros.solo_confirmados else "",
+        "region": [str(r) for r in regiones],
+        "monto_min": str(int(m_min)) if m_min is not None else "",
+        "monto_max": str(int(m_max)) if m_max is not None else "",
+        "excluir_sin_monto": "" if incluir_monto else "1",
+        "cierre": cierre,
+        "texto": filtros.texto,
+        "organismo": filtros.organismo,
+        "orden": "" if orden == "cierre" else orden,
+    }
+    estado_qs = {k: v for k, v in estado_qs.items() if v not in ("", [])}
+    return filtros, estado_qs, favoritos
+
+
+def _chips_explorador(estado_qs: dict[str, Any], filtros: FiltrosExplorador) -> list[dict[str, str]]:
+    """Un chip por valor aplicado, con el enlace que lo quita (mismo criterio que
+    `_chips_filtro` del feed: salen del estado con el que se consultó)."""
+    chips: list[dict[str, str]] = []
+
+    def agregar(etiqueta: str, **quitar: Any) -> None:
+        chips.append({"etiqueta": etiqueta, "href": _url_explorador(estado_qs, **quitar)})
+
+    for p in filtros.prefijos:
+        restantes = [x for x in filtros.prefijos if x != p]
+        agregar(f"Rubro: {nombre_rubro(p) or p}", categorias_unspsc=restantes)
+    if filtros.solo_confirmados:
+        agregar("Solo rubros confirmados", solo_confirmados=None)
+    for r in filtros.regiones:
+        restantes_r = [str(x) for x in filtros.regiones if x != r]
+        agregar(f"Región: {nombre_region(r) or r}", region=restantes_r)
+    if filtros.monto_min is not None or filtros.monto_max is not None:
+        if filtros.monto_min is not None and filtros.monto_max is not None:
+            glosa = f"{formato_clp(filtros.monto_min)} – {formato_clp(filtros.monto_max)}"
+        elif filtros.monto_min is not None:
+            glosa = f"desde {formato_clp(filtros.monto_min)}"
+        else:
+            glosa = f"hasta {formato_clp(filtros.monto_max)}"
+        agregar(f"Monto: {glosa}", monto_min=None, monto_max=None)
+    if not filtros.incluir_sin_monto:
+        agregar("Monto: solo con monto informado", excluir_sin_monto=None)
+    if filtros.cierre:
+        agregar(f"Cierra {_ETIQUETA_CIERRE_EXPLORADOR[filtros.cierre]}", cierre=None)
+    if filtros.texto:
+        agregar(f"Texto: {filtros.texto}", texto=None)
+    if filtros.organismo:
+        agregar(f"Organismo: {filtros.organismo}", organismo=None)
+    return chips
+
+
+@router.get("/compras-agiles", response_class=HTMLResponse)
+async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
+    request: Request,
+    categorias_unspsc: list[str] = Query(default=[]),
+    solo_confirmados: str = "",
+    region: list[str] = Query(default=[]),
+    monto_min: str = "",
+    monto_max: str = "",
+    excluir_sin_monto: str = "",
+    incluir_sin_monto: str = "",
+    cierre: str = "",
+    texto: str = "",
+    organismo: str = "",
+    orden: str = "cierre",
+    pagina: int = 1,
+    panel: str = "",
+    sin_favoritos: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    filtros, estado_qs, favoritos = _armar_filtros_explorador(
+        session,
+        user,
+        categorias_unspsc=categorias_unspsc,
+        solo_confirmados=solo_confirmados,
+        region=region,
+        monto_min=monto_min,
+        monto_max=monto_max,
+        excluir_sin_monto=excluir_sin_monto,
+        incluir_sin_monto=incluir_sin_monto,
+        cierre=cierre,
+        texto=texto,
+        organismo=organismo,
+        orden=orden,
+        panel=panel,
+        sin_favoritos=sin_favoritos,
+    )
+    resultado = buscar_explorador(session, filtros, pagina=pagina)
+    chips = _chips_explorador(estado_qs, filtros)
+    familias_catalogo = {codigo for codigo, _ in familias()}
+    vocabulario_listo = bool(vocabulario_de_prefijos(session, filtros.prefijos)) if filtros.prefijos else True
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "compras_agiles.html",
+        _ctx(
+            request,
+            user,
+            filtros=filtros,
+            resultado=resultado,
+            chips=chips,
+            regiones_disponibles=REGIONES,
+            rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
+            rubros_elegidos=[
+                {"prefijo": p, "nombre": nombre_rubro(p) or p, "favorito": p in favoritos}
+                for p in filtros.prefijos
+            ],
+            vocabulario_listo=vocabulario_listo,
+            # Las familias (4 dígitos) del catálogo van marcadas en el acordeón; lo demás
+            # (segmentos, prefijos finos) viaja en el campo de texto, para que aplicar
+            # el formulario no lo pierda.
+            rubros_preseleccion=[p for p in filtros.prefijos if p in familias_catalogo],
+            rubros_extra=",".join(p for p in filtros.prefijos if p not in familias_catalogo),
+            monto_min=filtros.monto_min,
+            monto_max=filtros.monto_max,
+            url_ex=lambda **cambios: _url_explorador(estado_qs, **cambios),
+            url_limpiar="/compras-agiles?sin_favoritos=1",
+            pagina_actual=resultado.pagina,
+            page_size=PAGE_SIZE_EXPLORADOR,
+            next_actual=_url_explorador(estado_qs, pagina=resultado.pagina if resultado.pagina > 1 else None),
+        ),
+    )
+
+
+@router.get("/compras-agiles/conteo", response_class=HTMLResponse)
+async def explorador_ca_conteo(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
+    request: Request,
+    categorias_unspsc: list[str] = Query(default=[]),
+    solo_confirmados: str = "",
+    region: list[str] = Query(default=[]),
+    monto_min: str = "",
+    monto_max: str = "",
+    excluir_sin_monto: str = "",
+    incluir_sin_monto: str = "",
+    cierre: str = "",
+    texto: str = "",
+    organismo: str = "",
+    orden: str = "cierre",
+    panel: str = "",
+    sin_favoritos: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Conteo en vivo (HTMX): solo un número, con los mismos filtros de la
+    pantalla — nunca expone filas."""
+    filtros, _, _ = _armar_filtros_explorador(
+        session,
+        user,
+        categorias_unspsc=categorias_unspsc,
+        solo_confirmados=solo_confirmados,
+        region=region,
+        monto_min=monto_min,
+        monto_max=monto_max,
+        excluir_sin_monto=excluir_sin_monto,
+        incluir_sin_monto=incluir_sin_monto,
+        cierre=cierre,
+        texto=texto,
+        organismo=organismo,
+        orden=orden,
+        panel=panel,
+        sin_favoritos=sin_favoritos,
+    )
+    return _TEMPLATES.TemplateResponse(
+        request, "_explorador_conteo.html", {"total": contar_explorador(session, filtros)}
+    )
+
+
+@router.post("/rubros-favoritos/agregar")
+async def rubro_favorito_agregar(
+    request: Request,
+    prefijo: str = Form(""),
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    try:
+        agregar_favorito(session, user.id, prefijo)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Rubro inválido") from None
+    session.commit()
+    return RedirectResponse(url=_safe_next(next, "/perfiles"), status_code=303)
+
+
+@router.post("/rubros-favoritos/quitar")
+async def rubro_favorito_quitar(
+    request: Request,
+    prefijo: str = Form(""),
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    check_csrf(request, csrf_token)
+    # Solo los del propio usuario (regla 17): el filtro por owner_id va en la query.
+    quitar_favorito(session, user.id, prefijo)
+    session.commit()
+    return RedirectResponse(url=_safe_next(next, "/perfiles"), status_code=303)

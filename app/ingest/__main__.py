@@ -30,6 +30,7 @@ from app.ingest.orchestrator import (
     run_scheduler,
     run_sync_activas,
     run_sync_ca,
+    run_vocabulario_rubros,
 )
 
 _JOBS = (
@@ -48,6 +49,7 @@ _JOBS = (
     "estados-vencidos",
     "nocturno",
     "plan-anual",
+    "vocabulario-rubros",
 )
 
 
@@ -111,6 +113,9 @@ def cmd_run_once(
             "estados-vencidos", lambda: run_estados_vencidos(settings, engine)
         ),
         "plan-anual": _locked("plan-anual", lambda: run_plan_anual(settings, engine)),
+        "vocabulario-rubros": _locked(
+            "vocabulario-rubros", lambda: run_vocabulario_rubros(settings, engine)
+        ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Explorar Compras Ágiles — MP Oportunidades{% endblock %}
+{% block main_clase %}container-xxl{% endblock %}
+{% block content %}
+
+{#
+  Explorador de Compras Ágiles (F-ca-explorar). Todo sale de la base: esta
+  pantalla nunca llama a la API. Ni un querystring armado a mano: los enlaces
+  salen de `url_ex(...)`, que codifica con `urlencode` sobre el estado completo.
+#}
+
+<div class="d-flex justify-content-between align-items-center gap-3 mb-3 flex-wrap">
+  <h2 class="mb-0">Explorar Compras Ágiles</h2>
+  <button class="btn btn-outline-secondary d-lg-none" type="button"
+          data-bs-toggle="offcanvas" data-bs-target="#panel-explorador-movil"
+          aria-controls="panel-explorador-movil">
+    Filtros{% if chips %} ({{ chips | length }}){% endif %}
+  </button>
+</div>
+
+<div class="d-flex align-items-start gap-4">
+
+  <aside class="panel-filtros d-none d-lg-block" aria-label="Filtros del explorador">
+    {% set panel_id = "explorador-escritorio" %}
+    {% include "_panel_explorador.html" %}
+  </aside>
+
+  <div class="flex-grow-1 min-w-0">
+
+    {# --- Rubros elegidos, con su estrella de favorito ---------------------- #}
+    {% if rubros_elegidos %}
+    <div class="mb-3">
+      <div class="small text-muted mb-1">Rubros elegidos (la estrella los deja como favoritos y vienen marcados al entrar)</div>
+      <ul class="list-unstyled d-flex flex-wrap gap-2 mb-0">
+        {% for r in rubros_elegidos %}
+        <li>
+          <form method="post" action="/rubros-favoritos/{{ 'quitar' if r.favorito else 'agregar' }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="prefijo" value="{{ r.prefijo }}">
+            <input type="hidden" name="next" value="{{ next_actual }}">
+            <span class="badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-2 fw-normal">
+              {{ r.prefijo }} — {{ r.nombre }}
+              <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent lh-1"
+                      aria-label="{{ 'Quitar de favoritos' if r.favorito else 'Marcar como favorito' }}: {{ r.nombre }}"
+                      title="{{ 'Quitar de favoritos' if r.favorito else 'Marcar como favorito' }}">
+                <span aria-hidden="true">{{ '★' if r.favorito else '☆' }}</span>
+              </button>
+            </span>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {# --- Chips de filtro activo -------------------------------------------- #}
+    {% if chips %}
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      {% for chip in chips %}
+      <span class="chip-filtro">
+        {{ chip.etiqueta }}
+        <a class="chip-filtro__quitar" href="{{ chip.href }}"
+           aria-label="Quitar filtro {{ chip.etiqueta }}">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </a>
+      </span>
+      {% endfor %}
+      <a class="btn btn-sm btn-link link-secondary text-decoration-none" href="{{ url_limpiar }}">
+        Limpiar todo ({{ chips | length }})
+      </a>
+    </div>
+    {% endif %}
+
+    {% if filtros.prefijos and not filtros.solo_confirmados and not vocabulario_listo %}
+    <div class="alert alert-warning small py-2">
+      Todavía no hay vocabulario calculado para estos rubros (se actualiza cada lunes), así
+      que por ahora solo se ven las CA con rubro confirmado.
+    </div>
+    {% endif %}
+
+    {# --- Cabecera de resultados --------------------------------------------- #}
+    <div class="barra-resultados">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-lg">
+          <p class="mb-0 text-muted small" id="conteo-resultados">
+            {% if resultado.total %}
+            <strong class="num">{{ resultado.total | numero }}</strong> CA vigentes
+            {%- if resultado.total_paginas > 1 %} · página <span class="num">{{ resultado.pagina }}</span> de <span class="num">{{ resultado.total_paginas }}</span>{% endif %}
+            {% else %}
+            Sin CA vigentes con estos filtros.
+            {% endif %}
+          </p>
+        </div>
+        <div class="col-6 col-lg-auto">
+          <label class="form-label mb-1" for="orden-select">Orden</label>
+          <select id="orden-select" class="form-select form-select-sm" onchange="location.href=this.value">
+            <option value="{{ url_ex(orden=none) }}" {% if filtros.orden == 'cierre' %}selected{% endif %}>Cierran antes</option>
+            <option value="{{ url_ex(orden='monto') }}" {% if filtros.orden == 'monto' %}selected{% endif %}>Monto mayor</option>
+            <option value="{{ url_ex(orden='reciente') }}" {% if filtros.orden == 'reciente' %}selected{% endif %}>Publicadas recién</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {# --- Resultados ---------------------------------------------------------- #}
+    <div id="explorador">
+      {% for it in resultado.items %}
+      <div class="tarjeta-op tarjeta-op--{{ it.urgencia }}">
+        <div class="d-flex align-items-start gap-3">
+          <div class="flex-grow-1 min-w-0">
+            <a class="tarjeta-op__titulo" href="/oportunidad/compras_agiles/{{ it.codigo }}">{{ it.nombre }}</a>
+            <div class="tarjeta-op__meta mt-1">
+              {{ it.organismo or "Organismo no informado" }} ·
+              {{ it.region_nombre or "Sin región" }} ·
+              <span class="num">{{ it.codigo }}</span>
+            </div>
+          </div>
+          <div class="text-end">
+            {% if it.monto is none %}
+            <div class="tarjeta-op__monto tarjeta-op__monto--ausente">{{ None | clp }}</div>
+            {% else %}
+            <div class="tarjeta-op__monto num">{{ it.monto | clp }}</div>
+            {% endif %}
+            <div class="tarjeta-op__monto-glosa">disponible</div>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <span class="badge-cierre badge-cierre--{{ it.urgencia }}">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>
+            {{ it.cierre_texto }}
+          </span>
+          {% if it.confirmado %}
+          <span class="badge text-bg-success fw-normal">Confirmado</span>
+          {% elif it.posible %}
+          <span class="badge text-bg-secondary fw-normal">Posible{% if it.familia_posible %}: {{ it.familia_posible }}{% endif %}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if resultado.total_paginas > 1 %}
+    <nav class="d-flex justify-content-between align-items-center gap-2 mt-3" aria-label="Paginación del explorador">
+      {% if resultado.pagina > 1 %}
+      <a class="btn btn-outline-secondary btn-sm"
+         href="{{ url_ex(pagina=(resultado.pagina - 1) if resultado.pagina > 2 else none) }}">Anteriores</a>
+      {% else %}<span></span>{% endif %}
+      {% if resultado.pagina < resultado.total_paginas %}
+      <a class="btn btn-outline-secondary btn-sm"
+         href="{{ url_ex(pagina=resultado.pagina + 1) }}">Siguientes</a>
+      {% endif %}
+    </nav>
+    {% endif %}
+  </div>
+</div>
+
+{# --- Panel de filtros en móvil ------------------------------------------- #}
+<div class="offcanvas offcanvas-start d-lg-none" tabindex="-1" id="panel-explorador-movil"
+     aria-labelledby="titulo-explorador-movil">
+  <div class="offcanvas-header">
+    <h3 class="offcanvas-title h5" id="titulo-explorador-movil">Filtros</h3>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body">
+    {% set panel_id = "explorador-movil" %}
+    {% include "_panel_explorador.html" %}
+  </div>
+</div>
+
+<script src="/static/rubros_widget.js?v={{ version_estaticos }}" defer></script>
+{% endblock %}

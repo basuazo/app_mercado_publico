@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+from collections.abc import Collection
 
 from app.core.logging import get_logger
 
@@ -77,6 +78,15 @@ _MAP_FAMILIA: dict[EstadoOportunidad, FamiliaEstado] = {
     EstadoOportunidad.SUSPENDIDA: FamiliaEstado.SIN_EFECTO,
     EstadoOportunidad.DESCONOCIDO: FamiliaEstado.DESCONOCIDO,
 }
+
+
+def valores_de_estado_en(familias: Collection[FamiliaEstado]) -> frozenset[str]:
+    """Valores (`EstadoOportunidad.value`) mapeados a alguna de esas familias.
+
+    Sirve para escribir en SQL lo que `familia_de_estado` decide en Python. Un
+    valor NO mapeado cae en DESCONOCIDO, así que "la familia es DESCONOCIDO"
+    se escribe en SQL como "el valor NO está en las demás familias"."""
+    return frozenset(e.value for e, f in _MAP_FAMILIA.items() if f in familias)
 
 
 def familia_de_estado(estado: object) -> FamiliaEstado:

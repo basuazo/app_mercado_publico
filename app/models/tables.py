@@ -448,6 +448,41 @@ class InstitucionPAC(Base):
 
 
 # ---------------------------------------------------------------------------
+# Explorador de Compras Ágiles (F-ca-explorar)
+# ---------------------------------------------------------------------------
+
+
+class RubroFavorito(Base):
+    """Rubro (prefijo UNSPSC de 2 a 8 dígitos) que un usuario marcó como favorito.
+    Preselecciona el filtro de rubro del explorador; nada más lo lee todavía."""
+
+    __tablename__ = "rubros_favoritos"
+    __table_args__ = (UniqueConstraint("owner_id", "prefijo", name="uq_rubro_favorito"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False
+    )
+    prefijo: Mapped[str] = mapped_column(String(8), nullable=False)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+class RubroVocabulario(Base):
+    """Vocabulario típico de un rubro: lexemas de `to_tsvector('spanish', ...)`
+    aprendidos de `licitacion_items`. DERIVADO: el job `vocabulario-rubros` lo
+    regenera entero (app/catalogos/vocabulario_rubro.py); `prefijo` es siempre
+    una familia UNSPSC de 4 dígitos."""
+
+    __tablename__ = "rubro_vocabulario"
+
+    prefijo: Mapped[str] = mapped_column(String(8), primary_key=True)
+    lexema: Mapped[str] = mapped_column(String(60), primary_key=True)
+    df_rubro: Mapped[int] = mapped_column(Integer, nullable=False)
+    lift: Mapped[float] = mapped_column(Float, nullable=False)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+# ---------------------------------------------------------------------------
 # Estado de sincronizaciÃ³n
 # ---------------------------------------------------------------------------
 

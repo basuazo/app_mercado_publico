@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Versión de los estáticos: se usa como ?v= al enlazar app.css, para que un
 # deploy invalide la caché del navegador. Se sube A MANO en la fase que toca
 # el CSS; nada de hashes calculados en tiempo de request.
-VERSION_ESTATICOS = "f-feed-ui-1"
+VERSION_ESTATICOS = "f-ca-explorar"
 
 
 class Settings(BaseSettings):
@@ -176,6 +176,20 @@ class Settings(BaseSettings):
             "Días mínimos entre cargas del PAC completo (job `plan-anual`): el "
             "archivo se regenera ~mensualmente aunque el contenido casi no cambie "
             "(decisión de Boris, 27-sep, ver docs/07-plan-anual.md §5-bis g)"
+        ),
+    )
+
+    # --- Vocabulario por rubro (F-ca-explorar, job `vocabulario-rubros`) ---
+    rubro_vocab_k: int = Field(
+        default=10,
+        description="Lexemas que se guardan por familia UNSPSC en rubro_vocabulario",
+    )
+    rubro_vocab_lift: float = Field(
+        default=10.0,
+        description=(
+            "Lift mínimo de un lexema (frecuencia en el rubro / frecuencia en nombres de "
+            "CA de 30 días) para entrar al vocabulario. Paso 0 (26-sep): k=10 y lift 10 "
+            "encontraron el 91 % de las CA que sí calzan, con 7 % de precisión"
         ),
     )
 
