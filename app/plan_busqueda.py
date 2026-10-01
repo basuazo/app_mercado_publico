@@ -1,11 +1,11 @@
 """Búsqueda inversa en el Plan Anual de Compra (F-plan-busqueda): "qué se
 compra" en vez de "qué organismo". Postgres FTS sobre `descripcion_producto`,
-mismo motor que app.matching (websearch_to_tsquery + inmutable_unaccent), pero
-en un módulo propio: app/matching/* es de la fase paralela F-ca-rubro y no se
-toca acá (ver docs/prompt-F-plan-busqueda.md).
+en un módulo propio. Igual que app.matching, usa
+websearch_to_tsquery('spanish', inmutable_unaccent(:q)): la query pasa por
+unaccent igual que el texto indexado (F-acentos).
 
 `FiltrosPlanBusqueda.q_include`/`q_exclude` ya vienen como tsquery-string listos
-para `websearch_to_tsquery('spanish', :q)` — este módulo no decide CÓMO se
+para `websearch_to_tsquery('spanish', inmutable_unaccent(:q))` — este módulo no decide CÓMO se
 arma esa query (texto libre vs keywords de perfil), solo la aplica. Quien
 llama:
 - Texto libre (una sola caja de búsqueda): pasa el texto tal cual como
@@ -33,9 +33,16 @@ from app.models.tables import InstitucionPAC, PlanCompraLinea
 # calzar exactamente para que Postgres use el índice en vez de recalcular un
 # seq scan.
 _TSV_DESCRIPCION = "to_tsvector('spanish', inmutable_unaccent(plan_compra_lineas.descripcion_producto))"
-_FTS_INCLUDE = f"({_TSV_DESCRIPCION} @@ websearch_to_tsquery('spanish', :q))"
-_FTS_EXCLUDE = f"(NOT {_TSV_DESCRIPCION} @@ websearch_to_tsquery('spanish', :qx))"
-_TS_RANK = f"ts_rank({_TSV_DESCRIPCION}, websearch_to_tsquery('spanish', :q))"
+
+
+def _tsq(param: str) -> str:
+    """tsquery 'spanish' con unaccent, igual que el tsv (param fijo del código)."""
+    return f"websearch_to_tsquery('spanish', inmutable_unaccent({param}))"
+
+
+_FTS_INCLUDE = f"({_TSV_DESCRIPCION} @@ {_tsq(':q')})"
+_FTS_EXCLUDE = f"(NOT {_TSV_DESCRIPCION} @@ {_tsq(':qx')})"
+_TS_RANK = f"ts_rank({_TSV_DESCRIPCION}, {_tsq(':q')})"
 
 # Protege RAM en Render (la ruta web corre ahí, regla 12): la agregación "por
 # organismo" nunca devuelve más de esto (hay ~962 instituciones en el PAC

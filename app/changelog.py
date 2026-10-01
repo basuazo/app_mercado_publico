@@ -16,6 +16,19 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 10, 1),
+        titulo="Tus perfiles ahora encuentran bien las palabras con tilde",
+        descripcion=(
+            "Algunas palabras con tilde de los perfiles, como 'reparación', 'ferretería' o "
+            "'evaluación', no encontraban las publicaciones que las usan. Ya está corregido, "
+            "tanto en lo que buscas como en lo que excluyes, y también en la búsqueda del "
+            "Plan Anual. Puede que veas oportunidades nuevas en el próximo resumen. Cada "
+            "palabra busca su propia familia: 'economía' trae 'economía' pero no "
+            "'económico'; si quieres las dos, agrega ambas a tu perfil. Fuente: Dirección "
+            "ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 10, 1),
         titulo="Explorar Compras Ágiles: rubros más precisos y tus propias palabras",
         descripcion=(
             "Medimos qué tan bien acierta el 'posible' del explorador: de cada 10 Compras "

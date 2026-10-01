@@ -111,21 +111,28 @@ def _rubros_hit(categorias_unspsc: list[str], codigos_producto: list[str]) -> li
 # Siempre usados como text().bindparams(q=...) — nunca interpolados.
 # ---------------------------------------------------------------------------
 
+def _tsq(param: str) -> str:
+    """tsquery 'spanish' con unaccent, igual que el tsv (si no, 'reparación'→repar vs reparacion).
+    `param` es un nombre de bindparam o columna fijos del código (':q', ':qx', 'kw.keyword'),
+    nunca un dato de la persona."""
+    return f"websearch_to_tsquery('spanish', inmutable_unaccent({param}))"
+
+
 _FTS_LIC_INCLUDE = (
-    "(licitaciones.tsv @@ websearch_to_tsquery('spanish', :q) "
+    f"(licitaciones.tsv @@ {_tsq(':q')} "
     "OR EXISTS ("
     "SELECT 1 FROM licitacion_items li "
     "WHERE li.licitacion_codigo = licitaciones.codigo "
     "AND to_tsvector('spanish', inmutable_unaccent(li.nombre)) "
-    "@@ websearch_to_tsquery('spanish', :q)))"
+    f"@@ {_tsq(':q')}))"
 )
 _FTS_LIC_EXCLUDE = (
-    "NOT (licitaciones.tsv @@ websearch_to_tsquery('spanish', :qx) "
+    f"NOT (licitaciones.tsv @@ {_tsq(':qx')} "
     "OR EXISTS ("
     "SELECT 1 FROM licitacion_items li "
     "WHERE li.licitacion_codigo = licitaciones.codigo "
     "AND to_tsvector('spanish', inmutable_unaccent(li.nombre)) "
-    "@@ websearch_to_tsquery('spanish', :qx)))"
+    f"@@ {_tsq(':qx')}))"
 )
 # Texto de un producto de CA para FTS: nombre + descripción del comprador
 # (F-detalles-match). La MISMA expresión en recall (INCLUDE/EXCLUDE) y en
@@ -133,20 +140,20 @@ _FTS_LIC_EXCLUDE = (
 _FTS_CA_PRODUCTO = "to_tsvector('spanish', inmutable_unaccent(p.nombre || ' ' || p.descripcion))"
 
 _FTS_CA_INCLUDE = (
-    "(compras_agiles.tsv @@ websearch_to_tsquery('spanish', :q) "
+    f"(compras_agiles.tsv @@ {_tsq(':q')} "
     "OR EXISTS ("
     "SELECT 1 FROM ca_productos p "
     "WHERE p.ca_codigo = compras_agiles.codigo "
     f"AND {_FTS_CA_PRODUCTO} "
-    "@@ websearch_to_tsquery('spanish', :q)))"
+    f"@@ {_tsq(':q')}))"
 )
 _FTS_CA_EXCLUDE = (
-    "NOT (compras_agiles.tsv @@ websearch_to_tsquery('spanish', :qx) "
+    f"NOT (compras_agiles.tsv @@ {_tsq(':qx')} "
     "OR EXISTS ("
     "SELECT 1 FROM ca_productos p "
     "WHERE p.ca_codigo = compras_agiles.codigo "
     f"AND {_FTS_CA_PRODUCTO} "
-    "@@ websearch_to_tsquery('spanish', :qx)))"
+    f"@@ {_tsq(':qx')}))"
 )
 
 
@@ -246,20 +253,20 @@ def _candidatos_ca(
 # agrega por codigo: una sola query por fuente cubre todos los candidatos y
 # todas las keywords del perfil (sin N+1).
 _HITS_LIC_SQL = text(
-    """
+    f"""
     WITH pares AS (
         SELECT
             l.codigo AS codigo,
             kw.keyword AS keyword,
             to_tsvector('spanish', inmutable_unaccent(coalesce(l.nombre, '')))
-                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_nombre,
+                @@ {_tsq('kw.keyword')} AS hit_nombre,
             to_tsvector('spanish', inmutable_unaccent(coalesce(l.descripcion, '')))
-                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_descripcion,
+                @@ {_tsq('kw.keyword')} AS hit_descripcion,
             EXISTS (
                 SELECT 1 FROM licitacion_items li
                 WHERE li.licitacion_codigo = l.codigo
                 AND to_tsvector('spanish', inmutable_unaccent(li.nombre))
-                    @@ websearch_to_tsquery('spanish', kw.keyword)
+                    @@ {_tsq('kw.keyword')}
             ) AS hit_producto
         FROM licitaciones l
         CROSS JOIN unnest(:keywords) AS kw(keyword)
@@ -287,14 +294,14 @@ _HITS_CA_SQL = text(
             c.codigo AS codigo,
             kw.keyword AS keyword,
             to_tsvector('spanish', inmutable_unaccent(coalesce(c.nombre, '')))
-                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_nombre,
+                @@ {_tsq('kw.keyword')} AS hit_nombre,
             to_tsvector('spanish', inmutable_unaccent(coalesce(c.descripcion, '')))
-                @@ websearch_to_tsquery('spanish', kw.keyword) AS hit_descripcion,
+                @@ {_tsq('kw.keyword')} AS hit_descripcion,
             EXISTS (
                 SELECT 1 FROM ca_productos p
                 WHERE p.ca_codigo = c.codigo
                 AND {_FTS_CA_PRODUCTO}
-                    @@ websearch_to_tsquery('spanish', kw.keyword)
+                    @@ {_tsq('kw.keyword')}
             ) AS hit_producto
         FROM compras_agiles c
         CROSS JOIN unnest(:keywords) AS kw(keyword)

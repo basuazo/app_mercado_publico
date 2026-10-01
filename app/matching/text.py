@@ -1,8 +1,12 @@
 """Construcción segura de queries para websearch_to_tsquery.
 
 Regla crítica: build_tsquery y build_exclude_tsquery solo producen el STRING
-que se pasa como parámetro :q a websearch_to_tsquery('spanish', :q).
+que se pasa como parámetro :q a
+websearch_to_tsquery('spanish', inmutable_unaccent(:q)).
 NUNCA se interpola directamente en SQL.
+
+No se normalizan tildes acá: lo hace Postgres, para que `keywords_hit`
+conserve la escritura de la persona.
 
 Invariante recall/score (F9c): keywords_validas() es el ÚNICO punto que decide
 qué keywords participan en la tsquery. build_tsquery la usa para el OR
