@@ -71,10 +71,9 @@
     </div>
     {% endif %}
 
-    {% if filtros.prefijos and not filtros.solo_confirmados and not vocabulario_listo %}
+    {% if filtros.incluir_posibles and aviso_vocabulario %}
     <div class="alert alert-warning small py-2">
-      Todavía no hay vocabulario calculado para estos rubros (se actualiza cada lunes), así
-      que por ahora solo se ven las CA con rubro confirmado.
+      {{ aviso_vocabulario }} Por ahora solo se ven las CA con rubro confirmado.
     </div>
     {% endif %}
 
@@ -104,6 +103,12 @@
 
     {# --- Resultados ---------------------------------------------------------- #}
     <div id="explorador">
+      {% if not resultado.total and filtros.prefijos and not filtros.palabras_rubro and not filtros.incluir_posibles %}
+      <div class="alert alert-light border small">
+        <strong>Sin CA confirmadas para estos rubros.</strong>
+        Prueba con las palabras del rubro (panel de filtros) o incluye las posibles.
+      </div>
+      {% endif %}
       {% for it in resultado.items %}
       <div class="tarjeta-op tarjeta-op--{{ it.urgencia }}">
         <div class="d-flex align-items-start gap-3">
@@ -131,8 +136,10 @@
           </span>
           {% if it.confirmado %}
           <span class="badge text-bg-success fw-normal">Confirmado</span>
+          {% elif it.por_palabras %}
+          <span class="badge text-bg-info fw-normal">Por tus palabras</span>
           {% elif it.posible %}
-          <span class="badge text-bg-secondary fw-normal">Posible{% if it.familia_posible %}: {{ it.familia_posible }}{% endif %}</span>
+          <span class="badge text-bg-secondary fw-normal">Posible (por nombre){% if it.familia_posible %}: {{ it.familia_posible }}{% endif %}</span>
           {% endif %}
         </div>
       </div>

@@ -36,9 +36,17 @@ class _SecretFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.msg = self._mask(str(record.msg))
-        record.args = tuple(
-            self._mask(str(a)) if isinstance(a, str) else a for a in (record.args or ())
-        )
+        args = record.args
+        if isinstance(args, dict):
+            # `_log.info("x: %s", {"a": 1})`: logging guarda el dict como mapping.
+            # Convertirlo a tupla dejaba solo sus claves y reventaba el formateo.
+            record.args = {
+                k: self._mask(v) if isinstance(v, str) else v for k, v in args.items()
+            }
+        else:
+            record.args = tuple(
+                self._mask(str(a)) if isinstance(a, str) else a for a in (args or ())
+            )
         return True
 
 

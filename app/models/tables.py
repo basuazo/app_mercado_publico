@@ -479,6 +479,9 @@ class RubroVocabulario(Base):
     lexema: Mapped[str] = mapped_column(String(60), primary_key=True)
     df_rubro: Mapped[int] = mapped_column(Integer, nullable=False)
     lift: Mapped[float] = mapped_column(Float, nullable=False)
+    # Palabra legible (minúsculas, con tildes) más frecuente de ese lexema en la
+    # familia; NULL si no hay una válida (F-ca-vocab). El panel muestra el lexema.
+    palabra: Mapped[str | None] = mapped_column(String(60), nullable=True)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
 

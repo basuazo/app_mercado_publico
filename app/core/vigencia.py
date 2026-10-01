@@ -58,7 +58,7 @@ def condicion_ca_vigente(ahora: datetime) -> Any:
 
     El explorador pagina en la base (regla 12: nunca el universo en Python), así
     que necesita la MISMA decisión como cláusula. Cualquier cambio a `es_vigente`
-    se replica acá; tests/test_vigencia.py compara ambas sobre una matriz de casos.
+    se replica acá; tests/test_ca_explorar.py compara ambas sobre una matriz de casos.
     El estado se normaliza como en `familia_de_estado` (minúsculas, sin espacios);
     un valor sin mapear cuenta como DESCONOCIDO, o sea, "no está en las demás familias".
     """

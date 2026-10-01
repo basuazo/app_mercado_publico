@@ -30,17 +30,60 @@
       <div id="{{ panel_id }}-sec-rubro" class="accordion-collapse collapse show">
         <div class="accordion-body">
           {{ rubros_widget(panel_id ~ "-rubros", rubros_agrupados, rubros_preseleccion, rubros_extra) }}
+          <p class="text-muted small mt-2 mb-1">
+            Por defecto solo salen las <strong>confirmadas</strong>: la CA trae productos de ese rubro.
+          </p>
           <div class="form-check mt-2">
-            <input class="form-check-input" type="checkbox" name="solo_confirmados" value="1"
-                   id="{{ panel_id }}-solo-confirmados" {% if filtros.solo_confirmados %}checked{% endif %}>
-            <label class="form-check-label small" for="{{ panel_id }}-solo-confirmados">
-              Solo confirmados
+            <input class="form-check-input" type="checkbox" name="incluir_posibles" value="1"
+                   id="{{ panel_id }}-incluir-posibles" aria-describedby="{{ panel_id }}-ayuda-posibles"
+                   {% if filtros.incluir_posibles %}checked{% endif %}>
+            <label class="form-check-label small" for="{{ panel_id }}-incluir-posibles">
+              Incluir posibles (por nombre, poco preciso)
             </label>
           </div>
-          <p class="text-muted small mt-1 mb-0">
-            <strong>Confirmado</strong>: la CA trae productos de ese rubro.
-            <strong>Posible</strong>: su nombre calza con palabras típicas del rubro.
+          <p class="text-muted small mt-1 mb-0" id="{{ panel_id }}-ayuda-posibles">
+            Posible: el nombre se parece a lo que suele comprarse en el rubro. Acierta poco:
+            de cada 10 posibles, 1 o menos es del rubro.
           </p>
+
+          {# --- Palabras del rubro: sugeridas por el vocabulario, elegidas por la persona --- #}
+          <div class="js-palabras-widget mt-3" data-panel="{{ panel_id }}">
+            <div class="small fw-semibold" id="{{ panel_id }}-etiqueta-palabras">Tus palabras del rubro</div>
+            <p class="text-muted small mb-1">
+              Amplían el rubro: salen también las CA cuyo nombre o descripción tenga alguna.
+            </p>
+            <div class="js-palabras-chips d-flex flex-wrap gap-1 mb-2"
+                 aria-labelledby="{{ panel_id }}-etiqueta-palabras"></div>
+            <div class="js-palabras-inputs">
+              {% for p in filtros.palabras_rubro %}
+              <input type="hidden" name="palabras_rubro" value="{{ p }}">
+              {% endfor %}
+            </div>
+            <div class="input-group input-group-sm mb-2">
+              <input type="text" class="form-control js-palabra-nueva" maxlength="200"
+                     id="{{ panel_id }}-palabra-nueva" placeholder="Escribe palabras, separadas por coma"
+                     aria-label="Agregar palabras propias del rubro">
+              <button type="button" class="btn btn-outline-secondary js-palabra-agregar">Agregar</button>
+            </div>
+
+            {% if sugerencias %}
+            <div class="small fw-semibold">Palabras típicas de estos rubros</div>
+            {% for fam in sugerencias %}
+            <div class="mt-1">
+              <div class="text-muted small">{{ fam.nombre }}</div>
+              <div class="d-flex flex-wrap gap-1">
+                {% for palabra in fam.palabras %}
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-palabra-sugerida"
+                        data-palabra="{{ palabra }}">+ {{ palabra }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% if aviso_vocabulario %}
+            <p class="text-muted small mt-2 mb-0">{{ aviso_vocabulario }}</p>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>

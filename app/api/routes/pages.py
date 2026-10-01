@@ -68,10 +68,14 @@ from app.explorador_ca import (
 from app.explorador_ca import (
     FiltrosExplorador,
     agregar_favorito,
+    filas_vocabulario,
     listar_favoritos,
+    palabras_validas,
     prefijos_validos,
     quitar_favorito,
-    vocabulario_de_prefijos,
+    sugerencias_de_vocabulario,
+    vocabulario_por_familia,
+    vocabulario_vacio,
 )
 from app.explorador_ca import buscar as buscar_explorador
 from app.explorador_ca import contar as contar_explorador
@@ -1850,7 +1854,8 @@ async def plan_anual_export_csv(
 
 _EXPLORADOR_ORDEN_PARAMS = (
     "categorias_unspsc",
-    "solo_confirmados",
+    "incluir_posibles",
+    "palabras_rubro",
     "region",
     "monto_min",
     "monto_max",
@@ -1889,7 +1894,8 @@ def _armar_filtros_explorador(  # noqa: PLR0913 - una dimensión filtrable = un 
     user: Usuario,
     *,
     categorias_unspsc: list[str],
-    solo_confirmados: str,
+    incluir_posibles: str,
+    palabras_rubro: list[str],
     region: list[str],
     monto_min: str,
     monto_max: str,
@@ -1923,7 +1929,8 @@ def _armar_filtros_explorador(  # noqa: PLR0913 - una dimensión filtrable = un 
     filtros = FiltrosExplorador(
         usuario_id=user.id,
         prefijos=prefijos,
-        solo_confirmados=solo_confirmados == "1" and bool(prefijos),
+        incluir_posibles=incluir_posibles == "1" and bool(prefijos),
+        palabras_rubro=palabras_validas(palabras_rubro),
         regiones=regiones,
         monto_min=m_min,
         monto_max=m_max,
@@ -1935,7 +1942,8 @@ def _armar_filtros_explorador(  # noqa: PLR0913 - una dimensión filtrable = un 
     )
     estado_qs: dict[str, Any] = {
         "categorias_unspsc": prefijos,
-        "solo_confirmados": "1" if filtros.solo_confirmados else "",
+        "incluir_posibles": "1" if filtros.incluir_posibles else "",
+        "palabras_rubro": filtros.palabras_rubro,
         "region": [str(r) for r in regiones],
         "monto_min": str(int(m_min)) if m_min is not None else "",
         "monto_max": str(int(m_max)) if m_max is not None else "",
@@ -1960,8 +1968,11 @@ def _chips_explorador(estado_qs: dict[str, Any], filtros: FiltrosExplorador) -> 
     for p in filtros.prefijos:
         restantes = [x for x in filtros.prefijos if x != p]
         agregar(f"Rubro: {nombre_rubro(p) or p}", categorias_unspsc=restantes)
-    if filtros.solo_confirmados:
-        agregar("Solo rubros confirmados", solo_confirmados=None)
+    if filtros.incluir_posibles:
+        agregar("Incluye posibles", incluir_posibles=None)
+    for palabra in filtros.palabras_rubro:
+        restantes_p = [x for x in filtros.palabras_rubro if x != palabra]
+        agregar(f"Palabra: {palabra}", palabras_rubro=restantes_p)
     for r in filtros.regiones:
         restantes_r = [str(x) for x in filtros.regiones if x != r]
         agregar(f"Región: {nombre_region(r) or r}", region=restantes_r)
@@ -1988,7 +1999,8 @@ def _chips_explorador(estado_qs: dict[str, Any], filtros: FiltrosExplorador) -> 
 async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     request: Request,
     categorias_unspsc: list[str] = Query(default=[]),
-    solo_confirmados: str = "",
+    incluir_posibles: str = "",
+    palabras_rubro: list[str] = Query(default=[]),
     region: list[str] = Query(default=[]),
     monto_min: str = "",
     monto_max: str = "",
@@ -2008,7 +2020,8 @@ async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un pa
         session,
         user,
         categorias_unspsc=categorias_unspsc,
-        solo_confirmados=solo_confirmados,
+        incluir_posibles=incluir_posibles,
+        palabras_rubro=palabras_rubro,
         region=region,
         monto_min=monto_min,
         monto_max=monto_max,
@@ -2021,10 +2034,22 @@ async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un pa
         panel=panel,
         sin_favoritos=sin_favoritos,
     )
-    resultado = buscar_explorador(session, filtros, pagina=pagina)
+    # Una sola lectura del vocabulario: sirve a las sugerencias, al aviso y a la búsqueda.
+    filas_vocab = filas_vocabulario(session, filtros.prefijos)
+    resultado = buscar_explorador(
+        session, filtros, pagina=pagina, vocab=vocabulario_por_familia(filas_vocab)
+    )
     chips = _chips_explorador(estado_qs, filtros)
     familias_catalogo = {codigo for codigo, _ in familias()}
-    vocabulario_listo = bool(vocabulario_de_prefijos(session, filtros.prefijos)) if filtros.prefijos else True
+    aviso_vocabulario = None
+    if filtros.prefijos and not filas_vocab:
+        aviso_vocabulario = (
+            "Todavía no hay vocabulario calculado (se actualiza cada lunes), así que "
+            "aún no hay palabras sugeridas ni posibles."
+            if vocabulario_vacio(session)
+            else "Estos rubros no tienen palabras típicas aprendidas (códigos nuevos o "
+            "sin nombre en español)."
+        )
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -2041,7 +2066,8 @@ async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un pa
                 {"prefijo": p, "nombre": nombre_rubro(p) or p, "favorito": p in favoritos}
                 for p in filtros.prefijos
             ],
-            vocabulario_listo=vocabulario_listo,
+            aviso_vocabulario=aviso_vocabulario,
+            sugerencias=sugerencias_de_vocabulario(filas_vocab),
             # Las familias (4 dígitos) del catálogo van marcadas en el acordeón; lo demás
             # (segmentos, prefijos finos) viaja en el campo de texto, para que aplicar
             # el formulario no lo pierda.
@@ -2062,7 +2088,8 @@ async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un pa
 async def explorador_ca_conteo(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     request: Request,
     categorias_unspsc: list[str] = Query(default=[]),
-    solo_confirmados: str = "",
+    incluir_posibles: str = "",
+    palabras_rubro: list[str] = Query(default=[]),
     region: list[str] = Query(default=[]),
     monto_min: str = "",
     monto_max: str = "",
@@ -2083,7 +2110,8 @@ async def explorador_ca_conteo(  # noqa: PLR0913 - una dimensión filtrable = un
         session,
         user,
         categorias_unspsc=categorias_unspsc,
-        solo_confirmados=solo_confirmados,
+        incluir_posibles=incluir_posibles,
+        palabras_rubro=palabras_rubro,
         region=region,
         monto_min=monto_min,
         monto_max=monto_max,

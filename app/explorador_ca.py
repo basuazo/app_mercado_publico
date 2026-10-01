@@ -4,13 +4,20 @@ Todo sale de la base: este módulo NUNCA llama a la API (regla 3) y NUNCA carga 
 universo en Python (regla 12): filtros, orden, conteo y paginación son SQL. Lo único
 que vuelve a Python es una página de `PAGE_SIZE` filas.
 
-Rubro en dos niveles, porque el rubro de una CA solo se conoce con su detalle y
+Rubro en tres niveles, porque el rubro de una CA solo se conoce con su detalle y
 apenas ~3 % lo tiene [V, Paso 0 del 26-sep]:
-- **confirmado**: la CA tiene productos (`ca_productos`) con ese prefijo UNSPSC;
-- **posible**: el nombre/descripción calza (`compras_agiles.tsv`) con el vocabulario
-  típico del rubro (`rubro_vocabulario`, job `vocabulario-rubros`). Con 10 términos
-  y lift >= 10 encuentra el 91 % de las CA que sí calzan, con 7 % de precisión: sirve
-  para recorrer, no para alertar, y por eso la pantalla lo rotula "posible".
+- **confirmado** (por defecto): la CA tiene productos (`ca_productos`) con ese
+  prefijo UNSPSC;
+- **por tus palabras**: la persona elige palabras (sugeridas desde el vocabulario del
+  rubro, o escritas por ella) y el nombre/descripción de la CA calza con alguna;
+  amplía el rubro, no lo restringe;
+- **posible** (opt-in, `incluir_posibles`): el nombre calza (`compras_agiles.tsv`) con
+  el vocabulario típico del rubro (`rubro_vocabulario`, job `vocabulario-rubros`).
+  Medido en producción el 01-oct (2.948 CA con detalle): recall 32 %, precisión 4 %,
+  y marca una mediana de 107 CA vigentes por familia. Ninguna combinación de
+  k/lift/campo/lexemas lo arregla (grilla de 48): no sirve para clasificar, sí como
+  sugerencia. Por eso no entra por defecto y la tarjeta lo rotula "Posible (por
+  nombre)". Decisión A + B del 01-oct; más detalles de CA por rubro: F-ca-rubro.
 
 Los lexemas del vocabulario ya vienen con el stemmer de `spanish` aplicado (salen de
 `to_tsvector`), así que se comparan con `to_tsquery('simple', ...)`: pasarlos otra
@@ -23,7 +30,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
@@ -43,7 +50,7 @@ from sqlalchemy.orm import Session
 
 from app.api.presentacion import banda_urgencia, nombre_region, texto_cierre
 from app.catalogos.unspsc import nombre_rubro
-from app.catalogos.vocabulario_rubro import LEXEMA_RE
+from app.catalogos.vocabulario_rubro import LEXEMA_RE, PALABRA_RE
 from app.core.tiempo import TZ_CHILE, ahora_utc, borde_del_dia_utc_naive
 from app.core.vigencia import condicion_ca_vigente
 from app.models.enums import ValorFeedback
@@ -57,6 +64,10 @@ _MAX_FAMILIAS_ETIQUETA = 60
 _MAX_TEXTO = 200
 
 PREFIJO_RE = re.compile(r"^\d{2,8}$")
+MAX_PALABRAS = 20
+# Sugerencias del panel: hasta 10 palabras por familia y hasta 8 familias.
+_SUGERENCIAS_POR_FAMILIA = 10
+_SUGERENCIAS_FAMILIAS = 8
 
 ORDENES = ("cierre", "monto", "reciente")
 # Atajos del filtro de cierre: días hacia adelante, contados en hora de Chile.
@@ -69,7 +80,8 @@ _TSV: Any = literal_column("compras_agiles.tsv")
 class FiltrosExplorador:
     usuario_id: int
     prefijos: list[str] = field(default_factory=list)
-    solo_confirmados: bool = False
+    incluir_posibles: bool = False
+    palabras_rubro: list[str] = field(default_factory=list)
     regiones: list[int] = field(default_factory=list)
     monto_min: float | None = None
     monto_max: float | None = None
@@ -105,15 +117,36 @@ def prefijos_validos(valores: list[str]) -> list[str]:
     return salida
 
 
-def vocabulario_de_prefijos(session: Session, prefijos: list[str]) -> dict[str, list[str]]:
-    """Lexemas por familia (4 dígitos) para los prefijos elegidos.
+def palabras_validas(valores: list[str]) -> list[str]:
+    """Deja solo palabras `^[a-záéíóúüñ]{3,60}$` (acepta listas separadas por coma;
+    sin distinguir mayúsculas), sin duplicar, en orden de aparición y hasta
+    `MAX_PALABRAS`. Lo demás se descarta: es lo que después viaja a la tsquery."""
+    salida: list[str] = []
+    for v in valores:
+        for parte in v.split(","):
+            p = parte.strip().lower()
+            if PALABRA_RE.match(p) and p not in salida:
+                salida.append(p)
+    return salida[:MAX_PALABRAS]
+
+
+@dataclass(frozen=True)
+class FilaVocabulario:
+    prefijo: str
+    lexema: str
+    palabra: str | None
+    df_rubro: int
+
+
+def filas_vocabulario(session: Session, prefijos: list[str]) -> list[FilaVocabulario]:
+    """Filas de `rubro_vocabulario` para los prefijos elegidos (una sola lectura).
 
     Un prefijo de 2 dígitos (segmento) reúne las familias que empiezan con él; uno
-    de 4 a 8 usa su familia (`[:4]`). Se re-valida cada lexema: es lo que después
-    se une con " | " en la tsquery.
+    de 4 a 8 usa su familia (`[:4]`). Se re-valida cada lexema y cada palabra: los
+    lexemas se unen con " | " en una tsquery y las palabras van a la pantalla.
     """
     if not prefijos:
-        return {}
+        return []
     familias = sorted({p[:4] for p in prefijos if len(p) >= 4})
     segmentos = sorted({p for p in prefijos if len(p) == 2})
     condiciones: list[ColumnElement[bool]] = []
@@ -122,15 +155,62 @@ def vocabulario_de_prefijos(session: Session, prefijos: list[str]) -> dict[str, 
     for seg in segmentos:
         condiciones.append(RubroVocabulario.prefijo.startswith(seg, autoescape=True))
     filas = session.execute(
-        select(RubroVocabulario.prefijo, RubroVocabulario.lexema)
+        select(
+            RubroVocabulario.prefijo,
+            RubroVocabulario.lexema,
+            RubroVocabulario.palabra,
+            RubroVocabulario.df_rubro,
+        )
         .where(or_(*condiciones))
-        .order_by(RubroVocabulario.prefijo, RubroVocabulario.df_rubro.desc())
+        .order_by(RubroVocabulario.prefijo, RubroVocabulario.df_rubro.desc(), RubroVocabulario.lexema)
     ).all()
+    return [
+        FilaVocabulario(
+            prefijo, lexema, palabra if palabra and PALABRA_RE.match(palabra) else None, int(df)
+        )
+        for prefijo, lexema, palabra, df in filas
+        if LEXEMA_RE.match(lexema)
+    ]
+
+
+def vocabulario_por_familia(filas: list[FilaVocabulario]) -> dict[str, list[str]]:
+    """Lexemas por familia (4 dígitos), del más al menos frecuente."""
     vocab: dict[str, list[str]] = {}
-    for prefijo, lexema in filas:
-        if LEXEMA_RE.match(lexema):
-            vocab.setdefault(prefijo, []).append(lexema)
+    for f in filas:
+        vocab.setdefault(f.prefijo, []).append(f.lexema)
     return vocab
+
+
+def vocabulario_de_prefijos(session: Session, prefijos: list[str]) -> dict[str, list[str]]:
+    return vocabulario_por_familia(filas_vocabulario(session, prefijos))
+
+
+def vocabulario_vacio(session: Session) -> bool:
+    """True si `rubro_vocabulario` no tiene ninguna fila (el job aún no corre)."""
+    return session.execute(select(RubroVocabulario.prefijo).limit(1)).first() is None
+
+
+def sugerencias_de_vocabulario(filas: list[FilaVocabulario]) -> list[dict[str, Any]]:
+    """Palabras típicas por familia para el panel: hasta 10 por familia y hasta 8
+    familias (las de mayor `df_rubro`). Sin palabra legible, se muestra el lexema."""
+    por_familia: dict[str, list[FilaVocabulario]] = {}
+    for f in filas:
+        por_familia.setdefault(f.prefijo, []).append(f)
+    ordenadas = sorted(por_familia.items(), key=lambda kv: (-kv[1][0].df_rubro, kv[0]))
+    salida: list[dict[str, Any]] = []
+    for familia, lista in ordenadas[:_SUGERENCIAS_FAMILIAS]:
+        palabras: list[str] = []
+        for f in lista:
+            w = f.palabra or f.lexema
+            if PALABRA_RE.match(w) and w not in palabras:
+                palabras.append(w)
+            if len(palabras) == _SUGERENCIAS_POR_FAMILIA:
+                break
+        if palabras:
+            salida.append(
+                {"familia": familia, "nombre": nombre_rubro(familia) or familia, "palabras": palabras}
+            )
+    return salida
 
 
 def _tsquery_or(lexemas: list[str]) -> str:
@@ -143,6 +223,21 @@ def _cond_confirmado(prefijos: list[str]) -> ColumnElement[bool]:
         or_(*[CaProducto.codigo_producto.startswith(p, autoescape=True) for p in prefijos])
     )
     return CompraAgil.codigo.in_(con_prefijo)
+
+
+def _tsquery_spanish(texto: str):  # type: ignore[no-untyped-def]
+    """`tsv` se indexa con unaccent: la consulta también, o el stemmer da raíces distintas
+    ("ferretería"→ferret vs "ferreteria"→ferreteri). `texto` va como parámetro."""
+    return func.websearch_to_tsquery(literal_column("'spanish'"), func.inmutable_unaccent(texto))
+
+
+def _cond_palabras(palabras: list[str]) -> ColumnElement[bool]:
+    """Misma semántica que los perfiles: `websearch_to_tsquery('spanish', ...)` con las
+    palabras (ya validadas) unidas por OR, siempre como parámetro."""
+    calza: ColumnElement[bool] = _TSV.op("@@")(
+        _tsquery_spanish(" or ".join(palabras))
+    )
+    return calza
 
 
 def _cond_posible(vocab: dict[str, list[str]]) -> ColumnElement[bool]:
@@ -177,9 +272,17 @@ def _condiciones(
         )
     )
 
+    # Rubro = confirmado OR palabras elegidas OR (incluir_posibles AND posible).
+    # Con rubros elegidos y nada más, solo las confirmadas.
+    partes: list[ColumnElement[bool]] = []
     if filtros.prefijos:
-        confirmado = _cond_confirmado(filtros.prefijos)
-        conds.append(confirmado if filtros.solo_confirmados else or_(confirmado, _cond_posible(vocab)))
+        partes.append(_cond_confirmado(filtros.prefijos))
+        if filtros.incluir_posibles:
+            partes.append(_cond_posible(vocab))
+    if filtros.palabras_rubro:
+        partes.append(_cond_palabras(filtros.palabras_rubro))
+    if partes:
+        conds.append(or_(*partes))
 
     if filtros.regiones:
         conds.append(CompraAgil.region.in_(filtros.regiones))
@@ -197,15 +300,16 @@ def _condiciones(
         conds.append(monto.is_not(None))
 
     if filtros.cierre in CIERRES:
-        hoy = datetime.now(TZ_CHILE).date()
+        # `ahora` es naive en UTC (como la base): el día que cuenta es el de Chile.
+        hoy = ahora.replace(tzinfo=UTC).astimezone(TZ_CHILE).date()
         limite = borde_del_dia_utc_naive(hoy + timedelta(days=CIERRES[filtros.cierre]), fin_de_dia=True)
         # Una CA sin fecha de cierre no se puede decir que "cierra pronto": queda fuera.
         conds.append(and_(CompraAgil.fecha_cierre.is_not(None), CompraAgil.fecha_cierre <= limite))
 
     texto = filtros.texto.strip()[:_MAX_TEXTO]
     if texto:
-        # Misma semántica que los perfiles: websearch_to_tsquery('spanish', ...).
-        conds.append(_TSV.op("@@")(func.websearch_to_tsquery(literal_column("'spanish'"), texto)))
+        # Misma semántica que los perfiles: websearch_to_tsquery('spanish', unaccent(...)).
+        conds.append(_TSV.op("@@")(_tsquery_spanish(texto)))
 
     organismo = filtros.organismo.strip()[:_MAX_TEXTO]
     if organismo:
@@ -226,16 +330,27 @@ def _orden(orden: str) -> list[Any]:
     ]
 
 
-def _vocab_para(session: Session, filtros: FiltrosExplorador) -> dict[str, list[str]]:
-    """Con "solo confirmados" el vocabulario no participa: ni se lee."""
-    if filtros.solo_confirmados:
+def _vocab_para(
+    session: Session, filtros: FiltrosExplorador, vocab: dict[str, list[str]] | None
+) -> dict[str, list[str]]:
+    """Sin `incluir_posibles` el vocabulario no participa: ni se lee. Si el llamador
+    ya lo leyó (la pantalla lo necesita para las sugerencias), se reutiliza."""
+    if not (filtros.incluir_posibles and filtros.prefijos):
         return {}
+    if vocab is not None:
+        return vocab
     return vocabulario_de_prefijos(session, filtros.prefijos)
 
 
-def contar(session: Session, filtros: FiltrosExplorador, *, ahora: datetime | None = None) -> int:
+def contar(
+    session: Session,
+    filtros: FiltrosExplorador,
+    *,
+    ahora: datetime | None = None,
+    vocab: dict[str, list[str]] | None = None,
+) -> int:
     ahora = ahora or ahora_utc()
-    conds = _condiciones(filtros, ahora, _vocab_para(session, filtros))
+    conds = _condiciones(filtros, ahora, _vocab_para(session, filtros, vocab))
     return int(session.execute(select(func.count()).select_from(CompraAgil).where(*conds)).scalar_one())
 
 
@@ -246,10 +361,11 @@ def buscar(
     pagina: int = 1,
     page_size: int = PAGE_SIZE,
     ahora: datetime | None = None,
+    vocab: dict[str, list[str]] | None = None,
 ) -> ResultadoExplorador:
     """Una página del explorador (`LIMIT/OFFSET`) y el total por `count(*)` aparte."""
     ahora = ahora or ahora_utc()
-    vocab = _vocab_para(session, filtros)
+    vocab = _vocab_para(session, filtros, vocab)
     conds = _condiciones(filtros, ahora, vocab)
 
     total = int(session.execute(select(func.count()).select_from(CompraAgil).where(*conds)).scalar_one())
@@ -269,6 +385,8 @@ def buscar(
     ]
     if filtros.prefijos:
         columnas.append(_cond_confirmado(filtros.prefijos).label("confirmado"))
+    if filtros.palabras_rubro:
+        columnas.append(_cond_palabras(filtros.palabras_rubro).label("por_palabras"))
     filas = session.execute(
         select(*columnas)
         .where(*conds)
@@ -277,15 +395,22 @@ def buscar(
         .offset((pagina - 1) * page_size)
     ).all()
 
-    sin_confirmar = [f.codigo for f in filas if filtros.prefijos and not f.confirmado]
-    familias_posibles = _familias_posibles(session, sin_confirmar, vocab)
+    def _confirmada(f: Any) -> bool:
+        return bool(filtros.prefijos and f.confirmado)
+
+    def _por_palabras(f: Any) -> bool:
+        return bool(filtros.palabras_rubro and f.por_palabras) and not _confirmada(f)
+
+    sin_razon = [f.codigo for f in filas if not _confirmada(f) and not _por_palabras(f)]
+    familias_posibles = _familias_posibles(session, sin_razon, vocab) if vocab else {}
 
     items: list[dict[str, Any]] = []
     for f in filas:
         dias = None
         if f.fecha_cierre is not None:
             dias = max(0.0, (f.fecha_cierre - ahora).total_seconds() / 86400)
-        confirmado = bool(filtros.prefijos and f.confirmado)
+        confirmado = _confirmada(f)
+        por_palabras = _por_palabras(f)
         items.append(
             {
                 "codigo": f.codigo,
@@ -297,9 +422,13 @@ def buscar(
                 "cierre_texto": texto_cierre(f.fecha_cierre, dias, FUENTE),
                 "urgencia": banda_urgencia(dias),
                 "confirmado": confirmado,
-                # Con rubros elegidos y sin confirmar, es "posible" aunque no se
-                # pueda nombrar la familia (tope de etiquetas).
-                "posible": bool(filtros.prefijos) and not confirmado,
+                "por_palabras": por_palabras,
+                # Con rubros elegidos y posibles incluidos, lo que no es confirmado ni
+                # calza por palabras es "posible" aunque no se pueda nombrar la familia
+                # (tope de etiquetas).
+                "posible": bool(filtros.prefijos and filtros.incluir_posibles)
+                and not confirmado
+                and not por_palabras,
                 "familia_posible": familias_posibles.get(f.codigo),
             }
         )

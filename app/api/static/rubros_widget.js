@@ -114,7 +114,92 @@
     renderChips();
   }
 
+  // ---- Palabras del rubro (F-ca-vocab): sugeridas o escritas, en cliente, sin red ----
+  // Mismo criterio que el servidor (que igual las vuelve a validar).
+  const PALABRA_RE = /^[a-záéíóúüñ]{3,60}$/;
+  const MAX_PALABRAS = 20;
+
+  function initPalabrasWidget(widget) {
+    const form = widget.closest("form");
+    const chipsBox = widget.querySelector(".js-palabras-chips");
+    const inputsBox = widget.querySelector(".js-palabras-inputs");
+    const campo = widget.querySelector(".js-palabra-nueva");
+    const botonAgregar = widget.querySelector(".js-palabra-agregar");
+    const sugeridas = Array.from(widget.querySelectorAll(".js-palabra-sugerida"));
+
+    function elegidas() {
+      return Array.from(inputsBox.querySelectorAll("input")).map((i) => i.value);
+    }
+
+    function render() {
+      const actuales = elegidas();
+      chipsBox.innerHTML = "";
+      actuales.forEach((p) => {
+        chipsBox.appendChild(crearChip(p, () => quitar(p)));
+      });
+      sugeridas.forEach((b) => {
+        const ya = actuales.includes(b.dataset.palabra);
+        b.disabled = ya;
+        b.setAttribute("aria-pressed", ya ? "true" : "false");
+      });
+    }
+
+    function avisarCambio() {
+      // El formulario cuenta en vivo con HTMX al recibir `change`.
+      if (form) form.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    function agregar(texto) {
+      let cambio = false;
+      texto.split(",").forEach((parte) => {
+        const p = parte.trim().toLowerCase();
+        if (!PALABRA_RE.test(p) || elegidas().includes(p)) return;
+        if (elegidas().length >= MAX_PALABRAS) return;
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "palabras_rubro";
+        input.value = p;
+        inputsBox.appendChild(input);
+        cambio = true;
+      });
+      if (cambio) {
+        render();
+        avisarCambio();
+      }
+    }
+
+    function quitar(palabra) {
+      Array.from(inputsBox.querySelectorAll("input"))
+        .filter((i) => i.value === palabra)
+        .forEach((i) => i.remove());
+      render();
+      avisarCambio();
+    }
+
+    sugeridas.forEach((b) => b.addEventListener("click", () => agregar(b.dataset.palabra)));
+
+    function agregarEscritas() {
+      if (!campo) return;
+      agregar(campo.value);
+      campo.value = "";
+    }
+    if (botonAgregar) botonAgregar.addEventListener("click", agregarEscritas);
+    if (campo) {
+      campo.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          agregarEscritas();
+        }
+      });
+    }
+    // Lo escrito y no agregado también cuenta al aplicar los filtros.
+    if (form) form.addEventListener("submit", agregarEscritas);
+
+    render();
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".js-rubros-widget").forEach(initRubrosWidget);
+    document.querySelectorAll(".js-palabras-widget").forEach(initPalabrasWidget);
   });
 })();

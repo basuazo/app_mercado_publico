@@ -15,6 +15,9 @@ como "posible" cuando su nombre calza.
 - Lift: (frecuencia en el rubro) / (frecuencia en NOMBRES DE CA de los últimos 30
   días). Contra la población que se filtra, no contra licitaciones: castiga las
   palabras comunes en CA ("agua", "central", "salud"). [V, Paso 0 del 26-sep]
+- Palabra legible (F-ca-vocab): para cada lexema elegido, la palabra original
+  (minúsculas, con tildes) más frecuente en los nombres de esa familia que dé ese
+  lexema; desempate: más corta y luego alfabética. NULL si no hay una válida.
 - Todo lo hace UNA sentencia agregada en la base: a Python solo vuelven los
   top-K por familia (regla 12). El reemplazo va en una transacción: nadie ve
   la tabla vacía a la mitad. Idempotente: re-ejecutar deja el mismo resultado.
@@ -40,6 +43,8 @@ _log = get_logger(__name__)
 # leerlos: la tsquery se arma uniéndolos con " | " y no debe poder colarse un
 # operador (`&`, `!`, `:*`, comillas, paréntesis).
 LEXEMA_RE = re.compile(r"^[a-zñ]+$")
+# Palabra legible (con tildes) que se sugiere en el explorador y se usa como filtro.
+PALABRA_RE = re.compile(r"^[a-záéíóúüñ]{3,60}$")
 LEXEMA_LARGO_MIN = 3
 LEXEMA_LARGO_MAX = 60
 # Frecuencia mínima en el rubro (en ítems) para tomar un lexema en cuenta.
@@ -51,7 +56,8 @@ _FAMILIA_RE = re.compile(r"^\d{4}$")
 _SQL_VOCABULARIO = """
 WITH items AS (
     SELECT left(li.codigo_producto, 4) AS fam,
-           to_tsvector('spanish', inmutable_unaccent(li.nombre)) AS tsv
+           to_tsvector('spanish', inmutable_unaccent(li.nombre)) AS tsv,
+           lower(li.nombre) AS nombre_min
     FROM licitacion_items li
     WHERE li.codigo_producto ~ '^[0-9]{{4}}'
       {filtro_familias}
@@ -92,8 +98,34 @@ ranking AS (
            row_number() OVER (PARTITION BY fam ORDER BY df DESC, lift DESC, lexeme) AS rn
     FROM candidatos
     WHERE lift >= :lift_min
+),
+elegidos AS (
+    SELECT fam, lexeme, df, lift, rn FROM ranking WHERE rn <= :k
+),
+palabras AS (
+    SELECT i.fam, w.palabra, count(*) AS n
+    FROM items i
+    CROSS JOIN LATERAL regexp_split_to_table(i.nombre_min, '[^a-záéíóúüñ]+') AS w(palabra)
+    WHERE i.fam IN (SELECT fam FROM elegidos)
+      AND w.palabra ~ '^[a-záéíóúüñ]{{{largo_min},{largo_max}}}$'
+    GROUP BY i.fam, w.palabra
+),
+palabra_lexema AS (
+    SELECT p.fam, p.palabra, p.n, x.lexeme
+    FROM palabras p
+    CROSS JOIN LATERAL unnest(to_tsvector('spanish', inmutable_unaccent(p.palabra)))
+         AS x(lexeme, positions, weights)
+),
+mejor AS (
+    SELECT DISTINCT ON (e.fam, e.lexeme) e.fam, e.lexeme, pl.palabra
+    FROM elegidos e
+    JOIN palabra_lexema pl ON pl.fam = e.fam AND pl.lexeme = e.lexeme
+    ORDER BY e.fam, e.lexeme, pl.n DESC, length(pl.palabra), pl.palabra
 )
-SELECT fam, lexeme, df, lift FROM ranking WHERE rn <= :k ORDER BY fam, rn
+SELECT e.fam, e.lexeme, e.df, e.lift, m.palabra
+FROM elegidos e
+LEFT JOIN mejor m ON m.fam = e.fam AND m.lexeme = e.lexeme
+ORDER BY e.fam, e.rn
 """
 
 _SQL_CONTEO = """
@@ -156,6 +188,7 @@ def construir_vocabulario(
             "lexema": f.lexeme,
             "df_rubro": int(f.df),
             "lift": float(f.lift),
+            "palabra": f.palabra if f.palabra and PALABRA_RE.match(f.palabra) else None,
             "actualizado_en": marca,
         }
         for f in filas

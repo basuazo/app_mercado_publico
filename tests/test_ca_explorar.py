@@ -461,3 +461,135 @@ def test_explorador_exige_sesion(client):
     r = client.get("/compras-agiles", follow_redirects=False)
     assert r.status_code in (302, 303, 307, 401)
     assert "EXP" not in r.text
+
+
+# ---------------------------------------------------------------------------
+# F-ca-vocab: palabras del rubro, posibles opcionales, logging y migración
+# ---------------------------------------------------------------------------
+
+
+def test_palabras_validas_descarta_lo_invalido_y_topa_en_20():
+    from app.explorador_ca import MAX_PALABRAS, palabras_validas
+
+    assert palabras_validas(["Construcción, ASEO", "a&b", "x", "'; drop", "%", "aseo", "ñandú"]) == [
+        "construcción",
+        "aseo",
+        "ñandú",
+    ]
+    # Cada una con su largo y sin cifras ni operadores de tsquery.
+    assert palabras_validas(["ab", "a" * 61, "cable1", "no-cable", "cable | oro", "cable!"]) == []
+    muchas = [f"{a}{b}{c}" for a in "abcd" for b in "abcd" for c in "abcd"]
+    assert len(palabras_validas([",".join(muchas)])) == MAX_PALABRAS
+    assert len(palabras_validas(muchas)) == MAX_PALABRAS
+
+
+def test_url_vieja_solo_confirmados_responde_200_igual_que_el_default(client, engine, settings, usuario):
+    _ca(engine, "EXP-CONF")
+    _ca(engine, "EXP-OTRO")
+    _con_producto(engine, "EXP-CONF", "43211503")
+    _con_producto(engine, "EXP-OTRO", "50101500")
+    base = _pagina(client, settings, usuario, categorias_unspsc="4321")
+    vieja = _pagina(client, settings, usuario, categorias_unspsc="4321", solo_confirmados="1")
+    assert base.status_code == vieja.status_code == 200
+    assert _codigos(vieja.text) == _codigos(base.text) == {"EXP-CONF"}
+    # Sin posibles ni palabras, el estado vacío lo dice y sugiere salidas.
+    vacia = _pagina(client, settings, usuario, categorias_unspsc="9999").text
+    assert "Sin CA confirmadas para estos rubros." in vacia
+    assert "Incluye posibles" not in vacia
+
+
+def test_incluir_posibles_sin_rubros_se_ignora_y_la_casilla_dice_la_verdad(client, engine, settings, usuario):
+    _ca(engine, "EXP-A")
+    html = _pagina(client, settings, usuario, incluir_posibles="1").text
+    assert _codigos(html) == {"EXP-A"}
+    assert "Incluye posibles" not in html
+    assert "Incluir posibles (por nombre, poco preciso)" in html
+    assert "de cada 10 posibles, 1 o menos es del rubro" in html
+
+
+def test_palabras_en_chips_y_url_canonica(client, engine, settings, usuario):
+    # Solo se renderiza (sin evaluar FTS, que es de Postgres): se mira el filtro armado.
+    from app.api.routes.pages import _armar_filtros_explorador, _chips_explorador
+
+    with Session(engine) as s:
+        user = s.get(Usuario, usuario)
+        filtros, estado_qs, _ = _armar_filtros_explorador(
+            s,
+            user,
+            categorias_unspsc=["4321"],
+            incluir_posibles="1",
+            palabras_rubro=["Cable, oro", "x", "a&b"],
+            region=[],
+            monto_min="",
+            monto_max="",
+            excluir_sin_monto="",
+            incluir_sin_monto="",
+            cierre="",
+            texto="",
+            organismo="",
+            orden="cierre",
+            panel="",
+            sin_favoritos="1",
+        )
+        assert filtros.palabras_rubro == ["cable", "oro"]
+        assert filtros.incluir_posibles is True
+        etiquetas = [c["etiqueta"] for c in _chips_explorador(estado_qs, filtros)]
+        assert "Incluye posibles" in etiquetas and "Palabra: cable" in etiquetas and "Palabra: oro" in etiquetas
+        quitar_oro = next(c["href"] for c in _chips_explorador(estado_qs, filtros) if c["etiqueta"] == "Palabra: oro")
+        assert "palabras_rubro=cable" in quitar_oro and "oro" not in quitar_oro
+
+
+def test_logging_con_dict_como_unico_argumento_no_revienta_y_enmascara(monkeypatch, capsys):
+    import logging
+
+    monkeypatch.setenv("SECRET_KEY", "clave-secreta-de-prueba-1234567890")
+    from app.core.logging import _SecretFilter
+
+    filtro = _SecretFilter()
+    handler = logging.StreamHandler()
+    handler.addFilter(filtro)
+    logger = logging.getLogger("test.vocab.dict")
+    logger.handlers = [handler]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+    logger.info("x: %s", {"a": 1, "k": "clave-secreta-de-prueba-1234567890"})
+    err = capsys.readouterr().err
+    assert "Logging error" not in err and "TypeError" not in err
+    assert "clave-secreta-de-prueba-1234567890" not in err
+
+    record = logging.LogRecord("t", logging.INFO, "", 0, "x: %s", ({"a": "clave-secreta-de-prueba-1234567890"},), None)
+    filtro.filter(record)
+    assert isinstance(record.args, dict) and record.args == {"a": "***"}
+    assert record.getMessage() == "x: {'a': '***'}"
+    # Con tupla, como siempre.
+    record = logging.LogRecord("t", logging.INFO, "", 0, "x: %s %s", ("clave-secreta-de-prueba-1234567890", 3), None)
+    filtro.filter(record)
+    assert record.getMessage() == "x: *** 3"
+
+
+def test_migracion_palabra_agrega_y_revierte_la_columna(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    ruta = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "b5d1f8a3c6e2_ca_vocab_palabra.py"
+    spec = importlib.util.spec_from_file_location("mig_b5d1f8a3c6e2", ruta)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    llamadas: list[tuple[str, str, str]] = []
+    columnas: dict[str, Any] = {}
+
+    class FakeOp:
+        def add_column(self, table: str, column: Any) -> None:
+            llamadas.append(("add", table, column.name))
+            columnas[column.name] = column
+
+        def drop_column(self, table: str, column_name: str) -> None:
+            llamadas.append(("drop", table, column_name))
+
+    monkeypatch.setattr(migration, "op", FakeOp())
+    migration.upgrade()
+    migration.downgrade()
+    assert migration.down_revision == "a4c9e2b7d1f3"
+    assert columnas["palabra"].nullable is True and columnas["palabra"].type.length == 60
+    assert llamadas == [("add", "rubro_vocabulario", "palabra"), ("drop", "rubro_vocabulario", "palabra")]

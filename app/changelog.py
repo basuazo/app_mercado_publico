@@ -15,6 +15,21 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 10, 1),
+        titulo="Explorar Compras Ágiles: rubros más precisos y tus propias palabras",
+        descripcion=(
+            "Medimos qué tan bien acierta el 'posible' del explorador: de cada 10 Compras "
+            "Ágiles que marcaba por parecerse al rubro, 1 o menos era del rubro. Por eso, "
+            "ahora al elegir un rubro solo ves las confirmadas (las que traen productos de "
+            "ese rubro), y los posibles son opcionales: se activan con 'Incluir posibles'. "
+            "Además, el panel te sugiere las palabras típicas de cada rubro, como "
+            "'construcción' o 'computador': tócalas para agregarlas, o escribe las tuyas. "
+            "Salen también las Compras Ágiles cuyo nombre o descripción tenga alguna de "
+            "esas palabras, marcadas como 'Por tus palabras'. Las palabras sugeridas se "
+            "actualizan cada lunes. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 9, 30),
         titulo="Explorar todas las Compras Ágiles vigentes, por rubro y más",
         descripcion=(
