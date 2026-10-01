@@ -630,6 +630,20 @@ Detectados auditando la app con datos reales de prod. Ninguno bloquea la operaci
 - **Tasas de cambio:** UF/UTM/USD/EUR hardcodeadas en env, probablemente desactualizadas
   (afecta conversión y filtros de monto).
 
+## Próxima versión — F-ca-rubro: detalle de CA por rubro (decisión de Boris, 01-oct)
+**Estado: en roadmap, no en esta versión.** Prompt existente: `docs/prompt-F-ca-rubro.md` (Opus;
+toca cuota, ventana nocturna y lock).
+- Por qué: en el explorador de CA la única señal confiable de rubro es **"Confirmado"** (la CA trae
+  productos con ese prefijo UNSPSC), y eso solo existe para las CA con detalle (2.948 al 01-oct, de
+  7.843 vigentes).
+- Medición del 01-oct [V]: el vocabulario por nombre ("posible") tiene recall 32 % y precisión 4 %;
+  ninguna de 48 variantes pasa de 7 % de precisión con recall útil. Esta versión lo resuelve con
+  F-ca-vocab (confirmados por defecto + palabras sugeridas que elige la persona).
+- **Al retomar, revisar el prefiltro del prompt:** el prompt asume que el vocabulario elige bien qué
+  CA pedir de noche; con 4 % de precisión, ~96 % de los detalles pedidos serían de otro rubro.
+  Alternativas a evaluar: priorizar las CA que calzan con las **palabras elegidas** por los usuarios
+  (F-ca-vocab), o calce de 2 lexemas (precisión ~27 %, pocas CA), o por organismo/región.
+
 ## Backlog (más adelante, condicionado)
 
 ### Worker offline de anexos en la Raspberry Pi

@@ -7,6 +7,9 @@
 > de botella en esta versión con un explorador. Al retomar: leer `rubro_vocabulario` (creada por
 > F-ca-explorar) en vez de calcular el vocabulario en cada corrida (§1), y priorizar en la cola
 > nocturna las CA "posibles" de los `rubros_favoritos` de los usuarios.
+> **Actualización 01-oct:** queda para la **próxima versión** (ver `docs/03-roadmap.md`). OJO: la
+> medición del 01-oct dio al vocabulario precisión 4 % (recall 32 %); el prefiltro de §1 hay que
+> rediseñarlo antes de correr esta fase (por ejemplo, con las palabras elegidas en F-ca-vocab).
 > **Modelo:** **Opus**. Toca cuota, 429, ventana nocturna y el lock (reglas duras 3, 4, 5 y 13).
 > **Decisiones de Boris (26-sep):** prefiltro por texto con vocabulario aprendido; tope inicial de
 > **300 CA por rubro al día**, ajustable por setting; solo de noche.
