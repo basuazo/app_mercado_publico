@@ -18,10 +18,11 @@ score quedan unificados en un solo motor (Postgres FTS 'spanish').
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import String, bindparam, exists, or_, select, text
+from sqlalchemy import String, and_, bindparam, delete, exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session, selectinload
 
@@ -165,6 +166,81 @@ _FTS_CA_EXCLUDE = (
 _MAX_CANDIDATOS = 500
 
 
+def condicion_texto_ca(texto: str) -> Any:
+    """`_FTS_CA_INCLUDE` con `texto` como parámetro: nombre/descripción O productos.
+    La usa el Texto del explorador (F-guardar) para buscar igual que los perfiles."""
+    return text(_FTS_CA_INCLUDE).bindparams(q=texto)
+
+
+def _vigencia_lic(ahora: datetime) -> list[Any]:
+    return [
+        Licitacion.estado == EstadoOportunidad.PUBLICADA.value,
+        Licitacion.fecha_cierre > ahora,
+    ]
+
+
+def _vigencia_ca(ahora: datetime) -> list[Any]:
+    return [
+        CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
+        or_(CompraAgil.fecha_cierre.is_(None), CompraAgil.fecha_cierre > ahora),
+    ]
+
+
+def _criterio_lic(
+    q: str | None,
+    qx: str | None,
+    categorias_unspsc: list[str] | None,
+    organismos_seguidos: list[str] | None,
+) -> list[Any]:
+    """Inclusión (FTS OR rubro OR organismo; sin ninguno, todo pasa) y exclusión.
+    Lo comparten el recall (`_candidatos_licitaciones`) y la limpieza."""
+    conds: list[Any] = []
+    inclusion: list[Any] = []
+    if q:
+        inclusion.append(text(_FTS_LIC_INCLUDE).bindparams(q=q))
+    if categorias_unspsc:
+        inclusion.append(
+            exists().where(
+                LicitacionItem.licitacion_codigo == Licitacion.codigo,
+                or_(*[LicitacionItem.codigo_producto.like(f"{p}%") for p in categorias_unspsc]),
+            )
+        )
+    if organismos_seguidos:
+        inclusion.append(Licitacion.codigo_organismo.in_(organismos_seguidos))
+    if inclusion:
+        conds.append(or_(*inclusion))
+    if qx:
+        conds.append(text(_FTS_LIC_EXCLUDE).bindparams(qx=qx))
+    return conds
+
+
+def _criterio_ca(
+    q: str | None,
+    qx: str | None,
+    categorias_unspsc: list[str] | None,
+    organismos_seguidos: list[str] | None,
+) -> list[Any]:
+    """Análogo a `_criterio_lic` (rubro vía ca_productos, organismo vía organismo_rut)."""
+    conds: list[Any] = []
+    inclusion: list[Any] = []
+    if q:
+        inclusion.append(text(_FTS_CA_INCLUDE).bindparams(q=q))
+    if categorias_unspsc:
+        inclusion.append(
+            exists().where(
+                CaProducto.ca_codigo == CompraAgil.codigo,
+                or_(*[CaProducto.codigo_producto.like(f"{p}%") for p in categorias_unspsc]),
+            )
+        )
+    if organismos_seguidos:
+        inclusion.append(CompraAgil.organismo_rut.in_(organismos_seguidos))
+    if inclusion:
+        conds.append(or_(*inclusion))
+    if qx:
+        conds.append(text(_FTS_CA_EXCLUDE).bindparams(qx=qx))
+    return conds
+
+
 def _candidatos_licitaciones(
     session: Session,
     ahora: datetime,
@@ -182,28 +258,10 @@ def _candidatos_licitaciones(
     stmt = (
         select(Licitacion)
         .options(selectinload(Licitacion.items))
-        .where(
-            Licitacion.estado == EstadoOportunidad.PUBLICADA.value,
-            Licitacion.fecha_cierre > ahora,
-        )
+        .where(*_vigencia_lic(ahora))
+        .where(*_criterio_lic(q, qx, categorias_unspsc, organismos_seguidos))
+        .limit(_MAX_CANDIDATOS)
     )
-    inclusion: list[Any] = []
-    if q:
-        inclusion.append(text(_FTS_LIC_INCLUDE).bindparams(q=q))
-    if categorias_unspsc:
-        inclusion.append(
-            exists().where(
-                LicitacionItem.licitacion_codigo == Licitacion.codigo,
-                or_(*[LicitacionItem.codigo_producto.like(f"{p}%") for p in categorias_unspsc]),
-            )
-        )
-    if organismos_seguidos:
-        inclusion.append(Licitacion.codigo_organismo.in_(organismos_seguidos))
-    if inclusion:
-        stmt = stmt.where(or_(*inclusion))
-    if qx:
-        stmt = stmt.where(text(_FTS_LIC_EXCLUDE).bindparams(qx=qx))
-    stmt = stmt.limit(_MAX_CANDIDATOS)
     return list(session.execute(stmt).scalars())
 
 
@@ -220,29 +278,143 @@ def _candidatos_ca(
     stmt = (
         select(CompraAgil)
         .options(selectinload(CompraAgil.productos))
-        .where(
-            CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
-            or_(CompraAgil.fecha_cierre.is_(None), CompraAgil.fecha_cierre > ahora),
-        )
+        .where(*_vigencia_ca(ahora))
+        .where(*_criterio_ca(q, qx, categorias_unspsc, organismos_seguidos))
+        .limit(_MAX_CANDIDATOS)
     )
-    inclusion: list[Any] = []
-    if q:
-        inclusion.append(text(_FTS_CA_INCLUDE).bindparams(q=q))
-    if categorias_unspsc:
-        inclusion.append(
-            exists().where(
-                CaProducto.ca_codigo == CompraAgil.codigo,
-                or_(*[CaProducto.codigo_producto.like(f"{p}%") for p in categorias_unspsc]),
-            )
-        )
-    if organismos_seguidos:
-        inclusion.append(CompraAgil.organismo_rut.in_(organismos_seguidos))
-    if inclusion:
-        stmt = stmt.where(or_(*inclusion))
-    if qx:
-        stmt = stmt.where(text(_FTS_CA_EXCLUDE).bindparams(qx=qx))
-    stmt = stmt.limit(_MAX_CANDIDATOS)
     return list(session.execute(stmt).scalars())
+
+
+# ---------------------------------------------------------------------------
+# Limpieza de matches que ya no calzan (F-guardar)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CriterioPerfil:
+    """El criterio actual de un perfil, ya convertido a tsquery/listas."""
+
+    perfil_id: int
+    fuentes: tuple[str, ...]
+    q: str | None
+    qx: str | None
+    categorias_unspsc: tuple[str, ...]
+    organismos_seguidos: tuple[str, ...]
+    regiones: tuple[int, ...]
+    monto_min: float | None
+    monto_max: float | None
+
+
+def criterio_perfil(perfil: PerfilBusqueda, excluir_extra: list[str] | None = None) -> CriterioPerfil:
+    """Criterio del perfil; `excluir_extra` suma exclusiones sin escribir nada
+    (vista previa de "Descartar y excluir")."""
+    keywords = cast(list[str], list(perfil.keywords or []))
+    excluir = cast(list[str], list(perfil.keywords_excluir or [])) + list(excluir_extra or [])
+    return CriterioPerfil(
+        perfil_id=perfil.id,
+        fuentes=tuple(cast(list[str], list(perfil.fuentes or ["licitaciones", "compras_agiles"]))),
+        q=build_tsquery(keywords) if keywords_validas(keywords) else None,
+        qx=build_exclude_tsquery(excluir) if keywords_validas(excluir) else None,
+        categorias_unspsc=tuple(cast(list[str], list(perfil.categorias_unspsc or []))),
+        organismos_seguidos=tuple(cast(list[str], list(perfil.organismos_seguidos or []))),
+        regiones=tuple(cast(list[int], list(perfil.regiones or []))),
+        monto_min=perfil.monto_min_clp,
+        monto_max=perfil.monto_max_clp,
+    )
+
+
+def _monto_pasa(col: Any, monto_min: float | None, monto_max: float | None) -> list[Any]:
+    """Mismo filtro de monto que match_perfil: monto no informado pasa."""
+    rango: list[Any] = []
+    if monto_min is not None:
+        rango.append(col >= monto_min)
+    if monto_max is not None:
+        rango.append(col <= monto_max)
+    if not rango:
+        return []
+    return [or_(col.is_(None), and_(*rango))]
+
+
+def _where_limpieza(c: CriterioPerfil, fuente: str, ahora: datetime) -> list[Any]:
+    """WHERE sobre oportunidades_match: matches de ese perfil y fuente cuya
+    oportunidad está vigente y NO pasa el criterio actual.
+
+    "No pasa" = no está en el conjunto que el recall devolvería sin el tope de
+    500 (mismos fragmentos de `_criterio_*`). Se expresa como NOT IN del
+    conjunto que calza, no como NOT (criterio): así un NULL (organismo o región
+    no informados) se trata igual que en el recall, donde un WHERE NULL no entra.
+    """
+    if fuente == "licitaciones":
+        vigentes = select(Licitacion.codigo).where(*_vigencia_lic(ahora))
+        calzan = select(Licitacion.codigo).where(
+            *_vigencia_lic(ahora),
+            *_criterio_lic(c.q, c.qx, list(c.categorias_unspsc), list(c.organismos_seguidos)),
+            *_monto_pasa(Licitacion.monto_clp, c.monto_min, c.monto_max),
+        )
+    else:
+        vigentes = select(CompraAgil.codigo).where(*_vigencia_ca(ahora))
+        region = [CompraAgil.region.in_(c.regiones)] if c.regiones else []
+        calzan = select(CompraAgil.codigo).where(
+            *_vigencia_ca(ahora),
+            *_criterio_ca(c.q, c.qx, list(c.categorias_unspsc), list(c.organismos_seguidos)),
+            *region,
+            *_monto_pasa(CompraAgil.monto_disponible_clp, c.monto_min, c.monto_max),
+        )
+    conds: list[Any] = [
+        OportunidadMatch.perfil_id == c.perfil_id,
+        OportunidadMatch.fuente == fuente,
+        OportunidadMatch.codigo_oportunidad.in_(vigentes),
+    ]
+    # Fuente que el perfil ya no mira: nada de esa fuente calza.
+    if fuente in c.fuentes:
+        conds.append(OportunidadMatch.codigo_oportunidad.not_in(calzan))
+    return conds
+
+
+_FUENTES = ("licitaciones", "compras_agiles")
+
+
+def contar_limpieza(session: Session, criterio: CriterioPerfil, ahora: datetime | None = None) -> int:
+    """Cuántos matches borraría `limpiar_matches_perfil` con ese criterio (sin escribir)."""
+    ahora = ahora or ahora_utc()
+    total = 0
+    for fuente in _FUENTES:
+        total += int(
+            session.execute(
+                select(func.count())
+                .select_from(OportunidadMatch)
+                .where(*_where_limpieza(criterio, fuente, ahora))
+            ).scalar_one()
+        )
+    return total
+
+
+def limpiar_matches_perfil(
+    session: Session, perfil: PerfilBusqueda, ahora: datetime | None = None
+) -> int:
+    """Borra los matches de ESE perfil cuya oportunidad sigue vigente pero ya no
+    pasa su criterio actual (keyword quitada, exclusión agregada, región, monto,
+    rubro, organismo o fuente cambiados). Devuelve cuántos borró.
+
+    Un DELETE por fuente, con los mismos fragmentos SQL del recall y sin el tope
+    de 500. No toca matches de oportunidades terminales/vencidas (historial,
+    competencia), ni seguidas, ni feedback; las alertas del match se van por
+    cascade. Si una keyword se quita y se vuelve a poner, el match se recrea con
+    `fecha_match` nueva y reaparece en el resumen (aceptado). No hace commit.
+    """
+    ahora = ahora or ahora_utc()
+    criterio = criterio_perfil(perfil)
+    borrados = 0
+    for fuente in _FUENTES:
+        r = session.execute(
+            delete(OportunidadMatch)
+            .where(*_where_limpieza(criterio, fuente, ahora))
+            .execution_options(synchronize_session=False)
+        )
+        borrados += int(r.rowcount or 0)  # type: ignore[attr-defined]
+    if borrados:
+        _log.info("limpiar_matches_perfil id=%d: borrados=%d", perfil.id, borrados)
+    return borrados
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +687,9 @@ def match_perfil(
     """Ejecuta matching para un perfil. No llama a clientes HTTP.
 
     Devuelve conteos y listas sin_detalle_* para que el orchestrator
-    decida qué detalles buscar respetando el presupuesto de cuota.
+    decida qué detalles buscar respetando el presupuesto de cuota. Al final
+    borra los matches vigentes que ya no calzan (`limpiar_matches_perfil`,
+    F-guardar) y los cuenta en `borrados`.
     """
     if ahora is None:
         ahora = ahora_utc()
@@ -529,7 +703,7 @@ def match_perfil(
 
     kws_validas = keywords_validas(keywords)
     q = build_tsquery(keywords) if kws_validas else None
-    qx = build_exclude_tsquery(keywords_excluir) if keywords_excluir else None
+    qx = build_exclude_tsquery(keywords_excluir) if keywords_validas(keywords_excluir) else None
 
     nuevos = actualizados = descartados = 0
     sin_detalle_lic: list[str] = []
@@ -603,18 +777,21 @@ def match_perfil(
             if ca.raw_json is None:
                 sin_detalle_ca.append(ca.codigo)
 
+    borrados = limpiar_matches_perfil(session, perfil, ahora)
     session.commit()
     _log.info(
-        "match_perfil id=%d: nuevos=%d act=%d desc=%d",
+        "match_perfil id=%d: nuevos=%d act=%d desc=%d borrados=%d",
         perfil.id,
         nuevos,
         actualizados,
         descartados,
+        borrados,
     )
     return {
         "nuevos": nuevos,
         "actualizados": actualizados,
         "descartados": descartados,
+        "borrados": borrados,
         "sin_detalle_licitaciones": sin_detalle_lic,
         "sin_detalle_ca": sin_detalle_ca,
     }
@@ -636,33 +813,42 @@ def match_todos(
         ).scalars()
     )
 
-    total_nuevos = total_act = total_desc = 0
+    total_nuevos = total_act = total_desc = total_borrados = 0
     all_sin_lic: list[str] = []
     all_sin_ca: list[str] = []
 
     for perfil in perfiles:
+        # El id se lee antes: tras el rollback el objeto queda expirado y leerlo
+        # de nuevo puede fallar (o pegarle a la BD).
+        perfil_id = perfil.id
         try:
             r = match_perfil(perfil, session, ahora)
             total_nuevos += r["nuevos"]
             total_act += r["actualizados"]
             total_desc += r["descartados"]
+            total_borrados += r.get("borrados", 0)
             all_sin_lic.extend(r["sin_detalle_licitaciones"])
             all_sin_ca.extend(r["sin_detalle_ca"])
         except Exception:
-            _log.error("match_todos: error en perfil_id=%d", perfil.id, exc_info=True)
+            # Sin rollback, una sesión abortada (p. ej. un error de Postgres)
+            # haría fallar a todos los perfiles siguientes.
+            session.rollback()
+            _log.error("match_todos: error en perfil_id=%d", perfil_id, exc_info=True)
 
     _log.info(
-        "match_todos: perfiles=%d nuevos=%d act=%d desc=%d",
+        "match_todos: perfiles=%d nuevos=%d act=%d desc=%d borrados=%d",
         len(perfiles),
         total_nuevos,
         total_act,
         total_desc,
+        total_borrados,
     )
     return {
         "perfiles_procesados": len(perfiles),
         "nuevos": total_nuevos,
         "actualizados": total_act,
         "descartados": total_desc,
+        "borrados": total_borrados,
         "sin_detalle_licitaciones": list(set(all_sin_lic)),
         "sin_detalle_ca": list(set(all_sin_ca)),
     }

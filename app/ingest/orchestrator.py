@@ -58,7 +58,7 @@ from app.ingest.licitaciones import (
 from app.ingest.lifecycle import refresh_estados, refresh_estados_vencidos
 from app.ingest.plan_compra import sync_plan_anual_completo
 from app.models.enums import EstadoOportunidad
-from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch
+from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch, OportunidadSeguida
 
 _log = get_logger(__name__)
 
@@ -218,7 +218,8 @@ def _candidatas_detalles_match(
 ) -> list[tuple[str, str, int, datetime | None]]:
     """Candidatas de `detalles-match` como (fuente, código, fallos, último fallo), en UNA query.
 
-    Entran licitaciones y CA con al menos una fila en oportunidades_match, sin
+    Entran licitaciones y CA con al menos una fila en oportunidades_match o
+    guardadas por alguien (oportunidades_seguidas no archivada, F-guardar), sin
     detalle, publicadas y sin cerrar (fecha_cierre nula o futura). Orden: primero
     las que no tienen fallos, luego las que sí; dentro de cada grupo,
     fecha_cierre ascendente —lo que cierra antes, primero— y las sin fecha al
@@ -228,10 +229,16 @@ def _candidatas_detalles_match(
     publicada = EstadoOportunidad.PUBLICADA.value
 
     def _con_match(fuente: str, codigo: Any) -> Any:
-        return exists().where(
+        con_match = exists().where(
             OportunidadMatch.fuente == fuente,
             OportunidadMatch.codigo_oportunidad == codigo,
         )
+        guardada = exists().where(
+            OportunidadSeguida.fuente == fuente,
+            OportunidadSeguida.codigo_oportunidad == codigo,
+            OportunidadSeguida.archivada.is_(False),
+        )
+        return or_(con_match, guardada)
 
     lic = select(
         literal(_FUENTE_LIC).label("fuente"),

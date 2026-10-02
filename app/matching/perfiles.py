@@ -6,6 +6,8 @@ Un usuario solo ve/edita sus propios perfiles.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -137,3 +139,106 @@ def eliminar_perfil(
         return False
     session.delete(p)
     return True
+
+
+# ---------------------------------------------------------------------------
+# "Descartar y excluir" (F-guardar, sección E)
+# ---------------------------------------------------------------------------
+
+MAX_PALABRAS_EXCLUIR = 5
+_LARGO_PALABRA = (2, 60)
+
+
+def normalizar_palabras_excluir(palabras: list[str]) -> list[str]:
+    """Mismo criterio que el formulario de perfiles (separar por coma y recortar),
+    más un largo razonable; sin duplicados (sin distinguir mayúsculas). Lanza
+    PerfilInvalido si quedan más de MAX_PALABRAS_EXCLUIR."""
+    salida: list[str] = []
+    vistas: set[str] = set()
+    for valor in palabras:
+        for parte in valor.split(","):
+            p = " ".join(parte.split())
+            if not (_LARGO_PALABRA[0] <= len(p) <= _LARGO_PALABRA[1]):
+                continue
+            if p.lower() not in vistas:
+                vistas.add(p.lower())
+                salida.append(p)
+    if len(salida) > MAX_PALABRAS_EXCLUIR:
+        raise PerfilInvalido(f"Se pueden excluir hasta {MAX_PALABRAS_EXCLUIR} palabras por vez")
+    return salida
+
+
+def excluir_palabras(
+    session: Session,
+    owner_id: int,
+    perfil_id: int,
+    palabras: list[str],
+) -> tuple[list[str], int] | None:
+    """Agrega `palabras` a las exclusiones del perfil (regla 17: solo el dueño) y
+    borra los matches vigentes que ya no calzan. Devuelve (agregadas, borrados),
+    o None si el perfil no es del usuario. Seguidas y feedback quedan intactos.
+    No hace commit."""
+    from app.matching.engine import limpiar_matches_perfil
+
+    p = obtener_perfil(session, perfil_id, owner_id)
+    if p is None:
+        return None
+    actuales = cast(list[str], list(p.keywords_excluir or []))
+    ya = {a.lower() for a in actuales}
+    agregadas = [w for w in normalizar_palabras_excluir(palabras) if w.lower() not in ya]
+    if agregadas:
+        # Lista nueva: JSONB no detecta mutaciones in-place.
+        p.keywords_excluir = actuales + agregadas  # type: ignore[assignment]
+        session.flush()
+    borrados = limpiar_matches_perfil(session, p)
+    return agregadas, borrados
+
+
+def quitar_exclusiones(
+    session: Session,
+    owner_id: int,
+    perfil_id: int,
+    palabras: list[str],
+) -> PerfilBusqueda | None:
+    """Deshacer de "Descartar y excluir": saca esas palabras de las exclusiones.
+    El llamador re-ejecuta `match_perfil` para recrear los matches. No hace commit."""
+    p = obtener_perfil(session, perfil_id, owner_id)
+    if p is None:
+        return None
+    quitar = {w.strip().lower() for w in palabras}
+    actuales = cast(list[str], list(p.keywords_excluir or []))
+    p.keywords_excluir = [a for a in actuales if a.lower() not in quitar]  # type: ignore[assignment]
+    session.flush()
+    return p
+
+
+# Palabras que no sirven como exclusión (artículos, preposiciones y términos de
+# trámite que aparecen en casi cualquier nombre de compra).
+_STOPWORDS = frozenset(
+    ["para", "con", "por", "del", "las", "los", "una", "uno", "unos", "unas", "que", "sin", "sus", "entre", "sobre", "desde", "hasta", "segun", "según", "como", "más", "mas", "este", "esta", "estos", "estas", "otro", "otros", "otra", "otras", "adquisicion", "adquisición", "compra", "compras", "servicio", "servicios", "contratacion", "contratación", "suministro", "suministros", "licitacion", "licitación", "agil", "ágil", "publica", "pública", "año", "anio"]
+)
+_PALABRA_NOMBRE_RE = re.compile(r"[a-záéíóúüñ]{4,}")
+_MAX_SUGERIDAS = 8
+
+
+def _sin_tildes(texto: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn"
+    )
+
+
+def palabras_sugeridas(nombre: str, keywords_perfil: list[str]) -> list[str]:
+    """Términos del nombre de la oportunidad que se pueden ofrecer para excluir:
+    sin stopwords ni las palabras clave del perfil (excluirlas vaciaría el perfil)."""
+    propias = {_sin_tildes(k.lower()) for kw in keywords_perfil for k in kw.split()}
+    salida: list[str] = []
+    vistas: set[str] = set()
+    for w in _PALABRA_NOMBRE_RE.findall(nombre.lower()):
+        base = _sin_tildes(w)
+        if w in _STOPWORDS or base in _STOPWORDS or base in propias or base in vistas:
+            continue
+        vistas.add(base)
+        salida.append(w)
+        if len(salida) == _MAX_SUGERIDAS:
+            break
+    return salida

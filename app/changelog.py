@@ -15,6 +15,20 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 10, 2),
+        titulo="Guardar: un solo botón para lo que te interesa",
+        descripcion=(
+            "'Me sirve' y 'Activar alertas' ahora son un solo botón: Guardar. Lo que guardas "
+            "queda en 'Mi registro' (antes 'Alertas activas') y te avisamos cuando cambia de "
+            "estado o está por cerrar; lo que habías marcado con 'Me sirve' ya está ahí. "
+            "También puedes guardar o descartar desde Explorar CA, aunque la Compra Ágil no "
+            "calce con tus perfiles. El Texto del explorador ahora busca también en los "
+            "productos de cada Compra Ágil. Al descartar puedes excluir la palabra que la "
+            "trajo: lo que ya no calza con tu perfil sale del feed, y lo mismo pasa cuando "
+            "editas un perfil. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 10, 1),
         titulo="Tus perfiles ahora encuentran bien las palabras con tilde",
         descripcion=(

@@ -251,10 +251,10 @@ def test_encabezados_de_tabla_con_scope(client, settings, usuario, engine) -> No
     assert "<th>" not in html
 
 
-def test_toggle_me_sirve_expone_su_estado(client, settings, usuario, engine) -> None:
+def test_toggle_guardar_expone_su_estado(client, settings, usuario, engine) -> None:
     _crear_match(engine, usuario, score=65)
     html = client.get("/oportunidad/licitaciones/LIC-UI-1", cookies=_cookie(settings, usuario)).text
-    assert 'data-accion="me-sirve"' in html
+    assert 'data-accion="guardar"' in html
     assert 'aria-pressed="false"' in html
     # El mecanismo de anuncio y de foco cuelga del contenedor que HTMX reemplaza.
     assert "data-anuncio=" in html

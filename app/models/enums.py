@@ -289,5 +289,7 @@ class ValorFeedback(enum.StrEnum):
     entrenamiento para reponderar el matching — este módulo no reordena nada.
     """
 
+    # Deprecated (F-guardar): "me sirve" se unificó con Guardar y ya no se
+    # escribe; se mantiene para leer filas viejas sin romper (regla 6).
     SIRVE = "sirve"
     DESCARTE = "descarte"

@@ -13,7 +13,7 @@
   <h2 class="mb-0">{{ oportunidad.nombre }}</h2>
   {# Los cortes los decide la ruta con los mismos valores que los presets del feed. #}
   {% if match is none %}
-  {# Vista desde el explorador: sin match con tus perfiles, no hay puntaje. #}
+  {# Sin match con tus perfiles (explorador, o guardada cuyo match se limpió): sin puntaje. #}
   {% elif banda == 'alta' %}
   <span class="badge bg-success fs-5 num">{{ match.score | round(0) | int }}<span class="visually-hidden"> — alta relevancia</span></span>
   {% elif banda == 'media' %}
@@ -190,43 +190,10 @@
   {% endif %}
   <a href="{{ url_volver }}" class="btn btn-outline-secondary ms-2">Volver</a>
 
-  {% if match is none %}
-  <p class="text-muted small mt-3 mb-0">
-    Esta Compra Ágil no coincide con ninguno de tus perfiles, así que no se puede seguir ni
-    descartar desde acá. Si te interesa este tipo de compra, ajusta un perfil o marca su rubro
-    como favorito en <a href="/perfiles#rubros-favoritos">Perfiles</a>.
-  </p>
-  {% endif %}
-  <span class="d-inline-block ms-2">
-    {% if match is none %}
-    {% elif seguimiento and not seguimiento.archivada %}
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/archivar" class="d-inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}">
-      <button type="submit" class="btn btn-outline-warning">Archivar</button>
-    </form>
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/dejar-de-seguir" class="d-inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}">
-      <button type="submit" class="btn btn-outline-secondary">Desactivar alertas</button>
-    </form>
-    {% elif seguimiento and seguimiento.archivada %}
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/desarchivar" class="d-inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}">
-      <button type="submit" class="btn btn-outline-success">Desarchivar</button>
-    </form>
-    {% else %}
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}/seguir" class="d-inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ oportunidad.codigo }}">
-      <button type="submit" class="btn btn-success">Activar alertas</button>
-    </form>
-    {% endif %}
-  </span>
-
-  {% if feedback_item %}
-  <span class="ms-2">{{ ficha_acciones(feedback_item, csrf_token) }}</span>
+  {# Guardar / Descartar con o sin match (F-guardar): una CA del explorador o una
+     licitación guardada cuyo match se limpió también se pueden guardar y descartar. #}
+  {% if acciones %}
+  <span class="ms-2">{{ ficha_acciones(acciones, csrf_token) }}</span>
   {% endif %}
 </div>
 <p class="text-muted small mt-3">Fuente: Dirección ChileCompra</p>

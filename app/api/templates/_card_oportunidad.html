@@ -35,7 +35,7 @@
 <div class="tarjeta-op tarjeta-op--{{ item.urgencia }}"
      id="{{ card_id }}"
      data-oportunidad-key="{{ oportunidad_key }}"
-     data-anuncio="{% if item.feedback == 'sirve' %}Marcada como útil: {{ item.nombre }}{% elif item.siguiendo %}Siguiendo: {{ item.nombre }}{% else %}Sin marcas: {{ item.nombre }}{% endif %}">
+     data-anuncio="{% if item.guardada %}Guardada: {{ item.nombre }}{% else %}No guardada: {{ item.nombre }}{% endif %}">
 
   {# --- Fila superior: match · título/meta · monto --- #}
   <div class="d-flex align-items-start gap-3">
@@ -77,6 +77,14 @@
       {{ item.cierre_texto }}
     </span>
 
+    {% if item.guardada %}
+    {# Texto + icono: el estado no se comunica solo con color. #}
+    <span class="badge text-bg-success fw-normal d-inline-flex align-items-center gap-1">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 2.5h8v11l-4-3-4 3z"/></svg>
+      Guardada
+    </span>
+    {% endif %}
+
     {% for chip in visibles %}
     <span class="chip-razon chip-razon--{{ chip.tipo }}" title="{{ chip.texto }}">{{ chip.texto }}</span>
     {% endfor %}
@@ -94,41 +102,31 @@
   <div class="d-flex flex-wrap gap-2 align-items-center mt-3 tarjeta-op__acciones">
     <a href="/oportunidad/{{ fuente }}/{{ codigo }}" class="btn btn-sm btn-primary">Ver ficha</a>
 
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
-          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/seguir"
+    {# Guardar = queda en Mi registro y avisa de sus cambios (F-guardar). #}
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/guardar"
+          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/guardar"
           hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="/">
-      {% if item.siguiendo %}
-      <button type="submit" class="btn btn-sm btn-success" data-accion="seguir" aria-pressed="true">
-        <span aria-hidden="true">✓</span> Alertas activas<span class="visually-hidden"> (seleccionado)</span>
+      {% if item.guardada %}
+      <button type="submit" class="btn btn-sm btn-success" data-accion="guardar" aria-pressed="true">
+        <span aria-hidden="true">✓</span> Guardada<span class="visually-hidden"> (seleccionado)</span>
       </button>
       {% else %}
-      <button type="submit" class="btn btn-sm btn-outline-secondary" data-accion="seguir" aria-pressed="false">Activar alertas</button>
+      <button type="submit" class="btn btn-sm btn-outline-success" data-accion="guardar" aria-pressed="false">Guardar</button>
       {% endif %}
     </form>
 
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
-          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
-          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/">
-      {% if item.feedback == "sirve" %}
-      <button type="submit" class="btn btn-sm btn-success" data-accion="me-sirve" aria-pressed="true">
-        <span aria-hidden="true">✓</span> Me sirve<span class="visually-hidden"> (seleccionado)</span>
-      </button>
-      {% else %}
-      <button type="submit" class="btn btn-sm btn-outline-success" data-accion="me-sirve" aria-pressed="false">Me sirve</button>
-      {% endif %}
-    </form>
-
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline ms-auto">
+    {# Sin JS el formulario descarta directo; con JS el botón abre el modal
+       "Descartar" (qué lo trajo y excluir la palabra). #}
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar" class="d-inline ms-auto">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="/">
       <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
-              data-accion="descartar" data-nombre-oportunidad="{{ item.nombre }}">Descartar</button>
+              hx-get="/oportunidad/{{ fuente }}/{{ codigo }}/descartar-opciones?origen=dashboard"
+              hx-target="#modal-descartar-contenido" hx-swap="innerHTML"
+              data-abre-descartar aria-haspopup="dialog"
+              data-nombre-oportunidad="{{ item.nombre }}">Descartar</button>
     </form>
   </div>
 </div>

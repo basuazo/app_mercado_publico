@@ -199,24 +199,28 @@ def test_ficha_cerrada_no_muestra_enlace_oficial(client, usuario, settings, engi
 # ---------------------------------------------------------------------------
 
 
-def test_ficha_muestra_botones_me_sirve_y_descartar(client, usuario, settings, engine):
+def test_ficha_muestra_botones_guardar_y_descartar(client, usuario, settings, engine):
     _crear_match_lic_con_items(engine, usuario)
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "/oportunidad/licitaciones/LIC-001/me-sirve" in r.text
+    assert "/oportunidad/licitaciones/LIC-001/guardar" in r.text
     assert "/oportunidad/licitaciones/LIC-001/descartar" in r.text
+    # F-guardar: desaparecen "Me sirve" y "Activar alertas".
+    assert "/oportunidad/licitaciones/LIC-001/me-sirve" not in r.text
+    assert "Activar alertas</button>" not in r.text
 
 
-def test_ficha_refleja_me_sirve_activo(client, usuario, settings, engine):
+def test_ficha_refleja_guardada_activa(client, usuario, settings, engine):
     _crear_match_lic_con_items(engine, usuario)
     cookies, headers = _session(settings, usuario)
+    # Vía el alias deprecated: hace lo mismo que /guardar.
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
 
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     # El estado activo se expresa por relleno, aria-pressed y marca textual.
-    assert 'class="btn btn-success" data-accion="me-sirve" aria-pressed="true"' in r.text
-    assert "Me sirve" in r.text
+    assert 'class="btn btn-success" data-accion="guardar" aria-pressed="true"' in r.text
+    assert "Guardada" in r.text
 
 
 def test_ficha_refleja_descartada_con_boton_restaurar(client, usuario, settings, engine):

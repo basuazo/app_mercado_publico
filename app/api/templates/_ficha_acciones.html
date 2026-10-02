@@ -1,26 +1,34 @@
-{% macro ficha_acciones(item, csrf_token) %}
-{% set fuente = item.match.fuente %}
-{% set codigo = item.match.codigo_oportunidad %}
-{# data-anuncio: lo lee el script de base.html y lo copia a la región aria-live.
-   data-accion: identifica el botón para devolverle el foco tras el swap. #}
+{#
+  Botones de la ficha (F-guardar): Guardar / Guardada ✓ y Descartar, con o sin
+  match. `acciones` sale de `query.estado_acciones`. Con match, Descartar abre el
+  modal (qué lo trajo y excluir la palabra); sin match descarta directo.
+  data-anuncio: lo lee el script de base.html y lo copia a la región aria-live.
+  data-accion: identifica el botón para devolverle el foco tras el swap.
+#}
+{% macro ficha_acciones(acciones, csrf_token) %}
+{% set fuente = acciones.fuente %}
+{% set codigo = acciones.codigo %}
 <span id="ficha-acciones-feedback" class="d-inline-block"
-      data-anuncio="{% if item.feedback == 'sirve' %}Marcada como útil{% elif item.feedback == 'descarte' %}Oportunidad descartada{% else %}Sin marca de utilidad{% endif %}">
-  <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
-        hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/me-sirve"
+      data-anuncio="{% if acciones.descartada %}Oportunidad descartada{% elif acciones.guardada %}Guardada{% else %}No guardada{% endif %}">
+  <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/guardar"
+        hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/guardar"
         hx-target="#ficha-acciones-feedback" hx-swap="outerHTML" class="d-inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ codigo }}">
     <input type="hidden" name="origen" value="ficha">
-    {% if item.feedback == "sirve" %}
-    <button type="submit" class="btn btn-success" data-accion="me-sirve" aria-pressed="true">
-      <span aria-hidden="true">✓</span> Me sirve<span class="visually-hidden"> (seleccionado)</span>
+    {% if acciones.guardada %}
+    <button type="submit" class="btn btn-success" data-accion="guardar" aria-pressed="true">
+      <span aria-hidden="true">✓</span> Guardada<span class="visually-hidden"> (seleccionado)</span>
     </button>
     {% else %}
-    <button type="submit" class="btn btn-outline-success" data-accion="me-sirve" aria-pressed="false">Me sirve</button>
+    <button type="submit" class="btn btn-outline-success" data-accion="guardar" aria-pressed="false">Guardar</button>
     {% endif %}
   </form>
+  {% if acciones.archivada %}
+  <span class="text-muted small ms-1">Archivada en Mi registro</span>
+  {% endif %}
 
-  {% if item.feedback == "descarte" %}
+  {% if acciones.descartada %}
   <span class="text-muted small ms-2 me-1">Descartada</span>
   <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/deshacer-descarte"
         hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/deshacer-descarte"
@@ -37,7 +45,14 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="next" value="/oportunidad/{{ fuente }}/{{ codigo }}">
     <input type="hidden" name="origen" value="ficha">
+    {% if acciones.con_match %}
+    <button type="submit" class="btn btn-outline-danger" aria-pressed="false"
+            hx-get="/oportunidad/{{ fuente }}/{{ codigo }}/descartar-opciones?origen=ficha"
+            hx-target="#modal-descartar-contenido" hx-swap="innerHTML"
+            data-abre-descartar aria-haspopup="dialog">Descartar</button>
+    {% else %}
     <button type="submit" class="btn btn-outline-danger" data-accion="descartar" aria-pressed="false">Descartar</button>
+    {% endif %}
   </form>
   {% endif %}
 </span>

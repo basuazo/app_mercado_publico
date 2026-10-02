@@ -851,6 +851,13 @@ class TestUpsertMatch:
 class TestMatchPerfilMockedCandidatos:
     """Testea match_perfil con _candidatos_* mockeados para no requerir Postgres."""
 
+    @pytest.fixture(autouse=True)
+    def _sin_limpieza(self):
+        # F-guardar: match_perfil termina con limpiar_matches_perfil, que usa los
+        # mismos fragmentos FTS de Postgres que los candidatos mockeados acá.
+        with patch("app.matching.engine.limpiar_matches_perfil", return_value=0):
+            yield
+
     def _perfil(self, session: Session, keywords=None, regiones=None, fuentes=None, monto_min=None, monto_max=None):
         from app.models.tables import PerfilBusqueda, Usuario
 
@@ -1207,3 +1214,49 @@ class TestMatchPerfilRecallAditivo:
             )
         ).scalar_one()
         assert match.score > 0.0
+
+
+# ---------------------------------------------------------------------------
+# match_todos: un perfil que falla no arrastra a los siguientes
+# ---------------------------------------------------------------------------
+
+
+def test_match_todos_hace_rollback_si_un_perfil_falla(session: Session):
+    """El primer perfil deja la sesión con un flush fallido (IntegrityError):
+    sin rollback, el segundo recibiría PendingRollbackError al usarla."""
+    from app.models.tables import PerfilBusqueda
+
+    u = Usuario(email="mt-rollback@test.cl", password_hash=_PW_HASH2, activo=True)
+    session.add(u)
+    session.flush()
+    p_falla = PerfilBusqueda(owner_id=u.id, nombre="Falla", keywords=["x"], activo=True)
+    p_ok = PerfilBusqueda(owner_id=u.id, nombre="Ok", keywords=["y"], activo=True)
+    session.add_all([p_falla, p_ok])
+    session.commit()
+    id_falla, id_ok = p_falla.id, p_ok.id
+
+    llamados: list[int] = []
+
+    def _match_perfil(perfil, s, ahora=None):  # noqa: ARG001
+        llamados.append(perfil.id)
+        if perfil.id == id_falla:
+            # Email duplicado: el flush revienta y deja la sesión abortada.
+            s.add(Usuario(email="mt-rollback@test.cl", password_hash=_PW_HASH2, activo=True))
+            s.flush()
+        # El segundo perfil usa la sesión: falla si nadie hizo rollback.
+        s.execute(select(OportunidadMatch)).all()
+        return {
+            "nuevos": 1,
+            "actualizados": 0,
+            "descartados": 0,
+            "borrados": 0,
+            "sin_detalle_licitaciones": [],
+            "sin_detalle_ca": [],
+        }
+
+    with patch("app.matching.engine.match_perfil", side_effect=_match_perfil):
+        r = match_todos(session, ahora=_AHORA_LOCAL)
+
+    assert llamados == [id_falla, id_ok]
+    assert r["perfiles_procesados"] == 2
+    assert r["nuevos"] == 1  # solo el segundo perfil sumó

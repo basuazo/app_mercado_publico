@@ -1,0 +1,38 @@
+{#
+  Botones de una fila del explorador de CA (F-guardar). `a` trae codigo, nombre
+  y guardada (de `explorador_ca.buscar` o de `query.estado_acciones`). Guardar
+  re-pinta solo este bloque; Descartar reemplaza la fila completa por un
+  marcador oculto (`_explorador_descartada.html`) y la fila desaparece. En el
+  explorador Descartar es directo, sin modal: no hay perfil que la haya traído.
+#}
+{% macro explorador_acciones(a, csrf_token) %}
+<div id="acciones-ca-{{ a.codigo }}" class="d-flex flex-wrap gap-2 align-items-center mt-3 tarjeta-op__acciones"
+     data-anuncio="{% if a.guardada %}Guardada: {{ a.nombre }}{% else %}No guardada: {{ a.nombre }}{% endif %}">
+  <a href="/oportunidad/compras_agiles/{{ a.codigo }}" class="btn btn-sm btn-outline-primary">Ver ficha</a>
+
+  <form method="post" action="/oportunidad/compras_agiles/{{ a.codigo }}/guardar"
+        hx-post="/oportunidad/compras_agiles/{{ a.codigo }}/guardar"
+        hx-target="#acciones-ca-{{ a.codigo }}" hx-swap="outerHTML" class="d-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="origen" value="explorador">
+    <input type="hidden" name="next" value="/compras-agiles">
+    {% if a.guardada %}
+    <button type="submit" class="btn btn-sm btn-success" data-accion="guardar" aria-pressed="true">
+      <span aria-hidden="true">✓</span> Guardada<span class="visually-hidden"> (seleccionado)</span>
+    </button>
+    {% else %}
+    <button type="submit" class="btn btn-sm btn-outline-success" data-accion="guardar" aria-pressed="false">Guardar</button>
+    {% endif %}
+  </form>
+
+  <form method="post" action="/oportunidad/compras_agiles/{{ a.codigo }}/descartar"
+        hx-post="/oportunidad/compras_agiles/{{ a.codigo }}/descartar"
+        hx-target="#fila-ca-{{ a.codigo }}" hx-swap="outerHTML" class="d-inline ms-auto">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="origen" value="explorador">
+    <input type="hidden" name="next" value="/compras-agiles">
+    <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
+            data-accion="descartar" aria-pressed="false">Descartar</button>
+  </form>
+</div>
+{% endmacro %}

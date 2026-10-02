@@ -15,6 +15,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from markupsafe import escape
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -42,11 +43,14 @@ from app.api.query import (
     buscar_instituciones_pac,
     check_oportunidad_access,
     detalle_competencia,
+    estado_acciones,
     get_item_oportunidad,
     get_oportunidades_usuario,
     listar_descartadas_detalle,
     listar_organismos_catalogo,
     listar_seguidas_detalle,
+    matches_de_oportunidad,
+    puede_actuar,
     resumen_competencia,
 )
 from app.api.salud_data import get_salud_data
@@ -85,22 +89,30 @@ from app.ingest.plan_compra import (
     sync_instituciones_pac,
     sync_sectores_organismos,
 )
-from app.matching.engine import match_perfil
-from app.matching.feedback import alternar_me_sirve, deshacer_descarte, listar_descartadas
+from app.matching.engine import (
+    contar_limpieza,
+    criterio_perfil,
+    match_perfil,
+)
 from app.matching.feedback import descartar as marcar_descarte
+from app.matching.feedback import deshacer_descarte, listar_descartadas
 from app.matching.perfiles import (
     PerfilInvalido,
     actualizar_perfil,
     crear_perfil,
     eliminar_perfil,
+    excluir_palabras,
     listar_perfiles,
+    normalizar_palabras_excluir,
     obtener_perfil,
+    palabras_sugeridas,
+    quitar_exclusiones,
 )
 from app.matching.seguimiento import (
+    alternar_guardada,
     archivar_seguimiento,
     dejar_de_seguir,
-    obtener_seguimiento,
-    seguir_oportunidad,
+    guardar,
 )
 from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
 from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, RolUsuario
@@ -440,6 +452,10 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     panel: str = "",
     incluir_sin_monto: str = "",
     incluir_sin_cierre: str = "",
+    # Aviso tras "Descartar y excluir" (F-guardar): no se re-serializan en los enlaces.
+    excluido_perfil: str = "",
+    excluido: list[str] = Query(default=[]),
+    excluidos_n: str = "",
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -459,6 +475,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     perfil_ids_propios = {p.id for p in perfiles}
     nombres_perfil = {p.id: p.nombre for p in perfiles}
     keywords_propias = {palabra for p in perfiles for palabra in (p.keywords or [])}
+    aviso_exclusion = _aviso_exclusion(perfiles, excluido_perfil, excluido, excluidos_n)
 
     perfil_ids_sel: list[int] = []
     for pid in _enteros(perfil_id):
@@ -688,8 +705,31 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             perfiles=perfiles,
             mostrar_tutorial=not user.tutorial_visto,
             mostrar_novedades=_hay_novedades_pendientes(user),
+            aviso_exclusion=aviso_exclusion,
         ),
     )
+
+
+def _aviso_exclusion(
+    perfiles: list[PerfilBusqueda], perfil_id: str, palabras: list[str], n: str
+) -> dict[str, Any] | None:
+    """Datos del aviso "excluiste X del perfil Y" tras Descartar y excluir. Solo
+    con un perfil propio (regla 17) y palabras que sigan en sus exclusiones: un
+    enlace manipulado no muestra nada."""
+    pid = _entero(perfil_id)
+    perfil = next((p for p in perfiles if p.id == pid), None)
+    if perfil is None:
+        return None
+    actuales = {str(w).lower() for w in (perfil.keywords_excluir or [])}
+    vigentes = [w for w in palabras if w.lower() in actuales]
+    if not vigentes:
+        return None
+    return {
+        "perfil_id": perfil.id,
+        "perfil": perfil.nombre,
+        "palabras": vigentes,
+        "n": _entero(n) or 0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -743,13 +783,12 @@ async def oportunidad_detalle(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    match = check_oportunidad_access(session, user.id, fuente, codigo)
-    # Solo la Compra Ágil se puede abrir sin match: el explorador (F-ca-explorar)
-    # lista TODAS las vigentes, no solo las que calzan con un perfil. Los datos
-    # son públicos; lo que sigue siendo del dueño (regla 17) son sus acciones,
-    # que en esa ficha no se ofrecen (ver `oportunidad.html`).
-    if match is None and fuente != "compras_agiles":
+    # Sin match se abren las Compras Ágiles (el explorador lista todas las
+    # vigentes) y lo que el usuario ya guardó o descartó (F-guardar): ver
+    # `puede_actuar`. Las acciones van siempre con su propio user_id (regla 17).
+    if not puede_actuar(session, user.id, fuente, codigo):
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    match = check_oportunidad_access(session, user.id, fuente, codigo)
 
     op: Licitacion | CompraAgil | None = None
     if fuente == "licitaciones":
@@ -765,7 +804,6 @@ async def oportunidad_detalle(
     settings = request.app.state.settings
 
     url_ficha = _url_ficha(fuente, codigo)
-    seguimiento = obtener_seguimiento(session, user.id, fuente, codigo)
 
     competencia_resumen: list[Any] = []
     competencia_detalle: list[Any] = []
@@ -796,14 +834,12 @@ async def oportunidad_detalle(
         for it in items_raw
     ]
 
-    feedback_item = get_item_oportunidad(session, user.id, fuente, codigo)
-    if feedback_item:
-        dias_al_cierre = feedback_item["dias_al_cierre"]
-    elif op.fecha_cierre is not None:
-        # Sin match no hay item armado (explorador): mismo calculo que `_construir_item`.
-        dias_al_cierre = max(0.0, (op.fecha_cierre - ahora_utc()).total_seconds() / 86400)
-    else:
-        dias_al_cierre = None
+    # Mismo cálculo que `_construir_item`, con o sin match.
+    dias_al_cierre = (
+        max(0.0, (op.fecha_cierre - ahora_utc()).total_seconds() / 86400)
+        if op.fecha_cierre is not None
+        else None
+    )
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -832,8 +868,7 @@ async def oportunidad_detalle(
             organismo=organismo,
             region_nombre=region_nombre,
             razones=razones_legibles(match.razones) if match is not None else [],
-            seguimiento=seguimiento,
-            feedback_item=feedback_item,
+            acciones=estado_acciones(session, user.id, fuente, codigo),
             competencia_resumen=competencia_resumen,
             competencia_detalle=competencia_detalle,
             url_volver=_url_volver_feed(request),
@@ -858,6 +893,9 @@ def _safe_next(next_: str, fallback: str) -> str:
     return fallback
 
 
+_ORIGENES = ("dashboard", "ficha", "explorador")
+
+
 def _render_card_partial(
     request: Request,
     user: Usuario,
@@ -869,45 +907,86 @@ def _render_card_partial(
 ) -> HTMLResponse:
     """Re-renderiza el estado de una oportunidad tras una acción HTMX rápida.
 
-    `origen="dashboard"` (default) re-renderiza la tarjeta completa del feed;
-    `origen="ficha"` re-renderiza solo la fila de botones de feedback de la
-    ficha de detalle (`_ficha_acciones.html`) — son layouts distintos, no la
-    misma tarjeta. Vacío si el usuario perdió acceso entretanto (regla 17)."""
+    - `origen="dashboard"` (default): la tarjeta completa del feed (necesita match;
+      vacío si el usuario lo perdió entretanto, regla 17);
+    - `origen="ficha"`: solo la fila de botones de la ficha (`_ficha_acciones.html`);
+    - `origen="explorador"`: los botones de la fila del explorador de CA, que no
+      tiene match (F-guardar).
+    """
+    settings = request.app.state.settings
+    csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
+    if origen in ("ficha", "explorador"):
+        acciones = estado_acciones(session, user.id, fuente, codigo)
+        if acciones is None:
+            return HTMLResponse(content="", status_code=200)
+        template = (
+            "_ficha_acciones_partial.html" if origen == "ficha" else "_explorador_acciones_partial.html"
+        )
+        return _TEMPLATES.TemplateResponse(
+            request, template, {"acciones": acciones, "csrf_token": csrf_token}
+        )
     item = get_item_oportunidad(session, user.id, fuente, codigo)
     if item is None:
         return HTMLResponse(content="", status_code=200)
-    settings = request.app.state.settings
     # La tarjeta re-renderizada tiene que traer lo mismo que la del feed: si no,
     # tras un swap quedaría sin banda, sin badge de estado y sin urgencia.
     _decorar_item(item, settings)
-    csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
-    template = "_ficha_acciones_partial.html" if origen == "ficha" else "_card_partial.html"
     return _TEMPLATES.TemplateResponse(
-        request, template, {"item": item, "csrf_token": csrf_token}
+        request, "_card_partial.html", {"item": item, "csrf_token": csrf_token}
     )
 
 
-@router.post("/oportunidad/{fuente}/{codigo}/seguir", response_model=None)
-async def oportunidad_seguir(
+def _guardar(
+    request: Request,
+    user: Usuario,
+    session: Session,
+    fuente: str,
+    codigo: str,
+    *,
+    accion: str,
+    next_: str,
+    origen: str,
+    fallback: str,
+) -> HTMLResponse | RedirectResponse:
+    """Guardar (F-guardar): queda en Mi registro y avisa de sus cambios.
+
+    `accion`: "alternar" (toggle del botón), "guardar" (idempotente) o "quitar"
+    (`dejar_de_seguir`; 404 si no estaba, como antes)."""
+    if accion == "quitar":
+        if not dejar_de_seguir(session, owner_id=user.id, fuente=fuente, codigo=codigo):
+            raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    else:
+        if not puede_actuar(session, user.id, fuente, codigo):
+            raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+        if accion == "guardar":
+            guardar(session, user.id, fuente, codigo)
+        else:
+            alternar_guardada(session, user.id, fuente, codigo)
+    session.commit()
+    if _es_htmx(request):
+        return _render_card_partial(
+            request, user, session, fuente, codigo, origen=origen if origen in _ORIGENES else "dashboard"
+        )
+    return RedirectResponse(url=_safe_next(next_, fallback), status_code=303)
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/guardar", response_model=None)
+async def oportunidad_guardar(
     request: Request,
     fuente: str,
     codigo: str,
     next: str = Form(""),
+    origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
+    """Toggle Guardar / Guardada (F-guardar)."""
     check_csrf(request, csrf_token)
-    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
-        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
-    op: Licitacion | CompraAgil | None
-    op = session.get(Licitacion, codigo) if fuente == "licitaciones" else session.get(CompraAgil, codigo)
-    estado_actual = op.estado if op is not None else ""
-    seguir_oportunidad(session, owner_id=user.id, fuente=fuente, codigo=codigo, estado_actual=estado_actual)
-    session.commit()
-    if _es_htmx(request):
-        return _render_card_partial(request, user, session, fuente, codigo)
-    return RedirectResponse(url=_safe_next(next, f"/oportunidad/{fuente}/{codigo}"), status_code=303)
+    return _guardar(
+        request, user, session, fuente, codigo,
+        accion="alternar", next_=next, origen=origen, fallback=f"/oportunidad/{fuente}/{codigo}",
+    )
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/me-sirve", response_model=None)
@@ -921,16 +1000,50 @@ async def oportunidad_me_sirve(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
-    """Toggle de "me sirve" (F10 parte 2): registra feedback POSITIVO, señal
-    para F11. No reordena ni entrena nada aquí."""
+    """Deprecated (F-guardar): alias del toggle de `/guardar`."""
     check_csrf(request, csrf_token)
-    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
-        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
-    alternar_me_sirve(session, user.id, fuente, codigo)
-    session.commit()
-    if _es_htmx(request):
-        return _render_card_partial(request, user, session, fuente, codigo, origen=origen)
-    return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
+    return _guardar(
+        request, user, session, fuente, codigo,
+        accion="alternar", next_=next, origen=origen, fallback="/",
+    )
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/seguir", response_model=None)
+async def oportunidad_seguir(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    origen: str = Form("dashboard"),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    """Deprecated (F-guardar): alias de `/guardar` que solo guarda (idempotente)."""
+    check_csrf(request, csrf_token)
+    return _guardar(
+        request, user, session, fuente, codigo,
+        accion="guardar", next_=next, origen=origen, fallback=f"/oportunidad/{fuente}/{codigo}",
+    )
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/dejar-de-seguir", response_model=None)
+async def oportunidad_dejar_de_seguir(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    next: str = Form(""),
+    origen: str = Form("dashboard"),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    """Deprecated (F-guardar): alias de `/guardar` que solo quita de guardadas."""
+    check_csrf(request, csrf_token)
+    return _guardar(
+        request, user, session, fuente, codigo,
+        accion="quitar", next_=next, origen=origen, fallback="/seguidas",
+    )
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/descartar", response_model=None)
@@ -944,19 +1057,25 @@ async def oportunidad_descartar(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
-    """Descartar (F10 parte 2): registra feedback NEGATIVO. En el dashboard
-    oculta el match del feed (reversible vía /descartadas); en la ficha
-    (`origen=ficha`) no tiene sentido ocultar la página completa, así que
-    re-renderiza la fila de botones reflejando el nuevo estado. Distinto de
-    archivar (solo aplica a seguidas)."""
+    """Descartar: registra feedback NEGATIVO y, si estaba guardada, la quita de
+    guardadas (exclusión mutua, F-guardar). En el dashboard oculta el match del
+    feed (reversible vía /descartadas); en el explorador la fila desaparece; en
+    la ficha re-renderiza la fila de botones."""
     check_csrf(request, csrf_token)
-    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
+    if not puede_actuar(session, user.id, fuente, codigo):
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
     marcar_descarte(session, user.id, fuente, codigo)
     session.commit()
     if _es_htmx(request):
         if origen == "ficha":
             return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
+        if origen == "explorador":
+            # La fila se reemplaza por un marcador oculto que solo lleva el anuncio.
+            return _TEMPLATES.TemplateResponse(
+                request,
+                "_explorador_descartada.html",
+                {"acciones": estado_acciones(session, user.id, fuente, codigo)},
+            )
         # 200 con cuerpo vacío, no 204: htmx no swapea en absoluto ante un 204.
         return HTMLResponse(content="", status_code=200)
     return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
@@ -974,7 +1093,7 @@ async def oportunidad_deshacer_descarte(
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
-    if check_oportunidad_access(session, user.id, fuente, codigo) is None:
+    if not puede_actuar(session, user.id, fuente, codigo):
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
     if not deshacer_descarte(session, user.id, fuente, codigo):
         raise HTTPException(status_code=404, detail="Descarte no encontrado")
@@ -984,6 +1103,147 @@ async def oportunidad_deshacer_descarte(
             return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
         return HTMLResponse(content="", status_code=200)
     return RedirectResponse(url=_safe_next(next, "/descartadas"), status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Descartar y excluir palabra (F-guardar, sección E)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/oportunidad/{fuente}/{codigo}/descartar-opciones", response_class=HTMLResponse)
+async def oportunidad_descartar_opciones(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    origen: str = "dashboard",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Contenido del modal "Descartar": qué perfil y qué palabras la trajeron,
+    palabras sugeridas para excluir y en qué perfil. Solo con match propio."""
+    matches = matches_de_oportunidad(session, user.id, fuente, codigo)
+    acciones = estado_acciones(session, user.id, fuente, codigo)
+    if not matches or acciones is None:
+        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    perfiles = {p.id: p for p in listar_perfiles(session, user.id)}
+    motivos = [
+        {
+            "perfil_id": m.perfil_id,
+            "perfil": perfiles[m.perfil_id].nombre,
+            "keywords": list((m.razones or {}).get("keywords_hit") or []),
+        }
+        for m in matches
+        if m.perfil_id in perfiles
+    ]
+    keywords_perfiles = [
+        str(k) for m in matches if m.perfil_id in perfiles for k in (perfiles[m.perfil_id].keywords or [])
+    ]
+    settings = request.app.state.settings
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_modal_descartar.html",
+        {
+            "acciones": acciones,
+            "motivos": motivos,
+            "sugeridas": palabras_sugeridas(acciones["nombre"] or "", keywords_perfiles),
+            "origen": origen if origen in ("dashboard", "ficha") else "dashboard",
+            "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
+        },
+    )
+
+
+@router.get("/oportunidad/{fuente}/{codigo}/excluir-vista-previa", response_class=HTMLResponse)
+async def oportunidad_excluir_vista_previa(
+    fuente: str,  # noqa: ARG001 - la ruta cuelga de la oportunidad del modal
+    codigo: str,  # noqa: ARG001
+    perfil_id: str = "",
+    palabras: list[str] = Query(default=[]),
+    palabra_nueva: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Vista previa (HTMX), solo números: cuántos matches del perfil saldrían con
+    la(s) palabra(s) agregada(s), con la MISMA condición que
+    `limpiar_matches_perfil` (`contar_limpieza`). No escribe nada."""
+    pid = _entero(perfil_id)
+    perfil = obtener_perfil(session, pid, user.id) if pid is not None else None
+    if perfil is None:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    try:
+        lista = normalizar_palabras_excluir([*palabras, palabra_nueva])
+    except PerfilInvalido as exc:
+        return HTMLResponse(content=str(escape(str(exc))))
+    if not lista:
+        return HTMLResponse(content="Elige o escribe al menos una palabra.")
+    n = contar_limpieza(session, criterio_perfil(perfil, lista))
+    texto = (
+        f"Con esto salen {n} oportunidad{'es' if n != 1 else ''} vigentes del perfil "
+        f"«{perfil.nombre}» (contando esta, si contiene la palabra)."
+    )
+    return HTMLResponse(content=str(escape(texto)))
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/descartar-y-excluir", response_model=None)
+async def oportunidad_descartar_y_excluir(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    perfil_id: str = Form(""),
+    palabras: list[str] = Form(default=[]),
+    palabra_nueva: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Descarta y agrega la(s) palabra(s) a las exclusiones del perfil; lo que ya
+    no calza sale del feed. Vuelve al feed con un aviso y "Deshacer"."""
+    check_csrf(request, csrf_token)
+    if not puede_actuar(session, user.id, fuente, codigo):
+        raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
+    pid = _entero(perfil_id)
+    perfil = obtener_perfil(session, pid, user.id) if pid is not None else None
+    if perfil is None:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    try:
+        lista = normalizar_palabras_excluir([*palabras, palabra_nueva])
+    except PerfilInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if not lista:
+        raise HTTPException(status_code=400, detail="Elige o escribe al menos una palabra")
+    marcar_descarte(session, user.id, fuente, codigo)
+    resultado = excluir_palabras(session, user.id, perfil.id, lista)
+    session.commit()
+    agregadas, borrados = resultado if resultado is not None else ([], 0)
+    qs = urlencode(
+        [
+            ("excluido_perfil", perfil.id),
+            *[("excluido", w) for w in agregadas],
+            ("excluidos_n", borrados),
+        ],
+        quote_via=quote,
+    )
+    return RedirectResponse(url=f"/?{qs}", status_code=303)
+
+
+@router.post("/perfiles/{perfil_id}/deshacer-exclusion")
+async def perfil_deshacer_exclusion(
+    request: Request,
+    perfil_id: int,
+    palabras: list[str] = Form(default=[]),
+    next: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Deshacer de "Descartar y excluir": quita las palabras y re-ejecuta el
+    matching del perfil, que recrea los matches (con `fecha_match` nueva)."""
+    check_csrf(request, csrf_token)
+    perfil = quitar_exclusiones(session, user.id, perfil_id, palabras)
+    if perfil is None:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    session.commit()
+    match_perfil(perfil, session)
+    return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/archivar")
@@ -1015,23 +1275,6 @@ async def oportunidad_desarchivar(
 ) -> RedirectResponse:
     check_csrf(request, csrf_token)
     if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=False):
-        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
-    session.commit()
-    return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
-
-
-@router.post("/oportunidad/{fuente}/{codigo}/dejar-de-seguir")
-async def oportunidad_dejar_de_seguir(
-    request: Request,
-    fuente: str,
-    codigo: str,
-    next: str = Form(""),
-    csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
-    session: Session = Depends(get_db),
-) -> RedirectResponse:
-    check_csrf(request, csrf_token)
-    if not dejar_de_seguir(session, owner_id=user.id, fuente=fuente, codigo=codigo):
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     session.commit()
     return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
@@ -1380,6 +1623,8 @@ async def perfil_editar(
     except PerfilInvalido as exc:
         return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
     session.commit()
+    # El match en segundo plano agrega lo nuevo y, al final, borra lo vigente que
+    # ya no calza con el perfil editado (`limpiar_matches_perfil`, F-guardar).
     background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_id)
     return RedirectResponse(url="/perfiles?mensaje=Perfil+actualizado", status_code=303)
 

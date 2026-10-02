@@ -17,15 +17,19 @@ from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_
 from app.core.vigencia import CA_SIN_CIERRE_VIGENCIA_DIAS, es_vigente
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
-from app.matching.seguimiento import listar_seguidas, obtener_seguimiento
+from app.matching.seguimiento import esta_guardada, listar_seguidas, obtener_seguimiento
 from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, ValorFeedback
 from app.models.tables import (
     CompraAgil,
     InstitucionPAC,
     Licitacion,
+    MatchFeedback,
     OfertaCompetencia,
     OportunidadMatch,
+    OportunidadSeguida,
 )
+
+FUENTES_VALIDAS = ("licitaciones", "compras_agiles")
 
 
 def _url_ficha(fuente: str, codigo: str) -> str:
@@ -63,11 +67,11 @@ def _construir_item(
     op: Licitacion | CompraAgil,
     *,
     feedback_valor: str | None,
-    siguiendo: bool,
+    guardada: bool,
     ahora: datetime,
 ) -> dict[str, Any]:
     """Arma el dict de presentación de una oportunidad para el feed o una
-    tarjeta individual (re-render HTMX tras seguir/me-sirve)."""
+    tarjeta individual (re-render HTMX tras guardar)."""
     dias: float | None = None
     if op.fecha_cierre is not None:
         delta = op.fecha_cierre - ahora
@@ -98,7 +102,7 @@ def _construir_item(
         "razones": razones_legibles(m.razones),
         "url_ficha": _url_ficha(m.fuente, m.codigo_oportunidad),
         "mostrar_ficha": mostrar_ficha_oficial(op.estado),
-        "siguiendo": siguiendo,
+        "guardada": guardada,
         "feedback": feedback_valor,
     }
 
@@ -110,7 +114,7 @@ def get_item_oportunidad(
     codigo: str,
 ) -> dict[str, Any] | None:
     """Arma el mismo dict que `get_oportunidades_usuario` para UNA oportunidad,
-    usado para re-renderizar su tarjeta tras una acción HTMX (seguir/me-sirve).
+    usado para re-renderizar su tarjeta tras una acción HTMX (guardar).
 
     None si el usuario no tiene acceso (ownership, regla 17) o la oportunidad
     subyacente ya no existe.
@@ -125,13 +129,12 @@ def get_item_oportunidad(
         return None
 
     feedback = obtener_feedback(session, user_id, fuente, codigo)
-    siguiendo = obtener_seguimiento(session, user_id, fuente, codigo) is not None
     ahora = ahora_utc()
     return _construir_item(
         m,
         op,
         feedback_valor=feedback.valor if feedback is not None else None,
-        siguiendo=siguiendo,
+        guardada=esta_guardada(session, user_id, fuente, codigo),
         ahora=ahora,
     )
 
@@ -520,7 +523,7 @@ def get_oportunidades_usuario(
     matches = list(session.execute(stmt).scalars())
 
     feedback_map = listar_feedback_usuario(session, user_id)
-    siguiendo_set = {(s.fuente, s.codigo_oportunidad) for s in listar_seguidas(session, user_id)}
+    guardadas_set = {(s.fuente, s.codigo_oportunidad) for s in listar_seguidas(session, user_id)}
 
     # Batch-load oportunidades
     lic_codigos = [m.codigo_oportunidad for m in matches if m.fuente == "licitaciones"]
@@ -566,7 +569,7 @@ def get_oportunidades_usuario(
                 m,
                 op,
                 feedback_valor=feedback.valor if feedback is not None else None,
-                siguiendo=(m.fuente, m.codigo_oportunidad) in siguiendo_set,
+                guardada=(m.fuente, m.codigo_oportunidad) in guardadas_set,
                 ahora=ahora,
             )
         )
@@ -904,3 +907,82 @@ def check_oportunidad_access(
         )
         .limit(1)
     ).scalar_one_or_none()
+
+
+def puede_actuar(session: Session, user_id: int, fuente: str, codigo: str) -> bool:
+    """Si el usuario puede abrir la ficha y guardar/descartar esta oportunidad (F-guardar).
+
+    La oportunidad tiene que existir y, además: el usuario tiene un match con ella,
+    o es una Compra Ágil (el explorador lista todas las vigentes), o ya la tiene
+    guardada/descartada (p. ej. una licitación guardada cuyo match se limpió). Una
+    licitación sin nada de eso sigue sin abrirse: no hay explorador de licitaciones.
+    Los datos son públicos; lo que es del dueño (regla 17) son sus acciones, que
+    siempre van filtradas por su `user_id`.
+    """
+    if fuente not in FUENTES_VALIDAS:
+        return False
+    modelo: type[Licitacion] | type[CompraAgil] = Licitacion if fuente == "licitaciones" else CompraAgil
+    if session.get(modelo, codigo) is None:
+        return False
+    if fuente == "compras_agiles":
+        return True
+    if check_oportunidad_access(session, user_id, fuente, codigo) is not None:
+        return True
+    seguida = session.execute(
+        select(OportunidadSeguida.id).where(
+            OportunidadSeguida.owner_id == user_id,
+            OportunidadSeguida.fuente == fuente,
+            OportunidadSeguida.codigo_oportunidad == codigo,
+        )
+    ).first()
+    if seguida is not None:
+        return True
+    feedback = session.execute(
+        select(MatchFeedback.id).where(
+            MatchFeedback.usuario_id == user_id,
+            MatchFeedback.fuente == fuente,
+            MatchFeedback.codigo_oportunidad == codigo,
+        )
+    ).first()
+    return feedback is not None
+
+
+def estado_acciones(session: Session, user_id: int, fuente: str, codigo: str) -> dict[str, Any] | None:
+    """Lo que pintan los botones Guardar/Descartar de la ficha, con o sin match.
+    None si la oportunidad no existe."""
+    op: Licitacion | CompraAgil | None
+    op = session.get(Licitacion, codigo) if fuente == "licitaciones" else session.get(CompraAgil, codigo)
+    if op is None:
+        return None
+    seguimiento = obtener_seguimiento(session, user_id, fuente, codigo)
+    feedback = obtener_feedback(session, user_id, fuente, codigo)
+    return {
+        "fuente": fuente,
+        "codigo": codigo,
+        "nombre": op.nombre,
+        "guardada": seguimiento is not None and not seguimiento.archivada,
+        "archivada": seguimiento is not None and seguimiento.archivada,
+        "descartada": feedback is not None and feedback.valor == ValorFeedback.DESCARTE.value,
+        "con_match": check_oportunidad_access(session, user_id, fuente, codigo) is not None,
+    }
+
+
+def matches_de_oportunidad(
+    session: Session, user_id: int, fuente: str, codigo: str
+) -> list[OportunidadMatch]:
+    """Los matches de ESTE usuario con la oportunidad (uno por perfil activo):
+    qué perfil y qué palabras la trajeron, para el modal "Descartar"."""
+    perfil_ids = [p.id for p in listar_perfiles(session, user_id)]
+    if not perfil_ids:
+        return []
+    return list(
+        session.execute(
+            select(OportunidadMatch)
+            .where(
+                OportunidadMatch.perfil_id.in_(perfil_ids),
+                OportunidadMatch.fuente == fuente,
+                OportunidadMatch.codigo_oportunidad == codigo,
+            )
+            .order_by(OportunidadMatch.score.desc())
+        ).scalars()
+    )

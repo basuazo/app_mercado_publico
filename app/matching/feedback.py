@@ -4,6 +4,9 @@ consumirá para reponderar el matching; este módulo no entrena ni reordena.
 
 Un feedback por usuario por oportunidad (uq_match_feedback): alternar
 actualiza el valor existente o lo borra, nunca duplica.
+
+F-guardar: el feedback queda SOLO para el descarte. "Me sirve" se unificó con
+Guardar (`app.matching.seguimiento`); `sirve` ya no se escribe.
 """
 
 from __future__ import annotations
@@ -66,19 +69,21 @@ def alternar_me_sirve(
     usuario_id: int,
     fuente: str,
     codigo: str,
-) -> MatchFeedback | None:
-    """Toggle de "me sirve": si ya estaba marcado, lo borra (vuelve a neutro);
-    si no, lo marca (reemplazando un posible "descarte" previo — reaparece
-    en el feed). Retorna el feedback resultante, o None si quedó borrado."""
-    existing = obtener_feedback(session, usuario_id, fuente, codigo)
-    if existing is not None and existing.valor == ValorFeedback.SIRVE.value:
-        session.delete(existing)
-        return None
-    return _marcar(session, usuario_id, fuente, codigo, ValorFeedback.SIRVE)
+) -> bool:
+    """Deprecated (F-guardar): alias de `seguimiento.alternar_guardada`.
+    Devuelve True si quedó guardada."""
+    from app.matching.seguimiento import alternar_guardada
+
+    return alternar_guardada(session, usuario_id, fuente, codigo)
 
 
 def descartar(session: Session, usuario_id: int, fuente: str, codigo: str) -> MatchFeedback:
-    """Marca la oportunidad como descartada — el feed la excluye hasta deshacer."""
+    """Marca la oportunidad como descartada — el feed la excluye hasta deshacer.
+    Si estaba guardada, la quita de guardadas (`dejar_de_seguir`, no archivar):
+    nunca guardada y descartada a la vez."""
+    from app.matching.seguimiento import dejar_de_seguir
+
+    dejar_de_seguir(session, usuario_id, fuente, codigo)
     return _marcar(session, usuario_id, fuente, codigo, ValorFeedback.DESCARTE)
 
 

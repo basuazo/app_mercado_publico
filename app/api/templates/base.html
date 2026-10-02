@@ -39,7 +39,7 @@
         <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/compras-agiles' %} active{% endif %}"
            href="/compras-agiles"{% if ruta_actual == '/compras-agiles' %} aria-current="page"{% endif %}>Explorar CA</a>
         <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/seguidas' %} active{% endif %}"
-           href="/seguidas"{% if ruta_actual == '/seguidas' %} aria-current="page"{% endif %}>Alertas activas</a>
+           href="/seguidas"{% if ruta_actual == '/seguidas' %} aria-current="page"{% endif %}>Mi registro</a>
         <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/plan-anual' %} active{% endif %}"
            href="/plan-anual"{% if ruta_actual == '/plan-anual' %} aria-current="page"{% endif %}>Plan Anual</a>
         <button type="button" class="btn btn-sm btn-outline-light" data-open-novedades>Novedades</button>
@@ -60,6 +60,16 @@
 <div id="anuncios" role="status" aria-live="polite" class="visually-hidden"></div>
 
 <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+{% if current_user is defined %}
+{# Modal "Descartar" (F-guardar): su contenido llega por HTMX desde
+   /oportunidad/{fuente}/{codigo}/descartar-opciones. #}
+<div class="modal fade" id="modal-descartar" tabindex="-1" aria-labelledby="modal-descartar-titulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content" id="modal-descartar-contenido"></div>
+  </div>
+</div>
+{% endif %}
 
 {% if current_user is defined %}
   {% include "_onboarding_modals.html" %}
@@ -166,6 +176,49 @@
       }
       pendiente = null;
     });
+
+    // --- Modal "Descartar" (F-guardar) ---------------------------------------
+    // Se abre cuando llega su contenido; al cerrarse, el foco vuelve al botón que
+    // lo abrió o, si ese botón ya no existe (la tarjeta se descartó), al
+    // "Deshacer" del toast o a los botones de la ficha.
+    var abridorModal = null;
+
+    function modalDescartar() {
+      var el = document.getElementById("modal-descartar");
+      return el && window.bootstrap ? window.bootstrap.Modal.getOrCreateInstance(el) : null;
+    }
+
+    document.body.addEventListener("htmx:beforeRequest", function (evt) {
+      var elt = evt.detail && evt.detail.elt;
+      if (elt && elt.hasAttribute && elt.hasAttribute("data-abre-descartar")) abridorModal = elt;
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+      var target = evt.detail && evt.detail.target;
+      if (target && target.id === "modal-descartar-contenido") {
+        var m = modalDescartar();
+        if (m) m.show();
+      }
+    });
+
+    document.body.addEventListener("htmx:afterRequest", function (evt) {
+      var elt = evt.detail && evt.detail.elt;
+      if (evt.detail.successful && elt && elt.hasAttribute && elt.hasAttribute("data-cierra-modal")) {
+        var m = modalDescartar();
+        if (m) m.hide();
+      }
+    });
+
+    var modalEl = document.getElementById("modal-descartar");
+    if (modalEl) {
+      modalEl.addEventListener("hidden.bs.modal", function () {
+        var destino = abridorModal && document.contains(abridorModal) ? abridorModal : null;
+        if (!destino) destino = document.querySelector("#toasts [data-deshacer]");
+        if (!destino) destino = document.querySelector("#ficha-acciones-feedback button");
+        if (destino) destino.focus();
+        abridorModal = null;
+      });
+    }
 
     // --- Toast de deshacer al descartar ------------------------------------
     window.mostrarToastDescarte = function (nombre, urlDeshacer, csrfToken) {

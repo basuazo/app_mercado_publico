@@ -268,7 +268,7 @@ def test_seguidas_get_oculta_archivadas_por_defecto(client, usuario, settings, e
     client.post("/oportunidad/licitaciones/LIC-001/archivar", data={}, cookies=cookies, headers=headers)
 
     r = client.get("/seguidas", cookies=_cookie(settings, usuario))
-    assert "No tienes alertas activas" in r.text
+    assert "No tienes oportunidades guardadas" in r.text
 
     r2 = client.get("/seguidas?archivadas=1", cookies=_cookie(settings, usuario))
     assert "Licitación test" in r2.text
@@ -284,20 +284,24 @@ def test_seguidas_sin_sesion_redirige(client):
 # ---------------------------------------------------------------------------
 
 
-def test_ficha_muestra_boton_seguir_si_no_sigue(client, usuario, settings, engine):
+def test_ficha_muestra_boton_guardar_si_no_esta_guardada(client, usuario, settings, engine):
+    """F-guardar: seguir = guardar; la ficha muestra un solo toggle."""
     _crear_match_propio(engine, usuario)
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "/oportunidad/licitaciones/LIC-001/seguir" in r.text
-    assert "/oportunidad/licitaciones/LIC-001/dejar-de-seguir" not in r.text
+    assert "/oportunidad/licitaciones/LIC-001/guardar" in r.text
+    assert 'data-accion="guardar" aria-pressed="false"' in r.text
+    assert "/oportunidad/licitaciones/LIC-001/seguir" not in r.text
 
 
-def test_ficha_muestra_botones_archivar_y_dejar_de_seguir_si_sigue(client, usuario, settings, engine):
+def test_ficha_muestra_guardada_si_sigue(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario)
     cookies, headers = _session(settings, usuario)
     client.post("/oportunidad/licitaciones/LIC-001/seguir", data={}, cookies=cookies, headers=headers)
 
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "/oportunidad/licitaciones/LIC-001/archivar" in r.text
-    assert "/oportunidad/licitaciones/LIC-001/dejar-de-seguir" in r.text
+    assert 'data-accion="guardar" aria-pressed="true"' in r.text
+    # Archivar vive en Mi registro (/seguidas); F-registro lo expone en la ficha.
+    r2 = client.get("/seguidas", cookies=_cookie(settings, usuario))
+    assert "/oportunidad/licitaciones/LIC-001/archivar" in r2.text

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_explorador_acciones.html" import explorador_acciones %}
 {% block title %}Explorar Compras Ágiles — MP Oportunidades{% endblock %}
 {% block main_clase %}container-xxl{% endblock %}
 {% block content %}
@@ -110,7 +111,8 @@
       </div>
       {% endif %}
       {% for it in resultado.items %}
-      <div class="tarjeta-op tarjeta-op--{{ it.urgencia }}">
+      <div class="tarjeta-op tarjeta-op--{{ it.urgencia }}" id="fila-ca-{{ it.codigo }}"
+           data-oportunidad-key="compras_agiles:{{ it.codigo }}">
         <div class="d-flex align-items-start gap-3">
           <div class="flex-grow-1 min-w-0">
             <a class="tarjeta-op__titulo" href="/oportunidad/compras_agiles/{{ it.codigo }}">{{ it.nombre }}</a>
@@ -142,6 +144,7 @@
           <span class="badge text-bg-secondary fw-normal">Posible (por nombre){% if it.familia_posible %}: {{ it.familia_posible }}{% endif %}</span>
           {% endif %}
         </div>
+        {{ explorador_acciones(it, csrf_token) }}
       </div>
       {% endfor %}
     </div>

@@ -181,16 +181,24 @@ def _guardar_vencidos(session: Session, resultado: dict[str, int], *, ok: bool) 
 
 
 def _rezagadas(session: Session, excluir: set[str]) -> list[str]:
-    """Licitaciones con match, no terminales, cerradas hace más de 7 días.
+    """Licitaciones con match o guardadas (seguida no archivada de cualquier
+    usuario, F-guardar), no terminales, cerradas hace más de 7 días.
 
     La menos refrescada primero (`actualizado_en`), y entre iguales la que cerró
     más tarde: una que sigue legítimamente `cerrada` esperando adjudicación queda
     al fondo tras consultarla, y el tope va rotando por todas en noches seguidas.
     Fuera las que datos abiertos dejó terminales en esta corrida.
     """
-    tiene_match = exists().where(
-        OportunidadMatch.fuente == "licitaciones",
-        OportunidadMatch.codigo_oportunidad == Licitacion.codigo,
+    tiene_match = or_(
+        exists().where(
+            OportunidadMatch.fuente == "licitaciones",
+            OportunidadMatch.codigo_oportunidad == Licitacion.codigo,
+        ),
+        exists().where(
+            OportunidadSeguida.fuente == "licitaciones",
+            OportunidadSeguida.codigo_oportunidad == Licitacion.codigo,
+            OportunidadSeguida.archivada.is_(False),
+        ),
     )
     codigos = session.execute(
         select(Licitacion.codigo)

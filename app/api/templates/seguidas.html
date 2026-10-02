@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Alertas activas — MP Oportunidades{% endblock %}
+{% block title %}Mi registro — MP Oportunidades{% endblock %}
 {% block content %}
-<h2 class="mb-4">Oportunidades con alertas activas</h2>
+<h2 class="mb-1">Mi registro</h2>
+<p class="text-muted mb-4">Las oportunidades que guardaste. Te avisamos por correo cuando cambian de estado y cuando están por cerrar.</p>
 
 <div class="mb-3">
   {% if incluir_archivadas %}
@@ -46,7 +47,7 @@
       <form method="post" action="/oportunidad/{{ item.seguimiento.fuente }}/{{ item.seguimiento.codigo_oportunidad }}/dejar-de-seguir" class="d-inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="/seguidas{% if incluir_archivadas %}?archivadas=1{% endif %}">
-        <button type="submit" class="btn btn-sm btn-outline-secondary">Desactivar alertas</button>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Quitar de guardadas</button>
       </form>
     </div>
   </div>
@@ -54,7 +55,7 @@
 </div>
 {% else %}
 <div class="alert alert-info">
-  {% if incluir_archivadas %}No tienes oportunidades con alertas.{% else %}No tienes alertas activas.{% endif %}
+  {% if incluir_archivadas %}No tienes oportunidades guardadas ni archivadas.{% else %}No tienes oportunidades guardadas. Usa Guardar en el feed, en Explorar CA o en la ficha.{% endif %}
 </div>
 {% endif %}
 {% endblock %}

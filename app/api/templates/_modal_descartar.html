@@ -1,0 +1,84 @@
+{#
+  Contenido del modal "Descartar" (F-guardar, sección E). Va dentro de
+  #modal-descartar-contenido (base.html), que lo muestra al llegar.
+  - "Descartar": HTMX, igual que el botón de siempre (la tarjeta sale y queda
+    el toast con Deshacer; en la ficha se re-pinta la fila de botones).
+  - "Descartar y excluir": formulario normal; vuelve al feed con un aviso y
+    "Deshacer exclusión".
+#}
+{% set fuente = acciones.fuente %}
+{% set codigo = acciones.codigo %}
+{% set modal_id = "modal-descartar" %}
+<div class="modal-header">
+  <h2 class="modal-title fs-5" id="modal-descartar-titulo">Descartar oportunidad</h2>
+  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+</div>
+
+<form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar-y-excluir"
+      hx-get="/oportunidad/{{ fuente }}/{{ codigo }}/excluir-vista-previa"
+      hx-trigger="change, keyup changed delay:400ms from:#excluir-palabra-nueva"
+      hx-target="#vista-previa-excluir" hx-swap="innerHTML">
+  <div class="modal-body">
+    <p class="mb-2"><strong>{{ acciones.nombre }}</strong></p>
+
+    <h3 class="h6 mt-3">Qué la trajo</h3>
+    <ul class="small mb-3">
+      {% for m in motivos %}
+      <li>
+        {% if m.keywords %}
+        Llegó por <em>{{ m.keywords | join(', ') }}</em> en el perfil <em>{{ m.perfil }}</em>
+        {% else %}
+        Llegó por rubro u organismo en el perfil <em>{{ m.perfil }}</em>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+
+    <fieldset class="mb-3">
+      <legend class="h6">¿Excluir alguna palabra para que no vuelva a aparecer algo así?</legend>
+      {% if sugeridas %}
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        {% for w in sugeridas %}
+        <input type="checkbox" class="btn-check" name="palabras" value="{{ w }}"
+               id="excluir-sug-{{ loop.index }}" autocomplete="off">
+        <label class="btn btn-sm btn-outline-secondary" for="excluir-sug-{{ loop.index }}">{{ w }}</label>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <label class="form-label small mb-1" for="excluir-palabra-nueva">Otra palabra (hasta 5 en total, separadas por coma)</label>
+      <input type="text" class="form-control form-control-sm" id="excluir-palabra-nueva"
+             name="palabra_nueva" maxlength="200" autocomplete="off">
+    </fieldset>
+
+    {% if motivos | length > 1 %}
+    <div class="mb-3">
+      <label class="form-label small mb-1" for="excluir-perfil">Excluir en el perfil</label>
+      <select class="form-select form-select-sm" id="excluir-perfil" name="perfil_id">
+        {% for m in motivos %}
+        <option value="{{ m.perfil_id }}" {% if loop.first %}selected{% endif %}>{{ m.perfil }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% else %}
+    <input type="hidden" name="perfil_id" value="{{ motivos[0].perfil_id }}">
+    <p class="small text-muted mb-3">Se excluye en el perfil <em>{{ motivos[0].perfil }}</em>.</p>
+    {% endif %}
+
+    <p class="small mb-0" id="vista-previa-excluir" aria-live="polite">
+      Elige o escribe una palabra para ver cuántas oportunidades saldrían de tu feed.
+    </p>
+  </div>
+
+  <div class="modal-footer">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+    <button type="submit" class="btn btn-outline-danger"
+            formaction="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+            hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+            hx-vals='{"origen": "{{ origen }}", "next": "/"}'
+            {% if origen == "ficha" %}hx-target="#ficha-acciones-feedback" hx-swap="outerHTML"{% else %}hx-swap="none"{% endif %}
+            data-cierra-modal
+            data-nombre-oportunidad="{{ acciones.nombre }}">Descartar</button>
+    <button type="submit" class="btn btn-danger">Descartar y excluir</button>
+  </div>
+</form>

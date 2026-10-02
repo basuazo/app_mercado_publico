@@ -32,6 +32,25 @@
   {# --- Columna del feed --------------------------------------------------- #}
   <div class="flex-grow-1 min-w-0">
 
+    {# Aviso tras "Descartar y excluir" (F-guardar), con su Deshacer. #}
+    {% if aviso_exclusion %}
+    <div class="alert alert-success d-flex flex-wrap align-items-center gap-2" role="status">
+      <span>
+        Descartada. Excluiste «{{ aviso_exclusion.palabras | join('», «') }}» del perfil
+        «{{ aviso_exclusion.perfil }}»: salieron {{ aviso_exclusion.n }}
+        oportunidad{{ 'es' if aviso_exclusion.n != 1 else '' }} que ya no calzan.
+      </span>
+      <form method="post" action="/perfiles/{{ aviso_exclusion.perfil_id }}/deshacer-exclusion" class="ms-auto">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="/">
+        {% for w in aviso_exclusion.palabras %}
+        <input type="hidden" name="palabras" value="{{ w }}">
+        {% endfor %}
+        <button type="submit" class="btn btn-sm btn-outline-success">Deshacer exclusión</button>
+      </form>
+    </div>
+    {% endif %}
+
     {# El buscador vive acá pero pertenece al formulario del panel (`form=`):
        así una búsqueda y los filtros se aplican juntos, sin dos formularios
        que se pisen el estado. #}
@@ -222,9 +241,10 @@
     var m = path && path.match(/^\/oportunidad\/([^/]+)\/([^/]+)\/descartar$/);
     if (!m) return;
     var origen = evt.detail.elt;
-    var boton = origen && origen.querySelector
-      ? origen.querySelector("[data-nombre-oportunidad]")
-      : null;
+    // El origen es el formulario de la tarjeta o el botón del modal "Descartar".
+    var boton = origen && origen.matches && origen.matches("[data-nombre-oportunidad]")
+      ? origen
+      : (origen && origen.querySelector ? origen.querySelector("[data-nombre-oportunidad]") : null);
     if (boton) nombresDescartados[m[1] + ":" + m[2]] = boton.getAttribute("data-nombre-oportunidad");
   });
 

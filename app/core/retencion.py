@@ -2,7 +2,8 @@
 
 Regla: raw_json se guarda SOLO cuando la oportunidad tiene al menos un match.
 purgar_terminales() limpia raw_json e items/productos de oportunidades terminales
-antiguas, pero nunca toca filas vigentes ni matches con alertas pendientes.
+antiguas, pero nunca toca filas vigentes, matches con alertas pendientes ni
+oportunidades guardadas (seguidas, archivadas o no; F-guardar).
 También purga el historial de corridas de jobs (job_runs), que crece sin techo.
 """
 
@@ -24,6 +25,7 @@ from app.models.tables import (
     Licitacion,
     LicitacionItem,
     OportunidadMatch,
+    OportunidadSeguida,
 )
 
 _log = get_logger(__name__)
@@ -32,7 +34,8 @@ _log = get_logger(__name__)
 def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
     """Purga raw_json e items de oportunidades terminales con más de `dias` días sin actualizar.
 
-    No toca oportunidades vigentes ni aquellas con alertas pendientes.
+    No toca oportunidades vigentes, ni aquellas con alertas pendientes, ni las
+    que algún usuario tiene en oportunidades_seguidas (archivada o no).
     Devuelve dict con conteos de filas afectadas por tipo.
     """
     corte = ahora_utc() - timedelta(days=dias)
@@ -43,10 +46,18 @@ def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
     codigos_licitacion_protegidos = select(OportunidadMatch.codigo_oportunidad).where(
         OportunidadMatch.fuente == "licitaciones",
         OportunidadMatch.id.in_(matches_con_alerta_pendiente),
+    ).union(
+        select(OportunidadSeguida.codigo_oportunidad).where(
+            OportunidadSeguida.fuente == "licitaciones"
+        )
     )
     codigos_ca_protegidos = select(OportunidadMatch.codigo_oportunidad).where(
         OportunidadMatch.fuente == "compras_agiles",
         OportunidadMatch.id.in_(matches_con_alerta_pendiente),
+    ).union(
+        select(OportunidadSeguida.codigo_oportunidad).where(
+            OportunidadSeguida.fuente == "compras_agiles"
+        )
     )
 
     # -- Licitaciones terminales antiguas --

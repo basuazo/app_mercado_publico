@@ -344,7 +344,7 @@ def test_la_tarjeta_pinta_las_seis_familias(
 ):
     """F-vigencia: 4 de las 6 familias (todo menos ABIERTA/DESCONOCIDO) ya no
     aparecen en el feed (`GET /` solo muestra lo vigente) — se re-renderiza la
-    tarjeta vía el mismo HTMX que usa "me sirve", que no filtra por vigencia
+    tarjeta vía el mismo HTMX que usa "Guardar", que no filtra por vigencia
     (re-renderiza LA oportunidad puntual, no el feed)."""
     from app.auth.csrf import generate_csrf_token
     from app.auth.session import decode_session_token
@@ -361,7 +361,7 @@ def test_la_tarjeta_pinta_las_seis_familias(
     }
 
     r = client.post(
-        "/oportunidad/licitaciones/LIC-1/me-sirve", data={}, cookies=cookies, headers=headers
+        "/oportunidad/licitaciones/LIC-1/guardar", data={}, cookies=cookies, headers=headers
     )
     assert r.status_code == 200
     assert f"badge-estado--{clase}" in r.text
@@ -461,9 +461,11 @@ def test_los_chips_se_cortan_en_tres_mas_el_boton_de_resto(client, settings, usu
 def test_los_toggles_de_la_tarjeta_exponen_su_estado(client, settings, usuario, engine):
     _crear_lic(engine, usuario)
     html = client.get("/", cookies=_cookie(settings, usuario)).text
-    assert 'data-accion="seguir"' in html
-    assert 'data-accion="me-sirve"' in html
-    assert 'data-accion="descartar"' in html
+    # F-guardar: un solo toggle Guardar; Descartar abre el modal.
+    assert 'data-accion="guardar"' in html
+    assert 'data-accion="me-sirve"' not in html
+    assert 'data-accion="seguir"' not in html
+    assert "data-abre-descartar" in html
     assert 'aria-pressed="false"' in html
     assert "data-anuncio=" in html
     assert "data-nombre-oportunidad=" in html
@@ -472,7 +474,7 @@ def test_los_toggles_de_la_tarjeta_exponen_su_estado(client, settings, usuario, 
 def test_el_anuncio_nombra_la_oportunidad(client, settings, usuario, engine):
     _crear_lic(engine, usuario, codigo="LIC-NOMBRE")
     html = client.get("/", cookies=_cookie(settings, usuario)).text
-    assert "Sin marcas: Licitación LIC-NOMBRE" in html
+    assert "No guardada: Licitación LIC-NOMBRE" in html
 
 
 def test_la_tarjeta_recargada_por_htmx_trae_los_mismos_datos(client, settings, usuario, engine):
@@ -492,7 +494,7 @@ def test_la_tarjeta_recargada_por_htmx_trae_los_mismos_datos(client, settings, u
     }
 
     r = client.post(
-        "/oportunidad/licitaciones/LIC-1/seguir", data={}, cookies=cookies, headers=headers
+        "/oportunidad/licitaciones/LIC-1/guardar", data={}, cookies=cookies, headers=headers
     )
     assert r.status_code == 200
     assert "anillo-match--alta" in r.text

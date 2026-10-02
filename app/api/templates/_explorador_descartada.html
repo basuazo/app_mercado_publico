@@ -1,0 +1,4 @@
+{# Reemplaza la fila descartada del explorador: oculta, solo para el anuncio en
+   #anuncios (base.html la encuentra por data-oportunidad-key). #}
+<span hidden data-oportunidad-key="compras_agiles:{{ acciones.codigo if acciones else '' }}"
+      data-anuncio="Descartada: {{ acciones.nombre if acciones else '' }}"></span>

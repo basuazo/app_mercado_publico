@@ -428,7 +428,7 @@ def test_el_modelo_declara_cascada_y_claves(engine, usuario):
 # ---------------------------------------------------------------------------
 
 
-def test_ficha_de_ca_sin_match_se_puede_abrir_sin_acciones(client, engine, settings, usuario):
+def test_ficha_de_ca_sin_match_se_puede_abrir_y_guardar(client, engine, settings, usuario):
     _ca(engine, "EXP-SINMATCH")
     cookies, _ = _sesion(settings, usuario)
     r = client.get(
@@ -438,8 +438,10 @@ def test_ficha_de_ca_sin_match_se_puede_abrir_sin_acciones(client, engine, setti
     )
     assert r.status_code == 200
     assert "Compra EXP-SINMATCH" in r.text
-    assert "no coincide con ninguno de tus perfiles" in r.text
-    assert "/seguir" not in r.text and "/descartar" not in r.text
+    # F-guardar: la ficha sin match deja de ser solo lectura (sin razones ni banda).
+    assert "/oportunidad/compras_agiles/EXP-SINMATCH/guardar" in r.text
+    assert "/oportunidad/compras_agiles/EXP-SINMATCH/descartar" in r.text
+    assert "anillo-match" not in r.text
     assert 'href="/compras-agiles?region=13&amp;sin_favoritos=1"' in r.text
     # Las licitaciones siguen exigiendo match (regla 17).
     assert client.get("/oportunidad/licitaciones/NO-ES-MIA", cookies=cookies).status_code == 404

@@ -1,5 +1,8 @@
 """Tests F10 parte 2 — dashboard rediseñado: feed excluye descartadas,
-/descartadas, toggle me-sirve/descartar/deshacer-descarte, orden, IDOR."""
+/descartadas, toggle me-sirve/descartar/deshacer-descarte, orden, IDOR.
+
+F-guardar: "me sirve" es un alias deprecated de Guardar (= OportunidadSeguida
+no archivada); `sirve` ya no se escribe en match_feedback."""
 
 from __future__ import annotations
 
@@ -191,37 +194,44 @@ def test_deshacer_descarte_inexistente_404(client, usuario, settings, engine):
 
 
 # ---------------------------------------------------------------------------
-# Me sirve: toggle, idempotente
+# Me sirve (alias deprecated de Guardar): toggle, idempotente
 # ---------------------------------------------------------------------------
 
 
 def test_me_sirve_marca_y_alterna(client, usuario, settings, engine):
+    from app.matching.seguimiento import esta_guardada
+
     _crear_match_propio(engine, usuario, "LIC-001")
     cookies, headers = _session(settings, usuario)
 
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
     with Session(engine) as s:
-        fb = obtener_feedback(s, usuario, "licitaciones", "LIC-001")
-        assert fb is not None and fb.valor == ValorFeedback.SIRVE.value
+        assert esta_guardada(s, usuario, "licitaciones", "LIC-001")
+        # "sirve" ya no se escribe (F-guardar).
+        assert obtener_feedback(s, usuario, "licitaciones", "LIC-001") is None
 
-    # alternar de nuevo lo borra (vuelve a neutro)
+    # alternar de nuevo la quita de guardadas
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
     with Session(engine) as s:
-        assert obtener_feedback(s, usuario, "licitaciones", "LIC-001") is None
+        assert not esta_guardada(s, usuario, "licitaciones", "LIC-001")
 
 
 def test_me_sirve_no_duplica_filas(client, usuario, settings, engine):
+    from app.models.tables import OportunidadSeguida
+
     _crear_match_propio(engine, usuario, "LIC-001")
     cookies, headers = _session(settings, usuario)
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
     with Session(engine) as s:
-        filas = list(s.execute(select(MatchFeedback)).scalars())
-        assert len(filas) <= 1
+        assert len(list(s.execute(select(OportunidadSeguida)).scalars())) <= 1
+        assert list(s.execute(select(MatchFeedback)).scalars()) == []
 
 
 def test_descartar_sobre_me_sirve_reemplaza_valor(client, usuario, settings, engine):
+    from app.matching.seguimiento import obtener_seguimiento
+
     _crear_match_propio(engine, usuario, "LIC-001")
     cookies, headers = _session(settings, usuario)
     client.post("/oportunidad/licitaciones/LIC-001/me-sirve", data={}, cookies=cookies, headers=headers)
@@ -231,6 +241,8 @@ def test_descartar_sobre_me_sirve_reemplaza_valor(client, usuario, settings, eng
         assert fb is not None and fb.valor == ValorFeedback.DESCARTE.value
         filas = list(s.execute(select(MatchFeedback)).scalars())
         assert len(filas) == 1
+        # Exclusión mutua: descartar la quitó de guardadas.
+        assert obtener_seguimiento(s, usuario, "licitaciones", "LIC-001") is None
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +393,7 @@ def test_seguir_via_htmx_devuelve_tarjeta_parcial(client, usuario, settings, eng
         follow_redirects=False,
     )
     assert r.status_code == 200
-    assert "Siguiendo" in r.text
+    assert "Guardada" in r.text
 
 
 def test_descartar_via_htmx_devuelve_200_vacio(client, usuario, settings, engine):
@@ -409,9 +421,11 @@ def test_dashboard_render_tarjeta_con_acciones(client, usuario, settings, engine
     r = client.get("/", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitación LIC-001" in r.text
-    assert "/oportunidad/licitaciones/LIC-001/me-sirve" in r.text
+    # F-guardar: un solo botón Guardar; "Me sirve" y "Activar alertas" desaparecen.
+    assert "/oportunidad/licitaciones/LIC-001/guardar" in r.text
     assert "/oportunidad/licitaciones/LIC-001/descartar" in r.text
-    assert "/oportunidad/licitaciones/LIC-001/seguir" in r.text
+    assert "/oportunidad/licitaciones/LIC-001/me-sirve" not in r.text
+    assert "/oportunidad/licitaciones/LIC-001/seguir" not in r.text
 
 
 def test_dashboard_banner_descartadas(client, usuario, settings, engine):

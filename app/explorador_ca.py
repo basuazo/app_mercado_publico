@@ -53,6 +53,8 @@ from app.catalogos.unspsc import nombre_rubro
 from app.catalogos.vocabulario_rubro import LEXEMA_RE, PALABRA_RE
 from app.core.tiempo import TZ_CHILE, ahora_utc, borde_del_dia_utc_naive
 from app.core.vigencia import condicion_ca_vigente
+from app.matching.engine import condicion_texto_ca
+from app.matching.seguimiento import codigos_guardados
 from app.models.enums import ValorFeedback
 from app.models.tables import CaProducto, CompraAgil, MatchFeedback, RubroFavorito, RubroVocabulario
 
@@ -308,8 +310,9 @@ def _condiciones(
 
     texto = filtros.texto.strip()[:_MAX_TEXTO]
     if texto:
-        # Misma semántica que los perfiles: websearch_to_tsquery('spanish', unaccent(...)).
-        conds.append(_TSV.op("@@")(_tsquery_spanish(texto)))
+        # La MISMA expresión que la inclusión de los perfiles (`_FTS_CA_INCLUDE`):
+        # nombre/descripción o productos, con unaccent (F-guardar).
+        conds.append(condicion_texto_ca(texto))
 
     organismo = filtros.organismo.strip()[:_MAX_TEXTO]
     if organismo:
@@ -402,6 +405,8 @@ def buscar(
         return bool(filtros.palabras_rubro and f.por_palabras) and not _confirmada(f)
 
     sin_razon = [f.codigo for f in filas if not _confirmada(f) and not _por_palabras(f)]
+    # Estado "Guardada" de toda la página en una sola query (sin N+1).
+    guardadas = codigos_guardados(session, filtros.usuario_id, FUENTE, [f.codigo for f in filas])
     familias_posibles = _familias_posibles(session, sin_razon, vocab) if vocab else {}
 
     items: list[dict[str, Any]] = []
@@ -430,6 +435,7 @@ def buscar(
                 and not confirmado
                 and not por_palabras,
                 "familia_posible": familias_posibles.get(f.codigo),
+                "guardada": f.codigo in guardadas,
             }
         )
     return ResultadoExplorador(total=total, items=items, pagina=pagina, total_paginas=total_paginas)
