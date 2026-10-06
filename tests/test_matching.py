@@ -1091,6 +1091,7 @@ class TestCandidatosRecallAditivo:
     def test_candidatos_ca_publicada_sin_fecha_cierre_es_candidata(self, session: Session):
         ca = _make_ca(session, "CA-RECALL-NULL-CIERRE")
         ca.fecha_cierre = None
+        ca.fecha_publicacion = _AHORA_LOCAL - timedelta(days=1)  # sin cierre: vigente si es reciente
         session.flush()
 
         candidatos = _candidatos_ca(session, _AHORA_LOCAL, None, None)
@@ -1202,6 +1203,7 @@ class TestMatchPerfilRecallAditivo:
 
         ca = _make_ca(session, "CA-E2E-NULL-CIERRE", region=13)
         ca.fecha_cierre = None
+        ca.fecha_publicacion = _AHORA_LOCAL - timedelta(days=1)  # sin cierre: vigente si es reciente
         session.flush()
 
         result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)

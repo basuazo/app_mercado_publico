@@ -107,6 +107,7 @@ from app.matching.perfiles import (
     obtener_perfil,
     palabras_sugeridas,
     quitar_exclusiones,
+    verificar_exclusiones,
 )
 from app.matching.seguimiento import (
     alternar_guardada,
@@ -456,6 +457,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     excluido_perfil: str = "",
     excluido: list[str] = Query(default=[]),
     excluidos_n: str = "",
+    restaurado: str = "",
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -706,6 +708,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             mostrar_tutorial=not user.tutorial_visto,
             mostrar_novedades=_hay_novedades_pendientes(user),
             aviso_exclusion=aviso_exclusion,
+            exclusion_restaurada=restaurado == "1",
         ),
     )
 
@@ -1145,7 +1148,7 @@ async def oportunidad_descartar_opciones(
         {
             "acciones": acciones,
             "motivos": motivos,
-            "sugeridas": palabras_sugeridas(acciones["nombre"] or "", keywords_perfiles),
+            "sugeridas": palabras_sugeridas(acciones["nombre"] or "", keywords_perfiles, session),
             "origen": origen if origen in ("dashboard", "ficha") else "dashboard",
             "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
         },
@@ -1175,6 +1178,10 @@ async def oportunidad_excluir_vista_previa(
         return HTMLResponse(content=str(escape(str(exc))))
     if not lista:
         return HTMLResponse(content="Elige o escribe al menos una palabra.")
+    try:
+        verificar_exclusiones(session, [str(k) for k in (perfil.keywords or [])], lista)
+    except PerfilInvalido as exc:
+        return HTMLResponse(content=str(escape(str(exc))))
     n = contar_limpieza(session, criterio_perfil(perfil, lista))
     texto = (
         f"Con esto salen {n} oportunidad{'es' if n != 1 else ''} vigentes del perfil "
@@ -1210,6 +1217,11 @@ async def oportunidad_descartar_y_excluir(
         raise HTTPException(status_code=400, detail=str(exc)) from None
     if not lista:
         raise HTTPException(status_code=400, detail="Elige o escribe al menos una palabra")
+    try:
+        # Antes de descartar: si la exclusión choca, no se hace nada.
+        verificar_exclusiones(session, [str(k) for k in (perfil.keywords or [])], lista)
+    except PerfilInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     marcar_descarte(session, user.id, fuente, codigo)
     resultado = excluir_palabras(session, user.id, perfil.id, lista)
     session.commit()
@@ -1229,6 +1241,7 @@ async def oportunidad_descartar_y_excluir(
 async def perfil_deshacer_exclusion(
     request: Request,
     perfil_id: int,
+    background_tasks: BackgroundTasks,
     palabras: list[str] = Form(default=[]),
     next: str = Form(""),
     csrf_token: str = Form(""),
@@ -1236,14 +1249,18 @@ async def perfil_deshacer_exclusion(
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     """Deshacer de "Descartar y excluir": quita las palabras y re-ejecuta el
-    matching del perfil, que recrea los matches (con `fecha_match` nueva)."""
+    matching del perfil en segundo plano (como al editarlo), que recrea los
+    matches (con `fecha_match` nueva)."""
     check_csrf(request, csrf_token)
     perfil = quitar_exclusiones(session, user.id, perfil_id, palabras)
     if perfil is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     session.commit()
-    match_perfil(perfil, session)
-    return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
+    background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_id)
+    destino = _safe_next(next, "/")
+    if destino == "/":
+        destino = "/?restaurado=1"
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/archivar")

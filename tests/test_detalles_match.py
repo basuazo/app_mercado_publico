@@ -504,7 +504,15 @@ def escenario_pg(pg_engine) -> Iterator[dict[str, Any]]:
                 monto_disponible_clp=500_000.0,
             )
         )
-        s.add(CompraAgil(codigo=c["ca_sin_cierre"], nombre="ca", estado="publicada", fecha_cierre=None))
+        s.add(
+            CompraAgil(
+                codigo=c["ca_sin_cierre"],
+                nombre="ca",
+                estado="publicada",
+                fecha_cierre=None,
+                fecha_publicacion=ahora - timedelta(days=1),
+            )
+        )
         s.add(CompraAgil(codigo=c["ca_sin_match"], nombre="ca", estado="publicada", fecha_cierre=ahora + timedelta(hours=1)))
         s.flush()
         for clave, fuente in (
@@ -830,6 +838,8 @@ def opps_pg(pg_engine) -> Iterator[Any]:
             "detalle_ultimo_fallo": None if hace_h is None else ahora - timedelta(hours=hace_h),
             "actualizado_en": ahora - timedelta(days=3),
         }
+        if fuente != "licitaciones":
+            campos["fecha_publicacion"] = ahora - timedelta(days=1)  # sin cierre: vigente si es reciente
         with Session(pg_engine) as s:
             s.add(Licitacion(**campos) if fuente == "licitaciones" else CompraAgil(**campos))
             s.flush()

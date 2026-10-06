@@ -21,6 +21,7 @@ from app.api.query import get_oportunidades_usuario
 from app.api.salud_data import get_salud_data
 from app.core.tiempo import ahora_utc
 from app.matching.perfiles import (
+    PerfilInvalido,
     actualizar_perfil,
     crear_perfil,
     eliminar_perfil,
@@ -238,14 +239,17 @@ async def api_crear_perfil(
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
     check_csrf(request)
-    nuevo = crear_perfil(
-        session,
-        owner_id=user.id,
-        nombre=body.nombre,
-        keywords=body.keywords,
-        keywords_excluir=body.keywords_excluir,
-        fuentes=body.fuentes,
-    )
+    try:
+        nuevo = crear_perfil(
+            session,
+            owner_id=user.id,
+            nombre=body.nombre,
+            keywords=body.keywords,
+            keywords_excluir=body.keywords_excluir,
+            fuentes=body.fuentes,
+        )
+    except PerfilInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     session.commit()
     return {"id": nuevo.id, "nombre": nuevo.nombre}
 
@@ -261,15 +265,18 @@ async def api_actualizar_perfil(
     check_csrf(request)
     if obtener_perfil(session, perfil_id, user.id) is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-    actualizar_perfil(
-        session,
-        perfil_id=perfil_id,
-        owner_id=user.id,
-        nombre=body.nombre,
-        keywords=body.keywords,
-        keywords_excluir=body.keywords_excluir,
-        fuentes=body.fuentes,
-    )
+    try:
+        actualizar_perfil(
+            session,
+            perfil_id=perfil_id,
+            owner_id=user.id,
+            nombre=body.nombre,
+            keywords=body.keywords,
+            keywords_excluir=body.keywords_excluir,
+            fuentes=body.fuentes,
+        )
+    except PerfilInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     session.commit()
     return {"id": perfil_id, "nombre": body.nombre}
 

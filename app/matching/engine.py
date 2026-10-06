@@ -28,8 +28,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
 from app.core.tiempo import ahora_utc
+from app.core.vigencia import condicion_ca_vigente, condicion_lic_vigente
 from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
-from app.models.enums import EstadoOportunidad
 from app.models.tables import (
     CaProducto,
     CompraAgil,
@@ -172,18 +172,35 @@ def condicion_texto_ca(texto: str) -> Any:
     return text(_FTS_CA_INCLUDE).bindparams(q=texto)
 
 
+_CHOQUES_SQL = text(
+    "SELECT DISTINCT p.palabra "
+    "FROM unnest(:kws) AS k(keyword), unnest(:pals) AS p(palabra) "
+    "WHERE to_tsvector('spanish', inmutable_unaccent(k.keyword)) "
+    f"@@ {_tsq('p.palabra')}"
+).bindparams(bindparam("kws", type_=ARRAY(String)), bindparam("pals", type_=ARRAY(String)))
+
+
+def exclusiones_que_chocan(session: Session, keywords: list[str], palabras: list[str]) -> list[str]:
+    """Las `palabras` a excluir cuya tsquery calza con alguna keyword del perfil
+    (excluirlas sacaría justo lo que el perfil busca): "saludable" vs "salud" choca
+    (misma raíz); "salud mental" vs "salud" no (exige ambas palabras). Mantiene el
+    orden de `palabras`. Una sola query parametrizada, con la misma normalización
+    (`inmutable_unaccent` + 'spanish') que el recall. En SQLite (tests sin
+    Postgres) no hay FTS y devuelve `[]`."""
+    if not keywords or not palabras or session.get_bind().dialect.name != "postgresql":
+        return []
+    chocan = set(session.execute(_CHOQUES_SQL, {"kws": list(keywords), "pals": list(palabras)}).scalars())
+    return [p for p in palabras if p in chocan]
+
+
 def _vigencia_lic(ahora: datetime) -> list[Any]:
-    return [
-        Licitacion.estado == EstadoOportunidad.PUBLICADA.value,
-        Licitacion.fecha_cierre > ahora,
-    ]
+    """La misma "vigente" que el feed y Explorar CA (`app/core/vigencia.py`, F-ajustes)."""
+    return [condicion_lic_vigente(ahora)]
 
 
 def _vigencia_ca(ahora: datetime) -> list[Any]:
-    return [
-        CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
-        or_(CompraAgil.fecha_cierre.is_(None), CompraAgil.fecha_cierre > ahora),
-    ]
+    """Incluye el tope de 7 días para las CA sin cierre (`condicion_ca_vigente`)."""
+    return [condicion_ca_vigente(ahora)]
 
 
 def _criterio_lic(
@@ -260,6 +277,7 @@ def _candidatos_licitaciones(
         .options(selectinload(Licitacion.items))
         .where(*_vigencia_lic(ahora))
         .where(*_criterio_lic(q, qx, categorias_unspsc, organismos_seguidos))
+        .order_by(Licitacion.fecha_cierre.asc().nulls_last(), Licitacion.codigo)
         .limit(_MAX_CANDIDATOS)
     )
     return list(session.execute(stmt).scalars())
@@ -280,6 +298,7 @@ def _candidatos_ca(
         .options(selectinload(CompraAgil.productos))
         .where(*_vigencia_ca(ahora))
         .where(*_criterio_ca(q, qx, categorias_unspsc, organismos_seguidos))
+        .order_by(CompraAgil.fecha_cierre.asc().nulls_last(), CompraAgil.codigo)
         .limit(_MAX_CANDIDATOS)
     )
     return list(session.execute(stmt).scalars())
@@ -399,7 +418,10 @@ def limpiar_matches_perfil(
     Un DELETE por fuente, con los mismos fragmentos SQL del recall y sin el tope
     de 500. No toca matches de oportunidades terminales/vencidas (historial,
     competencia), ni seguidas, ni feedback; las alertas del match se van por
-    cascade. Si una keyword se quita y se vuelve a poner, el match se recrea con
+    cascade. "Vigente" es la regla oficial (`app/core/vigencia.py`): los matches de
+    CA que dejan de serlo (p. ej. sin cierre y publicadas hace más de 7 días) NO se
+    borran; quedan fuera del alcance de la limpieza como cualquier no vigente.
+    Si una keyword se quita y se vuelve a poner, el match se recrea con
     `fecha_match` nueva y reaparece en el resumen (aceptado). No hace commit.
     """
     ahora = ahora or ahora_utc()

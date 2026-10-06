@@ -51,6 +51,12 @@
     </div>
     {% endif %}
 
+    {% if exclusion_restaurada %}
+    <div class="alert alert-success" role="status">
+      Restauramos la exclusión; las oportunidades vuelven en unos segundos.
+    </div>
+    {% endif %}
+
     {# El buscador vive acá pero pertenece al formulario del panel (`form=`):
        así una búsqueda y los filtros se aplican juntos, sin dos formularios
        que se pisen el estado. #}

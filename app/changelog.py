@@ -15,6 +15,17 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 10, 6),
+        titulo="Perfiles más precisos y exclusiones más seguras",
+        descripcion=(
+            "Tus perfiles buscan solo en lo que todavía se puede postular (las Compras Ágiles "
+            "sin fecha de cierre cuentan una semana desde que se publican, igual que en Explorar "
+            "CA). Ya no se puede excluir una palabra que borraría lo que el mismo perfil busca "
+            "(por ejemplo, 'saludable' en un perfil de 'salud'). Deshacer una exclusión ya no "
+            "hace esperar. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 10, 2),
         titulo="Guardar: un solo botón para lo que te interesa",
         descripcion=(

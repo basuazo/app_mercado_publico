@@ -42,6 +42,7 @@ from app.core.retencion import purgar_terminales
 from app.core.serializacion import dataclass_a_json
 from app.core.settings import Settings
 from app.core.tiempo import ahora_utc, en_ventana_nocturna
+from app.core.vigencia import condicion_ca_vigente, condicion_lic_vigente
 from app.ingest.catalogos import refresh_organismos
 from app.ingest.compra_agil import sync_incremental, upsert_ca_detalle
 from app.ingest.datos_abiertos import (
@@ -57,7 +58,6 @@ from app.ingest.licitaciones import (
 )
 from app.ingest.lifecycle import refresh_estados, refresh_estados_vencidos
 from app.ingest.plan_compra import sync_plan_anual_completo
-from app.models.enums import EstadoOportunidad
 from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch, OportunidadSeguida
 
 _log = get_logger(__name__)
@@ -220,14 +220,13 @@ def _candidatas_detalles_match(
 
     Entran licitaciones y CA con al menos una fila en oportunidades_match o
     guardadas por alguien (oportunidades_seguidas no archivada, F-guardar), sin
-    detalle, publicadas y sin cerrar (fecha_cierre nula o futura). Orden: primero
+    detalle y vigentes según la regla oficial (`app/core/vigencia.py`: CA sin
+    cierre solo si se publicaron hace ≤ 7 días). Orden: primero
     las que no tienen fallos, luego las que sí; dentro de cada grupo,
     fecha_cierre ascendente —lo que cierra antes, primero— y las sin fecha al
     final. La espera por fallos la aplica :func:`_cola_detalles_match`.
     """
     dialecto = session.get_bind().dialect.name
-    publicada = EstadoOportunidad.PUBLICADA.value
-
     def _con_match(fuente: str, codigo: Any) -> Any:
         con_match = exists().where(
             OportunidadMatch.fuente == fuente,
@@ -248,8 +247,7 @@ def _candidatas_detalles_match(
         Licitacion.detalle_ultimo_fallo.label("ultimo_fallo"),
     ).where(
         _sin_detalle(Licitacion.raw_json, dialecto),
-        Licitacion.estado == publicada,
-        or_(Licitacion.fecha_cierre.is_(None), Licitacion.fecha_cierre > ahora),
+        condicion_lic_vigente(ahora),
         _con_match(_FUENTE_LIC, Licitacion.codigo),
     )
     ca = select(
@@ -260,8 +258,7 @@ def _candidatas_detalles_match(
         CompraAgil.detalle_ultimo_fallo.label("ultimo_fallo"),
     ).where(
         _sin_detalle(CompraAgil.raw_json, dialecto),
-        CompraAgil.estado == publicada,
-        or_(CompraAgil.fecha_cierre.is_(None), CompraAgil.fecha_cierre > ahora),
+        condicion_ca_vigente(ahora),
         _con_match(_FUENTE_CA, CompraAgil.codigo),
     )
     sub = union_all(lic, ca).subquery()

@@ -26,7 +26,7 @@ from typing import Any
 from sqlalchemy import and_, func, or_
 
 from app.models.enums import FamiliaEstado, familia_de_estado, valores_de_estado_en
-from app.models.tables import CompraAgil
+from app.models.tables import CompraAgil, Licitacion
 
 # [V, Paso 0 de F-ca-rubro, 26-sep-2026]: ver docstring del módulo.
 CA_SIN_CIERRE_VIGENCIA_DIAS = 7
@@ -51,6 +51,21 @@ def es_vigente(
     if fecha_publicacion is None:
         return False
     return fecha_publicacion >= ahora - timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS)
+
+
+def condicion_lic_vigente(ahora: datetime) -> Any:
+    """`es_vigente` para licitaciones, escrita en SQL (F-ajustes): cierre no nulo y
+    futuro, y familia ABIERTA o DESCONOCIDO. Mismo patrón que `condicion_ca_vigente`;
+    tests/test_vigencia.py compara ambas con `es_vigente`."""
+    estado = func.lower(func.trim(Licitacion.estado))
+    no_validos = valores_de_estado_en(
+        [f for f in FamiliaEstado if f not in _FAMILIAS_CON_CIERRE_FUTURO]
+    )
+    return and_(
+        Licitacion.fecha_cierre.is_not(None),
+        Licitacion.fecha_cierre > ahora,
+        estado.not_in(sorted(no_validos)),
+    )
 
 
 def condicion_ca_vigente(ahora: datetime) -> Any:

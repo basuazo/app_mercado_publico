@@ -64,6 +64,7 @@ def crear_perfil(
     fuentes_list: list[str] = list(fuentes or ["licitaciones", "compras_agiles"])
 
     _validar(kw, regs, monto_min_clp, monto_max_clp, cats, orgs)
+    verificar_exclusiones(session, kw, kw_excluir)
 
     perfil = PerfilBusqueda(
         owner_id=owner_id,
@@ -117,6 +118,12 @@ def actualizar_perfil(
     p = obtener_perfil(session, perfil_id, owner_id)
     if p is None:
         return None
+    # Las exclusiones ya guardadas no se revisan (solo se previene hacia adelante).
+    ya = {str(w).lower() for w in (p.keywords_excluir or [])}
+    nuevas = [w for w in campos.get("keywords_excluir", []) if str(w).lower() not in ya]
+    verificar_exclusiones(
+        session, list(campos["keywords"]) if "keywords" in campos else list(p.keywords or []), nuevas
+    )
     for k, v in campos.items():
         if hasattr(p, k):
             setattr(p, k, v)
@@ -168,6 +175,20 @@ def normalizar_palabras_excluir(palabras: list[str]) -> list[str]:
     return salida
 
 
+def verificar_exclusiones(session: Session, keywords: list[str], palabras: list[str]) -> None:
+    """Lanza PerfilInvalido si excluir alguna de `palabras` sacaría lo que las
+    `keywords` del perfil buscan (F-ajustes). Sin Postgres no verifica."""
+    from app.matching.engine import exclusiones_que_chocan
+
+    chocan = exclusiones_que_chocan(session, keywords, palabras)
+    if chocan:
+        listado = ", ".join(f"«{w}»" for w in chocan)
+        raise PerfilInvalido(
+            f"{listado} sacaría{'n' if len(chocan) > 1 else ''} todo lo que trae una palabra "
+            "de búsqueda de este perfil; elige otra palabra"
+        )
+
+
 def excluir_palabras(
     session: Session,
     owner_id: int,
@@ -177,7 +198,8 @@ def excluir_palabras(
     """Agrega `palabras` a las exclusiones del perfil (regla 17: solo el dueño) y
     borra los matches vigentes que ya no calzan. Devuelve (agregadas, borrados),
     o None si el perfil no es del usuario. Seguidas y feedback quedan intactos.
-    No hace commit."""
+    Si alguna palabra choca con las keywords del perfil lanza PerfilInvalido sin
+    agregar nada. No hace commit."""
     from app.matching.engine import limpiar_matches_perfil
 
     p = obtener_perfil(session, perfil_id, owner_id)
@@ -186,6 +208,7 @@ def excluir_palabras(
     actuales = cast(list[str], list(p.keywords_excluir or []))
     ya = {a.lower() for a in actuales}
     agregadas = [w for w in normalizar_palabras_excluir(palabras) if w.lower() not in ya]
+    verificar_exclusiones(session, cast(list[str], list(p.keywords or [])), agregadas)
     if agregadas:
         # Lista nueva: JSONB no detecta mutaciones in-place.
         p.keywords_excluir = actuales + agregadas  # type: ignore[assignment]
@@ -227,9 +250,13 @@ def _sin_tildes(texto: str) -> str:
     )
 
 
-def palabras_sugeridas(nombre: str, keywords_perfil: list[str]) -> list[str]:
+def palabras_sugeridas(
+    nombre: str, keywords_perfil: list[str], session: Session | None = None
+) -> list[str]:
     """Términos del nombre de la oportunidad que se pueden ofrecer para excluir:
-    sin stopwords ni las palabras clave del perfil (excluirlas vaciaría el perfil)."""
+    sin stopwords ni las palabras clave del perfil (excluirlas vaciaría el perfil).
+    Con `session` (Postgres) también descarta las de la misma raíz que una keyword
+    ("saludable" con "salud"), en una sola consulta (`exclusiones_que_chocan`)."""
     propias = {_sin_tildes(k.lower()) for kw in keywords_perfil for k in kw.split()}
     salida: list[str] = []
     vistas: set[str] = set()
@@ -241,4 +268,9 @@ def palabras_sugeridas(nombre: str, keywords_perfil: list[str]) -> list[str]:
         salida.append(w)
         if len(salida) == _MAX_SUGERIDAS:
             break
+    if session is not None and salida:
+        from app.matching.engine import exclusiones_que_chocan
+
+        chocan = set(exclusiones_que_chocan(session, keywords_perfil, salida))
+        salida = [w for w in salida if w not in chocan]
     return salida
