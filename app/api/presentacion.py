@@ -12,6 +12,7 @@ from typing import Any
 
 from app.catalogos.unspsc import nombre_rubro
 from app.core.settings import VERSION_ESTATICOS
+from app.core.vigencia import cierre_vencido
 from app.models.enums import FamiliaEstado, familia_de_estado
 from app.models.seeds import REGIONES
 
@@ -269,3 +270,27 @@ def texto_cierre(
         cuando = f"Cierra en {dias} días"
 
     return f"{cuando} · {fecha_cierre_legible(fecha_cierre, fuente)}"
+
+
+# ---------------------------------------------------------------------------
+# Cierre vencido (F-ficha-modal)
+# ---------------------------------------------------------------------------
+
+
+def presentacion_estado_con_cierre(
+    estado: object,
+    fecha_cierre: datetime | None,
+    fuente: str,
+    ahora: datetime,
+    fecha_publicacion: datetime | None = None,
+) -> dict[str, str]:
+    """Como `presentacion_estado`, pero un abierto que `es_vigente` ya no da por vigente
+    (`app.core.vigencia.cierre_vencido`) sale como "Publicada · cierre vencido"
+    (chip ámbar) y no como "Abierta"."""
+    if cierre_vencido(estado, fecha_cierre, fuente, ahora, fecha_publicacion):
+        return {
+            "familia": "cierre_vencido",
+            "etiqueta": "Publicada · cierre vencido",
+            "clase": "cierre_vencido",
+        }
+    return presentacion_estado(estado)

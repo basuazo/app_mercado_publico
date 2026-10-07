@@ -1,0 +1,276 @@
+{#
+  Contenido de la ficha (F-ficha-modal). UN solo parcial para la página completa
+  (/oportunidad/{fuente}/{codigo}, a la que enlazan los correos) y para el modal
+  del feed y de Mi registro (la misma ruta con HX-Request). Todo lo decide la ruta
+  (`_contexto_ficha`): acá solo se pinta.
+
+  Estructura: `.ficha` (única hija de .modal-content; es una columna flex con
+  min-height 0 para que solo .modal-body haga scroll, ver app.css) que contiene la
+  cabecera, la barra de acciones, el panel "Descartar y excluir términos", el cuerpo con
+  pestañas + resumen lateral y el pie. Con `en_modal` aparecen Anterior/Siguiente y la ×;
+  sin él, el botón "Volver".
+#}
+{% from "_ficha_acciones.html" import ficha_acciones %}
+{% set es_lic = fuente == 'licitaciones' %}
+{% set tipo = 'Licitación' if es_lic else 'Compra Ágil' %}
+{% set monto = oportunidad.monto_clp if es_lic else oportunidad.monto_disponible_clp %}
+{% set tiene_desc = oportunidad.descripcion %}
+{% set sin_detalle = not tiene_desc and not items %}
+{% set tab_inicial = 'items' if items else 'desc' %}
+<div class="ficha{% if not en_modal %} border rounded bg-white{% endif %}"
+     data-ficha-key="{{ fuente }}:{{ codigo }}" data-ficha-nombre="{{ oportunidad.nombre }}">
+
+  {# --- Cabecera ------------------------------------------------------------- #}
+  <div class="modal-header d-block">
+    <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+      <p class="text-muted small mb-0">{{ tipo }} · <span class="num">{{ codigo }}</span></p>
+      {% if en_modal %}
+      <div class="d-flex align-items-center gap-1">
+        <span class="small text-muted num me-1" data-ficha-pos aria-live="off"></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-ficha-nav="prev"
+                aria-label="Oportunidad anterior de la lista">‹ Anterior</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-ficha-nav="next"
+                aria-label="Oportunidad siguiente de la lista">Siguiente ›</button>
+        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="d-flex justify-content-between align-items-start gap-3">
+      <h2 class="fs-4 mb-2" id="ficha-titulo" tabindex="-1">{{ oportunidad.nombre }}</h2>
+      {# Sin match con tus perfiles (explorador, o guardada cuyo match se limpió): sin puntaje. #}
+      {% if match is not none %}
+      <div class="text-center flex-shrink-0">
+        <div class="anillo-match anillo-match--{{ banda }}">{{ match.score | round(0) | int }}</div>
+        <div class="anillo-match__glosa">Match</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <span class="badge-estado badge-estado--{{ estado_badge.clase }}">{{ estado_badge.etiqueta }}</span>
+      {# Mismo chip que la tarjeta del feed: color por urgencia y el texto que decide `texto_cierre`. #}
+      <span class="badge-cierre badge-cierre--{{ urgencia }}">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>
+        {{ cierre_texto }}
+      </span>
+      <span class="ms-auto text-end">
+        {% if monto %}<span class="fw-semibold num">{{ monto | clp }}</span>
+        <span class="text-muted small">{% if es_lic %}estimado{% else %}disponible{% endif %}</span>
+        {% else %}<span class="text-muted">Monto no informado</span>{% endif %}
+      </span>
+    </div>
+  </div>
+
+  {# --- Barra de acciones, bajo la cabecera (no al final del scroll) ------------- #}
+  <div class="ficha-barra d-flex flex-wrap gap-2 align-items-center px-3 py-2">
+    {% if mostrar_ficha %}
+    <a href="{{ url_ficha }}" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
+      Abrir en Mercado Público ↗
+    </a>
+    <span class="text-muted small">Requiere sesión de proveedor</span>
+    {% else %}
+    <span class="text-muted small">
+      Proceso {{ oportunidad.estado }}: la ficha oficial solo está disponible para la unidad compradora.
+    </span>
+    {% endif %}
+    {% if not en_modal %}
+    <a href="{{ url_volver }}" class="btn btn-outline-secondary ms-2">Volver</a>
+    {% endif %}
+
+    {# Guardar / Descartar con o sin match (F-guardar). #}
+    {% if acciones %}
+    <span class="ms-lg-auto">{{ ficha_acciones(acciones, csrf_token, en_modal, desde) }}</span>
+    {% endif %}
+  </div>
+
+  {# Panel "Descartar y excluir términos" (solo en el modal; sin segundo modal). #}
+  {% if en_modal %}<div id="ficha-panel-excluir"></div>{% endif %}
+
+  {# --- Cuerpo -------------------------------------------------------------- #}
+  <div class="modal-body">
+    {# El chip de la cabecera ya dice "Publicada · cierre vencido": acá solo qué hacer. #}
+    {% if aviso_cierre %}
+    <div class="alert alert-warning" role="status">{{ aviso_cierre }}</div>
+    {% endif %}
+    {% if sin_detalle %}
+    <div class="alert alert-secondary" role="status">
+      <strong>Todavía sin descripción ni productos.</strong>
+      La app aún no descarga el detalle de esta {{ tipo }}. Mientras tanto, revísalo en la ficha oficial.
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+      <aside class="col-12 col-md-auto order-1 order-md-2 ficha-resumen" aria-label="Resumen">
+        <dl class="mb-3">
+          <dt>Organismo</dt>
+          <dd>{{ organismo or 'No informado' }}</dd>
+          <dt>Región</dt>
+          <dd>{{ region_nombre or 'No informada' }}</dd>
+          <dt>Publicación</dt>
+          <dd>{% if oportunidad.fecha_publicacion %}{{ oportunidad.fecha_publicacion.strftime('%d/%m/%Y') }}{% else %}No informada{% endif %}</dd>
+          {% if not es_lic %}
+          <dt>Ofertas recibidas</dt>
+          <dd class="num">{{ oportunidad.total_ofertas }}</dd>
+          {% endif %}
+        </dl>
+        {% if razones_chips %}
+        <h3 class="fs-6">Por qué calza</h3>
+        <div class="d-flex flex-wrap gap-1">
+          {% for chip in razones_chips[:3] %}
+          <span class="chip-razon chip-razon--{{ chip.tipo }}" title="{{ chip.texto }}">{{ chip.texto }}</span>
+          {% endfor %}
+          {% if razones_chips | length > 3 %}
+          <span class="chip-razon chip-razon--mas"
+                title="{{ razones_chips[3:] | map(attribute='texto') | join(' · ') }}">+{{ razones_chips | length - 3 }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </aside>
+
+      <div class="col-12 col-md order-2 order-md-1 min-w-0">
+        {% if tiene_desc or items or competencia_resumen %}
+        <ul class="nav nav-tabs mb-3" role="tablist">
+          {% if tiene_desc %}
+          <li class="nav-item" role="presentation">
+            <button class="nav-link{% if tab_inicial == 'desc' %} active{% endif %}" id="ficha-tab-desc" type="button" role="tab"
+                    data-bs-toggle="tab" data-bs-target="#ficha-panel-desc" aria-controls="ficha-panel-desc"
+                    aria-selected="{{ 'true' if tab_inicial == 'desc' else 'false' }}">Descripción</button>
+          </li>
+          {% endif %}
+          {% if items %}
+          <li class="nav-item" role="presentation">
+            <button class="nav-link{% if tab_inicial == 'items' %} active{% endif %}" id="ficha-tab-items" type="button" role="tab"
+                    data-bs-toggle="tab" data-bs-target="#ficha-panel-items" aria-controls="ficha-panel-items"
+                    aria-selected="{{ 'true' if tab_inicial == 'items' else 'false' }}">
+              {% if es_lic %}Ítems{% else %}Productos{% endif %} ({{ items | length }})</button>
+          </li>
+          {% endif %}
+          {% if competencia_resumen %}
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ficha-tab-comp" type="button" role="tab"
+                    data-bs-toggle="tab" data-bs-target="#ficha-panel-comp" aria-controls="ficha-panel-comp"
+                    aria-selected="false">Competencia ({{ competencia_resumen | length }})</button>
+          </li>
+          {% endif %}
+        </ul>
+
+        <div class="tab-content">
+          {% if tiene_desc %}
+          <div class="tab-pane fade{% if tab_inicial == 'desc' %} show active{% endif %}" id="ficha-panel-desc" role="tabpanel"
+               aria-labelledby="ficha-tab-desc" tabindex="0">
+            <p>{{ oportunidad.descripcion }}</p>
+          </div>
+          {% endif %}
+
+          {% if items %}
+          <div class="tab-pane fade{% if tab_inicial == 'items' %} show active{% endif %}" id="ficha-panel-items" role="tabpanel"
+               aria-labelledby="ficha-tab-items" tabindex="0">
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle">
+                <thead>
+                  <tr>
+                    <th scope="col">Descripción</th>
+                    <th scope="col">Rubro</th>
+                    <th scope="col" class="text-end">Cantidad</th>
+                    <th scope="col">Unidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for it in items %}
+                  <tr>
+                    <td>{{ it.nombre }}</td>
+                    <td>{{ it.rubro or '—' }}</td>
+                    <td class="text-end num">{{ it.cantidad | numero }}</td>
+                    <td>{{ it.unidad or '—' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if competencia_resumen %}
+          <div class="tab-pane fade" id="ficha-panel-comp" role="tabpanel" aria-labelledby="ficha-tab-comp" tabindex="0">
+            <p class="text-muted small">{{ competencia_resumen | length }} proveedor{{ 'es' if competencia_resumen | length != 1 else '' }}</p>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle">
+                <thead>
+                  <tr>
+                    <th scope="col">Proveedor</th>
+                    <th scope="col">RUT</th>
+                    <th scope="col" class="text-end">Ítems ofertados</th>
+                    <th scope="col" class="text-end">Ítems ganados</th>
+                    <th scope="col" class="text-end">Total adjudicado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for p in competencia_resumen %}
+                  {% set es_propia = current_user.rut_proveedor and p.rut_proveedor == current_user.rut_proveedor %}
+                  {# El color no es el único canal: la fila propia lleva borde y chip de texto. #}
+                  <tr class="{% if es_propia %}table-success border-start border-4 border-primary{% endif %}">
+                    <td>
+                      {{ p.nombre_proveedor }}
+                      {%- if es_propia %} <span class="badge text-bg-primary">Tu empresa</span>{% endif %}
+                      {%- if p.items_ganados > 0 %} <span class="badge bg-primary">Ganó</span>{% endif %}
+                    </td>
+                    <td class="num">{{ p.rut_proveedor }}</td>
+                    <td class="text-end num">{{ p.items_ofertados | numero }}</td>
+                    <td class="text-end num">{{ p.items_ganados | numero }}</td>
+                    <td class="text-end num">{{ p.total_adjudicado | clp }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            {% if competencia_detalle %}
+            <details class="mb-3">
+              <summary class="text-muted small" style="cursor: pointer;">Ver detalle por ítem ({{ competencia_detalle | length }} ofertas)</summary>
+              <div class="table-responsive mt-2">
+                <table class="table table-sm align-middle">
+                  <thead>
+                    <tr>
+                      <th scope="col">Ítem</th>
+                      <th scope="col">Proveedor</th>
+                      <th scope="col">RUT</th>
+                      <th scope="col" class="text-end">Monto unitario ofertado</th>
+                      <th scope="col">Ganó</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for d in competencia_detalle %}
+                    {% set es_propia = current_user.rut_proveedor and d.rut_proveedor == current_user.rut_proveedor %}
+                    <tr class="{% if es_propia %}table-success border-start border-4 border-primary{% endif %}">
+                      <td class="num">{{ d.codigo_item }}</td>
+                      <td>
+                        {{ d.nombre_proveedor }}
+                        {%- if es_propia %} <span class="badge text-bg-primary">Tu empresa</span>{% endif %}
+                      </td>
+                      <td class="num">{{ d.rut_proveedor }}</td>
+                      <td class="text-end num">{% if d.monto_unitario is not none %}{{ d.monto_unitario | clp }}{% else %}—{% endif %}</td>
+                      <td>
+                        {% if d.seleccionada %}
+                        <span aria-hidden="true">✓</span><span class="visually-hidden">Adjudicado</span>
+                        {% else %}
+                        <span aria-hidden="true">—</span><span class="visually-hidden">No adjudicado</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-footer justify-content-start text-muted small">Fuente: Dirección ChileCompra</div>
+</div>

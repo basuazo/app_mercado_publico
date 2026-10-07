@@ -5,10 +5,11 @@
   marcador oculto (`_explorador_descartada.html`) y la fila desaparece. En el
   explorador Descartar es directo, sin modal: no hay perfil que la haya traído.
 #}
-{% macro explorador_acciones(a, csrf_token) %}
-<div id="acciones-ca-{{ a.codigo }}" class="d-flex flex-wrap gap-2 align-items-center mt-3 tarjeta-op__acciones"
+{% macro explorador_acciones(a, csrf_token, oob=False) %}
+<div id="acciones-ca-{{ a.codigo }}"{% if oob %} hx-swap-oob="true"{% endif %} class="d-flex flex-wrap gap-2 align-items-center mt-3 tarjeta-op__acciones"
      data-anuncio="{% if a.guardada %}Guardada: {{ a.nombre }}{% else %}No guardada: {{ a.nombre }}{% endif %}">
-  <a href="/oportunidad/compras_agiles/{{ a.codigo }}" class="btn btn-sm btn-outline-primary">Ver ficha</a>
+  <a href="/oportunidad/compras_agiles/{{ a.codigo }}" class="btn btn-sm btn-outline-primary"
+     data-abre-ficha aria-haspopup="dialog">Ver ficha</a>
 
   <form method="post" action="/oportunidad/compras_agiles/{{ a.codigo }}/guardar"
         hx-post="/oportunidad/compras_agiles/{{ a.codigo }}/guardar"
@@ -31,8 +32,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="origen" value="explorador">
     <input type="hidden" name="next" value="/compras-agiles">
-    <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
-            data-accion="descartar" aria-pressed="false">Descartar</button>
+    <button type="submit" class="btn btn-sm btn-outline-secondary"
+            data-accion="descartar" aria-pressed="false">Solo descartar</button>
   </form>
 </div>
 {% endmacro %}

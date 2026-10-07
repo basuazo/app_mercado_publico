@@ -2,26 +2,10 @@
 {% from "_card_oportunidad.html" import card_oportunidad %}
 {% block title %}Mi registro — MP Oportunidades{% endblock %}
 {% block content %}
-{% set etiquetas = {
-  "guardadas": "Guardadas",
-  "cerradas": "Cerradas",
-  "vencidas": "Vencidas recientes",
-  "descartadas": "Descartadas",
-  "archivadas": "Archivadas"
-} %}
 <h2 class="mb-1">Mi registro</h2>
 <p class="text-muted mb-3">Lo que guardaste, lo que cerró hace poco con buen match y lo que descartaste o archivaste. Te avisamos por correo cuando una guardada cambia de estado o está por cerrar.</p>
 
-<nav aria-label="Secciones de Mi registro">
-  <ul class="nav nav-tabs mb-3">
-    {% for clave, etiqueta in etiquetas.items() %}
-    <li class="nav-item">
-      <a class="nav-link{% if tab == clave %} active{% endif %}" href="/registro?tab={{ clave }}"
-         {% if tab == clave %}aria-current="page"{% endif %}>{{ etiqueta }} ({{ conteos[clave] }})</a>
-    </li>
-    {% endfor %}
-  </ul>
-</nav>
+{% include "_registro_tabs.html" %}
 
 {% if tab == "vencidas" %}
 <p class="text-muted">Oportunidades con buen match que cerraron hace poco sin que las guardaras. Se ocultan a los {{ dias_gracia }} días; guárdalas si quieres conservarlas.</p>
@@ -96,4 +80,7 @@
   {% else %}No tienes oportunidades archivadas.{% endif %}
 </div>
 {% endif %}
+
+{# Ficha en modal (F-ficha-modal). #}
+{% include "_modal_ficha.html" %}
 {% endblock %}

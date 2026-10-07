@@ -132,10 +132,14 @@
       if (!control) { pendiente = null; return; }
       var contenedor = control.closest("[data-oportunidad-key]");
       var clave = contenedor ? contenedor.getAttribute("data-oportunidad-key") : null;
+      // Un control del modal de la ficha (F-ficha-modal): el foco y el anuncio se buscan
+      // dentro del modal, no en la tarjeta del feed que queda detrás.
+      var enModal = !!(control.closest && control.closest("#modal-ficha"));
       var accion = control.getAttribute("data-accion");
       pendiente = {
         accion: accion,
         clave: clave,
+        enModal: enModal,
         // Se busca AHORA, con la tarjeta todavía en el DOM: después del swap
         // ya no hay desde dónde contar.
         siguiente: accion === "descartar" ? siguienteTarjeta(contenedor, clave) : null
@@ -149,7 +153,9 @@
     document.body.addEventListener("htmx:afterSwap", function () {
       if (!pendiente) return;
       var ambito = document;
-      if (pendiente.clave) {
+      if (pendiente.enModal) {
+        ambito = document.getElementById("modal-ficha") || document;
+      } else if (pendiente.clave) {
         var tarjeta = document.querySelector(
           '[data-oportunidad-key="' + escapar(pendiente.clave) + '"]'
         );

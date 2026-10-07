@@ -16,6 +16,8 @@
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="6" r="4"/><path d="M5.5 9.5 4 14l4-2 4 2-1.5-4.5"/></svg>
   {%- elif familia == 'completada' -%}
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m5.5 8 2 2 3.5-4"/></svg>
+  {%- elif familia == 'cierre_vencido' -%}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2.5 14 13H2z"/><path d="M8 6.5v3M8 11.2h.01"/></svg>
   {%- elif familia == 'sin_efecto' -%}
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M4.5 4.5 11.5 11.5"/></svg>
   {%- else -%}
@@ -25,10 +27,13 @@
 
 {# `modo="registro"` (F-registro): tarjeta de Mi registro; `next_url` es la pestaña actual.
    `item.match` puede ser none (guardada sin match): sin score ni razones. #}
-{% macro card_oportunidad(item, csrf_token, idx="", modo="feed", next_url="/") %}
+{% macro card_oportunidad(item, csrf_token, idx="", modo="feed", next_url="/", oob=False) %}
 {% set fuente = item.fuente %}
 {% set codigo = item.codigo %}
 {% set origen_acciones = "registro" if modo == "registro" else "dashboard" %}
+{# `data-abre-ficha`: static/ficha_modal.js abre la ficha en el modal con clic normal y deja
+   pasar Ctrl/Cmd/Shift/Alt y el clic medio (navegan al href). #}
+{% set ficha_url = "/oportunidad/" ~ item.fuente ~ "/" ~ item.codigo %}
 {% set card_id = "card-" ~ (idx ~ "-" if idx != "" else "") ~ fuente ~ "-" ~ codigo %}
 {% set oportunidad_key = fuente ~ ":" ~ codigo %}
 {% set estado_badge = item.estado_badge %}
@@ -38,6 +43,7 @@
 <div class="tarjeta-op tarjeta-op--{{ item.urgencia }}"
      id="{{ card_id }}"
      data-oportunidad-key="{{ oportunidad_key }}"
+     {% if oob %}hx-swap-oob="outerHTML:[data-oportunidad-key='{{ oportunidad_key }}']"{% endif %}
      data-anuncio="{% if item.guardada %}Guardada: {{ item.nombre }}{% else %}No guardada: {{ item.nombre }}{% endif %}">
 
   {# --- Fila superior: match · título/meta · monto --- #}
@@ -50,7 +56,7 @@
     {% endif %}
 
     <div class="flex-grow-1 min-w-0">
-      <a class="tarjeta-op__titulo" href="/oportunidad/{{ fuente }}/{{ codigo }}">{{ item.nombre }}</a>
+      <a class="tarjeta-op__titulo" href="{{ ficha_url }}" data-abre-ficha aria-haspopup="dialog">{{ item.nombre }}</a>
       <div class="tarjeta-op__meta mt-1">
         {{ item.organismo or "Organismo no informado" }} ·
         {{ item.region_nombre or "Sin región" }} ·
@@ -112,7 +118,7 @@
 
   {# --- Fila de acciones --- #}
   <div class="d-flex flex-wrap gap-2 align-items-center mt-3 tarjeta-op__acciones">
-    <a href="/oportunidad/{{ fuente }}/{{ codigo }}" class="btn btn-sm btn-primary">Ver ficha</a>
+    <a href="{{ ficha_url }}" class="btn btn-sm btn-primary" data-abre-ficha aria-haspopup="dialog">Ver ficha</a>
 
     {# Guardar = queda en Mi registro y avisa de sus cambios (F-guardar). #}
     {% if not (modo == "registro" and item.pestana == "archivadas") %}
@@ -152,31 +158,30 @@
     </form>
     {% endif %}
 
-    {% if modo == "registro" %}
-    {# Vencidas: descartar directo, sin modal (no hay palabra que excluir de algo que ya cerró). #}
-    {% if item.pestana == "vencidas" %}
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline ms-auto">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="{{ next_url }}">
-      <input type="hidden" name="origen" value="registro">
-      <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
-              data-accion="descartar">Descartar</button>
-    </form>
-    {% endif %}
-    {% else %}
-    {# Sin JS el formulario descarta directo; con JS el botón abre el modal
-       "Descartar" (qué lo trajo y excluir la palabra). #}
-    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar" class="d-inline ms-auto">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/">
-      <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
+    {# Descarte en dos botones, con la misma jerarquía (secundarios):
+       - "Solo descartar": un clic, sin tocar perfiles ni exclusiones;
+       - "Descartar y excluir términos": solo con match (hay perfil del cual excluir);
+         abre el panel "Descartar" (qué la trajo, palabras sugeridas, vista previa).
+       En Mi registro solo las vencidas se pueden descartar. #}
+    {% if modo != "registro" or item.pestana == "vencidas" %}
+    <div class="d-inline-flex flex-wrap gap-2 ms-auto">
+      <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar" class="d-inline"
+            hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+            {% if modo == "registro" %}hx-target="#{{ card_id }}" hx-swap="outerHTML"{% else %}hx-swap="none"{% endif %}>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <input type="hidden" name="origen" value="{{ origen_acciones }}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary" data-accion="descartar"
+                data-nombre-oportunidad="{{ item.nombre }}">Solo descartar</button>
+      </form>
+      {% if item.match is not none %}
+      <button type="button" class="btn btn-sm btn-outline-secondary"
               hx-get="/oportunidad/{{ fuente }}/{{ codigo }}/descartar-opciones?origen=dashboard"
               hx-target="#modal-descartar-contenido" hx-swap="innerHTML"
               data-abre-descartar aria-haspopup="dialog"
-              data-nombre-oportunidad="{{ item.nombre }}">Descartar</button>
-    </form>
+              data-nombre-oportunidad="{{ item.nombre }}">Descartar y excluir términos</button>
+      {% endif %}
+    </div>
     {% endif %}
   </div>
 </div>

@@ -157,7 +157,7 @@ def test_ficha_sin_ofertas_no_muestra_seccion(client, usuario, settings, engine)
     _crear_lic_con_match(engine, usuario)
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "Análisis de competencia" not in r.text
+    assert "ficha-tab-comp" not in r.text
 
 
 def test_ficha_con_ofertas_muestra_resumen_y_detalle(client, usuario, settings, engine):
@@ -165,7 +165,8 @@ def test_ficha_con_ofertas_muestra_resumen_y_detalle(client, usuario, settings, 
     _agregar_ofertas(engine)
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "Análisis de competencia" in r.text
+    # F-ficha-modal: la competencia es una pestaña ("Competencia (N)").
+    assert "Competencia (2)" in r.text
     assert "Ganó" in r.text
     assert "Prov Ganador" in r.text
     # El resumen ahora incluye también a quienes ofertaron y no ganaron.
@@ -180,7 +181,7 @@ def test_ficha_no_adjudicada_no_muestra_seccion_aunque_haya_ofertas(client, usua
     _agregar_ofertas(engine, "LIC-002")
     r = client.get("/oportunidad/licitaciones/LIC-002", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
-    assert "Análisis de competencia" not in r.text
+    assert "ficha-tab-comp" not in r.text
 
 
 def test_ficha_resalta_rut_propio(client, usuario, settings, engine):

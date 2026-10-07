@@ -226,14 +226,15 @@ def test_score_65_es_banda_alta_en_la_ficha(client, settings, usuario, engine) -
     """65 pasa el preset "Alta relevancia" (60): el badge no puede salir ámbar."""
     _crear_match(engine, usuario, score=65)
     html = client.get("/oportunidad/licitaciones/LIC-UI-1", cookies=_cookie(settings, usuario)).text
-    assert "badge bg-success fs-5 num" in html
-    assert "badge bg-warning text-dark fs-5" not in html
+    # F-ficha-modal: el badge pasó al anillo "Match", con las mismas bandas que el feed.
+    assert "anillo-match anillo-match--alta" in html
+    assert "anillo-match--media" not in html
 
 
 def test_score_bajo_el_corte_medio_es_banda_baja(client, settings, usuario, engine) -> None:
     _crear_match(engine, usuario, score=20, codigo="LIC-UI-2")
     html = client.get("/oportunidad/licitaciones/LIC-UI-2", cookies=_cookie(settings, usuario)).text
-    assert "badge bg-secondary fs-5 num" in html
+    assert "anillo-match anillo-match--baja" in html
 
 
 def test_montos_y_cantidades_en_formato_chileno(client, settings, usuario, engine) -> None:

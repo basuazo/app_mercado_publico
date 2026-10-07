@@ -31,7 +31,7 @@ from app.api.presentacion import (
     banda_urgencia,
     formato_clp,
     nombre_region,
-    presentacion_estado,
+    presentacion_estado_con_cierre,
     razones_tipificadas,
     registrar_filtros,
     texto_cierre,
@@ -65,6 +65,7 @@ from app.catalogos.unspsc import familias, nombre_rubro, segmentos
 from app.changelog import entradas_changelog, fecha_ultima_novedad
 from app.core.logging import get_logger
 from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.core.vigencia import CA_SIN_CIERRE_VIGENCIA_DIAS, cierre_vencido
 from app.explorador_ca import (
     CIERRES as CIERRES_EXPLORADOR,
 )
@@ -193,7 +194,13 @@ def _decorar_item(item: dict[str, Any], settings: Any) -> dict[str, Any]:
         else banda_relevancia(item["score"], _RELEVANCIA_ALTA, settings.feed_min_score_default)
     )
     item["urgencia"] = banda_urgencia(item["dias_al_cierre"])
-    item["estado_badge"] = presentacion_estado(item["estado"])
+    item["estado_badge"] = presentacion_estado_con_cierre(
+        item["estado"],
+        item["fecha_cierre"],
+        item["fuente"],
+        ahora_utc(),
+        item["fecha_publicacion"],
+    )
     item["cierre_texto"] = texto_cierre(
         item["fecha_cierre"], item["dias_al_cierre"], item["fuente"]
     )
@@ -788,14 +795,45 @@ def _url_volver_feed(request: Request) -> str:
     return partes.path + ("?" + partes.query if partes.query else "")
 
 
-@router.get("/oportunidad/{fuente}/{codigo}", response_class=HTMLResponse)
-async def oportunidad_detalle(
+def _desde_valido(valor: str) -> str:
+    """De dónde se abrió el modal: "" (feed), "explorador" (Explorar CA) o
+    "registro:<pestaña>". Cualquier otra cosa se ignora (viene de la URL o de un formulario)."""
+    if valor == "explorador":
+        return valor
+    if valor.startswith("registro:") and valor.split(":", 1)[1] in _PESTANAS_REGISTRO:
+        return valor
+    return ""
+
+
+def _aviso_cierre(
+    estado: object,
+    fecha_cierre: datetime | None,
+    fuente: str,
+    ahora: datetime,
+    fecha_publicacion: datetime | None,
+) -> str | None:
+    """Aviso bajo el chip "Publicada · cierre vencido" (no lo repite): None si el chip no sale."""
+    if not cierre_vencido(estado, fecha_cierre, fuente, ahora, fecha_publicacion):
+        return None
+    if fecha_cierre is None:
+        return (
+            "No informa fecha de cierre y se publicó hace más de "
+            f"{CA_SIN_CIERRE_VIGENCIA_DIAS} días. Revisa la ficha oficial antes de preparar una oferta."
+        )
+    return "Revisa la ficha oficial antes de preparar una oferta."
+
+
+def _contexto_ficha(
     request: Request,
+    user: Usuario,
+    session: Session,
     fuente: str,
     codigo: str,
-    user: Usuario = Depends(html_require_user),
-    session: Session = Depends(get_db),
-) -> HTMLResponse:
+    *,
+    en_modal: bool,
+    desde: str = "",
+) -> dict[str, Any]:
+    """Contexto único de la ficha: lo comparten la página completa y el parcial del modal."""
     # Sin match se abren las Compras Ágiles (el explorador lista todas las
     # vigentes) y lo que el usuario ya guardó o descartó (F-guardar): ver
     # `puede_actuar`. Las acciones van siempre con su propio user_id (regla 17).
@@ -811,7 +849,7 @@ async def oportunidad_detalle(
     if op is None:
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
 
-    from app.api.presentacion import nombre_region, razones_legibles
+    from app.api.presentacion import nombre_region
     from app.api.query import _url_ficha, mostrar_ficha_oficial
 
     settings = request.app.state.settings
@@ -848,50 +886,81 @@ async def oportunidad_detalle(
     ]
 
     # Mismo cálculo que `_construir_item`, con o sin match.
+    ahora = ahora_utc()
     dias_al_cierre = (
-        max(0.0, (op.fecha_cierre - ahora_utc()).total_seconds() / 86400)
+        max(0.0, (op.fecha_cierre - ahora).total_seconds() / 86400)
         if op.fecha_cierre is not None
         else None
     )
 
-    return _TEMPLATES.TemplateResponse(
+    publicacion = getattr(op, "fecha_publicacion", None)
+    volver = _url_volver_feed(request)
+    return _ctx(
         request,
-        "oportunidad.html",
-        _ctx(
-            request,
-            user,
-            match=match,
-            # Misma definición de "alta"/"media" que los presets del feed:
-            # el badge de la ficha ya no puede contradecir al filtro (2.2).
-            banda=(
-                banda_relevancia(match.score, _RELEVANCIA_ALTA, settings.feed_min_score_default)
-                if match is not None
-                else None
-            ),
-            # El cierre lo deciden las MISMAS funciones puras que en la tarjeta
-            # (F-coherencia): la ficha tenía una copia divergente que mostraba
-            # la medianoche derivada de un ddmmaaaa como si fuera hora real.
-            urgencia=banda_urgencia(dias_al_cierre),
-            cierre_texto=texto_cierre(op.fecha_cierre, dias_al_cierre, fuente),
-            oportunidad=op,
-            fuente=fuente,
-            url_ficha=url_ficha,
-            mostrar_ficha=mostrar_ficha_oficial(op.estado),
-            items=items,
-            organismo=organismo,
-            region_nombre=region_nombre,
-            razones=razones_legibles(match.razones) if match is not None else [],
-            acciones=estado_acciones(session, user.id, fuente, codigo),
-            competencia_resumen=competencia_resumen,
-            competencia_detalle=competencia_detalle,
-            url_volver=_url_volver_feed(request),
-            volver_etiqueta=(
-                "Explorar Compras Ágiles"
-                if _url_volver_feed(request).startswith("/compras-agiles")
-                else "Dashboard"
-            ),
+        user,
+        match=match,
+        # Misma definición de "alta"/"media" que los presets del feed:
+        # el badge de la ficha ya no puede contradecir al filtro (2.2).
+        banda=(
+            banda_relevancia(match.score, _RELEVANCIA_ALTA, settings.feed_min_score_default)
+            if match is not None
+            else None
         ),
+        # El cierre lo deciden las MISMAS funciones puras que en la tarjeta
+        # (F-coherencia): la ficha tenía una copia divergente que mostraba
+        # la medianoche derivada de un ddmmaaaa como si fuera hora real.
+        urgencia=banda_urgencia(dias_al_cierre),
+        cierre_texto=texto_cierre(op.fecha_cierre, dias_al_cierre, fuente),
+        # Abierto con el cierre ya pasado: "Publicada · cierre vencido", no "Abierta".
+        estado_badge=presentacion_estado_con_cierre(
+            op.estado, op.fecha_cierre, fuente, ahora, publicacion
+        ),
+        aviso_cierre=_aviso_cierre(op.estado, op.fecha_cierre, fuente, ahora, publicacion),
+        oportunidad=op,
+        fuente=fuente,
+        codigo=codigo,
+        url_ficha=url_ficha,
+        mostrar_ficha=mostrar_ficha_oficial(op.estado),
+        items=items,
+        organismo=organismo,
+        region_nombre=region_nombre,
+        razones_chips=razones_tipificadas(match.razones) if match is not None else [],
+        acciones=estado_acciones(session, user.id, fuente, codigo),
+        competencia_resumen=competencia_resumen,
+        competencia_detalle=competencia_detalle,
+        url_volver=volver,
+        volver_etiqueta=(
+            "Explorar Compras Ágiles" if volver.startswith("/compras-agiles") else "Dashboard"
+        ),
+        en_modal=en_modal,
+        desde=desde,
     )
+
+
+@router.get("/oportunidad/{fuente}/{codigo}", response_class=HTMLResponse)
+async def oportunidad_detalle(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    desde: str = "",
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """La ficha. Con `HX-Request` (modal del feed y de Mi registro) devuelve solo el
+    parcial; sin él, la página completa a la que enlazan los correos."""
+    en_modal = _es_htmx(request)
+    ctx = _contexto_ficha(
+        request, user, session, fuente, codigo, en_modal=en_modal, desde=_desde_valido(desde)
+    )
+    respuesta = _TEMPLATES.TemplateResponse(
+        request, "_ficha_contenido.html" if en_modal else "oportunidad.html", ctx
+    )
+    # La misma URL devuelve la página o el parcial según HX-Request: que ninguna caché
+    # (navegador, proxy) mezcle una con la otra.
+    respuesta.headers["Vary"] = "HX-Request"
+    if en_modal:
+        respuesta.headers["Cache-Control"] = "no-store"
+    return respuesta
 
 
 # ---------------------------------------------------------------------------
@@ -906,7 +975,7 @@ def _safe_next(next_: str, fallback: str) -> str:
     return fallback
 
 
-_ORIGENES = ("dashboard", "ficha", "explorador", "registro")
+_ORIGENES = ("dashboard", "ficha", "explorador", "registro", "modal")
 
 
 def _render_card_partial(
@@ -917,6 +986,7 @@ def _render_card_partial(
     codigo: str,
     *,
     origen: str = "dashboard",
+    desde: str = "",
 ) -> HTMLResponse:
     """Re-renderiza el estado de una oportunidad tras una acción HTMX rápida.
 
@@ -925,12 +995,16 @@ def _render_card_partial(
     - `origen="ficha"`: solo la fila de botones de la ficha (`_ficha_acciones.html`);
     - `origen="explorador"`: los botones de la fila del explorador de CA, que no
       tiene match (F-guardar);
+    - `origen="modal"` (F-ficha-modal): la barra de acciones del modal y, por
+      `hx-swap-oob`, la tarjeta del feed (o su salida de la pestaña de Mi registro);
     - `origen="registro"` (F-registro): en Mi registro toda acción saca la tarjeta
       de su pestaña (guardar una vencida, quitar una guardada, descartar), así que
       la respuesta es vacía más un anuncio en `#anuncios` (swap fuera de banda).
     """
     settings = request.app.state.settings
     csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
+    if origen == "modal":
+        return _render_modal_acciones(request, user, session, fuente, codigo, desde=desde)
     if origen == "registro":
         return _salida_de_pestana(estado_acciones(session, user.id, fuente, codigo))
     if origen in ("ficha", "explorador"):
@@ -952,6 +1026,58 @@ def _render_card_partial(
     return _TEMPLATES.TemplateResponse(
         request, "_card_partial.html", {"item": item, "csrf_token": csrf_token}
     )
+
+
+def _volver_de(desde: str) -> str:
+    """Página a la que vuelve "Deshacer exclusión" según de dónde se abrió el modal."""
+    desde = _desde_valido(desde)
+    if desde == "explorador":
+        return "/compras-agiles"
+    if desde:
+        return f"/registro?tab={desde.split(':', 1)[1]}"
+    return "/"
+
+
+def _render_modal_acciones(
+    request: Request,
+    user: Usuario,
+    session: Session,
+    fuente: str,
+    codigo: str,
+    *,
+    desde: str,
+    aviso: dict[str, Any] | None = None,
+) -> HTMLResponse:
+    """Respuesta de una acción hecha dentro del modal de la ficha: la barra de acciones
+    (que reemplaza a la del modal) más, fuera de banda, la tarjeta del feed ya al día.
+    Si el modal se abrió desde una pestaña de Mi registro, la tarjeta sale de esa
+    pestaña y se refrescan los conteos de las pestañas."""
+    settings = request.app.state.settings
+    acciones = estado_acciones(session, user.id, fuente, codigo)
+    if acciones is None:
+        return HTMLResponse(content="", status_code=200)
+    desde = _desde_valido(desde)
+    contexto: dict[str, Any] = {
+        "acciones": acciones,
+        "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
+        "desde": desde,
+        "clave": f"{fuente}:{codigo}",
+        "item": None,
+        "aviso": aviso,
+    }
+    if desde == "explorador":
+        # Las filas de Explorar CA se actualizan con sus propios botones.
+        pass
+    elif desde:
+        tab = desde.split(":", 1)[1]
+        conteos, _, _ = _conteos_registro(session, user, settings, ahora_utc())
+        contexto.update(tab=tab, conteos=conteos)
+    elif not acciones["descartada"]:
+        # Descartada: la tarjeta se va del feed (script del dashboard + toast de deshacer).
+        item = get_item_oportunidad(session, user.id, fuente, codigo)
+        if item is not None:
+            contexto["item"] = _decorar_item(item, settings)
+    return _TEMPLATES.TemplateResponse(request, "_ficha_modal_respuesta.html", contexto)
 
 
 def _salida_de_pestana(acciones: dict[str, Any] | None) -> HTMLResponse:
@@ -986,6 +1112,7 @@ def _guardar(
     next_: str,
     origen: str,
     fallback: str,
+    desde: str = "",
 ) -> HTMLResponse | RedirectResponse:
     """Guardar (F-guardar): queda en Mi registro y avisa de sus cambios.
 
@@ -1004,7 +1131,13 @@ def _guardar(
     session.commit()
     if _es_htmx(request):
         return _render_card_partial(
-            request, user, session, fuente, codigo, origen=origen if origen in _ORIGENES else "dashboard"
+            request,
+            user,
+            session,
+            fuente,
+            codigo,
+            origen=origen if origen in _ORIGENES else "dashboard",
+            desde=desde,
         )
     return RedirectResponse(url=_safe_next(next_, fallback), status_code=303)
 
@@ -1016,6 +1149,7 @@ async def oportunidad_guardar(
     codigo: str,
     next: str = Form(""),
     origen: str = Form("dashboard"),
+    desde: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -1025,6 +1159,7 @@ async def oportunidad_guardar(
     return _guardar(
         request, user, session, fuente, codigo,
         accion="alternar", next_=next, origen=origen, fallback=f"/oportunidad/{fuente}/{codigo}",
+        desde=desde,
     )
 
 
@@ -1092,6 +1227,7 @@ async def oportunidad_descartar(
     codigo: str,
     next: str = Form(""),
     origen: str = Form("dashboard"),
+    desde: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -1108,8 +1244,10 @@ async def oportunidad_descartar(
     if _es_htmx(request):
         if origen == "ficha":
             return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
-        if origen == "registro":
-            return _render_card_partial(request, user, session, fuente, codigo, origen="registro")
+        if origen in ("registro", "modal"):
+            return _render_card_partial(
+                request, user, session, fuente, codigo, origen=origen, desde=desde
+            )
         if origen == "explorador":
             # La fila se reemplaza por un marcador oculto que solo lleva el anuncio.
             return _TEMPLATES.TemplateResponse(
@@ -1129,6 +1267,7 @@ async def oportunidad_deshacer_descarte(
     codigo: str,
     next: str = Form(""),
     origen: str = Form("dashboard"),
+    desde: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -1140,8 +1279,10 @@ async def oportunidad_deshacer_descarte(
         raise HTTPException(status_code=404, detail="Descarte no encontrado")
     session.commit()
     if _es_htmx(request):
-        if origen == "ficha":
-            return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
+        if origen in ("ficha", "modal"):
+            return _render_card_partial(
+                request, user, session, fuente, codigo, origen=origen, desde=desde
+            )
         return HTMLResponse(content="", status_code=200)
     return RedirectResponse(url=_safe_next(next, "/registro?tab=descartadas"), status_code=303)
 
@@ -1157,11 +1298,26 @@ async def oportunidad_descartar_opciones(
     fuente: str,
     codigo: str,
     origen: str = "dashboard",
+    desde: str = "",
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Contenido del modal "Descartar": qué perfil y qué palabras la trajeron,
-    palabras sugeridas para excluir y en qué perfil. Solo con match propio."""
+    """Contenido del panel "Descartar y excluir términos": qué perfil y qué palabras la
+    trajeron, palabras sugeridas para excluir y en qué perfil. Solo con match propio.
+    Con `origen=modal` se pinta DENTRO del modal de la ficha (sin segundo modal)."""
+    contexto = _contexto_descartar(request, user, session, fuente, codigo, origen, desde)
+    return _TEMPLATES.TemplateResponse(request, "_modal_descartar.html", contexto)
+
+
+def _contexto_descartar(
+    request: Request,
+    user: Usuario,
+    session: Session,
+    fuente: str,
+    codigo: str,
+    origen: str,
+    desde: str,
+) -> dict[str, Any]:
     matches = matches_de_oportunidad(session, user.id, fuente, codigo)
     acciones = estado_acciones(session, user.id, fuente, codigo)
     if not matches or acciones is None:
@@ -1180,17 +1336,15 @@ async def oportunidad_descartar_opciones(
         str(k) for m in matches if m.perfil_id in perfiles for k in (perfiles[m.perfil_id].keywords or [])
     ]
     settings = request.app.state.settings
-    return _TEMPLATES.TemplateResponse(
-        request,
-        "_modal_descartar.html",
-        {
-            "acciones": acciones,
-            "motivos": motivos,
-            "sugeridas": palabras_sugeridas(acciones["nombre"] or "", keywords_perfiles, session),
-            "origen": origen if origen in ("dashboard", "ficha") else "dashboard",
-            "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
-        },
-    )
+    return {
+        "acciones": acciones,
+        "motivos": motivos,
+        "sugeridas": palabras_sugeridas(acciones["nombre"] or "", keywords_perfiles, session),
+        "origen": origen if origen in ("dashboard", "ficha", "modal") else "dashboard",
+        "desde": _desde_valido(desde),
+        "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
+        "error": None,
+    }
 
 
 @router.get("/oportunidad/{fuente}/{codigo}/excluir-vista-previa", response_class=HTMLResponse)
@@ -1236,12 +1390,28 @@ async def oportunidad_descartar_y_excluir(
     perfil_id: str = Form(""),
     palabras: list[str] = Form(default=[]),
     palabra_nueva: str = Form(""),
+    origen: str = Form(""),
+    desde: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+) -> HTMLResponse | RedirectResponse:
     """Descarta y agrega la(s) palabra(s) a las exclusiones del perfil; lo que ya
-    no calza sale del feed. Vuelve al feed con un aviso y "Deshacer"."""
+    no calza sale del feed. Vuelve al feed con un aviso y "Deshacer". Desde el modal
+    de la ficha (`origen=modal` por HTMX) responde la barra del modal y el aviso, y un
+    error de validación se pinta en el mismo panel, sin descartar nada."""
+    en_modal = origen == "modal" and _es_htmx(request)
+
+    def rechazar(mensaje: str) -> HTMLResponse:
+        if not en_modal:
+            raise HTTPException(status_code=400, detail=mensaje)
+        contexto = _contexto_descartar(request, user, session, fuente, codigo, "modal", desde)
+        contexto["error"] = mensaje
+        respuesta = _TEMPLATES.TemplateResponse(request, "_modal_descartar.html", contexto)
+        respuesta.headers["HX-Retarget"] = "#ficha-panel-excluir"
+        respuesta.headers["HX-Reswap"] = "innerHTML"
+        return respuesta
+
     check_csrf(request, csrf_token)
     if not puede_actuar(session, user.id, fuente, codigo):
         raise HTTPException(status_code=404, detail="Oportunidad no encontrada")
@@ -1252,18 +1422,34 @@ async def oportunidad_descartar_y_excluir(
     try:
         lista = normalizar_palabras_excluir([*palabras, palabra_nueva])
     except PerfilInvalido as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+        return rechazar(str(exc))
     if not lista:
-        raise HTTPException(status_code=400, detail="Elige o escribe al menos una palabra")
+        return rechazar("Elige o escribe al menos una palabra")
     try:
         # Antes de descartar: si la exclusión choca, no se hace nada.
         verificar_exclusiones(session, [str(k) for k in (perfil.keywords or [])], lista)
     except PerfilInvalido as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+        return rechazar(str(exc))
     marcar_descarte(session, user.id, fuente, codigo)
     resultado = excluir_palabras(session, user.id, perfil.id, lista)
     session.commit()
     agregadas, borrados = resultado if resultado is not None else ([], 0)
+    if en_modal:
+        return _render_modal_acciones(
+            request,
+            user,
+            session,
+            fuente,
+            codigo,
+            desde=desde,
+            aviso={
+                "perfil": perfil.nombre,
+                "perfil_id": perfil.id,
+                "palabras": agregadas,
+                "n": borrados,
+                "volver": _volver_de(desde),
+            },
+        )
     qs = urlencode(
         [
             ("excluido_perfil", perfil.id),
@@ -1301,37 +1487,45 @@ async def perfil_deshacer_exclusion(
     return RedirectResponse(url=destino, status_code=303)
 
 
-@router.post("/oportunidad/{fuente}/{codigo}/archivar")
+@router.post("/oportunidad/{fuente}/{codigo}/archivar", response_model=None)
 async def oportunidad_archivar(
     request: Request,
     fuente: str,
     codigo: str,
     next: str = Form(""),
+    desde: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
     if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=True):
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     session.commit()
+    if _es_htmx(request):
+        # Desde el modal de la ficha: la barra al día y la tarjeta por hx-swap-oob.
+        return _render_modal_acciones(request, user, session, fuente, codigo, desde=desde)
     return RedirectResponse(url=_safe_next(next, "/registro?tab=guardadas"), status_code=303)
 
 
-@router.post("/oportunidad/{fuente}/{codigo}/desarchivar")
+@router.post("/oportunidad/{fuente}/{codigo}/desarchivar", response_model=None)
 async def oportunidad_desarchivar(
     request: Request,
     fuente: str,
     codigo: str,
     next: str = Form(""),
+    desde: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
     if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=False):
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     session.commit()
+    if _es_htmx(request):
+        # Desde el modal de la ficha: la barra al día y la tarjeta por hx-swap-oob.
+        return _render_modal_acciones(request, user, session, fuente, codigo, desde=desde)
     return RedirectResponse(url=_safe_next(next, "/registro?tab=archivadas"), status_code=303)
 
 
@@ -1374,6 +1568,30 @@ def _pasa_filtros_registro(item: dict[str, Any], fuente: str, texto: str) -> boo
     return True
 
 
+def _conteos_registro(
+    session: Session, user: Usuario, settings: Any, ahora: datetime
+) -> tuple[dict[str, int], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Conteo de cada pestaña de Mi registro, más las guardadas vigentes y las cerradas
+    (ya clasificadas; la pestaña activa las reutiliza). Vencidas y descartadas, en SQL."""
+    guardadas_todas = listar_registro_guardadas(session, user.id, archivadas=False)
+    vigentes = [i for i in guardadas_todas if i["vigente"]]
+    cerradas = [i for i in guardadas_todas if not i["vigente"]]
+    conteos = {
+        "guardadas": len(vigentes),
+        "cerradas": len(cerradas),
+        "vencidas": contar_vencidas_recientes(
+            session,
+            user.id,
+            ahora,
+            dias=settings.registro_dias_gracia,
+            min_score=settings.registro_min_score_vencidas,
+        ),
+        "descartadas": contar_descartadas(session, user.id),
+        "archivadas": contar_archivadas(session, user.id),
+    }
+    return conteos, vigentes, cerradas
+
+
 @router.get("/registro", response_class=HTMLResponse)
 async def registro_get(
     request: Request,
@@ -1395,24 +1613,7 @@ async def registro_get(
     texto = " ".join(texto.lower().split())[:100]
     n = min(max(n, _PAGINA_REGISTRO), 1000)
 
-    guardadas_todas = listar_registro_guardadas(session, user.id, archivadas=False)
-    vigentes = [i for i in guardadas_todas if i["vigente"]]
-    cerradas = [i for i in guardadas_todas if not i["vigente"]]
-    n_vencidas = contar_vencidas_recientes(
-        session,
-        user.id,
-        ahora,
-        dias=settings.registro_dias_gracia,
-        min_score=settings.registro_min_score_vencidas,
-    )
-    n_descartadas = contar_descartadas(session, user.id)
-    conteos = {
-        "guardadas": len(vigentes),
-        "cerradas": len(cerradas),
-        "vencidas": n_vencidas,
-        "descartadas": n_descartadas,
-        "archivadas": contar_archivadas(session, user.id),
-    }
+    conteos, vigentes, cerradas = _conteos_registro(session, user, settings, ahora)
 
     items: list[dict[str, Any]]
     if tab == "guardadas":

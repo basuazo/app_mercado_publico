@@ -15,6 +15,18 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 10, 7),
+        titulo="La ficha se abre sobre el feed",
+        descripcion=(
+            "Al hacer clic en una oportunidad, la ficha se abre en una ventana sobre el feed o "
+            "Mi registro, sin perder tus filtros ni tu lugar en la lista. Puedes pasar a la "
+            "anterior o a la siguiente sin cerrar, guardar o descartar desde ahí y compartir el "
+            "enlace. Al descartar eliges entre 'Solo descartar' y 'Descartar y excluir términos', "
+            "que además saca de tus perfiles las palabras que elijas. Las que figuran como publicadas pero ya pasaron su fecha de cierre ahora "
+            "dicen 'cierre vencido' en vez de 'Abierta'. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 10, 6),
         titulo="Mi registro: guardadas, cerradas y vencidas recientes",
         descripcion=(

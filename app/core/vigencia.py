@@ -53,6 +53,27 @@ def es_vigente(
     return fecha_publicacion >= ahora - timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS)
 
 
+def cierre_vencido(
+    estado: object,
+    fecha_cierre: datetime | None,
+    fuente: str,
+    ahora: datetime,
+    fecha_publicacion: datetime | None = None,
+) -> bool:
+    """El estado sigue abierto ("publicada") pero `es_vigente` dice que ya no se puede
+    postular: cierre pasado, o CA sin cierre publicada hace más de
+    `CA_SIN_CIERRE_VIGENCIA_DIAS` días. La tarjeta y la ficha lo muestran como
+    "Publicada · cierre vencido" y no como "Abierta" (F-ficha-modal).
+
+    Sin fecha con la que juzgar (licitación sin cierre, o CA sin cierre ni
+    publicación) no se afirma nada: False (regla 6)."""
+    if familia_de_estado(estado) != FamiliaEstado.ABIERTA:
+        return False
+    if fecha_cierre is None and not (fuente == "compras_agiles" and fecha_publicacion is not None):
+        return False
+    return not es_vigente(estado, fecha_cierre, fuente, ahora, fecha_publicacion)
+
+
 def fecha_vencimiento(op: Licitacion | CompraAgil, fuente: str) -> datetime | None:
     """Cuándo dejó de poder postularse la oportunidad (F-registro). Una sola regla:
 

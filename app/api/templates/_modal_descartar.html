@@ -1,24 +1,37 @@
 {#
-  Contenido del modal "Descartar" (F-guardar, sección E). Va dentro de
-  #modal-descartar-contenido (base.html), que lo muestra al llegar.
-  - "Descartar": HTMX, igual que el botón de siempre (la tarjeta sale y queda
-    el toast con Deshacer; en la ficha se re-pinta la fila de botones).
-  - "Descartar y excluir": formulario normal; vuelve al feed con un aviso y
-    "Deshacer exclusión".
+  Panel "Descartar y excluir términos" (F-guardar, sección E; F-ficha-modal). Lo abre
+  el botón del mismo nombre, que solo existe cuando la oportunidad tiene match.
+  - En el feed y en la ficha completa va dentro de #modal-descartar-contenido
+    (base.html): "Descartar y excluir" es un formulario normal; vuelve al feed con un
+    aviso y "Deshacer exclusión".
+  - Con `origen == "modal"` se pinta DENTRO del modal de la ficha, en
+    #ficha-panel-excluir (sin segundo modal): el envío es HTMX con origen=modal y
+    `desde`, y la respuesta es _ficha_modal_respuesta.html. "Cancelar" cierra el panel
+    y vuelve a la ficha sin descartar nada.
+  Descartar sin excluir nada es el otro botón, "Solo descartar": no pasa por acá.
 #}
 {% set fuente = acciones.fuente %}
 {% set codigo = acciones.codigo %}
-{% set modal_id = "modal-descartar" %}
+{% set en_panel = origen == "modal" %}
+{% if en_panel %}
+<div class="card mx-3 mt-2 border-secondary-subtle">
+<div class="card-body">
+<h3 class="h6 mb-2" id="panel-excluir-titulo">Descartar y excluir términos</h3>
+{% else %}
 <div class="modal-header">
-  <h2 class="modal-title fs-5" id="modal-descartar-titulo">Descartar oportunidad</h2>
+  <h2 class="modal-title fs-5" id="modal-descartar-titulo">Descartar y excluir términos</h2>
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
 </div>
+{% endif %}
 
 <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar-y-excluir"
       hx-get="/oportunidad/{{ fuente }}/{{ codigo }}/excluir-vista-previa"
       hx-trigger="change, keyup changed delay:400ms from:#excluir-palabra-nueva"
       hx-target="#vista-previa-excluir" hx-swap="innerHTML">
-  <div class="modal-body">
+  <div{% if not en_panel %} class="modal-body"{% endif %}>
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
     <p class="mb-2"><strong>{{ acciones.nombre }}</strong></p>
 
     <h3 class="h6 mt-3">Qué la trajo</h3>
@@ -69,16 +82,22 @@
     </p>
   </div>
 
-  <div class="modal-footer">
+  <div class="{% if en_panel %}d-flex justify-content-end gap-2 mt-3{% else %}modal-footer{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if en_panel %}
+    <input type="hidden" name="origen" value="modal">
+    <input type="hidden" name="desde" value="{{ desde }}">
+    <button type="button" class="btn btn-outline-secondary" data-cierra-panel-excluir>Cancelar</button>
+    <button type="submit" class="btn btn-outline-secondary"
+            hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar-y-excluir"
+            hx-target="#ficha-acciones-feedback" hx-swap="outerHTML">Descartar y excluir términos</button>
+    {% else %}
     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-    <button type="submit" class="btn btn-outline-danger"
-            formaction="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-            hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
-            hx-vals='{"origen": "{{ origen }}", "next": "/"}'
-            {% if origen == "ficha" %}hx-target="#ficha-acciones-feedback" hx-swap="outerHTML"{% else %}hx-swap="none"{% endif %}
-            data-cierra-modal
-            data-nombre-oportunidad="{{ acciones.nombre }}">Descartar</button>
-    <button type="submit" class="btn btn-danger">Descartar y excluir</button>
+    <button type="submit" class="btn btn-outline-secondary">Descartar y excluir términos</button>
+    {% endif %}
   </div>
 </form>
+{% if en_panel %}
+</div>
+</div>
+{% endif %}

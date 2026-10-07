@@ -1,0 +1,12 @@
+{#
+  Modal de la ficha (F-ficha-modal). Lo incluyen el feed (index.html) y Mi registro
+  (registro.html): misma conducta en ambos. El contenido llega por HTMX desde
+  /oportunidad/{fuente}/{codigo} (parcial `_ficha_contenido.html`) y lo maneja
+  static/ficha_modal.js: URL con ?ficha=, Atrás, Anterior/Siguiente y foco.
+#}
+<div class="modal fade" id="modal-ficha" tabindex="-1" aria-labelledby="ficha-titulo" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
+    <div class="modal-content"></div>
+  </div>
+</div>
+<script src="/static/ficha_modal.js?v={{ version_estaticos }}" defer></script>

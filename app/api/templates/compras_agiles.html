@@ -115,7 +115,8 @@
            data-oportunidad-key="compras_agiles:{{ it.codigo }}">
         <div class="d-flex align-items-start gap-3">
           <div class="flex-grow-1 min-w-0">
-            <a class="tarjeta-op__titulo" href="/oportunidad/compras_agiles/{{ it.codigo }}">{{ it.nombre }}</a>
+            <a class="tarjeta-op__titulo" href="/oportunidad/compras_agiles/{{ it.codigo }}"
+               data-abre-ficha aria-haspopup="dialog">{{ it.nombre }}</a>
             <div class="tarjeta-op__meta mt-1">
               {{ it.organismo or "Organismo no informado" }} ·
               {{ it.region_nombre or "Sin región" }} ·
@@ -177,5 +178,7 @@
   </div>
 </div>
 
+{# Ficha en modal (F-ficha-modal), igual que en el feed y en Mi registro. #}
+{% include "_modal_ficha.html" %}
 <script src="/static/rubros_widget.js?v={{ version_estaticos }}" defer></script>
 {% endblock %}

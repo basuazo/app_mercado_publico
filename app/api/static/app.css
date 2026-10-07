@@ -165,6 +165,8 @@ body {
 .badge-estado--familia_completada   { background: var(--est-compl-bg);   color: var(--est-compl-fg);   border-color: var(--est-compl-bd); }
 .badge-estado--familia_sinefecto    { background: var(--est-sinef-bg);   color: var(--est-sinef-fg);   border-color: var(--est-sinef-bd); }
 .badge-estado--familia_desconocido  { background: var(--est-desc-bg);    color: var(--est-desc-fg);    border-color: var(--est-desc-bd); }
+/* Abierto con el cierre ya pasado (F-ficha-modal): mismo ámbar que el cierre de urgencia media. */
+.badge-estado--cierre_vencido      { background: #FFFBEB; color: #92400E; border-color: #FCD34D; }
 
 .badge-cierre--critica { background: #FEF2F2; color: #991B1B; border-color: #FCA5A5; }
 .badge-cierre--alta    { background: #FFF7ED; color: #9A3412; border-color: #FDBA74; }
@@ -304,3 +306,23 @@ body {
 .feed--compacto .tarjeta-op { padding: 10px 12px; margin-bottom: 8px; }
 .feed--compacto .tarjeta-op__acciones { margin-top: 8px !important; }
 .feed--compacto .anillo-match { width: 38px; height: 38px; flex-basis: 38px; font-size: 0.8125rem; }
+
+/* --- Ficha en modal (F-ficha-modal) ------------------------------------- */
+
+.ficha-barra { background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
+/* `.ficha` envuelve cabecera, barra, cuerpo y pie dentro de .modal-content: tiene que ser una
+   columna flex que pueda encogerse, o .modal-body deja de hacer scroll en modal-dialog-scrollable. */
+#modal-ficha .ficha { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; max-height: 100%; }
+#modal-ficha .ficha .modal-body { min-height: 0; overflow-y: auto; }
+.ficha-resumen { flex: 0 0 300px; max-width: 100%; }
+@media (min-width: 768px) { .ficha-resumen { width: 300px; } }
+.ficha-resumen dt { color: var(--texto-3); font-weight: 500; font-size: 0.875rem; }
+.ficha-resumen dd { margin-bottom: 0.5rem; }
+.ficha .nav-link { min-height: 44px; }
+@media (max-width: 767.98px) {
+  /* Móvil: acciones fijas abajo y objetivos de 44px. */
+  #modal-ficha .ficha-barra { position: sticky; bottom: 0; order: 3; border-top: 1px solid var(--border); border-bottom: 0; }
+  #modal-ficha .ficha-barra .btn { min-height: 44px; }
+  #modal-ficha .modal-body { order: 2; }
+  #modal-ficha .modal-footer { order: 4; }
+}

@@ -1,0 +1,51 @@
+{#
+  Respuesta de una acción hecha dentro del modal de la ficha (F-ficha-modal).
+  Primero va la barra de acciones (reemplaza a #ficha-acciones-feedback del modal) y
+  después, fuera de banda (hx-swap-oob):
+  - el panel "Descartar y excluir términos" (vacío, o con el aviso de lo excluido);
+  - del feed: la tarjeta de la oportunidad, ya al día, o su salida si quedó descartada
+    (se ubica por data-oportunidad-key y no por id, porque el id lleva índice de grupo);
+  - de una pestaña de Mi registro: la salida de la tarjeta y las pestañas con sus
+    conteos nuevos (siempre fuera de banda);
+  - de Explorar CA: los botones de la fila, o la salida de la fila si se descartó.
+#}
+{% from "_ficha_acciones.html" import ficha_acciones %}
+{% from "_card_oportunidad.html" import card_oportunidad %}
+{% from "_explorador_acciones.html" import explorador_acciones %}
+{{ ficha_acciones(acciones, csrf_token, True, desde) }}
+<div id="ficha-panel-excluir" hx-swap-oob="true">
+  {% if aviso %}
+  {# data-recargar-lista: ficha_modal.js no avanza sola a la siguiente ficha (el aviso con
+     "Deshacer exclusión" tiene que quedar a la vista), oculta Anterior/Siguiente y, al
+     cerrar, recarga la página para que salgan las tarjetas que ya no calzan. #}
+  <div class="alert alert-success d-flex flex-wrap align-items-center gap-2 mx-3 mt-2 mb-0" role="status"
+       data-recargar-lista>
+    <span>
+      Descartada. Excluiste «{{ aviso.palabras | join('», «') }}» del perfil «{{ aviso.perfil }}»:
+      salieron {{ aviso.n }} oportunidad{{ 'es' if aviso.n != 1 else '' }} que ya no calzan.
+    </span>
+    <form method="post" action="/perfiles/{{ aviso.perfil_id }}/deshacer-exclusion" class="ms-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ aviso.volver }}">
+      {% for w in aviso.palabras %}
+      <input type="hidden" name="palabras" value="{{ w }}">
+      {% endfor %}
+      <button type="submit" class="btn btn-sm btn-outline-success">Deshacer exclusión</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% if desde == "explorador" %}
+  {% if acciones.descartada %}
+<div hx-swap-oob="delete:[data-oportunidad-key='{{ clave }}']"></div>
+  {% else %}
+{{ explorador_acciones(acciones, csrf_token, True) }}
+  {% endif %}
+{% elif desde %}
+<div hx-swap-oob="delete:[data-oportunidad-key='{{ clave }}']"></div>
+{% with oob=True %}{% include "_registro_tabs.html" %}{% endwith %}
+{% elif acciones.descartada %}
+<div hx-swap-oob="delete:[data-oportunidad-key='{{ clave }}']"></div>
+{% elif item %}
+{{ card_oportunidad(item, csrf_token, oob=True) }}
+{% endif %}
