@@ -105,6 +105,9 @@
             Sin resultados con los filtros actuales
             {% endif %}
           </p>
+          {% if n_vencidas %}
+          <p class="mb-0 small"><a class="text-muted" href="/registro?tab=vencidas">{{ n_vencidas }} vencida{{ 's' if n_vencidas != 1 }} reciente{{ 's' if n_vencidas != 1 }} en tu registro</a></p>
+          {% endif %}
         </div>
 
         <div class="col-6 col-lg-auto">
@@ -137,7 +140,7 @@
 
         {% if n_descartadas %}
         <div class="col-6 col-lg-auto">
-          <a href="/descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
+          <a href="/registro?tab=descartadas" class="btn btn-sm btn-outline-secondary">Ver descartadas ({{ n_descartadas }})</a>
         </div>
         {% endif %}
       </div>

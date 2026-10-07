@@ -147,7 +147,7 @@ def test_pagina_actual_marcada_en_la_navegacion(client, settings, usuario) -> No
     assert "active" in enlace
 
     # En otra página el mismo enlace no debe declararse actual.
-    html_seguidas = client.get("/seguidas", cookies=_cookie(settings, usuario)).text
+    html_seguidas = client.get("/registro", cookies=_cookie(settings, usuario)).text
     j = html_seguidas.index('href="/perfiles"')
     enlace_perfiles = html_seguidas[
         html_seguidas.rindex("<a", 0, j) : html_seguidas.index("</a>", j)

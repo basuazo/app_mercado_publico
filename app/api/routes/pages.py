@@ -38,17 +38,22 @@ from app.api.presentacion import (
 )
 from app.api.query import (
     AGRUPAR_POR_VALIDOS,
+    FUENTES_VALIDAS,
     LIMITE_PAGINA_DEFAULT,
     agrupar_oportunidades,
     buscar_instituciones_pac,
     check_oportunidad_access,
+    contar_archivadas,
+    contar_descartadas,
+    contar_vencidas_recientes,
     detalle_competencia,
     estado_acciones,
     get_item_oportunidad,
     get_oportunidades_usuario,
     listar_descartadas_detalle,
     listar_organismos_catalogo,
-    listar_seguidas_detalle,
+    listar_registro_guardadas,
+    listar_vencidas_recientes,
     matches_de_oportunidad,
     puede_actuar,
     resumen_competencia,
@@ -95,7 +100,7 @@ from app.matching.engine import (
     match_perfil,
 )
 from app.matching.feedback import descartar as marcar_descarte
-from app.matching.feedback import deshacer_descarte, listar_descartadas
+from app.matching.feedback import deshacer_descarte
 from app.matching.perfiles import (
     PerfilInvalido,
     actualizar_perfil,
@@ -181,15 +186,20 @@ def _decorar_item(item: dict[str, Any], settings: Any) -> dict[str, Any]:
     presets del feed y que el badge de la ficha — por eso la tarjeta ya no
     tiene sus propios `>= 80` / `>= 50`.
     """
-    item["banda"] = banda_relevancia(
-        item["match"].score, _RELEVANCIA_ALTA, settings.feed_min_score_default
+    # En Mi registro una guardada puede no tener match: sin score ni razones.
+    item["banda"] = (
+        None
+        if item["score"] is None
+        else banda_relevancia(item["score"], _RELEVANCIA_ALTA, settings.feed_min_score_default)
     )
     item["urgencia"] = banda_urgencia(item["dias_al_cierre"])
     item["estado_badge"] = presentacion_estado(item["estado"])
     item["cierre_texto"] = texto_cierre(
-        item["fecha_cierre"], item["dias_al_cierre"], item["match"].fuente
+        item["fecha_cierre"], item["dias_al_cierre"], item["fuente"]
     )
-    item["razones_chips"] = razones_tipificadas(item["match"].razones)
+    item["razones_chips"] = razones_tipificadas(
+        item["match"].razones if item["match"] is not None else None
+    )
     return item
 
 
@@ -586,7 +596,14 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     grupos, total_unico, total_apariciones = agrupar_oportunidades(
         items, agrupar_por, grupo_expandido=grupo_expandido or None
     )
-    n_descartadas = len(listar_descartadas(session, user.id))
+    n_descartadas = contar_descartadas(session, user.id)
+    n_vencidas = contar_vencidas_recientes(
+        session,
+        user.id,
+        ahora_utc(),
+        dias=settings.registro_dias_gracia,
+        min_score=settings.registro_min_score_vencidas,
+    )
 
     # Opciones de la faceta "Palabra clave" (F-vigencia 3-bis): las de los
     # perfiles SELECCIONADOS si hay filtro de perfil, si no las de todos los
@@ -704,6 +721,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             relevancia_alta=_RELEVANCIA_ALTA,
             relevancia_media=settings.feed_min_score_default,
             n_descartadas=n_descartadas,
+            n_vencidas=n_vencidas,
             perfiles=perfiles,
             mostrar_tutorial=not user.tutorial_visto,
             mostrar_novedades=_hay_novedades_pendientes(user),
@@ -740,18 +758,10 @@ def _aviso_exclusion(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/descartadas", response_class=HTMLResponse)
-async def descartadas_get(
-    request: Request,
-    user: Usuario = Depends(html_require_user),
-    session: Session = Depends(get_db),
-) -> HTMLResponse:
-    items = listar_descartadas_detalle(session, user.id)
-    return _TEMPLATES.TemplateResponse(
-        request,
-        "descartadas.html",
-        _ctx(request, user, items=items),
-    )
+@router.get("/descartadas")
+async def descartadas_get(user: Usuario = Depends(html_require_user)) -> RedirectResponse:  # noqa: ARG001
+    """Ruta vieja (enlaces guardados): las descartadas viven en Mi registro."""
+    return RedirectResponse(url="/registro?tab=descartadas", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -896,7 +906,7 @@ def _safe_next(next_: str, fallback: str) -> str:
     return fallback
 
 
-_ORIGENES = ("dashboard", "ficha", "explorador")
+_ORIGENES = ("dashboard", "ficha", "explorador", "registro")
 
 
 def _render_card_partial(
@@ -914,10 +924,15 @@ def _render_card_partial(
       vacío si el usuario lo perdió entretanto, regla 17);
     - `origen="ficha"`: solo la fila de botones de la ficha (`_ficha_acciones.html`);
     - `origen="explorador"`: los botones de la fila del explorador de CA, que no
-      tiene match (F-guardar).
+      tiene match (F-guardar);
+    - `origen="registro"` (F-registro): en Mi registro toda acción saca la tarjeta
+      de su pestaña (guardar una vencida, quitar una guardada, descartar), así que
+      la respuesta es vacía más un anuncio en `#anuncios` (swap fuera de banda).
     """
     settings = request.app.state.settings
     csrf_token = generate_csrf_token(settings.secret_key, request.state.csrf_nonce)
+    if origen == "registro":
+        return _salida_de_pestana(estado_acciones(session, user.id, fuente, codigo))
     if origen in ("ficha", "explorador"):
         acciones = estado_acciones(session, user.id, fuente, codigo)
         if acciones is None:
@@ -936,6 +951,27 @@ def _render_card_partial(
     _decorar_item(item, settings)
     return _TEMPLATES.TemplateResponse(
         request, "_card_partial.html", {"item": item, "csrf_token": csrf_token}
+    )
+
+
+def _salida_de_pestana(acciones: dict[str, Any] | None) -> HTMLResponse:
+    """200 vacío (la tarjeta desaparece) y el anuncio para lectores de pantalla."""
+    if acciones is None:
+        texto = "Oportunidad actualizada"
+    else:
+        if acciones["guardada"]:
+            accion = "Guardada"
+        elif acciones["descartada"]:
+            accion = "Descartada"
+        else:
+            accion = "Quitada de guardadas"
+        texto = f"{accion}: {acciones['nombre']}"
+    return HTMLResponse(
+        content=(
+            '<div id="anuncios" role="status" aria-live="polite" class="visually-hidden" '
+            f'hx-swap-oob="true">{escape(texto)}</div>'
+        ),
+        status_code=200,
     )
 
 
@@ -1045,7 +1081,7 @@ async def oportunidad_dejar_de_seguir(
     check_csrf(request, csrf_token)
     return _guardar(
         request, user, session, fuente, codigo,
-        accion="quitar", next_=next, origen=origen, fallback="/seguidas",
+        accion="quitar", next_=next, origen=origen, fallback="/registro?tab=guardadas",
     )
 
 
@@ -1062,7 +1098,7 @@ async def oportunidad_descartar(
 ) -> HTMLResponse | RedirectResponse:
     """Descartar: registra feedback NEGATIVO y, si estaba guardada, la quita de
     guardadas (exclusión mutua, F-guardar). En el dashboard oculta el match del
-    feed (reversible vía /descartadas); en el explorador la fila desaparece; en
+    feed (reversible desde Mi registro); en el explorador la fila desaparece; en
     la ficha re-renderiza la fila de botones."""
     check_csrf(request, csrf_token)
     if not puede_actuar(session, user.id, fuente, codigo):
@@ -1072,6 +1108,8 @@ async def oportunidad_descartar(
     if _es_htmx(request):
         if origen == "ficha":
             return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
+        if origen == "registro":
+            return _render_card_partial(request, user, session, fuente, codigo, origen="registro")
         if origen == "explorador":
             # La fila se reemplaza por un marcador oculto que solo lleva el anuncio.
             return _TEMPLATES.TemplateResponse(
@@ -1105,7 +1143,7 @@ async def oportunidad_deshacer_descarte(
         if origen == "ficha":
             return _render_card_partial(request, user, session, fuente, codigo, origen="ficha")
         return HTMLResponse(content="", status_code=200)
-    return RedirectResponse(url=_safe_next(next, "/descartadas"), status_code=303)
+    return RedirectResponse(url=_safe_next(next, "/registro?tab=descartadas"), status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -1277,7 +1315,7 @@ async def oportunidad_archivar(
     if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=True):
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     session.commit()
-    return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
+    return RedirectResponse(url=_safe_next(next, "/registro?tab=guardadas"), status_code=303)
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/desarchivar")
@@ -1294,22 +1332,142 @@ async def oportunidad_desarchivar(
     if not archivar_seguimiento(session, owner_id=user.id, fuente=fuente, codigo=codigo, archivada=False):
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     session.commit()
-    return RedirectResponse(url=_safe_next(next, "/seguidas"), status_code=303)
+    return RedirectResponse(url=_safe_next(next, "/registro?tab=archivadas"), status_code=303)
 
 
-@router.get("/seguidas", response_class=HTMLResponse)
+# ---------------------------------------------------------------------------
+# Mi registro (F-registro)
+# ---------------------------------------------------------------------------
+
+_PESTANAS_REGISTRO = ("guardadas", "cerradas", "vencidas", "descartadas", "archivadas")
+_PAGINA_REGISTRO = 20
+
+
+@router.get("/seguidas")
 async def seguidas_get(
-    request: Request,
     archivadas: str = "",
+    user: Usuario = Depends(html_require_user),  # noqa: ARG001
+) -> RedirectResponse:
+    """Ruta vieja (enlaces guardados): Mi registro, pestaña guardadas o archivadas."""
+    tab = "archivadas" if archivadas == "1" else "guardadas"
+    return RedirectResponse(url=f"/registro?tab={tab}", status_code=303)
+
+
+def _nota_sin_match(item: dict[str, Any]) -> str | None:
+    if item["match"] is not None:
+        return None
+    if item["fuente"] == "compras_agiles":
+        return "Guardada desde Explorar CA"
+    return "Ya no calza con tus perfiles"
+
+
+def _texto_oculta(dias: int) -> str:
+    return "Se oculta hoy" if dias <= 1 else f"Se oculta en {dias} días"
+
+
+def _pasa_filtros_registro(item: dict[str, Any], fuente: str, texto: str) -> bool:
+    if fuente and item["fuente"] != fuente:
+        return False
+    if texto:
+        pajar = f"{item['nombre'] or ''} {item.get('organismo') or ''}".lower()
+        return texto in pajar
+    return True
+
+
+@router.get("/registro", response_class=HTMLResponse)
+async def registro_get(
+    request: Request,
+    tab: str = "guardadas",
+    fuente: str = "",
+    texto: str = "",
+    n: int = _PAGINA_REGISTRO,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    incluir_archivadas = archivadas == "1"
-    items = listar_seguidas_detalle(session, user.id, incluir_archivadas=incluir_archivadas)
+    """Mi registro: guardadas (vigentes), cerradas (guardadas que ya vencieron),
+    vencidas recientes con buen match, descartadas y archivadas. Solo filtra por
+    Fuente y Texto, en Python sobre la lista ya acotada."""
+    settings = request.app.state.settings
+    ahora = ahora_utc()
+    if tab not in _PESTANAS_REGISTRO:
+        tab = "guardadas"
+    fuente = fuente if fuente in FUENTES_VALIDAS else ""
+    texto = " ".join(texto.lower().split())[:100]
+    n = min(max(n, _PAGINA_REGISTRO), 1000)
+
+    guardadas_todas = listar_registro_guardadas(session, user.id, archivadas=False)
+    vigentes = [i for i in guardadas_todas if i["vigente"]]
+    cerradas = [i for i in guardadas_todas if not i["vigente"]]
+    n_vencidas = contar_vencidas_recientes(
+        session,
+        user.id,
+        ahora,
+        dias=settings.registro_dias_gracia,
+        min_score=settings.registro_min_score_vencidas,
+    )
+    n_descartadas = contar_descartadas(session, user.id)
+    conteos = {
+        "guardadas": len(vigentes),
+        "cerradas": len(cerradas),
+        "vencidas": n_vencidas,
+        "descartadas": n_descartadas,
+        "archivadas": contar_archivadas(session, user.id),
+    }
+
+    items: list[dict[str, Any]]
+    if tab == "guardadas":
+        items = sorted(
+            vigentes, key=lambda i: (i["fecha_cierre"] is None, i["fecha_cierre"] or datetime.max)
+        )
+    elif tab == "cerradas":
+        items = sorted(cerradas, key=lambda i: i["fecha_vencimiento"] or datetime.min, reverse=True)
+    elif tab == "vencidas":
+        items = listar_vencidas_recientes(
+            session,
+            user.id,
+            ahora,
+            dias=settings.registro_dias_gracia,
+            min_score=settings.registro_min_score_vencidas,
+        )
+    elif tab == "archivadas":
+        items = listar_registro_guardadas(session, user.id, archivadas=True)
+    else:
+        items = [
+            {**d, "fuente": d["feedback"].fuente, "codigo": d["feedback"].codigo_oportunidad}
+            for d in listar_descartadas_detalle(session, user.id)
+        ]
+
+    items = [i for i in items if _pasa_filtros_registro(i, fuente, texto)]
+    for item in items:
+        item["pestana"] = tab
+        if tab != "descartadas":
+            _decorar_item(item, settings)
+            if tab == "vencidas":
+                item["oculta_texto"] = _texto_oculta(item["oculta_en_dias"])
+            else:
+                item["nota_registro"] = _nota_sin_match(item)
+
+    consulta = {"tab": tab, "fuente": fuente, "texto": texto}
+    consulta = {k: v for k, v in consulta.items() if v}
+    url_actual = "/registro?" + urlencode(consulta)
     return _TEMPLATES.TemplateResponse(
         request,
-        "seguidas.html",
-        _ctx(request, user, items=items, incluir_archivadas=incluir_archivadas),
+        "registro.html",
+        _ctx(
+            request,
+            user,
+            tab=tab,
+            conteos=conteos,
+            items=items[:n],
+            total=len(items),
+            hay_mas=len(items) > n,
+            url_mas=url_actual + f"&n={n + _PAGINA_REGISTRO}",
+            url_actual=url_actual,
+            fuente=fuente,
+            texto=texto,
+            dias_gracia=settings.registro_dias_gracia,
+            mostrar_tutorial=False,
+        ),
     )
 
 

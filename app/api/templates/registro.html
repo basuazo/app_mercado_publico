@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% from "_card_oportunidad.html" import card_oportunidad %}
+{% block title %}Mi registro — MP Oportunidades{% endblock %}
+{% block content %}
+{% set etiquetas = {
+  "guardadas": "Guardadas",
+  "cerradas": "Cerradas",
+  "vencidas": "Vencidas recientes",
+  "descartadas": "Descartadas",
+  "archivadas": "Archivadas"
+} %}
+<h2 class="mb-1">Mi registro</h2>
+<p class="text-muted mb-3">Lo que guardaste, lo que cerró hace poco con buen match y lo que descartaste o archivaste. Te avisamos por correo cuando una guardada cambia de estado o está por cerrar.</p>
+
+<nav aria-label="Secciones de Mi registro">
+  <ul class="nav nav-tabs mb-3">
+    {% for clave, etiqueta in etiquetas.items() %}
+    <li class="nav-item">
+      <a class="nav-link{% if tab == clave %} active{% endif %}" href="/registro?tab={{ clave }}"
+         {% if tab == clave %}aria-current="page"{% endif %}>{{ etiqueta }} ({{ conteos[clave] }})</a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+
+{% if tab == "vencidas" %}
+<p class="text-muted">Oportunidades con buen match que cerraron hace poco sin que las guardaras. Se ocultan a los {{ dias_gracia }} días; guárdalas si quieres conservarlas.</p>
+{% elif tab == "cerradas" %}
+<p class="text-muted">Oportunidades guardadas que ya no están vigentes. Siguen avisándote de cambios, como una adjudicación.</p>
+{% endif %}
+
+<form method="get" action="/registro" class="row g-2 align-items-end mb-3">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <div class="col-6 col-md-auto">
+    <label class="form-label small mb-1" for="registro-fuente">Fuente</label>
+    <select id="registro-fuente" name="fuente" class="form-select form-select-sm">
+      <option value="">Todas</option>
+      <option value="licitaciones" {% if fuente == "licitaciones" %}selected{% endif %}>Licitaciones</option>
+      <option value="compras_agiles" {% if fuente == "compras_agiles" %}selected{% endif %}>Compra Ágil</option>
+    </select>
+  </div>
+  <div class="col-12 col-md">
+    <label class="form-label small mb-1" for="registro-texto">Texto</label>
+    <input type="text" id="registro-texto" name="texto" class="form-control form-control-sm"
+           placeholder="Nombre u organismo" value="{{ texto }}">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">Filtrar</button>
+    {% if fuente or texto %}<a href="/registro?tab={{ tab }}" class="btn btn-sm btn-link">Limpiar</a>{% endif %}
+  </div>
+</form>
+
+{% if items %}
+<p class="small text-muted" id="registro-total"><span class="num">{{ total }}</span> oportunidad(es)</p>
+{% if tab == "descartadas" %}
+<div class="list-group">
+  {% for item in items %}
+  <div class="list-group-item" id="descarte-{{ item.fuente }}-{{ item.codigo }}">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <a href="/oportunidad/{{ item.fuente }}/{{ item.codigo }}"><strong>{{ item.nombre }}</strong></a>
+        <span class="badge bg-secondary ms-2">{{ item.fuente }}</span>
+      </div>
+    </div>
+    {% if item.estado %}
+    <small class="text-muted d-block">Estado: {{ item.estado }}</small>
+    {% endif %}
+    <div class="mt-2">
+      <form method="post" action="/oportunidad/{{ item.fuente }}/{{ item.codigo }}/deshacer-descarte" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ url_actual }}">
+        <button type="submit" class="btn btn-sm btn-outline-success">Restaurar</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="d-flex flex-column gap-3">
+  {% for item in items %}
+  {{ card_oportunidad(item, csrf_token, "reg", "registro", url_actual) }}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if hay_mas %}
+<p class="mt-3"><a class="btn btn-outline-secondary" href="{{ url_mas }}">Ver 20 más</a></p>
+{% endif %}
+{% else %}
+<div class="alert alert-info">
+  {% if fuente or texto %}Ninguna oportunidad de esta sección coincide con el filtro.
+  {% elif tab == "guardadas" %}No tienes oportunidades guardadas. Usa Guardar en el feed, en Explorar CA o en la ficha.
+  {% elif tab == "cerradas" %}Ninguna de tus guardadas ha cerrado todavía.
+  {% elif tab == "vencidas" %}No hay oportunidades con buen match que hayan cerrado en los últimos {{ dias_gracia }} días sin que las guardaras.
+  {% elif tab == "descartadas" %}No tienes oportunidades descartadas.
+  {% else %}No tienes oportunidades archivadas.{% endif %}
+</div>
+{% endif %}
+{% endblock %}

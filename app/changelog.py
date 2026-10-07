@@ -16,6 +16,15 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 10, 6),
+        titulo="Mi registro: guardadas, cerradas y vencidas recientes",
+        descripcion=(
+            "Mi registro reúne tus guardadas (vigentes y cerradas), las vencidas recientes que "
+            "tuvieron buen match y no guardaste (se ocultan a los 14 días), tus descartadas y "
+            "tus archivadas. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 10, 6),
         titulo="Perfiles más precisos y exclusiones más seguras",
         descripcion=(
             "Tus perfiles buscan solo en lo que todavía se puede postular (las Compras Ágiles "

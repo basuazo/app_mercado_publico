@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy.orm import Session, defer
 
 from app.api.presentacion import nombre_region, razones_legibles, texto_cierre
 from app.catalogos.unspsc import nombre_rubro
 from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_naive
-from app.core.vigencia import CA_SIN_CIERRE_VIGENCIA_DIAS, es_vigente
+from app.core.vigencia import (
+    CA_SIN_CIERRE_VIGENCIA_DIAS,
+    condicion_vencida_en_ventana,
+    es_vigente,
+    fecha_vencimiento,
+)
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import esta_guardada, listar_seguidas, obtener_seguimiento
@@ -63,15 +69,20 @@ def mostrar_ficha_oficial(estado: str | None) -> bool:
 
 
 def _construir_item(
-    m: OportunidadMatch,
+    m: OportunidadMatch | None,
     op: Licitacion | CompraAgil,
     *,
     feedback_valor: str | None,
     guardada: bool,
     ahora: datetime,
+    score_max: float | None = None,
 ) -> dict[str, Any]:
     """Arma el dict de presentación de una oportunidad para el feed o una
-    tarjeta individual (re-render HTMX tras guardar)."""
+    tarjeta individual (re-render HTMX tras guardar).
+
+    `m` es None en Mi registro para una guardada sin match (F-registro): sin score
+    ni razones. `score_max` es el mejor score del usuario cuando hay varios matches
+    (varios perfiles) de la misma oportunidad."""
     dias: float | None = None
     if op.fecha_cierre is not None:
         delta = op.fecha_cierre - ahora
@@ -80,6 +91,7 @@ def _construir_item(
     monto: float | None = None
     organismo: str | None = None
     reg: int | None = None
+    fuente = "licitaciones" if isinstance(op, Licitacion) else "compras_agiles"
     if isinstance(op, Licitacion):
         monto = op.monto_clp
         organismo = op.codigo_organismo
@@ -88,9 +100,13 @@ def _construir_item(
         organismo = op.organismo_nombre
         reg = op.region
 
+    score = score_max if score_max is not None else (m.score if m is not None else None)
     return {
         "match": m,
         "oportunidad": op,
+        "fuente": fuente,
+        "codigo": op.codigo,
+        "score": score,
         "nombre": op.nombre,
         "estado": op.estado,
         "fecha_cierre": op.fecha_cierre,
@@ -99,8 +115,8 @@ def _construir_item(
         "organismo": organismo,
         "region": reg,
         "region_nombre": nombre_region(reg),
-        "razones": razones_legibles(m.razones),
-        "url_ficha": _url_ficha(m.fuente, m.codigo_oportunidad),
+        "razones": razones_legibles(m.razones if m is not None else None),
+        "url_ficha": _url_ficha(fuente, op.codigo),
         "mostrar_ficha": mostrar_ficha_oficial(op.estado),
         "guardada": guardada,
         "feedback": feedback_valor,
@@ -788,6 +804,234 @@ def listar_descartadas_detalle(session: Session, user_id: int) -> list[dict[str,
     return result
 
 
+# ---------------------------------------------------------------------------
+# Mi registro (F-registro)
+#
+# Todo acotado por `user_id` (regla 17) y sin cargar el histórico de matches
+# (regla 12): "vencidas recientes" se prefiltra en SQL por ventana de vencimiento.
+# ---------------------------------------------------------------------------
+
+
+def _cargar_ops(
+    session: Session, fuente: str, codigos: list[str]
+) -> dict[str, Licitacion | CompraAgil]:
+    """Las oportunidades de esos códigos en una query, sin `raw_json` (pesado y
+    que el registro no pinta)."""
+    if not codigos:
+        return {}
+    modelo: type[Licitacion] | type[CompraAgil] = (
+        Licitacion if fuente == "licitaciones" else CompraAgil
+    )
+    filas = session.execute(
+        select(modelo).options(defer(modelo.raw_json)).where(modelo.codigo.in_(codigos))
+    ).scalars()
+    return {op.codigo: op for op in cast(Iterable[Licitacion | CompraAgil], filas)}
+
+
+def _mejores_matches(
+    session: Session, perfil_ids: list[int], fuente: str, codigos: list[str]
+) -> dict[str, OportunidadMatch]:
+    """El match de mayor score del usuario por código, solo para esos códigos."""
+    if not codigos or not perfil_ids:
+        return {}
+    mejores: dict[str, OportunidadMatch] = {}
+    filas = session.execute(
+        select(OportunidadMatch)
+        .where(
+            OportunidadMatch.perfil_id.in_(perfil_ids),
+            OportunidadMatch.fuente == fuente,
+            OportunidadMatch.codigo_oportunidad.in_(codigos),
+        )
+        .order_by(OportunidadMatch.score.desc(), OportunidadMatch.id)
+    ).scalars()
+    for m in filas:
+        mejores.setdefault(m.codigo_oportunidad, m)
+    return mejores
+
+
+def _item_sin_oportunidad(s: OportunidadSeguida) -> dict[str, Any]:
+    """Guardada cuya oportunidad ya no existe: datos mínimos del seguimiento, sin romper."""
+    return {
+        "match": None,
+        "oportunidad": None,
+        "fuente": s.fuente,
+        "codigo": s.codigo_oportunidad,
+        "score": None,
+        "nombre": s.codigo_oportunidad,
+        "estado": s.estado_visto,
+        "fecha_cierre": None,
+        "dias_al_cierre": None,
+        "monto": None,
+        "organismo": None,
+        "region": None,
+        "region_nombre": None,
+        "razones": [],
+        "url_ficha": _url_ficha(s.fuente, s.codigo_oportunidad),
+        "mostrar_ficha": False,
+        "guardada": not s.archivada,
+        "feedback": None,
+    }
+
+
+def listar_registro_guardadas(
+    session: Session, user_id: int, *, archivadas: bool
+) -> list[dict[str, Any]]:
+    """Seguimientos del usuario como items de tarjeta, con o sin match.
+
+    Parte de `oportunidades_seguidas` (una guardada puede no tener match: CA del
+    explorador, o licitación cuyo match borró la limpieza) y carga en lote las
+    oportunidades y los matches del usuario SOLO de esos códigos. Cada item trae
+    `seguimiento`, `vigente` (`es_vigente`) y `fecha_vencimiento`. Orden: los más
+    recientes primero (el llamador reordena por pestaña)."""
+    seguidas = [
+        s
+        for s in listar_seguidas(session, user_id, incluir_archivadas=True)
+        if s.archivada == archivadas
+    ]
+    perfil_ids = [p.id for p in listar_perfiles(session, user_id)]
+    ahora = ahora_utc()
+    ops: dict[str, dict[str, Licitacion | CompraAgil]] = {}
+    matches: dict[str, dict[str, OportunidadMatch]] = {}
+    for fuente in FUENTES_VALIDAS:
+        codigos = [s.codigo_oportunidad for s in seguidas if s.fuente == fuente]
+        ops[fuente] = _cargar_ops(session, fuente, codigos)
+        matches[fuente] = _mejores_matches(session, perfil_ids, fuente, codigos)
+
+    items: list[dict[str, Any]] = []
+    for s in seguidas:
+        op = ops.get(s.fuente, {}).get(s.codigo_oportunidad)
+        if op is None:
+            item = _item_sin_oportunidad(s)
+            item["vigente"] = False
+            item["fecha_vencimiento"] = None
+        else:
+            m = matches[s.fuente].get(s.codigo_oportunidad)
+            item = _construir_item(
+                m, op, feedback_valor=None, guardada=not s.archivada, ahora=ahora
+            )
+            item["vigente"] = es_vigente(
+                op.estado, op.fecha_cierre, s.fuente, ahora, getattr(op, "fecha_publicacion", None)
+            )
+            item["fecha_vencimiento"] = fecha_vencimiento(op, s.fuente)
+        item["seguimiento"] = s
+        item["sin_match"] = item["match"] is None
+        items.append(item)
+    return items
+
+
+def _vencidas_stmt(
+    fuente: str,
+    user_id: int,
+    perfil_ids: list[int],
+    ahora: datetime,
+    dias: int,
+    min_score: float,
+) -> Any:
+    """(codigo, score máximo) de las oportunidades con match del usuario que
+    vencieron en los últimos `dias` días, no están guardadas (archivadas incluidas)
+    ni descartadas, y cuyo mejor score alcanza `min_score`."""
+    modelo: type[Licitacion] | type[CompraAgil] = (
+        Licitacion if fuente == "licitaciones" else CompraAgil
+    )
+    guardada = exists().where(
+        OportunidadSeguida.owner_id == user_id,
+        OportunidadSeguida.fuente == fuente,
+        OportunidadSeguida.codigo_oportunidad == modelo.codigo,
+    )
+    descartada = exists().where(
+        MatchFeedback.usuario_id == user_id,
+        MatchFeedback.fuente == fuente,
+        MatchFeedback.codigo_oportunidad == modelo.codigo,
+        MatchFeedback.valor == ValorFeedback.DESCARTE.value,
+    )
+    score = func.max(OportunidadMatch.score)
+    return (
+        select(modelo.codigo.label("codigo"), score.label("score"))
+        .join(
+            OportunidadMatch,
+            and_(
+                OportunidadMatch.fuente == fuente,
+                OportunidadMatch.codigo_oportunidad == modelo.codigo,
+            ),
+        )
+        .where(
+            OportunidadMatch.perfil_id.in_(perfil_ids),
+            condicion_vencida_en_ventana(fuente, ahora - timedelta(days=dias), ahora),
+            ~guardada,
+            ~descartada,
+        )
+        .group_by(modelo.codigo)
+        .having(score >= min_score)
+    )
+
+
+def _dias_para_ocultar(vencimiento: datetime | None, ahora: datetime, dias: int) -> int:
+    """Días enteros (>= 1) que le quedan a una vencida antes de ocultarse."""
+    if vencimiento is None:
+        return 1
+    restante = (vencimiento + timedelta(days=dias) - ahora).total_seconds() / 86400
+    return max(1, math.ceil(restante))
+
+
+def listar_vencidas_recientes(
+    session: Session, user_id: int, ahora: datetime, *, dias: int, min_score: float
+) -> list[dict[str, Any]]:
+    """Pestaña "Vencidas recientes": vencimiento más reciente primero. Cada item
+    trae `score` (el máximo del usuario), `fecha_vencimiento` y `oculta_en_dias`
+    (N >= 1; 1 = "se oculta hoy"). Nunca carga el histórico: el prefiltro es SQL."""
+    perfil_ids = [p.id for p in listar_perfiles(session, user_id)]
+    if not perfil_ids:
+        return []
+    items: list[dict[str, Any]] = []
+    for fuente in FUENTES_VALIDAS:
+        filas = session.execute(
+            _vencidas_stmt(fuente, user_id, perfil_ids, ahora, dias, min_score)
+        ).all()
+        if not filas:
+            continue
+        codigos = [f.codigo for f in filas]
+        puntajes = {f.codigo: float(f.score) for f in filas}
+        ops = _cargar_ops(session, fuente, codigos)
+        matches = _mejores_matches(session, perfil_ids, fuente, codigos)
+        for codigo in codigos:
+            op = ops.get(codigo)
+            if op is None:
+                continue
+            if es_vigente(
+                op.estado, op.fecha_cierre, fuente, ahora, getattr(op, "fecha_publicacion", None)
+            ):
+                continue
+            item = _construir_item(
+                matches.get(codigo),
+                op,
+                feedback_valor=None,
+                guardada=False,
+                ahora=ahora,
+                score_max=puntajes[codigo],
+            )
+            venc = fecha_vencimiento(op, fuente)
+            item["fecha_vencimiento"] = venc
+            item["oculta_en_dias"] = _dias_para_ocultar(venc, ahora, dias)
+            items.append(item)
+    items.sort(key=lambda i: (i["fecha_vencimiento"] or datetime.min, i["codigo"]), reverse=True)
+    return items
+
+
+def contar_vencidas_recientes(
+    session: Session, user_id: int, ahora: datetime, *, dias: int, min_score: float
+) -> int:
+    """La misma condición de `listar_vencidas_recientes` en un `count` (dashboard y
+    etiqueta de la pestaña), sin traer filas."""
+    perfil_ids = [p.id for p in listar_perfiles(session, user_id)]
+    if not perfil_ids:
+        return 0
+    total = 0
+    for fuente in FUENTES_VALIDAS:
+        sub = _vencidas_stmt(fuente, user_id, perfil_ids, ahora, dias, min_score).subquery()
+        total += int(session.execute(select(func.count()).select_from(sub)).scalar_one())
+    return total
+
+
 def resumen_competencia(session: Session, licitacion_codigo: str) -> list[dict[str, Any]]:
     """Resumen de competencia por proveedor (F-competencia), incluyendo a quienes
     ofertaron pero NO ganaron — panorama competitivo completo, no solo ganadores
@@ -985,4 +1229,30 @@ def matches_de_oportunidad(
             )
             .order_by(OportunidadMatch.score.desc())
         ).scalars()
+    )
+
+
+def contar_archivadas(session: Session, user_id: int) -> int:
+    """Cuántas oportunidades archivadas tiene el usuario (etiqueta de la pestaña)."""
+    return int(
+        session.execute(
+            select(func.count())
+            .select_from(OportunidadSeguida)
+            .where(OportunidadSeguida.owner_id == user_id, OportunidadSeguida.archivada.is_(True))
+        ).scalar_one()
+    )
+
+
+def contar_descartadas(session: Session, user_id: int) -> int:
+    """Cuántas oportunidades descartó el usuario: la misma condición que
+    `listar_descartadas`, como `count` (etiqueta de la pestaña, sin traer filas)."""
+    return int(
+        session.execute(
+            select(func.count())
+            .select_from(MatchFeedback)
+            .where(
+                MatchFeedback.usuario_id == user_id,
+                MatchFeedback.valor == ValorFeedback.DESCARTE.value,
+            )
+        ).scalar_one()
     )

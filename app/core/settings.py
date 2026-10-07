@@ -203,6 +203,24 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Mi registro (F-registro) ---
+    registro_dias_gracia: int = Field(
+        default=14,
+        description=(
+            "Días que una oportunidad vencida, con buen match y no guardada, sigue "
+            "visible en 'Vencidas recientes' de Mi registro. Pasado el plazo se oculta "
+            "(no se borra nada). Solo la usa la web."
+        ),
+    )
+    registro_min_score_vencidas: int = Field(
+        default=30,
+        description=(
+            "Piso de score máximo del usuario para 'Vencidas recientes'. Queda bajo el "
+            "del feed (40) a propósito (decisión 24-sep): aparecen oportunidades con "
+            "match 30-39 que nunca se vieron en el dashboard. Solo la usa la web."
+        ),
+    )
+
 
 def get_settings() -> "Settings":
     return Settings()  # type: ignore[call-arg]

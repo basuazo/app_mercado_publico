@@ -53,10 +53,57 @@ def es_vigente(
     return fecha_publicacion >= ahora - timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS)
 
 
+def fecha_vencimiento(op: Licitacion | CompraAgil, fuente: str) -> datetime | None:
+    """Cuándo dejó de poder postularse la oportunidad (F-registro). Una sola regla:
+
+    - con `fecha_cierre`: `fecha_cierre` (aunque el estado haya dejado de ser
+      Abierta antes: una CA cancelada con cierre futuro aparece como vencida recién
+      cuando ese cierre pasa);
+    - CA sin cierre: `fecha_publicacion` + `CA_SIN_CIERRE_VIGENCIA_DIAS`, el momento
+      en que `es_vigente` dejó de darla por vigente;
+    - sin ninguna de las dos (licitación sin cierre, o CA sin cierre ni publicación):
+      None. NO se usa `actualizado_en`: tiene `onupdate` y la ingesta lo reescribe en
+      cada refresco, así que el "vencimiento" se correría a hoy indefinidamente. Sin
+      fecha confiable no se puede fechar el vencimiento: esas filas no entran a
+      "Vencidas recientes"; si están guardadas siguen visibles en "Cerradas".
+    """
+    if op.fecha_cierre is not None:
+        return op.fecha_cierre
+    if fuente == "compras_agiles" and op.fecha_publicacion is not None:
+        return op.fecha_publicacion + timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS)
+    return None
+
+
+def condicion_vencida_en_ventana(fuente: str, desde: datetime, hasta: datetime) -> Any:
+    """`desde < fecha_vencimiento <= hasta` en SQL, la misma regla que `fecha_vencimiento`.
+
+    Las fechas se calculan en Python (para una CA sin cierre, la publicación se
+    compara con la ventana corrida 7 días): así no hay aritmética de fechas en la
+    base y sirve igual en SQLite. Sin fecha confiable (ver `fecha_vencimiento`) la
+    fila no entra a la ventana. tests/test_registro.py
+    (`test_fecha_vencimiento_python_coincide_con_la_ventana_sql`) la compara con
+    `fecha_vencimiento` sobre una matriz de casos."""
+
+    def en(col: Any, a: datetime, b: datetime) -> Any:
+        return and_(col > a, col <= b)
+
+    if fuente == "licitaciones":
+        return and_(Licitacion.fecha_cierre.is_not(None), en(Licitacion.fecha_cierre, desde, hasta))
+    corrimiento = timedelta(days=CA_SIN_CIERRE_VIGENCIA_DIAS)
+    return or_(
+        and_(CompraAgil.fecha_cierre.is_not(None), en(CompraAgil.fecha_cierre, desde, hasta)),
+        and_(
+            CompraAgil.fecha_cierre.is_(None),
+            CompraAgil.fecha_publicacion.is_not(None),
+            en(CompraAgil.fecha_publicacion, desde - corrimiento, hasta - corrimiento),
+        ),
+    )
+
+
 def condicion_lic_vigente(ahora: datetime) -> Any:
     """`es_vigente` para licitaciones, escrita en SQL (F-ajustes): cierre no nulo y
     futuro, y familia ABIERTA o DESCONOCIDO. Mismo patrón que `condicion_ca_vigente`;
-    tests/test_vigencia.py compara ambas con `es_vigente`."""
+    tests/test_ajustes_pg.py compara ambas con `es_vigente`."""
     estado = func.lower(func.trim(Licitacion.estado))
     no_validos = valores_de_estado_en(
         [f for f in FamiliaEstado if f not in _FAMILIAS_CON_CIERRE_FUTURO]

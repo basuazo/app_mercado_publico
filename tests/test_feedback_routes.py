@@ -157,7 +157,7 @@ def test_descartadas_get_las_lista(client, usuario, settings, engine):
     cookies, headers = _session(settings, usuario)
     client.post("/oportunidad/licitaciones/LIC-001/descartar", data={}, cookies=cookies, headers=headers)
 
-    r = client.get("/descartadas", cookies=_cookie(settings, usuario))
+    r = client.get("/registro?tab=descartadas", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitación LIC-001" in r.text
 
@@ -507,7 +507,7 @@ def test_dashboard_respeta_override_min_score_por_query(client, usuario, setting
     assert r.status_code == 200
     assert "Licitación LIC-ALTO" in r.text
     assert "Licitación LIC-BAJO" in r.text
-    assert "oculta" not in r.text
+    assert "por baja relevancia" not in r.text
 
 
 def test_dashboard_render_control_de_relevancia(client, usuario, settings, engine):

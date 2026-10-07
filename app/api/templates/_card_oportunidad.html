@@ -23,9 +23,12 @@
   {%- endif -%}
 {% endmacro %}
 
-{% macro card_oportunidad(item, csrf_token, idx="") %}
-{% set fuente = item.match.fuente %}
-{% set codigo = item.match.codigo_oportunidad %}
+{# `modo="registro"` (F-registro): tarjeta de Mi registro; `next_url` es la pestaña actual.
+   `item.match` puede ser none (guardada sin match): sin score ni razones. #}
+{% macro card_oportunidad(item, csrf_token, idx="", modo="feed", next_url="/") %}
+{% set fuente = item.fuente %}
+{% set codigo = item.codigo %}
+{% set origen_acciones = "registro" if modo == "registro" else "dashboard" %}
 {% set card_id = "card-" ~ (idx ~ "-" if idx != "" else "") ~ fuente ~ "-" ~ codigo %}
 {% set oportunidad_key = fuente ~ ":" ~ codigo %}
 {% set estado_badge = item.estado_badge %}
@@ -39,10 +42,12 @@
 
   {# --- Fila superior: match · título/meta · monto --- #}
   <div class="d-flex align-items-start gap-3">
+    {% if item.score is not none %}
     <div>
-      <div class="anillo-match anillo-match--{{ item.banda }}">{{ item.match.score | round(0) | int }}</div>
+      <div class="anillo-match anillo-match--{{ item.banda }}">{{ item.score | round(0) | int }}</div>
       <div class="anillo-match__glosa">Match</div>
     </div>
+    {% endif %}
 
     <div class="flex-grow-1 min-w-0">
       <a class="tarjeta-op__titulo" href="/oportunidad/{{ fuente }}/{{ codigo }}">{{ item.nombre }}</a>
@@ -85,6 +90,13 @@
     </span>
     {% endif %}
 
+    {% if item.nota_registro %}
+    <span class="badge text-bg-light border fw-normal">{{ item.nota_registro }}</span>
+    {% endif %}
+    {% if item.oculta_texto %}
+    <span class="badge text-bg-warning fw-normal">{{ item.oculta_texto }}</span>
+    {% endif %}
+
     {% for chip in visibles %}
     <span class="chip-razon chip-razon--{{ chip.tipo }}" title="{{ chip.texto }}">{{ chip.texto }}</span>
     {% endfor %}
@@ -103,11 +115,13 @@
     <a href="/oportunidad/{{ fuente }}/{{ codigo }}" class="btn btn-sm btn-primary">Ver ficha</a>
 
     {# Guardar = queda en Mi registro y avisa de sus cambios (F-guardar). #}
+    {% if not (modo == "registro" and item.pestana == "archivadas") %}
     <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/guardar"
           hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/guardar"
           hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <input type="hidden" name="origen" value="{{ origen_acciones }}">
       {% if item.guardada %}
       <button type="submit" class="btn btn-sm btn-success" data-accion="guardar" aria-pressed="true">
         <span aria-hidden="true">✓</span> Guardada<span class="visually-hidden"> (seleccionado)</span>
@@ -116,7 +130,42 @@
       <button type="submit" class="btn btn-sm btn-outline-success" data-accion="guardar" aria-pressed="false">Guardar</button>
       {% endif %}
     </form>
+    {% endif %}
 
+    {# Mi registro: archivar / desarchivar / quitar vuelven a la pestaña actual. #}
+    {% if modo == "registro" and item.pestana in ("guardadas", "cerradas") %}
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/archivar" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <button type="submit" class="btn btn-sm btn-outline-warning">Archivar</button>
+    </form>
+    {% elif modo == "registro" and item.pestana == "archivadas" %}
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/desarchivar" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <button type="submit" class="btn btn-sm btn-outline-success">Desarchivar</button>
+    </form>
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/dejar-de-seguir" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">Quitar de guardadas</button>
+    </form>
+    {% endif %}
+
+    {% if modo == "registro" %}
+    {# Vencidas: descartar directo, sin modal (no hay palabra que excluir de algo que ya cerró). #}
+    {% if item.pestana == "vencidas" %}
+    <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+          hx-post="/oportunidad/{{ fuente }}/{{ codigo }}/descartar"
+          hx-target="#{{ card_id }}" hx-swap="outerHTML" class="d-inline ms-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <input type="hidden" name="origen" value="registro">
+      <button type="submit" class="btn btn-sm btn-link link-secondary text-decoration-none"
+              data-accion="descartar">Descartar</button>
+    </form>
+    {% endif %}
+    {% else %}
     {# Sin JS el formulario descarta directo; con JS el botón abre el modal
        "Descartar" (qué lo trajo y excluir la palabra). #}
     <form method="post" action="/oportunidad/{{ fuente }}/{{ codigo }}/descartar" class="d-inline ms-auto">
@@ -128,6 +177,7 @@
               data-abre-descartar aria-haspopup="dialog"
               data-nombre-oportunidad="{{ item.nombre }}">Descartar</button>
     </form>
+    {% endif %}
   </div>
 </div>
 {% endmacro %}

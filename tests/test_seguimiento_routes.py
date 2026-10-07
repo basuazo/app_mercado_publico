@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -13,6 +15,7 @@ from app.auth.csrf import generate_csrf_token
 from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token, decode_session_token
 from app.core.settings import Settings
+from app.core.tiempo import ahora_utc
 from app.matching.seguimiento import obtener_seguimiento
 from app.models.base import Base
 from app.models.enums import RolUsuario
@@ -79,7 +82,15 @@ def _crear_match_propio(engine, owner_id: int, codigo: str = "LIC-001") -> None:
     """Crea una licitación + perfil + match del owner indicado, condición para
     poder seguirla (check_oportunidad_access exige acceso vía match)."""
     with Session(engine) as s:
-        s.add(Licitacion(codigo=codigo, nombre="Licitación test", descripcion="", estado="publicada"))
+        s.add(
+            Licitacion(
+                codigo=codigo,
+                nombre="Licitación test",
+                descripcion="",
+                estado="publicada",
+                fecha_cierre=ahora_utc() + timedelta(days=5),
+            )
+        )
         perfil = PerfilBusqueda(
             owner_id=owner_id,
             nombre="Perfil test",
@@ -255,7 +266,7 @@ def test_seguidas_get_lista_activas(client, usuario, settings, engine):
     cookies, headers = _session(settings, usuario)
     client.post("/oportunidad/licitaciones/LIC-001/seguir", data={}, cookies=cookies, headers=headers)
 
-    r = client.get("/seguidas", cookies=_cookie(settings, usuario))
+    r = client.get("/registro", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "LIC-001" in r.text or "Licitación test" in r.text
     assert "Fuente: Dirección ChileCompra" in r.text
@@ -267,10 +278,10 @@ def test_seguidas_get_oculta_archivadas_por_defecto(client, usuario, settings, e
     client.post("/oportunidad/licitaciones/LIC-001/seguir", data={}, cookies=cookies, headers=headers)
     client.post("/oportunidad/licitaciones/LIC-001/archivar", data={}, cookies=cookies, headers=headers)
 
-    r = client.get("/seguidas", cookies=_cookie(settings, usuario))
+    r = client.get("/registro", cookies=_cookie(settings, usuario))
     assert "No tienes oportunidades guardadas" in r.text
 
-    r2 = client.get("/seguidas?archivadas=1", cookies=_cookie(settings, usuario))
+    r2 = client.get("/registro?tab=archivadas", cookies=_cookie(settings, usuario))
     assert "Licitación test" in r2.text
 
 
@@ -302,6 +313,6 @@ def test_ficha_muestra_guardada_si_sigue(client, usuario, settings, engine):
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert 'data-accion="guardar" aria-pressed="true"' in r.text
-    # Archivar vive en Mi registro (/seguidas); F-registro lo expone en la ficha.
-    r2 = client.get("/seguidas", cookies=_cookie(settings, usuario))
+    # Archivar vive en Mi registro (/registro); F-registro lo expone en la ficha.
+    r2 = client.get("/registro", cookies=_cookie(settings, usuario))
     assert "/oportunidad/licitaciones/LIC-001/archivar" in r2.text
