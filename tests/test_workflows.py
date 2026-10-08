@@ -5,7 +5,7 @@ El cron de `ciclo-activas` en cron-job.org quedó apuntando a `?job=<ciclo-activ
 repetirlo del lado de Actions: todo job nombrado en un workflow tiene que
 existir en el CLI.
 
-Convención (ver docs/prompt-F-actions-1-canary.md): la lista de jobs va SIEMPRE
+Convención (ver docs/archivo/prompts/prompt-F-actions-1-canary.md): la lista de jobs va SIEMPRE
 en una línea con comillas dobles, `jobs: "ca match alerts"`. Parseo por regex,
 sin PyYAML.
 """

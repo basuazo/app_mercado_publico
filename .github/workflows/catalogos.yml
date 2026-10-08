@@ -24,7 +24,7 @@ jobs:
     with:
       jobs: "catalogos plan-anual vocabulario-rubros"
       # catalogos: 0,0 min medido. plan-anual: sin medir en producción todavía
-      # (Paso 0 lo corre Boris, ver docs/prompt-F-plan-busqueda.md) — 60 min es
+      # (Paso 0 lo corre Boris, ver docs/archivo/prompts/prompt-F-plan-busqueda.md) — 60 min es
       # margen provisorio sobre una estimación local (~7 MB, 300k filas en
       # lotes de 5000); ajustar con el tiempo real de la primera corrida.
       # vocabulario-rubros: una sola sentencia agregada en Postgres sobre ~114k ítems y los

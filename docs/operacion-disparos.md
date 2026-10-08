@@ -5,7 +5,7 @@
 Los jobs corren en **GitHub Actions**, que ejecuta el CLI contra Neon production. Quien los
 dispara es **cron-job.org**: llama a la API de GitHub a la hora exacta, en hora de Chile. Los
 workflows ya no tienen `schedule`, porque GitHub los atrasaba de 2 a 5,5 h y descartaba
-corridas (evidencia en `docs/prompt-F-actions-3-disparo-externo.md`).
+corridas (evidencia en `docs/archivo/prompts/prompt-F-actions-3-disparo-externo.md`).
 
 Render solo sirve la app web. Los crons viejos de cron-job.org que llamaban a
 `/api/jobs/run` en Render quedan **pausados**.

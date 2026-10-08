@@ -51,7 +51,7 @@ _LOTE_INSERT = 5000
 
 # Guarda de espacio (F-plan-busqueda-fix, regla 11 CLAUDE.md — Neon 0,5 GB):
 # durante el reemplazo del año completo conviven dos lotes (pico ~58% medido
-# en el Paso 0 del 27-sep, ver docs/handoff-2026-09-27.md). Mismo límite que
+# en el Paso 0 del 27-sep, ver docs/archivo/handoff-2026-09-27.md). Mismo límite que
 # /salud (500 MB); no se comparte el literal para no acoplar app/ingest a
 # app/api.
 _LIMITE_BD_BYTES = 500 * 1024 * 1024
@@ -124,7 +124,7 @@ def _marcar_lote_vigente(session: Session, agno: int, lote_id: int, ahora: datet
 def anio_completo_cargado(session: Session, agno: int) -> bool:
     """True si el job `plan-anual` ya cargó el año completo (todas las
     instituciones) al menos una vez — desde ahí, get_plan de ese año lee
-    directo de la tabla, sin descarga on-demand (ver docs/prompt-F-plan-busqueda.md)."""
+    directo de la tabla, sin descarga on-demand (ver docs/archivo/prompts/prompt-F-plan-busqueda.md)."""
     state = session.get(SyncState, _fuente_anual_completo(agno))
     return state is not None and state.ultimo_ok is not None
 

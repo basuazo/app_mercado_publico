@@ -141,7 +141,7 @@ Base: `https://api2.mercadopublico.cl` · Auth: header `ticket`.
 | Restricción | Detalle | Implicancia en la app |
 |---|---|---|
 | **Cuota diaria** | 10.000 solicitudes/día por ticket (v1, no modificable). En v2 la cuota depende del tipo de ticket; `-1` = ilimitada | Presupuestar requests: priorizar listados con filtros, pedir detalle solo de candidatos; contador local de consumo |
-| **Error 429** | "Se ha alcanzado el límite…"; la cuota se restablece **por día calendario**, no por ventana de 24 h | Backoff que espera al cambio de fecha; cola de pendientes que se retoma al día siguiente |
+| **Error 429** | Con `Codigo: 10500` = peticiones simultáneas (concurrencia). Cualquier otro 429 = tope diario, que se restablece **por día calendario** (ver §10) | 10500: 3 reintentos 30/60/120 s y cortar el job. Otro 429: no reintentar hasta el cambio de día en Chile |
 | **Error 401** | Ticket ausente/ inválido (v2 lo exige en header) | Validación temprana del ticket al arrancar |
 | **Throttling por IP** | ChileCompra monitorea y puede restringir por volumen desde una misma IP | Rate limiting propio (p. ej. 1–2 req/s con jitter), no paralelizar agresivamente |
 | **Descargas masivas** | Recomendado entre **22:00 y 07:00** | Programar backfills históricos en ventana nocturna |
@@ -174,6 +174,39 @@ La información necesaria está disponible vía API oficial y los términos exig
 - R5. Formato de fecha v1 `ddmmaaaa` propenso a errores (vs ISO en v2).
 - R6. Erratas oficiales en slugs de estado de OC (`recepcionaceptadacialmente`, `recepecionconformeincompleta`).
 - R7. JSON potencialmente grande en días de alta actividad → parseo en streaming o paginación donde exista.
+
+---
+
+## 10. Hallazgos verificados en producción (jul–oct 2026)
+
+*Rescatados de la bitácora y los prompts archivados (`archivo/`). [V] = medido o probado.*
+
+- **429 `Codigo: 10500` es concurrencia, no cuota** [V, 22-sep]: aparece encadenado tras 504 cuando
+  el backend sigue procesando la request anterior. Política: enfriar 60 s tras 504/timeout; 10500 →
+  3 reintentos 30/60/120 s y cortar.
+- **v2: todas las fechas vienen en hora de Chile y la `Z` es falsa** [V, 22-sep] (el desfase sigue
+  el cambio de horario de Chile). Enviar `cambio_desde/hasta` en hora de Chile. En v1 las fechas
+  también son hora de Chile.
+- **v2: el 504 depende de los ítems por página, no del ancho de la ventana** [V]: latencia casi
+  lineal (0 ítems 2,8 s · 32 ítems 23 s · 50 ítems 27–31 s); el gateway corta a ~29–30 s. Por eso
+  `ca_tamano_pagina=20` y ventanas de 2 h.
+- **v2: una consulta no pasa de 10.000 resultados** [V]: partir la ventana si la página 1 informa
+  10.000.
+- **v2: `/v2/compra-agil` responde 500 si la request sale sin ningún filtro real** [V] (doc 09).
+- **v2: el listado no trae descripción ni productos** [V]; el detalle sí, pero tarda ~30 s de media
+  y 1 de cada 3–4 falla en horas malas [V, 27-sep].
+- **Volúmenes** [V, 27-sep]: ~3.100 CA nuevas/día; ~2.000 cambios/h en punta; la API entrega ~42
+  CA/min; 58 % de las CA abiertas sin `fecha_cierre`; plazo publicación→cierre p10 24 h, p50 47 h,
+  p90 119 h.
+- **v1: en el detalle de licitación el organismo viene bajo `Comprador`** (no en el primer nivel)
+  [V, doc 10 §2.a]. El parser actual aún lee el primer nivel (auditoría 14, D1).
+- **v2: `codigo_orden_compra` es null aunque exista OC**: usar `id_orden_compra`.
+- **Tipos de licitación** [V, chilecompra.cl 23-oct-2025]: LQ y H2 eliminados; vigentes L1, LE, LP,
+  LR, LS. Obras MOP/Minvu dentro de Mercado Público desde el 12-dic-2025.
+- **API OCDS pública sin ticket** [V, 08-oct-2026]: `api.mercadopublico.cl/APISOCDS/OCDS/
+  listaOCDSAgnoMes/{año}/{mes}/{desde}/{hasta}` (máx. 1.000 por llamada) y `/tender/{código}`,
+  `/award/`, `/ocds/planning/`, `/ocds/contract/`. Desfase ≥ 1 mes (2026/08 y 2026/09 → 404 el
+  08-oct). Ver auditoría 14 §2.4.
 
 ---
 

@@ -260,7 +260,7 @@ def _pasa_cierre(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
 
     Un item sin fecha de cierre pasa salvo que se pida lo contrario: Compra
     Ágil está dejando `fecha_cierre` en NULL incluso en las publicadas (deuda
-    de docs/00-estado-actual.md) y el matching ya las trata como abiertas —
+    de docs/archivo/00-estado-actual.md) y el matching ya las trata como abiertas —
     con el default en False este filtro las borraría todas del feed.
     """
     cierre = item["fecha_cierre"]
@@ -1037,7 +1037,7 @@ def contar_vencidas_recientes(
 def resumen_competencia(session: Session, licitacion_codigo: str) -> list[dict[str, Any]]:
     """Resumen de competencia por proveedor (F-competencia), incluyendo a quienes
     ofertaron pero NO ganaron — panorama competitivo completo, no solo ganadores
-    (ver deuda señalada en docs/00-estado-actual.md, resuelta en F10 parte 3).
+    (ver deuda señalada en docs/archivo/00-estado-actual.md, resuelta en F10 parte 3).
     Por proveedor: items_ofertados (cuántos ítems ofertó en total), items_ganados
     (cuántos le fueron adjudicados) y total_adjudicado (suma de
     monto_linea_adjudicada de sus ofertas seleccionadas). Agrupa por

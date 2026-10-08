@@ -6,13 +6,19 @@ Postgres (Neon) → perfiles por usuario → matching con score → alertas emai
 dashboard con login. Costo de operación: $0 (Render free + Neon free).
 
 ## Documentos de referencia (leer antes de tocar código)
+- docs/00-estado.md                        ← qué hay en producción y qué sigue
+- docs/14-auditoria-integral.md            ← auditoría vigente y plan de fases
 - docs/01-analisis-api-mercado-publico.md  ← contrato y gotchas de la API
-- docs/02-plan-desarrollo-y-auditoria.md   ← fases F0–F7, free tier, auditoría
+- docs/02-arquitectura-y-operacion.md      ← Actions + cron-job.org, Render, Neon, gotchas
+- docs/decisiones.md                       ← decisiones vigentes
+- docs/archivo/ es historia: no manda.
 
 ## Stack
 Python 3.11+, httpx+tenacity, SQLAlchemy 2 + Alembic sobre Postgres (Neon),
-FTS nativo (tsvector spanish + unaccent), APScheduler, FastAPI + Jinja2/HTMX,
+FTS nativo (tsvector spanish + unaccent), FastAPI + Jinja2/HTMX + Bootstrap 5.3,
 passlib[bcrypt] + cookies firmadas, pytest + respx, ruff + mypy + pre-commit.
+Jobs: GitHub Actions (CLI `python -m app.ingest run-once`) disparado por cron-job.org;
+Render solo sirve la web; correo por API REST de Brevo.
 
 ## API de Mercado Público — reglas duras (NO negociables)
 1. MP_TICKET solo en variable de entorno. Nunca en código, tests, fixtures,
@@ -64,13 +70,15 @@ passlib[bcrypt] + cookies firmadas, pytest + respx, ruff + mypy + pre-commit.
 - Jobs idempotentes; re-ejecutar nunca duplica ni corrompe.
 
 ## Flujo de trabajo
-- Una fase (F0–F7, incl. F6.5 despliegue) por sesión/commit. Antes de cerrar:
-  ruff check, mypy, pytest.
+- Una fase por commit, a partir de un prompt `docs/prompt-F-*.md`; sin push hasta
+  auditarla. Antes de cerrar: `ruff check .`, `python -m mypy app`, `python -m pytest -rs`
+  (0 fallos, 0 errores, 0 saltados, contra Neon dev con `postgresql+psycopg://`).
+- Toda fase con cambios visibles agrega una entrada a `app/changelog.py` en el mismo commit.
+- `git add` solo de los archivos de la fase; nunca `git add -A`.
 - Tests de red SIEMPRE mockeados (respx). Llamadas reales solo en
   scripts/smoke_test.py y solo las ejecuta el humano.
 - Commits en español con prefijo de fase: "F3: ingesta incremental de Compra Ágil".
 - No agregar dependencias fuera del stack sin proponer y justificar primero.
-```
 
 ## Investigación y verificación — reglas duras (NO negociables)
 20. No afirmar un NEGATIVO ("no existe / no está / no se puede / no está en datos

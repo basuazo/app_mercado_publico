@@ -247,7 +247,7 @@ def texto_cierre(
     que la fuente no entregó, para un subconjunto de las filas.
 
     Vuelve en una fase posterior, cuando el Paso 0 confirme que la API manda
-    hora y haya pasado una corrida completa. Ver docs/00-estado-actual.md.
+    hora y haya pasado una corrida completa. Ver docs/archivo/00-estado-actual.md.
 
     Tampoco se afirma zona horaria en Compra Ágil: el huso de la fuente no
     está verificado (ver app/core/tiempo.py).

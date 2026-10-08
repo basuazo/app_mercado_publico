@@ -1,5 +1,9 @@
 # Roadmap mp-oportunidades
 
+> **08-oct-2026:** este archivo es el historial de fases hasta septiembre. El plan vigente
+> está en `14-auditoria-integral.md` §8 y el estado en `00-estado.md`. La sección
+> "Próxima versión — F-ca-rubro" sigue vigente.
+
 > Paso a paso de lo pendiente, ordenado por prioridad. Una fase por sesión/commit
 > (regla de flujo de trabajo). Flujo de cada fase: Claude genera un prompt →
 > se ejecuta en Claude Code → se audita la salida → commit.
@@ -499,7 +503,7 @@ M apariciones" (M ≥ N) para no confundir.
   `/api/oportunidades`).
 
 ## Deuda técnica — suite 100% verde (incl. @needs_postgres, sin red real) — HECHO
-Cierra 3 de las deudas anotadas en "Deudas conocidas" (`docs/00-estado-actual.md`) más un
+Cierra 3 de las deudas anotadas en "Deudas conocidas" (`docs/archivo/00-estado-actual.md`) más un
 hallazgo que quedaba oculto detrás de una de ellas. Sin migración de esquema.
 - **`pg_session` (`tests/test_models.py`):** `Session(connection=conn)` no es un kwarg válido
   de `Session()` en la versión de SQLAlchemy 2 instalada (daba `TypeError`, 4 errors bajo

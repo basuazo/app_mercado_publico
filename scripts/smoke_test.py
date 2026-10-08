@@ -45,7 +45,7 @@ from app.core.settings import Settings  # noqa: E402
 # primaria. El proyecto interpreta las fechas SIN offset como hora de Chile
 # (ver app/core/tiempo.py, marcado [I]); esta comprobación es lo que convierte
 # esa suposición en dato verificado [V]. El resultado va a
-# docs/00-estado-actual.md.
+# docs/archivo/00-estado-actual.md.
 #
 # Imprime SOLO valores de fecha: el ticket nunca aparece en la salida — no se
 # imprime ninguna URL ni ningún parámetro de la request.
@@ -173,7 +173,7 @@ def verificar_formato_fechas(
     print("  · Si viene con un offset (+hh:mm) -> el código lo respeta. Una Z en la v2 NO es UTC:")
     print("    es hora de Chile mal etiquetada (F-ca-ventana); parse_fecha_v2 la ignora.")
     print("  · Si NO hay hora -> la mitad de F-fecha-cierre no aplicaba; hay que replantearla.")
-    print("  · Anotar el resultado en docs/00-estado-actual.md marcando [V] lo observado.")
+    print("  · Anotar el resultado en docs/01-analisis-api-mercado-publico.md §10 marcando [V] lo observado.")
     print()
     print("=== Paso 0 completado ===")
 

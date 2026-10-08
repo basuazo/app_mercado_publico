@@ -122,29 +122,24 @@ Causa más probable: ticket vencido o revocado.
 
 ---
 
-## 7. Error 429 — cuota de API agotada
+## 7. Error 429
 
-Síntoma: `MPRateLimitError` en logs; `/salud` muestra `cuota_api.usadas_hoy ≥ 9000`.
+Dos casos distintos (verificado el 22-sep; ver `01-analisis-api-mercado-publico.md` §10):
 
-**Regla crítica:** 429 significa cuota agotada hasta las **00:01 del día calendario siguiente en horario de Chile (America/Santiago)**. Jamás reintentar el mismo día.
+- **429 con `Codigo: 10500` = peticiones simultáneas** (concurrencia, no cuota). La app reintenta
+  hasta 3 veces con 30/60/120 s y luego corta el job; el siguiente disparo corre normal.
+- **Cualquier otro 429 = tope diario.** No reintentar hasta el cambio de día calendario en
+  `America/Santiago`. Ojo: hoy ese bloqueo no se persiste entre corridas (auditoría 14, R1).
 
-La app ya maneja esto automáticamente (aborta el ciclo, no reintenta). El scheduler retomará al día siguiente.
-
-**Si la cuota se agota frecuentemente:**
-
-1. Revisar `/salud` → `cuota_api` para ver distribución de uso.
-2. Considerar reducir la frecuencia de backfill o el tamaño de las ventanas.
-3. El presupuesto por defecto es 9.000/día (techo: 10.000). No cambiar sin evaluar el impacto.
+Revisar `/salud` → `cuota_api` (presupuesto local 9.000/día). Máximo medido: ~3.600/día.
 
 ---
 
-## 8. API de Mercado Público caída (5xx)
+## 8. API de Mercado Público caída (5xx, 504)
 
-La app reintenta automáticamente con back-off exponencial (tenacity: 3 intentos, 2–30 s entre ellos). Si persiste, el job falla con `MPServerError` y el advisory lock se libera.
-
-**No hay acción requerida** — el scheduler retomará en el siguiente intervalo (30 min para CA, cada 5 h para licitaciones activas).
-
-Si la caída dura > 24 h, el cursor de CA puede quedar desactualizado. Al recuperarse, el sync incremental usa el cursor guardado y recupera los cambios perdidos.
+Tras un 504 o un timeout la app enfría 60 s antes de la siguiente request. `detalles-match` no
+reintenta: cuenta el fallo en la oportunidad y la pone en espera tras varios fallos. El siguiente
+disparo de Actions retoma solo; el cursor de CA recupera lo perdido por ventanas.
 
 ---
 
@@ -179,17 +174,15 @@ Si el tamaño sigue creciendo después de purgar, revisar que `raw_json` no se g
 
 ---
 
-## 10. Pinger caído
+## 10. Jobs atrasados o sin correr
 
-**Síntoma:** Render duerme el proceso → sync atrasada. Se detecta porque `/salud` muestra `sync_state.ultima_sync` con > 2 h de antigüedad.
+Ya no hay pinger: los jobs corren en GitHub Actions disparados por cron-job.org.
 
-**Remedio:**
-
-1. Verificar en UptimeRobot/cron-job.org que el monitor de `GET /api/salud/ping` está activo y sin errores.
-2. Si estaba pausado, reactivarlo. Render despertará el proceso en la próxima request.
-3. Verificar que la URL del monitor es correcta (`https://tu-app.onrender.com/api/salud/ping`).
-
-El scheduler interno de APScheduler se detiene cuando Render duerme el proceso. Al despertar, los jobs retoman en el siguiente intervalo programado.
+1. `/salud` o `GET /api/salud/jobs` → ¿qué job está viejo?
+2. GitHub → Actions: ¿hubo corrida? Si no, revisar cron-job.org (historial y notificaciones) y
+   que el PAT no haya vencido (401). Ver `operacion-disparos.md`.
+3. Si hubo corrida y falló: ver el log; para correrlo a mano, **Run workflow** en Actions o el CLI
+   local (`02-arquitectura-y-operacion.md` §5).
 
 ---
 
@@ -255,44 +248,10 @@ El archivo `render.yaml` ya define el prefijo correcto en los ejemplos de `docs/
 
 ---
 
-## 14. Jobs y cadencia recomendada
+## 14. Jobs y cadencia
 
-Todos corren automáticamente vía el scheduler interno (APScheduler, ver
-`app/ingest/orchestrator.py::build_scheduler`) mientras el proceso esté despierto.
-
-**Todos los jobs de la tabla son disparables desde afuera** con
-`POST /api/jobs/run?job=<nombre>` (`X-Jobs-Token` requerido) y con el CLI
-`python -m app.ingest run-once --job=<nombre>` — útil para forzar un ciclo fuera de
-horario o tras un deploy (ver "heal post-deploy" en [despliegue.md](despliegue.md)).
-Los tres caminos de disparo (scheduler interno, endpoint y CLI) toman el mismo
-`pg_advisory_lock`, así que un cron externo nunca se solapa con el ciclo interno ni
-duplica gasto de cuota de la API (regla 13 de CLAUDE.md). Si el lock está ocupado el
-ciclo se **omite** — eso es correcto, no hay que reintentarlo.
-
-| Job | Cadencia (scheduler interno) | Qué hace |
-|---|---|---|
-| `ca` | cada 30 min | Sync incremental de Compra Ágil (cursor `fecha_ultimo_cambio`) |
-| `activas` | 08:00, 13:00, 18:00 Chile | Listado v1 de licitaciones activas |
-| `detalles` | tras cada `activas` | Detalle de licitaciones pendientes (gasta cuota API) |
-| `datos-abiertos` | 23:30 Chile (ciclo nocturno, primero) | `licitacion_items` (UNSPSC) desde `lic-da`, $0 cuota — ver `docs/04-datos-abiertos.md` |
-| `lifecycle` | 23:30 Chile (ciclo nocturno) | Refresca estados de oportunidades próximas a cierre o seguidas |
-| `match` | tras cada `activas`/`ca` | Recalcula matches contra perfiles activos |
-| `competencia` | 23:30 Chile (ciclo nocturno, después de `lifecycle`) | Captura ofertas (`lic-da`) de seguidas recién adjudicadas, $0 cuota — ver `docs/05-competencia.md` |
-| `alerts` | tras cada `match` | Detecta eventos de oportunidades con alertas activas y envía inmediatas pendientes |
-| `resumen` | diario, hora `DIGEST_HOUR` (default 8) | Envía el resumen consolidado por usuario elegible |
-| `retencion` | diario 03:00 Chile | Purga `raw_json`/filas terminales > 90 días |
-| `catalogos` | semanal, lunes 02:00 Chile | Refresca catálogo de organismos |
-| `nocturno` | 23:30 Chile | Ciclo nocturno completo: `datos-abiertos` → `lifecycle` → `competencia` → backfill del día anterior |
-
-`nocturno` es el **único** camino de disparo a `run_backfill_fecha`. Valida por sí mismo
-la ventana 22:00–07:00 de `America/Santiago` con `ZoneInfo` (regla 5): fuera de esa
-ventana no ejecuta ningún paso y lo registra en el log. Los crons externos corren en
-UTC, así que hay que agendarlo por la hora UTC equivalente y **no** llamar sus pasos por
-separado, que saltearía el guard y dejaría fuera el backfill.
-
-`datos-abiertos` corre **antes** de `lifecycle`/`match` en el ciclo nocturno para que
-los ítems UNSPSC estén disponibles antes del próximo matching; `competencia` corre
-**después** de `lifecycle` porque depende de que los estados (incl. adjudicaciones de
-seguidas) estén al día. Ninguno de los dos gasta cuota de la API (regla 7 de CLAUDE.md).
-`POST /api/jobs/run` sin `job` (o `job=all`) ejecuta el ciclo completo en este orden:
-activas → detalles → datos-abiertos → lifecycle → match → competencia → alerts → resumen.
+La cadencia real y la composición de cada workflow están en `02-arquitectura-y-operacion.md` §2 y
+en `operacion-disparos.md`. Todo job toma el mismo `pg_advisory_lock`; el CLI **espera** el lock
+(`--esperar-lock-min`) en vez de omitir. `nocturno` es el único camino al backfill y valida por sí
+mismo la ventana 22:00–07:00 de Chile. El scheduler en proceso y `POST /api/jobs/run` existen pero
+no se usan (limpieza pendiente).

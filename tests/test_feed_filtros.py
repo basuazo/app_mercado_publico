@@ -143,7 +143,7 @@ def test_cierre_rango_acota() -> None:
 
 def test_cierre_sin_fecha_pasa_por_defecto() -> None:
     """Compra Ágil está dejando `fecha_cierre` en NULL incluso en las
-    publicadas (deuda de docs/00-estado-actual.md) y el matching ya las trata
+    publicadas (deuda de docs/archivo/00-estado-actual.md) y el matching ya las trata
     como abiertas: sin este escape, el filtro por rango las borraría TODAS."""
     items = [
         _item("CA-SIN-FECHA", fuente="compras_agiles", fecha_cierre=None),

@@ -83,7 +83,7 @@ alinear la variable de entorno: Render + `.env` con el valor nuevo.
 
 ## Parte B — Prompt para Claude Code
 
-> Contexto: leer `docs/00-estado-actual.md` y este archivo antes de empezar. Todos los
+> Contexto: leer `docs/archivo/00-estado-actual.md` y este archivo antes de empezar. Todos los
 > secretos de producción fueron rotados a mano (Parte A); esta tarea es solo código y docs.
 > No hay que tocar `.env` ni ninguna consola externa.
 
@@ -106,7 +106,7 @@ final, no renumerar las existentes, que están referenciadas desde otros docs).
 En §4, agregar explícito el paso de cron-job.org: rotar `JOBS_TOKEN` sin actualizar el
 header `X-Jobs-Token` de los crons los deja en 401 silencioso.
 
-### B3. `docs/00-estado-actual.md`
+### B3. `docs/archivo/00-estado-actual.md`
 Cerrar A1 [CRÍTICO-1]: dejar registrado que los siete secretos se rotaron el 4-sep-2026,
 que se verificó que `.env` nunca estuvo en el historial de git y que `audits/` está
 gitignoreado — o sea que no hubo ni hay que reescribir historial.

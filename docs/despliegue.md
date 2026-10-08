@@ -87,20 +87,11 @@ dev         ← branch para desarrollo local y pytest
 
 ---
 
-## 3. Pinger — mantener el servicio vivo
+## 3. Jobs (sin pinger)
 
-Render free duerme el proceso tras 15 min de inactividad. El scheduler interno muere al dormirse.
-
-**Configurar en [cron-job.org](https://cron-job.org) o [UptimeRobot](https://uptimerobot.com):**
-
-| Tarea | URL | Método | Cabecera | Frecuencia |
-|---|---|---|---|---|
-| Keepalive | `https://tu-app.onrender.com/api/salud/ping` | GET | — | cada 10 min |
-| Job backup | `https://tu-app.onrender.com/api/jobs/run?job=ca` | POST | `X-Jobs-Token: <JOBS_TOKEN>` | cada 1 h |
-
-> **Advertencia TZ:** los crons externos corren en UTC. La ventana nocturna de backfill
-> (22:00–07:00) la valida la app internamente con `ZoneInfo("America/Santiago")`.
-> No confíes en la hora del cron externo para eso.
+Render free duerme el proceso a los 15 min sin requests, y está bien que lo haga: los jobs no
+corren en Render sino en GitHub Actions, disparados por cron-job.org. Configuración completa en
+`operacion-disparos.md`. No configurar keepalive.
 
 ---
 

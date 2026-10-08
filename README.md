@@ -92,7 +92,7 @@ Resumen:
 2. En Render: **New → Web Service** → conectar repo:
    - Start command: `alembic upgrade head && uvicorn app.api.main:_make_app --factory --host 0.0.0.0 --port $PORT`
    - Variables de entorno: igual que `.env` pero `DATABASE_URL` apunta a la branch **production** de Neon (con prefijo `postgresql+psycopg://`).
-3. Configurar pinger en UptimeRobot o cron-job.org → `GET /api/salud/ping` cada 10 min.
+3. Los jobs corren en GitHub Actions disparados por cron-job.org (ver [docs/operacion-disparos.md](docs/operacion-disparos.md)). Render duerme cuando nadie usa la web; no hace falta pinger.
 
 ---
 
@@ -100,11 +100,24 @@ Resumen:
 
 | Documento | Contenido |
 |---|---|
+| [docs/00-estado.md](docs/00-estado.md) | Qué hay en producción y qué sigue |
+| [docs/14-auditoria-integral.md](docs/14-auditoria-integral.md) | Auditoría vigente (08-oct-2026) y plan de fases |
 | [docs/01-analisis-api-mercado-publico.md](docs/01-analisis-api-mercado-publico.md) | Contrato y gotchas de la API |
-| [docs/02-plan-desarrollo-y-auditoria.md](docs/02-plan-desarrollo-y-auditoria.md) | Fases F0–F7, decisiones de arquitectura |
+| [docs/02-arquitectura-y-operacion.md](docs/02-arquitectura-y-operacion.md) | Arquitectura, jobs, flujo de trabajo, gotchas |
+| [docs/decisiones.md](docs/decisiones.md) | Decisiones vigentes |
+| [docs/operacion-disparos.md](docs/operacion-disparos.md) | cron-job.org → GitHub Actions |
+| [docs/operacion.md](docs/operacion.md) | Runbook: credenciales, incidentes, backup, rollback |
+| [docs/despliegue.md](docs/despliegue.md) | Despliegue en Render + Neon |
+| docs/04 · 05 · 07 · 08 · 09 · 10 | Spikes verificados: datos abiertos, competencia, plan anual, organismos, CA 500, enlace a ficha |
+| [docs/03-roadmap.md](docs/03-roadmap.md) | Historial de fases hasta sep-2026 (el plan vigente está en la auditoría 14) |
+| docs/archivo/ | Historia: bitácora, handoffs, prompts ejecutados |
+
+---|---|
+| [docs/01-analisis-api-mercado-publico.md](docs/01-analisis-api-mercado-publico.md) | Contrato y gotchas de la API |
+| [docs/archivo/02-plan-desarrollo-y-auditoria.md](docs/archivo/02-plan-desarrollo-y-auditoria.md) | Fases F0–F7, decisiones de arquitectura |
 | [docs/despliegue.md](docs/despliegue.md) | Guía paso a paso de despliegue en Render + Neon |
 | [docs/operacion.md](docs/operacion.md) | Runbook: rotación de credenciales, incidentes, backup |
-| [docs/arquitectura.md](docs/arquitectura.md) | Diagrama de módulos, decisiones y limitaciones |
+| [docs/archivo/arquitectura.md](docs/archivo/arquitectura.md) | Diagrama de módulos, decisiones y limitaciones |
 
 ---
 
