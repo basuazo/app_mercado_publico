@@ -184,9 +184,10 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
 class MercadoPublicoV2Client:
     """Acceso a la API Compra Ágil v2 de Mercado Público."""
 
-    def __init__(self, settings: Settings, engine: Engine) -> None:
+    def __init__(self, settings: Settings, engine: Engine, *, reserva: int = 0) -> None:
+        # `reserva`: requests del día que este cliente deja para `ca` (F-datos-1).
         rl = rate_limiter_compartido(settings.rate_limit_rps)
-        quota = QuotaTracker(engine, settings.api_daily_budget)
+        quota = QuotaTracker(engine, settings.api_daily_budget, reserva=reserva)
         self._ticket = settings.mp_ticket
         self._client = BaseClient(
             ticket=settings.mp_ticket,

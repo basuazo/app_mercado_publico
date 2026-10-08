@@ -109,6 +109,9 @@ class Licitacion(Base):
     monto_estimado: Mapped[float | None] = mapped_column(Float, nullable=True)
     monto_clp: Mapped[float | None] = mapped_column(Float, nullable=True)
     codigo_organismo: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Mismas columnas que compras_agiles (F-datos-1); llegan con el detalle v1.
+    organismo_nombre: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    region: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, default=None)
     detalle_obtenido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Fallos seguidos de `detalles-match` y el último (F-detalles-fallos): con
@@ -532,6 +535,7 @@ class JobRun(Base):
 
 Index("ix_licitaciones_estado", Licitacion.estado)
 Index("ix_licitaciones_fecha_cierre", Licitacion.fecha_cierre)
+Index("ix_licitaciones_region", Licitacion.region)
 Index("ix_compras_agiles_estado", CompraAgil.estado)
 Index("ix_compras_agiles_region", CompraAgil.region)
 Index("ix_oportunidades_match_perfil", OportunidadMatch.perfil_id)

@@ -280,7 +280,7 @@ class TestVentanas:
         for kw in api.llamadas:
             assert kw["cambio_hasta"] is not None
             assert kw["tamano_pagina"] == 20
-            assert kw["estados"] == ["cerrada", "proveedor_seleccionado", "publicada"]
+            assert kw["estados"] == ["cancelada", "cerrada", "desierta", "proveedor_seleccionado", "publicada"]
         assert [kw["numero_pagina"] for kw in api.llamadas[:2]] == [1, 2]
 
     def test_ventanas_vacias_igual_hacen_avanzar_el_cursor(
@@ -799,7 +799,7 @@ def test_arranque_en_frio_pide_lo_mismo_que_antes(monkeypatch, session, engine) 
 
     esperado = {
         "cambio_desde": None,
-        "estados": ["cerrada", "proveedor_seleccionado", "publicada"],
+        "estados": ["cancelada", "cerrada", "desierta", "proveedor_seleccionado", "publicada"],
         "tamano_pagina": 50,
     }
     assert [kw["numero_pagina"] for kw in api.llamadas] == [1, 2]

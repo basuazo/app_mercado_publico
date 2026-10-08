@@ -87,23 +87,29 @@ def test_el_429_cuenta_aunque_falle(client, quota) -> None:
     respx.get(_URL).mock(return_value=httpx.Response(429, text="limite"))
     with pytest.raises(MPRateLimitError):
         client._request("GET", _URL)
-    assert quota.remaining() == 99
+    # Cuenta y, además, deja el día agotado: un 429 que no es 10500 es tope
+    # diario (regla 3, F-datos-1). Ver tests/test_datos_1.py.
+    assert quota.remaining() == 0
 
 
 @respx.mock
 def test_secuencia_completa_deja_el_contador_en_4(client, quota) -> None:
-    """1 éxito + 1 error 504 con su reintento + 1 error 429 = 4 requests."""
+    """1 éxito + 1 error 504 con su reintento + 1 error 401 = 4 requests.
+
+    El último era un 429; desde F-datos-1 un 429 que no es 10500 agota el día y
+    el contador deja de reflejar lo emitido, así que se usa otro error.
+    """
     respx.get(_URL).mock(
         side_effect=[
             httpx.Response(200, json={"ok": True}),  # 1
             httpx.Response(504, text="boom"),  # 2
             httpx.Response(200, json={"ok": True}),  # 3 (reintento del 504)
-            httpx.Response(429, text="limite"),  # 4
+            httpx.Response(401, text="no"),  # 4
         ]
     )
     client._request("GET", _URL)
     client._request("GET", _URL)
-    with pytest.raises(MPRateLimitError):
+    with pytest.raises(MPAuthError):
         client._request("GET", _URL)
 
     assert quota.remaining() == 96  # 100 - 4, no 100 - 1

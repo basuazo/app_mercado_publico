@@ -1139,6 +1139,7 @@ class TestCliRunOnce:
             "lifecycle",
             "competencia",
             "backfill_ayer",
+            "rellenar-organismo",
             "detalles-match",
         ]
         assert "nocturno" not in llamadas

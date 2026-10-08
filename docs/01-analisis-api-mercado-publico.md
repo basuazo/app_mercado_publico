@@ -198,8 +198,20 @@ La información necesaria está disponible vía API oficial y los términos exig
 - **Volúmenes** [V, 27-sep]: ~3.100 CA nuevas/día; ~2.000 cambios/h en punta; la API entrega ~42
   CA/min; 58 % de las CA abiertas sin `fecha_cierre`; plazo publicación→cierre p10 24 h, p50 47 h,
   p90 119 h.
-- **v1: en el detalle de licitación el organismo viene bajo `Comprador`** (no en el primer nivel)
-  [V, doc 10 §2.a]. El parser actual aún lee el primer nivel (auditoría 14, D1).
+- **v1: en el detalle de licitación, organismo, región y fechas viven en bloques** [V, sonda
+  `claves-lic`, 08-oct-2026]: `Comprador.{CodigoOrganismo, NombreOrganismo, RegionUnidad}` (la
+  región como NOMBRE, p. ej. "Región del Libertador General Bernardo O´Higgins", con tilde
+  invertida) y `Fechas.{FechaPublicacion, FechaCierre, …}`; en el primer nivel `CodigoOrganismo`,
+  `FechaPublicacion` y `FechaCierre` vienen null. `FechaPublicacion` trae fracción de segundo
+  (`2026-10-07T19:32:09.92`). El listado de `activas` no trae `Tipo` ni `Comprador`. Parser
+  corregido en F-datos-1.
+- **v2: el listado exige `tamano_pagina` entre 10 y 50** [V, 08-oct-2026]: con 5 responde 400 en el
+  envelope ("tamano_pagina debe estar entre 10 y 50").
+- **v2: `estado=desierta` y `estado=cancelada` se aceptan y filtran** [V, sonda `estados-ca`,
+  08-oct-2026]: 200, todos los ítems con el estado pedido. La ingesta los pide desde F-datos-1.
+- **v2: el detalle de CA trae `fechas.fecha_cancelacion`** [V, 08-oct-2026] además de publicación,
+  cierre y último cambio. Las 8.295 CA `publicada` sin fecha medidas en el Paso 0 se crearon todas
+  antes del 21-sep (la más reciente, 21-sep 00:04 UTC): problema histórico, no vigente.
 - **v2: `codigo_orden_compra` es null aunque exista OC**: usar `id_orden_compra`.
 - **Tipos de licitación** [V, chilecompra.cl 23-oct-2025]: LQ y H2 eliminados; vigentes L1, LE, LP,
   LR, LS. Obras MOP/Minvu dentro de Mercado Público desde el 12-dic-2025.

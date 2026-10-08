@@ -257,6 +257,7 @@ class TestCli:
             "lifecycle",
             "competencia",
             "backfill_ayer",
+            "rellenar-organismo",
             "detalles-match",
         ]
         assert {s for _, s in vistos} == {1800}

@@ -27,7 +27,9 @@ _FUENTE = "compra_agil"
 # garantiza que la request nunca salga "pelada" (docs/09-compra-agil-500.md).
 # El filtro local de estado se mantiene como defensa adicional por si la API cambia qué
 # acepta en el parámetro `estado`.
-_ESTADOS_VALIDOS = {"publicada", "cerrada", "proveedor_seleccionado"}
+# desierta y cancelada (F-datos-1): sin ellas el paso a esos estados nunca llegaba por
+# el listado. La API los acepta y filtra por ellos [V, sonda estados-ca, 08-oct-2026].
+_ESTADOS_VALIDOS = {"publicada", "cerrada", "proveedor_seleccionado", "desierta", "cancelada"}
 
 # --- Ventanas (F-ca-ventana) ------------------------------------------------
 # Solapamiento con la ventana anterior, para no perder cambios en el borde.
@@ -63,7 +65,12 @@ def _filtros_listado(cambio_desde: datetime | None) -> list[str]:
 
 
 def upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAgil, bool]:
-    """Upsert básico de Compra Ágil. Devuelve (objeto, es_nueva)."""
+    """Upsert básico de Compra Ágil. Devuelve (objeto, es_nueva).
+
+    Una CA existente no se pisa con None: fechas, monto, región y organismo
+    solo se escriben si el ítem los trae, y `total_ofertas` se queda con el
+    mayor. Mismo criterio que :func:`_completar_desde_detalle` (F-datos-1).
+    """
     existing = session.get(CompraAgil, item.codigo)
     es_nueva = existing is None
 
@@ -75,14 +82,23 @@ def upsert_ca_basica(session: Session, item: CompraAgilBasica) -> tuple[CompraAg
 
     ca.nombre = item.nombre
     ca.estado = estado_ca(item.estado).value
-    ca.fecha_publicacion = item.fecha_publicacion
-    ca.fecha_cierre = item.fecha_cierre
-    ca.fecha_ultimo_cambio = item.fecha_ultimo_cambio
-    ca.monto_disponible_clp = item.monto_clp
-    ca.region = item.region
-    ca.organismo_nombre = item.organismo_nombre
-    ca.organismo_rut = item.organismo_rut
-    ca.total_ofertas = item.total_ofertas
+    if item.fecha_publicacion is not None or es_nueva:
+        ca.fecha_publicacion = item.fecha_publicacion
+    if item.fecha_cierre is not None or es_nueva:
+        ca.fecha_cierre = item.fecha_cierre
+    if item.fecha_ultimo_cambio is not None or es_nueva:
+        ca.fecha_ultimo_cambio = item.fecha_ultimo_cambio
+    if item.monto_clp is not None or es_nueva:
+        ca.monto_disponible_clp = item.monto_clp
+    if item.region is not None or es_nueva:
+        ca.region = item.region
+    if item.organismo_nombre is not None or es_nueva:
+        ca.organismo_nombre = item.organismo_nombre
+    if item.organismo_rut is not None or es_nueva:
+        ca.organismo_rut = item.organismo_rut
+    ca.total_ofertas = (
+        item.total_ofertas if es_nueva else max(ca.total_ofertas or 0, item.total_ofertas)
+    )
     ca.actualizado_en = ahora_utc()
     return ca, es_nueva
 

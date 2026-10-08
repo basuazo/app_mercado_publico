@@ -121,8 +121,8 @@ def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, 
             }
         return {
             "nombre": lic.nombre,
-            "organismo": lic.codigo_organismo or "",
-            "region": None,
+            "organismo": lic.organismo_nombre or lic.codigo_organismo or "",
+            "region": lic.region,
             "monto": lic.monto_clp,
             "fecha_cierre": lic.fecha_cierre,
             "fecha_publicacion": lic.fecha_publicacion,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 
@@ -57,6 +58,23 @@ class MPServerError(MPError):
     def __init__(self, message: str, status_code: int) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+class MPTransportError(MPServerError):
+    """Error de transporte (conexión rechazada o cortada) con los reintentos agotados.
+
+    Subclase de MPServerError con `status_code=0`, como el timeout: los
+    llamadores que ya cortan o siguen ante un 5xx hacen lo mismo sin conocerla.
+    `detalles-match` la distingue para no culpar a la oportunidad (F-datos-1).
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=0)
+
+
+# Fallos del canal que no son timeout: conexión rechazada, cortada a mitad de la
+# respuesta o con el protocolo roto. Se tratan como el timeout (F-datos-1, R3).
+_ERRORES_TRANSPORTE = (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError)
 
 
 class MPParseError(MPError):
@@ -270,13 +288,43 @@ INSERT INTO quota_log (fecha, requests_usadas) VALUES (:fecha, :n)
 ON CONFLICT(fecha) DO UPDATE SET requests_usadas = requests_usadas + :n
 """
 
+# Día agotado (R1): el contador sube al presupuesto completo, nunca baja.
+_AGOTAR_QUOTA_PG = """
+INSERT INTO quota_log (fecha, requests_usadas)
+VALUES (:fecha, :n)
+ON CONFLICT (fecha) DO UPDATE
+    SET requests_usadas = GREATEST(quota_log.requests_usadas, EXCLUDED.requests_usadas)
+"""
+
+_AGOTAR_QUOTA_SQLITE = """
+INSERT INTO quota_log (fecha, requests_usadas) VALUES (:fecha, :n)
+ON CONFLICT(fecha) DO UPDATE SET requests_usadas = MAX(requests_usadas, :n)
+"""
+
+
+def _ahora_chile() -> datetime:
+    return datetime.now(TZ_CHILE)
+
 
 class QuotaTracker:
-    """Rastrea el uso diario de la cuota de la API persistido en Postgres."""
+    """Rastrea el uso diario de la cuota de la API persistido en Postgres.
 
-    def __init__(self, engine: Engine, budget: int) -> None:
+    `reserva` (F-datos-1, R2): requests del presupuesto que este tracker no
+    puede usar, guardadas para `ca`. El contador es uno solo; lo que cambia es
+    el tope efectivo, `budget − reserva`. `now_fn` es inyectable para tests.
+    """
+
+    def __init__(
+        self,
+        engine: Engine,
+        budget: int,
+        reserva: int = 0,
+        now_fn: Callable[[], datetime] = _ahora_chile,
+    ) -> None:
         self._engine = engine
         self._budget = budget
+        self._reserva = max(0, min(reserva, budget))
+        self._now_fn = now_fn
         self._lock = threading.Lock()
         self._is_sqlite = engine.dialect.name == "sqlite"
         self._ensure_table()
@@ -286,14 +334,31 @@ class QuotaTracker:
             conn.execute(text(_CREATE_QUOTA_TABLE))
 
     def _today(self) -> str:
-        return datetime.now(TZ_CHILE).date().isoformat()
+        return self._now_fn().astimezone(TZ_CHILE).date().isoformat()
 
     def remaining(self) -> int:
         today = self._today()
         with self._engine.connect() as conn:
             row = conn.execute(text(_SELECT_QUOTA), {"fecha": today}).fetchone()
         used = int(row[0]) if row else 0
-        return max(0, self._budget - used)
+        return max(0, self._budget - self._reserva - used)
+
+    def marcar_agotado(self) -> None:
+        """Da por agotado el día calendario de Chile para TODOS los procesos (regla 3).
+
+        Tras un 429 que no es de concurrencia la API ya no nos atiende hasta el
+        cambio de día: el contador sube al presupuesto completo, así que
+        `check_budget` de cualquier tracker —con o sin reserva, de esta corrida
+        o de la siguiente— corta sin emitir. El día siguiente parte en cero.
+        """
+        today = self._today()
+        agotar = _AGOTAR_QUOTA_SQLITE if self._is_sqlite else _AGOTAR_QUOTA_PG
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(text(agotar), {"fecha": today, "n": self._budget})
+        _log.warning(
+            "Cuota: 429 de tope diario; día %s (Chile) marcado como agotado hasta el cambio de día",
+            today,
+        )
 
     def consume(self, n: int = 1) -> None:
         today = self._today()
@@ -387,9 +452,10 @@ class BaseClient:
         **kwargs: object,
     ) -> dict[str, object]:
         # MPServerError: máx 2 intentos totales (1 reintento) — absorbe errores transitorios
-        # httpx.TimeoutException: máx 3 intentos totales (2 reintentos)
+        # httpx.TimeoutException y errores de transporte: máx 3 intentos totales
+        # (2 reintentos), con un contador compartido
         # MPConcurrencyError (429/10500): máx 4 intentos totales, backoff 30/60/120 s + jitter
-        # MPRateLimitError (cualquier otro 429): nunca reintentar
+        # MPRateLimitError (cualquier otro 429): nunca reintentar; marca el día agotado
         # Los tres contadores son independientes.
         #
         # `reintentar_transitorios=False` (F-detalles-match): 5xx y timeout NO se
@@ -442,7 +508,16 @@ class BaseClient:
                     delay,
                 )
                 self._rate_limiter.enfriar(delay, causa="429/10500")
-            except (MPAuthError, MPRateLimitError, MPParseError):
+            except MPRateLimitError:
+                # No es concurrencia (esa la atrapa el except de arriba): tope
+                # diario. Se persiste para que ninguna corrida lo reintente hasta
+                # el cambio de día en Chile (regla 3, F-datos-1).
+                try:
+                    self._quota.marcar_agotado()
+                except Exception:
+                    _log.warning("Cuota: no pude marcar el día como agotado", exc_info=True)
+                raise
+            except (MPAuthError, MPParseError):
                 raise
             except MPServerError as exc:
                 es_504 = exc.status_code == 504
@@ -462,13 +537,21 @@ class BaseClient:
                     # 500/502/503 conservan su espera: el 500 de Compra Ágil es
                     # determinista (docs/09-compra-agil-500.md), no una consulta viva.
                     time.sleep(delay)
-            except httpx.TimeoutException as exc:
-                self._rate_limiter.enfriar(_ENFRIAMIENTO_S, causa="timeout")
+            except (httpx.TimeoutException, *_ERRORES_TRANSPORTE) as exc:
+                # Timeout y errores de transporte comparten enfriamiento,
+                # contador y bandera: en los dos la request pudo llegar y el
+                # backend puede seguir procesándola (F-datos-1, R3).
+                es_timeout = isinstance(exc, httpx.TimeoutException)
+                causa = "timeout" if es_timeout else type(exc).__name__
+                self._rate_limiter.enfriar(_ENFRIAMIENTO_S, causa=causa)
                 timeout_attempt += 1
                 if not reintentar_transitorios or timeout_attempt >= _MAX_TIMEOUT_ATTEMPTS:
-                    raise MPServerError("Timeout de red", status_code=0) from exc
+                    if es_timeout:
+                        raise MPServerError("Timeout de red", status_code=0) from exc
+                    raise MPTransportError(f"Error de transporte ({causa})") from exc
                 _log.warning(
-                    "TimeoutException intento %d/%d; reintentando en %.1f s",
+                    "%s intento %d/%d; reintentando en %.1f s",
+                    causa,
                     timeout_attempt,
                     _MAX_TIMEOUT_ATTEMPTS,
                     _ENFRIAMIENTO_S,

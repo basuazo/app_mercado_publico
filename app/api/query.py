@@ -91,14 +91,20 @@ def _construir_item(
     monto: float | None = None
     organismo: str | None = None
     reg: int | None = None
+    region_visible: int | None = None
     fuente = "licitaciones" if isinstance(op, Licitacion) else "compras_agiles"
     if isinstance(op, Licitacion):
         monto = op.monto_clp
-        organismo = op.codigo_organismo
+        # Nombre y región llegan con el detalle (F-datos-1); el código, de respaldo.
+        # La región de la licitación solo se MUESTRA: `region`, que usan el filtro
+        # y la faceta, sigue en None hasta F-match-1 (ver `_pasa_region`).
+        organismo = op.organismo_nombre or op.codigo_organismo
+        region_visible = op.region
     else:
         monto = op.monto_disponible_clp
         organismo = op.organismo_nombre
         reg = op.region
+        region_visible = reg
 
     score = score_max if score_max is not None else (m.score if m is not None else None)
     return {
@@ -115,7 +121,7 @@ def _construir_item(
         "monto": monto,
         "organismo": organismo,
         "region": reg,
-        "region_nombre": nombre_region(reg),
+        "region_nombre": nombre_region(region_visible),
         "razones": razones_legibles(m.razones if m is not None else None),
         "url_ficha": _url_ficha(fuente, op.codigo),
         "mostrar_ficha": mostrar_ficha_oficial(op.estado),

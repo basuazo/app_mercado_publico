@@ -8,6 +8,9 @@ Uso:
     python scripts/smoke_test.py ventana-ca # sonda de F-ca-ventana (5 variantes, ~5–15 req)
     python scripts/smoke_test.py ventana-ca --solo G1,G2,B2,B3  # prueba de huso
     python scripts/smoke_test.py claves-ca  # ¿el LISTADO v2 trae descripción y productos? (2 req)
+    python scripts/smoke_test.py claves-lic [código]  # F-datos-1: Comprador/Fechas en v1 (1 req)
+    python scripts/smoke_test.py ca-sin-fechas        # F-datos-1: CA sin fechas + desierta (≤5 req)
+    python scripts/smoke_test.py estados-ca           # F-datos-1: ¿v2 acepta desierta/cancelada? (2 req)
 """
 
 from __future__ import annotations
@@ -651,6 +654,198 @@ def sonda_claves_ca(v2: MercadoPublicoV2Client) -> None:
         print(f"  claves de un producto (detalle): {sorted(de['productos_solicitados'][0])}")
 
 
+# ---------------------------------------------------------------------------
+# Sondas de F-datos-1 — ¿dónde viven organismo, región y fechas?
+# ---------------------------------------------------------------------------
+#
+# raw_json guarda el dataclass ya parseado, no la respuesta: un campo que el
+# parser no lee no deja rastro en la base. Regla 23: los nombres se confirman
+# en la respuesta real antes de escribir el parseo. Ninguna sonda imprime URL,
+# parámetros de la request ni el ticket.
+
+
+def _hojas(obj: object, ruta: str = "") -> list[str]:
+    """Rutas de todas las claves hoja (recursivo; de las listas, solo el [0])."""
+    if isinstance(obj, dict):
+        if not obj:
+            return [f"{ruta} (objeto vacío)"]
+        salida: list[str] = []
+        for k in obj:
+            salida += _hojas(obj[k], f"{ruta}.{k}" if ruta else str(k))
+        return salida
+    if isinstance(obj, list):
+        if not obj:
+            return [f"{ruta} (lista vacía)"]
+        return _hojas(obj[0], f"{ruta}[0]") + ([f"{ruta} (lista de {len(obj)})"])
+    return [f"{ruta} ({_forma(obj)})"]
+
+
+def _codigo_lic_vigente(engine: Engine) -> str | None:
+    """Licitación vigente creada más recientemente. SOLO SELECT."""
+    from sqlalchemy import select
+
+    from app.core.tiempo import ahora_utc
+    from app.core.vigencia import condicion_lic_vigente
+    from app.models.tables import Licitacion
+
+    with engine.connect() as conn:
+        return conn.execute(
+            select(Licitacion.codigo)
+            .where(condicion_lic_vigente(ahora_utc()))
+            .order_by(Licitacion.creado_en.desc())
+            .limit(1)
+        ).scalar()
+
+
+def sonda_claves_lic(engine: Engine, v1: MercadoPublicoV1Client, codigo: str | None) -> None:
+    """1 request: detalle v1 de una licitación vigente; claves hoja y valores de
+    Comprador.*, Fechas.*, Tipo y CodigoTipo (organismo y fechas: no sensibles)."""
+    from app.clients.mp_v1 import _LICITACIONES
+
+    print("=== Sonda claves-lic: detalle v1 de 1 licitación ===\n")
+    codigo = codigo or _codigo_lic_vigente(engine)
+    if not codigo:
+        print("No hay licitación vigente en la base; pasa el código como argumento.")
+        return
+    print(f"código: {codigo}")
+    try:
+        data = v1._get(_LICITACIONES, {"codigo": codigo}, reintentar_transitorios=False)
+    except Exception as exc:
+        print(f"DETALLE -> {_error_seguro(exc)}. DETENIDA.")
+        return
+    listado = data.get("Listado")
+    if not isinstance(listado, list) or not listado or not isinstance(listado[0], dict):
+        print(f"Listado vacío o con otra forma. Claves de la respuesta: {sorted(data)}")
+        return
+    lic = listado[0]
+    print(f"\nclaves de primer nivel: {sorted(lic)}\n")
+    print("claves hoja de Listado[0]:")
+    for h in _hojas(lic):
+        print(f"  {h}")
+    for bloque in ("Comprador", "Fechas"):
+        valor = lic.get(bloque)
+        print(f"\n{bloque}:")
+        if isinstance(valor, dict):
+            for k, v in valor.items():
+                print(f"  {k} = {v!r}")
+        else:
+            print(f"  ({_forma(valor)})")
+    for campo in ("Tipo", "CodigoTipo", "FechaPublicacion", "FechaCierre", "CodigoOrganismo"):
+        print(f"{campo} (primer nivel) = {lic.get(campo)!r}")
+
+
+def _describir_estado(v: object) -> object:
+    return v.get("codigo") if isinstance(v, dict) else v
+
+
+def sonda_ca_sin_fechas(engine: Engine, v2: MercadoPublicoV2Client) -> None:
+    """≤ 5 requests: detalle de 3 CA publicadas sin fecha_publicacion, 1 página
+    del listado en la hora de su fecha_ultimo_cambio y 1 listado con
+    estado=desierta (¿la API acepta el slug?)."""
+    from app.clients.mp_v2 import _DETALLE, _LISTADO, _iso_para_la_api, _validar_envelope
+
+    print("=== Sonda ca-sin-fechas ===\n")
+    with engine.connect() as conn:
+        filas = conn.execute(
+            text(
+                "SELECT codigo, fecha_ultimo_cambio, creado_en FROM compras_agiles"
+                " WHERE estado = 'publicada' AND fecha_publicacion IS NULL"
+                " ORDER BY creado_en DESC LIMIT 3"
+            )
+        ).fetchall()
+        total = conn.execute(
+            text(
+                "SELECT count(*) FROM compras_agiles"
+                " WHERE estado = 'publicada' AND fecha_publicacion IS NULL"
+            )
+        ).scalar()
+    print(f"CA publicadas sin fecha_publicacion en la base: {total}")
+    if not filas:
+        print("Ninguna: nada que sondear.")
+        return
+
+    ultimo_cambio: datetime | None = None
+    for codigo, fuc, creado in filas:
+        print(f"\n[DETALLE] {codigo}  (fecha_ultimo_cambio base={fuc}, creado_en={creado})")
+        if fuc is not None and ultimo_cambio is None:
+            ultimo_cambio = fuc
+        try:
+            det = _validar_envelope(
+                v2._get(_DETALLE.format(codigo=codigo), reintentar_transitorios=False)
+            )
+        except Exception as exc:
+            print(f"  -> {_error_seguro(exc)}")
+            continue
+        fechas = det.get("fechas")
+        print(f"  claves de primer nivel: {sorted(det)}")
+        if isinstance(fechas, dict):
+            for k, v in fechas.items():
+                print(f"  fechas.{k} = {v!r}")
+        else:
+            print(f"  fechas: {_forma(fechas)}")
+        otras = [h for h in _hojas(det) if "fecha" in h.lower() and not h.startswith("fechas.")]
+        print(f"  otras claves con 'fecha': {otras or '(ninguna)'}")
+
+    if ultimo_cambio is None:
+        print("\nNinguna tiene fecha_ultimo_cambio: se omite la página del listado.")
+    else:
+        desde = ultimo_cambio.replace(minute=0, second=0, microsecond=0)
+        hasta = desde + timedelta(hours=1)
+        print(f"\n[LISTADO] ventana UTC {desde} → {hasta}, estado=publicada, tamano_pagina=20")
+        params: dict[str, object] = {
+            "cambio_desde": _iso_para_la_api(desde),
+            "cambio_hasta": _iso_para_la_api(hasta),
+            "estado": "publicada",
+            "tamano_pagina": 20,
+            "numero_pagina": 1,
+        }
+        try:
+            payload = _validar_envelope(v2._get(_LISTADO, params, reintentar_transitorios=False))
+            items_json = payload.get("convocatorias") or payload.get("items") or []
+            lista = items_json if isinstance(items_json, list) else []
+            items = [x for x in lista if isinstance(x, dict)]
+            print(f"  items: {len(items)}")
+            buscados = {str(f[0]) for f in filas}
+            for it in items:
+                f = it.get("fechas")
+                desc = f"claves {sorted(f)}" if isinstance(f, dict) else _forma(f)
+                marca = "  <- de la base" if str(it.get("codigo")) in buscados else ""
+                print(f"  {str(it.get('codigo'))[:25]:25}  fechas: {desc}{marca}")
+                if not isinstance(f, dict) or not f.get("fecha_publicacion"):
+                    otras = [h for h in _hojas(it) if "fecha" in h.lower()]
+                    print(f"    sin fecha_publicacion; claves con 'fecha': {otras}")
+        except Exception as exc:
+            print(f"  -> {_error_seguro(exc)}")
+
+    sonda_estados_ca(v2, ["desierta"])
+
+
+def sonda_estados_ca(v2: MercadoPublicoV2Client, slugs: list[str]) -> None:
+    """1 request por slug: ¿el parámetro `estado` del listado v2 lo acepta?
+    tamano_pagina=10 es el mínimo que admite la API [V, sonda ca-sin-fechas]."""
+    from app.clients.mp_v2 import _LISTADO, _validar_envelope
+
+    for i, slug in enumerate(slugs):
+        if i:
+            time.sleep(5)
+        print(f"\n[LISTADO] estado={slug}, tamano_pagina=10 (¿acepta el slug?)")
+        try:
+            payload = _validar_envelope(
+                v2._get(
+                    _LISTADO,
+                    {"estado": slug, "tamano_pagina": 10, "numero_pagina": 1},
+                    reintentar_transitorios=False,
+                )
+            )
+        except Exception as exc:
+            print(f"  -> {_error_seguro(exc)}")
+            continue
+        items_json = payload.get("convocatorias") or payload.get("items") or []
+        lista = items_json if isinstance(items_json, list) else []
+        estados = [_describir_estado(x.get("estado")) for x in lista if isinstance(x, dict)]
+        print(f"  -> 200 OK; paginacion={payload.get('paginacion')}; estados={estados}")
+
+
 def main() -> None:
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
@@ -661,6 +856,19 @@ def main() -> None:
 
     v1 = MercadoPublicoV1Client(settings, engine)
     v2 = MercadoPublicoV2Client(settings, engine)
+
+    args = sys.argv[1:]
+    if args[:1] == ["claves-lic"]:
+        sonda_claves_lic(engine, v1, args[1] if len(args) > 1 else None)
+        return
+
+    if args[:1] == ["estados-ca"]:
+        sonda_estados_ca(v2, ["desierta", "cancelada"])
+        return
+
+    if args[:1] == ["ca-sin-fechas"]:
+        sonda_ca_sin_fechas(engine, v2)
+        return
 
     if "claves-ca" in sys.argv[1:]:
         sonda_claves_ca(v2)

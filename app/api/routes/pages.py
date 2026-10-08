@@ -868,8 +868,8 @@ def _contexto_ficha(
     region_nombre: str | None
     if isinstance(op, Licitacion):
         items_raw = list(op.items)
-        organismo = op.codigo_organismo
-        region_nombre = None
+        organismo = op.organismo_nombre or op.codigo_organismo
+        region_nombre = nombre_region(op.region)
     else:
         items_raw = list(op.productos)
         organismo = op.organismo_nombre

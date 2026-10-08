@@ -34,7 +34,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from app.catalogos.vocabulario_rubro import construir_vocabulario
-from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
+from app.clients.base import (
+    MPAuthError,
+    MPRateLimitError,
+    MPTransportError,
+    QuotaExceededError,
+)
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
@@ -92,8 +97,17 @@ def _pg_unlock(conn: Any, key: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_clients(settings: Settings, engine: Engine) -> tuple[MercadoPublicoV1Client, MercadoPublicoV2Client]:
-    return MercadoPublicoV1Client(settings, engine), MercadoPublicoV2Client(settings, engine)
+def _make_clients(
+    settings: Settings, engine: Engine, *, reserva_ca: bool = True
+) -> tuple[MercadoPublicoV1Client, MercadoPublicoV2Client]:
+    """Clientes v1 y v2. Con `reserva_ca` (todos menos `ca`), dejan sin tocar
+    CUOTA_RESERVA_CA requests del día: si de noche se gasta la cuota, `ca` sigue
+    teniendo con qué correr (F-datos-1, R2)."""
+    reserva = settings.cuota_reserva_ca if reserva_ca else 0
+    return (
+        MercadoPublicoV1Client(settings, engine, reserva=reserva),
+        MercadoPublicoV2Client(settings, engine, reserva=reserva),
+    )
 
 
 def run_sync_activas(settings: Settings, engine: Engine, limit: int | None = None) -> dict[str, int]:
@@ -103,7 +117,7 @@ def run_sync_activas(settings: Settings, engine: Engine, limit: int | None = Non
 
 
 def run_sync_ca(settings: Settings, engine: Engine) -> dict[str, Any]:
-    _, v2 = _make_clients(settings, engine)
+    _, v2 = _make_clients(settings, engine, reserva_ca=False)
     with Session(engine) as session:
         return sync_incremental(session, v2, settings)
 
@@ -400,7 +414,8 @@ def run_detalles_match(
     (~30 s de request + 60 s de enfriamiento si da 504).
 
     Un detalle que falla (504, timeout, parseo) se cuenta, suma un fallo a la
-    oportunidad y se sigue con el próximo. Con DETALLES_FALLOS_MAX fallos
+    oportunidad y se sigue con el próximo. Un error de transporte (conexión
+    rechazada o cortada, F-datos-1) se cuenta pero no suma fallo. Con DETALLES_FALLOS_MAX fallos
     seguidos sale de la cola por una espera creciente (ver
     :func:`_espera_detalle`); un éxito resetea el contador. Un error del CANAL
     (429 que no es 10500, 10500 con reintentos agotados, cuota, 401) corta el
@@ -440,6 +455,16 @@ def run_detalles_match(
                 except _ERRORES_DE_CANAL:
                     fallidos += 1
                     raise
+                except MPTransportError as exc:
+                    # La conexión falló (rechazada o cortada), no la oportunidad:
+                    # no suma fallos. Vuelve a la cola de la corrida siguiente.
+                    fallidos += 1
+                    _log.warning(
+                        "detalles-match: error de transporte en %s %s — %s; sin sumar fallo",
+                        fuente,
+                        codigo,
+                        exc,
+                    )
                 except Exception:
                     fallidos += 1
                     _log.error(
@@ -469,6 +494,80 @@ def run_detalles_match(
             "detalles_llegaron_al_maximo": llegaron_al_maximo,
             "minutos_usados": round((reloj() - inicio) / 60, 1),
             "presupuesto_minutos": presupuesto_min,
+        }
+    )
+    return result
+
+
+def run_rellenar_organismo(
+    settings: Settings,
+    engine: Engine,
+    reloj: Callable[[], float] = time.monotonic,
+    now_fn: Callable[..., datetime] | None = None,
+) -> dict[str, Any]:
+    """Vuelve a bajar el detalle de licitaciones VIGENTES sin organismo (F-datos-1).
+
+    Su detalle se bajó con el parser viejo, que leía el organismo en el primer
+    nivel; en v1 vive bajo `Comprador`. Las nuevas ya lo traen por `detalles`.
+    Primero lo que cierra antes. Topes por noche: RELLENO_ORGANISMO_MAX
+    requests y RELLENO_ORGANISMO_MINUTOS (un detalle con 504 cuesta ~90 s).
+
+    Solo en la ventana 22:00–07:00 de Chile (regla 5), validada acá además de en
+    `_ciclo_nocturno`. Sin reintento de 5xx ni de timeout, como `detalles-match`:
+    lo que falla sigue sin organismo y vuelve a entrar la noche siguiente. Un
+    error del canal corta el loop (regla 3) y se re-lanza. Idempotente.
+    `reloj` y `now_fn` son inyectables para tests.
+    """
+    if not en_ventana_nocturna(now_fn):
+        _log.warning("rellenar-organismo: fuera de la ventana nocturna — omitido")
+        return {"omitido_fuera_de_ventana": True}
+
+    tope = settings.relleno_organismo_max
+    presupuesto_s = settings.relleno_organismo_minutos * 60
+    inicio = reloj()
+    with Session(engine) as session:
+        codigos = list(
+            session.execute(
+                select(Licitacion.codigo)
+                .where(
+                    Licitacion.codigo_organismo.is_(None),
+                    condicion_lic_vigente(ahora_utc()),
+                )
+                .order_by(Licitacion.fecha_cierre.asc(), Licitacion.codigo)
+                .limit(tope)
+            ).scalars()
+        )
+
+    intentados = rellenados = fallidos = 0
+    result: dict[str, Any] = {}
+    if codigos:
+        v1, _ = _make_clients(settings, engine)
+        for codigo in codigos:
+            if reloj() - inicio >= presupuesto_s:
+                result["cortado_por_tiempo"] = True
+                break
+            intentados += 1
+            try:
+                det = v1.licitacion_detalle(codigo, reintentar_transitorios=False)
+                with Session(engine) as session:
+                    upsert_detalle(session, det, settings)
+                    session.commit()
+                if det.codigo_organismo is not None:
+                    rellenados += 1
+            except _ERRORES_DE_CANAL:
+                _log.warning("rellenar-organismo: corte del canal tras %d detalle(s)", intentados)
+                raise
+            except Exception as exc:
+                fallidos += 1
+                _log.warning("rellenar-organismo: error con %s — %s", codigo, exc)
+
+    result.update(
+        {
+            "candidatas": len(codigos),
+            "intentados": intentados,
+            "rellenados": rellenados,
+            "fallidos": fallidos,
+            "minutos_usados": round((reloj() - inicio) / 60, 1),
         }
     )
     return result
@@ -708,7 +807,8 @@ def _ciclo_nocturno(
     now_fn: Callable[..., datetime] | None = None,
     esperar_lock_s: int = 0,
 ) -> None:
-    """Datos abiertos + estados vencidos + lifecycle + competencia + backfill del día anterior.
+    """Datos abiertos + estados vencidos + lifecycle + competencia + backfill del día anterior
+    + relleno de organismo + detalles-match.
 
     Solo ejecuta en ventana 22:00–07:00. datos_abiertos va primero para que sus
     ítems UNSPSC estén disponibles antes del próximo ciclo de match (08:00).
@@ -763,6 +863,15 @@ def _ciclo_nocturno(
     _run_with_lock(
         "backfill_ayer",
         lambda: run_backfill_fecha(settings, engine, ayer),
+        engine,
+        esperar_lock_s=esperar_lock_s,
+    )
+
+    # Antes de detalles-match, que es el único paso que se corta por tiempo sin
+    # perder nada. Tiene su propio tope de minutos (F-datos-1).
+    _run_with_lock(
+        "rellenar-organismo",
+        lambda: run_rellenar_organismo(settings, engine, now_fn=now_fn),
         engine,
         esperar_lock_s=esperar_lock_s,
     )

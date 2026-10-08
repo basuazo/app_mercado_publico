@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # --- Rate limit y presupuestos ---
     rate_limit_rps: float = Field(default=1.0, description="Solicitudes por segundo hacia la API")
     api_daily_budget: int = Field(default=9000, description="Presupuesto máximo de requests/día")
+    # F-datos-1 (R2): el contador es uno solo; los jobs que no son `ca` se cortan
+    # en API_DAILY_BUDGET − CUOTA_RESERVA_CA. Máximo medido: ~3.600 req/día.
+    cuota_reserva_ca: int = Field(
+        default=2500,
+        description="Requests del presupuesto diario que solo puede usar el job `ca`",
+    )
     email_daily_limit: int = Field(default=250, description="Tope de correos por día")
 
     # --- Ingesta por lotes (regla 12: nunca un día completo en memoria) ---
@@ -87,6 +93,18 @@ class Settings(BaseSettings):
             "Espera en horas al llegar a DETALLES_FALLOS_MAX; se duplica por cada "
             "fallo extra, con techo de 48 h"
         ),
+    )
+
+    # --- Relleno de organismo y región de licitaciones vigentes (F-datos-1) ---
+    # Tope doble: requests y minutos. Un detalle v1 cuesta ~1,3 s, pero con 504 se
+    # va a ~90 s (canario 3); el tope de tiempo protege el timeout de `nocturno`.
+    relleno_organismo_max: int = Field(
+        default=600,
+        description="Tope de detalles v1 por noche del paso `rellenar-organismo`",
+    )
+    relleno_organismo_minutos: int = Field(
+        default=25,
+        description="Minutos máximos por noche del paso `rellenar-organismo`",
     )
 
     # --- Estados vencidos (F-estados-vencidos) ---

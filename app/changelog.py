@@ -15,6 +15,18 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 10, 8),
+        titulo="Las licitaciones muestran su organismo y su región",
+        descripcion=(
+            "Las licitaciones ahora muestran el nombre del organismo que compra (también en los "
+            "correos) y su región; la ficha muestra también la fecha de publicación. "
+            "Las que ya estaban abiertas se completan de a poco durante las próximas noches. "
+            "Las Compras Ágiles que se declaran desiertas o se cancelan ahora cambian de estado en la "
+            "app, y ya no pierden su fecha de publicación o de cierre cuando una actualización "
+            "llega sin ellas. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 10, 7),
         titulo="La ficha se abre sobre el feed",
         descripcion=(

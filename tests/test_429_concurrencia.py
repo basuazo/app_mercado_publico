@@ -209,7 +209,7 @@ def test_otro_429_sigue_sin_reintentarse(client, quota, reloj, respuesta) -> Non
     assert not isinstance(exc.value, MPConcurrencyError)
     assert "Cuota agotada (429)" in str(exc.value)
     assert ruta.call_count == 1
-    assert quota.remaining() == 99
+    assert quota.remaining() == 0  # día agotado hasta el cambio de día (F-datos-1)
     assert reloj.t - antes < 0.01, "sin espera"
 
 

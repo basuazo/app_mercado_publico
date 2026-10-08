@@ -23,9 +23,10 @@ _log = get_logger(__name__)
 def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion, bool]:
     """Upsert básico de una licitación. Devuelve (objeto, es_nueva).
 
-    No sobrescribe estado/fecha_publicacion/fecha_cierre con None/DESCONOCIDO
+    No sobrescribe estado, fechas, tipo, organismo ni región con None/DESCONOCIDO
     cuando el item entrante (p.ej. del listado de activas) no trae el dato:
-    preserva el valor existente, que pudo venir de un detalle más completo.
+    preserva el valor existente, que pudo venir de un detalle más completo. El
+    listado de activas no trae `Tipo` ni `Comprador` y los pisaba (F-datos-1).
     """
     existing = session.get(Licitacion, item.codigo)
     es_nueva = existing is None
@@ -43,8 +44,14 @@ def upsert_basica(session: Session, item: LicitacionBasica) -> tuple[Licitacion,
     if item.estado is not None or es_nueva:
         lic.estado_codigo = item.estado
         lic.estado = estado_licitacion(item.estado).value
-    lic.tipo = item.tipo
-    lic.codigo_organismo = item.codigo_organismo
+    if item.tipo is not None or es_nueva:
+        lic.tipo = item.tipo
+    if item.codigo_organismo is not None or es_nueva:
+        lic.codigo_organismo = item.codigo_organismo
+    if item.organismo_nombre is not None or es_nueva:
+        lic.organismo_nombre = item.organismo_nombre
+    if item.region is not None or es_nueva:
+        lic.region = item.region
 
     # Ya vienen como instantes naive en UTC desde parse_fecha_v1_dt: nada que
     # fabricar aquí (F-fecha-cierre; antes _fecha_a_dt inventaba medianoche).

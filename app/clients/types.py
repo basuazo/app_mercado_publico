@@ -192,6 +192,10 @@ class LicitacionBasica:
     fecha_cierre: datetime | None
     tipo: str | None
     codigo_organismo: str | None
+    # Bajo `Comprador` en v1 [V, sonda claves-lic]. El listado de activas no los
+    # trae: llegan solo con el detalle (F-datos-1).
+    organismo_nombre: str | None = None
+    region: int | None = None
 
 
 @dataclass

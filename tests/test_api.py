@@ -1052,6 +1052,7 @@ def test_jobs_run_nocturno_en_ventana_toma_un_lock_por_paso(client):
         "lifecycle",
         "competencia",
         "backfill_ayer",
+        "rellenar-organismo",
         "detalles-match",
     ]
     assert "nocturno" not in locks
