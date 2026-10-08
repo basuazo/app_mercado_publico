@@ -87,6 +87,10 @@ Función pura `relevancia(...)` con estos valores por defecto. Son decisión de 
 - La tarjeta y la ficha muestran "Perfiles: …" cuando hay más de uno.
 - Las razones de match muestran "en el título", "en un ítem" o "en la descripción" según dónde hubo acierto.
 - No hay rediseño: eso va en F-bandeja.
+- **Fechas de publicación en hora de Chile** (detectado en F-datos-1): la ficha y la tarjeta formatean
+  `fecha_publicacion`, que está en UTC naive, sin convertirla. Desde las 21:00 de Chile muestran el
+  día siguiente. Convertir a `America/Santiago` antes de formatear, igual que el cierre; test con
+  reloj a las 22:00 de Chile.
 
 ## 1.c Simulación antes del commit (la corre Boris)
 Escribir `data/paso0_score_nuevo.py`: solo lectura, mismo patrón que `data/paso0_auditoria.py`. Recalcula la relevancia nueva **desde las `razones` guardadas** en producción (`keywords_hit`, `campo_hit`, `categorias_hit`, `organismo_seguido`).

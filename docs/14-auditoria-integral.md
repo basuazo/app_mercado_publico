@@ -427,7 +427,7 @@ Log: `data/logs/paso0_auditoria.txt`. Base 161 MB (31 % de 512 MB).
 | 3 | **F-indices** | §3.4 (FK, GIN de expresión, ON CONFLICT, días calculados) | Sonnet | sí (solo índices) |
 | 4 | **F-perfiles-1** | §4.4-1 y §4.2 abiertos de perfiles | Sonnet | no |
 | 5 | **F-perfiles-2** | asistente + vista previa + sugerencias (§3.3-8) | Sonnet | no |
-| 6 | **F-retencion-filas** | borrar CA/licitaciones terminales > 180 días sin match, guardado ni seguimiento; alerta 70 % | **Opus** (borra datos) | no |
+| 6 | **F-retencion-filas** | borrar CA/licitaciones terminales > 180 días sin match, guardado ni seguimiento; tratar como terminal la CA `publicada` sin fechas creada antes del 21-sep (8.295, histórico según la sonda de F-datos-1); alerta 70 % | **Opus** (borra datos) | no |
 | 7 | **F-bandeja** | §4.4-3 y 5 | Sonnet | sí (marca de revisada) |
 | 8 | Spikes de fuentes | OCDS (desfase, `tender` de activas, región/organismo), `COT_`, RFI, `q` v2, cierres masivos v1 | Cowork + `smoke_test` por Boris | — |
 | 9 | **F-mcp-1** | MCP local de solo lectura | Sonnet | no (rol de BD a mano) |
