@@ -396,11 +396,33 @@ Un script `data/paso0_auditoria.py` (lo prepara Cowork) con estas consultas:
 
 ---
 
+### 7-bis. Resultado del Paso 0 (08-oct, producción) [V]
+
+Log: `data/logs/paso0_auditoria.txt`. Base 161 MB (31 % de 512 MB).
+
+| Hallazgo | Resultado | Ajuste |
+|---|---|---|
+| D1 organismo NULL | **0 de 34.442** licitaciones con organismo (0 de 4.398 vigentes) | Confirmado. `raw_json` guarda el dataclass parseado, no la respuesta: `Comprador` no está en la base → los nombres de campo se verifican con una sonda (F-datos-1 Paso 0) |
+| **D11 (nuevo)** fecha de publicación de licitaciones | **NULL en todas** las creadas en 2026: el parser lee `FechaPublicacion` en el primer nivel y en v1 viene bajo `Fechas` [I sobre la ruta] | → F-datos-1 |
+| D1-bis `tipo` pisado | **18.120 de 34.442** con `tipo` NULL (el listado no trae `Tipo` y `upsert_basica` lo pisa) | → F-datos-1 |
+| D9 catálogo de organismos | `organismos` = **0 filas**; `instituciones_pac` = 1.335, todas con RUT | Confirmado |
+| **D12 (nuevo)** Plan Anual casi vacío | `plan_compra_lineas` = **819 filas** (se esperaban ~300.000 tras la carga completa) | La búsqueda inversa del Plan Anual no tiene datos en producción. Causa [I]: el job `catalogos` corre primero en el mismo workflow; si falla, `plan-anual` no corre. Revisar el log de Actions del lunes 05-oct |
+| M5 organismo seguido | perfil 5 sigue 75 organismos con valores tipo `7032` (`codigo_entidad`); las CA guardan RUT `61.975.800-5`; **0 matches por organismo** | Confirmado |
+| D3 CA estados | `publicada` 24.113 (7.201 con > 30 días); `desierta` 84, `cancelada` 125 (llegan solo por detalle) | Confirmado |
+| **D4 subido a ALTA** | CA sin fecha de publicación = sin fecha de cierre **en todos los estados** (las dos faltan juntas): `publicada` **8.295**, `cerrada` 53.625. Una CA `publicada` sin fechas **nunca es vigente** → no aparece en feed ni matching | Causa [I]: ítems del listado sin el bloque `fechas` + `upsert_ca_basica` pisa con None. Sonda en F-datos-1 |
+| R4 crecimiento | Días hábiles: **~4.300 CA y ~550 licitaciones nuevas/día** (no 3.100). `compras_agiles` 73 MB / 125.291 filas | ≈ 3 MB/día → 70 % en ~2 meses, 100 % en ~4 (sin PAC). F-retencion-filas sube de prioridad |
+| M8 duplicados | boris 426 de 5.701 oportunidades; alejandra 73 de 4.267 | Confirmado |
+| **M1/M2** score | Con keyword y score < 40 (ocultas por el piso): **licitaciones 2.625 de 4.716 (56 %)**, **CA 5.804 de 7.205 (81 %)**. Sin keyword y ≥ 40: 385 licitaciones (por rubro), 43 CA (17 ≥ 60). Perfiles con 6,8–7,8 keywords en promedio | Confirmado y es **el problema de resultados más grande**: la mayoría de lo que calza por palabra queda oculto |
+| M4 tope 500 | Solo el perfil 7 usa región (60 candidatas): **sin pérdida hoy** | Baja a BAJA (preventivo) |
+| D5 detalle doble | 22.981 licitaciones con detalle y sin `raw_json`, pero **solo 75 con match** | Baja a BAJA |
+| ~~D6~~ job `detalles` | 31.789 con detalle; pendientes ~2.650, de ellas 9 cerradas | **Retirado**: el job trae la descripción que usa el FTS de licitaciones; la cola está al día |
+| D10 tipos | LE, LP, L1, LR, O1, CO, B2, E2, I2, LS; **LQ 11** (viejas); sufijo nuevo `R1` (245) | Parseo defensivo ya cubre; anotar `R1` |
+
 ## 8. Plan de fases propuesto
 
 | # | Fase | Contenido | Modelo | Migración |
 |---|---|---|---|---|
-| 1 | **F-datos-1** | D1 (+ no pisar None), D3, D4, D5, D6, R1 (429 persistido), R2 (reservas), R3, R5, R6 | **Opus** (toca 429 y cuota) | posible (región de licitación) |
+| 1 | **F-datos-1** | D1, D1-bis, D11, D3, D4, R1 (429 persistido), R2 (reservas), R3, R5, R6; D12 se diagnostica antes |  **Opus** (toca 429 y cuota) | posible (región de licitación) |
 | 2 | **F-match-1** | §3.3 puntos 1–7 | Sonnet | no |
 | 3 | **F-indices** | §3.4 (FK, GIN de expresión, ON CONFLICT, días calculados) | Sonnet | sí (solo índices) |
 | 4 | **F-perfiles-1** | §4.4-1 y §4.2 abiertos de perfiles | Sonnet | no |

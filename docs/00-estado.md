@@ -19,15 +19,18 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
 
 ## Siguiente
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
-1. Paso 0 de la auditoría (Boris, solo lectura en producción).
-2. **F-datos-1** (Opus): organismo/región de licitaciones, CA desiertas/canceladas, fechas de CA,
-   429 diario persistido, reservas de cuota, job `detalles`.
-3. **F-match-1** (Sonnet): región/monto antes del tope, organismos en CA, relevancia separada de
-   urgencia, digest y feed sin duplicados.
+1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).
+   **D12:** el Plan Anual tiene 819 líneas en producción (se esperaban ~300.000): revisar el log de Actions de `catalogos`.
+2. **F-datos-1** (Opus, `prompt-F-datos-1.md`): organismo, región, tipo y fecha de publicación de
+   licitaciones; fechas de CA; CA desiertas/canceladas; 429 diario persistido; reserva de cuota.
+3. **F-match-1** (Sonnet, `prompt-F-match-1.md`, después de F-datos-1 en producción): relevancia
+   separada de urgencia, organismos seguidos, feed y resumen sin duplicados.
 4. F-indices → F-perfiles-1/2 → F-retencion-filas → F-bandeja → spikes de fuentes (OCDS, `COT_`,
    RFI) → F-mcp-1.
 
 ## Prompts pendientes
+- `prompt-F-datos-1.md` — siguiente (Opus; con migración).
+- `prompt-F-match-1.md` — después de F-datos-1 (Sonnet).
 - `prompt-F-ca-rubro.md` — próxima versión (rediseñar el prefiltro; ver auditoría 14).
 - `prompt-F-secretos.md` — rotación de credenciales; la parte de código (`repr=False`) ya está.
 
