@@ -222,6 +222,16 @@ La información necesaria está disponible vía API oficial y los términos exig
 
 ---
 
+- **10500 con detalles v1 seguidos** [V, nocturno 09-oct]: en `rellenar-organismo`, a 1 req/s,
+  cada 3–4 detalles llega un 429/10500 aunque las requests son secuenciales; tras ~33 s de espera
+  pasa. Hipótesis [I]: la API cuenta como "simultáneas" varias requests en una ventana de pocos
+  segundos. Prueba: `RATE_LIMIT_RPS=0.5` (variable de Actions) y comparar la tasa de 10500.
+- **PAC completo 403 desde GitHub Actions** [V, `catalogos` 05-oct]: `HEAD
+  pac-files.da.mercadopublico.cl/2026/pacorganismos_2026.zip` → 403. En sep el mismo archivo se
+  bajó desde el PC de Boris. Hipótesis [I]: bloqueo por IP/región de los runners. Por verificar.
+- **`BuscarComprador` responde 200 pero el parser lee 0 organismos** [V, `catalogos` 05-oct]: la
+  forma de la respuesta no es la que espera `listar_compradores` (sin verificar cuál es).
+
 ## 9. Referencias oficiales
 - Portal API: https://www.chilecompra.cl/api/
 - Solicitud de ticket: https://api.mercadopublico.cl/modules/IniciarSesion.aspx
