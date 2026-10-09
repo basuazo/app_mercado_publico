@@ -1,6 +1,6 @@
 # Estado actual — mp-oportunidades
 
-*08-oct-2026. Documento corto y vivo: se reescribe, no se apila. La bitácora larga de jul–sep
+*09-oct-2026. Documento corto y vivo: se reescribe, no se apila. La bitácora larga de jul–sep
 quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
 
 **Al retomar:** leer este archivo → `14-auditoria-integral.md` (auditoría vigente y plan) →
@@ -20,8 +20,8 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
 ## Siguiente
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).
-   **D12:** el Plan Anual tiene 819 líneas: el ZIP completo del PAC da **403 desde Actions** (log de
-   `catalogos` 05-oct); `BuscarComprador` responde 200 pero el parser lee 0. Ver `01` §10.
+   **D12:** Plan Anual en pausa hasta el PAC 2027 (403 desde Actions, 200 desde el PC de Boris;
+   ver `decisiones.md`).
 2. **F-datos-1** (`647900a`, auditado 08-oct; push tras un `ca` de los :05): organismo, región, tipo y fecha de publicación de
    licitaciones; fechas de CA; CA desiertas/canceladas; 429 diario persistido; reserva de cuota.
 3. **F-match-1** (Sonnet, `prompt-F-match-1.md`, después de F-datos-1 en producción): relevancia
@@ -30,7 +30,8 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
    RFI) → F-mcp-1.
 
 ## Prompts pendientes
-- `prompt-F-indices.md` — siguiente (Sonnet; migración solo de índices).
+- `prompt-F-indices.md` — en producción (`e8e064a`, migración `b8c2d5e9a1f7`; 9 índices ~7,7 MB, candidatos en 7–45 ms).
+- `prompt-F-perfiles-1.md` — siguiente (Sonnet, sin migración).
 - `prompt-F-datos-1.md` — ejecutado (`647900a`), pendiente de push.
 - `prompt-F-match-1.md` — después de F-datos-1 (Sonnet).
 - `prompt-F-ca-rubro.md` — próxima versión (rediseñar el prefiltro; ver auditoría 14).

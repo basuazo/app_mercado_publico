@@ -48,3 +48,9 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 - **Toda auditoría termina con un paso a paso de cómo seguir** (comando exacto, quién, qué esperar,
   qué hacer si falla).
 - Investigación: no afirmar un negativo sin consultar la fuente primaria; marcar [V]/[I].
+- **Plan Anual en pausa (09-oct):** el ZIP completo da 403 desde GitHub Actions (200 desde el PC de Boris).
+  No se carga el PAC 2026; se retoma cuando se publique el PAC 2027 (en 1–2 meses), con carga
+  mensual desde el PC de Boris. Mientras tanto `/plan-anual` muestra pocos datos (819 líneas).
+- **Retención nunca borra lo que un usuario tocó (09-oct):** guardadas (también archivadas) y
+  descartadas conservan fila, descripción, ítems y competencia para analizar perfiles. La purga de
+  filas (F-retencion-filas) solo alcanza oportunidades terminales sin ninguna relación con usuarios.

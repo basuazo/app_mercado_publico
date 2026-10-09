@@ -228,7 +228,8 @@ La información necesaria está disponible vía API oficial y los términos exig
   segundos. Prueba: `RATE_LIMIT_RPS=0.5` (variable de Actions) y comparar la tasa de 10500.
 - **PAC completo 403 desde GitHub Actions** [V, `catalogos` 05-oct]: `HEAD
   pac-files.da.mercadopublico.cl/2026/pacorganismos_2026.zip` → 403. En sep el mismo archivo se
-  bajó desde el PC de Boris. Hipótesis [I]: bloqueo por IP/región de los runners. Por verificar.
+  bajó desde el PC de Boris, y el 09-oct el mismo HEAD desde su PC da **200** [V]: el host bloquea
+  las IPs de los runners de GitHub (causa exacta [I]: IP o región). El PAC se carga desde el PC de Boris.
 - **`BuscarComprador` responde 200 pero el parser lee 0 organismos** [V, `catalogos` 05-oct]: la
   forma de la respuesta no es la que espera `listar_compradores` (sin verificar cuál es).
 
