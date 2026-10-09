@@ -550,3 +550,15 @@ Index("ix_job_runs_job_iniciado", JobRun.job, JobRun.iniciado_en.desc())
 # (d7f2a4c8b6e1), no en el ORM: es funcional, sin columna generada.
 Index("ix_plan_compra_lineas_agno_entidad", PlanCompraLinea.agno, PlanCompraLinea.codigo_entidad)
 Index("ix_plan_compra_lineas_monto", PlanCompraLinea.monto_estimado_clp)
+
+# F-indices: FK sin índice (borrado en cascada, EXISTS del recall, selectinload) y
+# fechas de vigencia de CA. Los GIN de expresión de FTS sobre licitacion_items.nombre
+# y ca_productos (nombre || ' ' || descripcion) viven en la migración (b8c2d5e9a1f7),
+# no en el ORM (mismo criterio que ix_plan_compra_lineas_desc_tsv).
+Index("ix_licitacion_items_licitacion_codigo", LicitacionItem.licitacion_codigo)
+Index("ix_ca_productos_ca_codigo", CaProducto.ca_codigo)
+Index("ix_alertas_match_id", Alerta.match_id)
+Index("ix_alertas_seguimiento_id", Alerta.seguimiento_id)
+Index("ix_oportunidades_match_fuente_codigo", OportunidadMatch.fuente, OportunidadMatch.codigo_oportunidad)
+Index("ix_compras_agiles_fecha_cierre", CompraAgil.fecha_cierre)
+Index("ix_compras_agiles_fecha_publicacion", CompraAgil.fecha_publicacion)

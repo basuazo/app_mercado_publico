@@ -22,8 +22,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import String, and_, bindparam, delete, exists, func, or_, select, text
+from sqlalchemy import (
+    String,
+    and_,
+    bindparam,
+    delete,
+    exists,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.logging import get_logger
@@ -579,6 +591,31 @@ def _upsert_match(
     score/razones, pero no re-tocan la fecha. El resumen de descubrimiento usa
     esa fecha para decidir qué oportunidades son realmente nuevas.
     """
+    bind = session.get_bind()
+    if bind.dialect.name == "postgresql":
+        # Una sola sentencia (sin SELECT previo). `fecha_match` NO está en el
+        # SET: solo se fija al insertar. El WHERE evita reescribir filas sin
+        # cambios; en ese caso no hay RETURNING y se trata como "no nuevo".
+        ins = pg_insert(OportunidadMatch).values(
+            perfil_id=perfil_id,
+            fuente=fuente,
+            codigo_oportunidad=codigo,
+            score=score,
+            razones=razones,
+            fecha_match=ahora,
+        )
+        upsert: Any = ins.on_conflict_do_update(
+            constraint="uq_match",
+            set_={"score": ins.excluded.score, "razones": ins.excluded.razones},
+            where=or_(
+                OportunidadMatch.score.is_distinct_from(ins.excluded.score),
+                OportunidadMatch.razones.is_distinct_from(ins.excluded.razones),
+            ),
+        ).returning(literal_column("(xmax = 0)").label("insertado"))
+        fila = session.execute(upsert).first()
+        return bool(fila is not None and fila.insertado)
+
+    # SQLite (tests): camino SELECT + INSERT/UPDATE.
     existing = session.execute(
         select(OportunidadMatch).where(
             OportunidadMatch.perfil_id == perfil_id,
