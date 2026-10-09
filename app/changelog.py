@@ -16,6 +16,17 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 10, 9),
+        titulo="El match mide qué tan bien calza, no qué tan urgente es",
+        descripcion=(
+            "El match ahora mide solo qué tan bien calza la oportunidad con tus palabras, "
+            "rubros y organismos; lo urgente se ve en el orden y en la fecha. Las palabras "
+            "excluidas solo sacan una oportunidad si están en su título, no por un ítem suelto. "
+            "Una oportunidad que calza con dos perfiles aparece una sola vez, y el resumen "
+            "diario trae una sección 'Cierra en 48 horas'. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 10, 9),
         titulo="Mis perfiles carga más rápido y se lee mejor",
         descripcion=(
             "Mis perfiles carga más rápido y se lee mejor: cada perfil muestra cuántas "

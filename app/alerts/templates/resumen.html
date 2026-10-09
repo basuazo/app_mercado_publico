@@ -8,12 +8,25 @@
     {% for item in items %}
     <li style="margin-bottom: 14px">
       <a href="{{ item.url }}"><strong>{{ item.nombre }}</strong></a><br>
-      Perfil: {{ item.perfil_nombre }} · Score: {{ "%.0f"|format(item.score) }}<br>
+      Perfil: {{ item.perfil_nombre }} · Match: {{ "%.0f"|format(item.score) }}<br>
       Organismo: {{ item.organismo or "No informado" }}<br>
       Monto: {{ item.monto }} · Cierre: {{ item.fecha_cierre }}
     </li>
     {% endfor %}
   </ul>
+  {% if cierra_pronto %}
+  <h3 style="color:#003366">Cierra en ≤ 48 h</h3>
+  <ul>
+    {% for item in cierra_pronto %}
+    <li style="margin-bottom: 14px">
+      <a href="{{ item.url }}"><strong>{{ item.nombre }}</strong></a><br>
+      Perfil: {{ item.perfil_nombre }} · Match: {{ "%.0f"|format(item.score) }}<br>
+      Organismo: {{ item.organismo or "No informado" }}<br>
+      Monto: {{ item.monto }} · Cierre: {{ item.fecha_cierre }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   <p><a href="{{ url_app }}" style="display:inline-block;background:#0d6efd;color:white;padding:10px 14px;text-decoration:none;border-radius:6px">Ver dashboard</a></p>
   <p style="font-size:12px;color:#6b7280">Fuente: Dirección ChileCompra</p>
 </body>

@@ -57,6 +57,7 @@ from app.api.query import (
     listar_registro_guardadas,
     listar_vencidas_recientes,
     matches_de_oportunidad,
+    nombres_de_perfiles,
     puede_actuar,
     razones_sociales,
     resumen_competencia,
@@ -897,6 +898,10 @@ def _contexto_ficha(
     )
 
     publicacion = getattr(op, "fecha_publicacion", None)
+    nombres_perfil = {p.id: p.nombre for p in listar_perfiles(session, user.id)}
+    perfiles_nombres = nombres_de_perfiles(
+        matches_de_oportunidad(session, user.id, fuente, codigo), nombres_perfil
+    )
     volver = _url_volver_feed(request)
     return _ctx(
         request,
@@ -928,6 +933,7 @@ def _contexto_ficha(
         organismo=organismo,
         region_nombre=region_nombre,
         razones_chips=razones_tipificadas(match.razones) if match is not None else [],
+        perfiles_nombres=perfiles_nombres,
         acciones=estado_acciones(session, user.id, fuente, codigo),
         competencia_resumen=competencia_resumen,
         competencia_detalle=competencia_detalle,
@@ -1377,7 +1383,7 @@ async def oportunidad_excluir_vista_previa(
         verificar_exclusiones(session, [str(k) for k in (perfil.keywords or [])], lista)
     except PerfilInvalido as exc:
         return HTMLResponse(content=str(escape(str(exc))))
-    n = contar_limpieza(session, criterio_perfil(perfil, lista))
+    n = contar_limpieza(session, criterio_perfil(session, perfil, lista))
     texto = (
         f"Con esto salen {n} oportunidad{'es' if n != 1 else ''} vigentes del perfil "
         f"«{perfil.nombre}» (contando esta, si contiene la palabra)."

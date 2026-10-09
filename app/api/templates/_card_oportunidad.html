@@ -63,6 +63,9 @@
         <span class="num">{{ codigo }}</span> ·
         {% if fuente == 'licitaciones' %}Licitación{% else %}Compra Ágil{% endif %}
       </div>
+      {% if item.perfiles and item.perfiles | length > 1 %}
+      <div class="tarjeta-op__meta">Perfiles: {{ item.perfiles | join(', ') }}</div>
+      {% endif %}
     </div>
 
     <div class="text-end">

@@ -7,11 +7,12 @@ directamente.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from app.catalogos.unspsc import nombre_rubro
 from app.core.settings import VERSION_ESTATICOS
+from app.core.tiempo import TZ_CHILE
 from app.core.vigencia import cierre_vencido
 from app.models.enums import FamiliaEstado, familia_de_estado
 from app.models.seeds import REGIONES
@@ -52,6 +53,15 @@ def formato_numero(valor: float | int | None) -> str:
     return f"{valor:,.0f}".replace(",", ".")
 
 
+def fecha_chile(valor: datetime | None) -> str:
+    """Día `dd/mm/aaaa` en hora de Chile de un instante guardado naive en UTC
+    (p. ej. `fecha_publicacion`). Sin esto, desde las 21:00 de Chile se mostraba
+    el día siguiente. None -> "No informada"."""
+    if valor is None:
+        return "No informada"
+    return valor.replace(tzinfo=UTC).astimezone(TZ_CHILE).strftime("%d/%m/%Y")
+
+
 def banda_relevancia(score: float, corte_alta: int, corte_media: int) -> str:
     """'alta' | 'media' | 'baja', con los mismos cortes que los presets del feed.
 
@@ -75,6 +85,7 @@ def registrar_filtros(env: Any) -> None:
     """
     env.filters["clp"] = formato_clp
     env.filters["numero"] = formato_numero
+    env.filters["fecha_chile"] = fecha_chile
     env.globals["version_estaticos"] = VERSION_ESTATICOS
 
 
@@ -82,7 +93,7 @@ def _campo_legible(campo: str) -> str:
     return {
         "nombre": "el título",
         "descripcion": "la descripción",
-        "producto": "los productos",
+        "producto": "un ítem",
     }.get(campo, "el texto")
 
 
@@ -98,13 +109,12 @@ def razones_tipificadas(razones: dict[str, Any] | None) -> list[dict[str, str]]:
     que la ficha y la tarjeta nunca digan cosas distintas.
 
     El dict proviene del motor de matching y puede contener:
-    keywords_hit (list[str]), campo_hit (str), ofertas (int|None),
-    monto_no_informado (bool), categorias_hit (list[str]),
-    organismo_seguido (bool).
+    keywords_hit (list[str]), campo_hit (str), hit_en_nombre (bool),
+    ofertas (int|None), monto_no_informado (bool), region_no_informada (bool),
+    categorias_hit (list[str]), organismo_seguido (bool).
 
-    `dias_al_cierre` se ignora a propósito: la cercanía del cierre ya la
-    muestra el badge de cierre de la tarjeta y de la ficha, y repetirla aquí
-    decía el mismo dato dos veces en el mismo bloque visual.
+    La cercanía del cierre no es una razón (desde F-match-1 ni siquiera se
+    guarda): ya la muestra el badge de cierre de la tarjeta y de la ficha.
     """
     if not razones:
         return []
@@ -135,6 +145,9 @@ def razones_tipificadas(razones: dict[str, Any] | None) -> list[dict[str, str]]:
 
     if razones.get("monto_no_informado"):
         chips.append({"texto": "Monto no informado por el organismo", "tipo": "advertencia"})
+
+    if razones.get("region_no_informada"):
+        chips.append({"texto": "Región aún no informada", "tipo": "advertencia"})
 
     categorias_hit = razones.get("categorias_hit") or []
     if categorias_hit:

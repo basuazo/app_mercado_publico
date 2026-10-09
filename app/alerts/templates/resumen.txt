@@ -4,12 +4,24 @@ Estas son las oportunidades más relevantes desde tu último resumen:
 
 {% for item in items -%}
 - {{ item.nombre }}
-  Perfil: {{ item.perfil_nombre }} · Score: {{ "%.0f"|format(item.score) }}
+  Perfil: {{ item.perfil_nombre }} · Match: {{ "%.0f"|format(item.score) }}
   Organismo: {{ item.organismo or "No informado" }}
   Monto: {{ item.monto }} · Cierre: {{ item.fecha_cierre }}
   Ver ficha: {{ item.url }}
 
 {% endfor -%}
+{% if cierra_pronto -%}
+Cierra en ≤ 48 h:
+
+{% for item in cierra_pronto -%}
+- {{ item.nombre }}
+  Perfil: {{ item.perfil_nombre }} · Match: {{ "%.0f"|format(item.score) }}
+  Organismo: {{ item.organismo or "No informado" }}
+  Monto: {{ item.monto }} · Cierre: {{ item.fecha_cierre }}
+  Ver ficha: {{ item.url }}
+
+{% endfor -%}
+{% endif -%}
 Ver dashboard: {{ url_app }}
 
 Fuente: Dirección ChileCompra

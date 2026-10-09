@@ -673,9 +673,9 @@ class TestFtsDescripcionProducto:
 
         assert _CA_FTS in cands
         # Mismo criterio en el score (invariante F9c): el hit se ve como producto.
-        assert hits[_CA_FTS] == (["zorglubtoner"], "producto")
+        assert hits[_CA_FTS] == (["zorglubtoner"], "producto", False)
 
-    def test_la_exclusion_tambien_mira_la_descripcion_de_producto(self, pg_engine, ca_fts):
+    def test_la_exclusion_no_mira_la_descripcion_de_producto_solo_el_titulo(self, pg_engine, ca_fts):
         from app.matching.engine import _candidatos_ca
         from app.matching.text import build_exclude_tsquery, build_tsquery
 
@@ -685,7 +685,8 @@ class TestFtsDescripcionProducto:
             cands = {c.codigo for c in _candidatos_ca(s, ahora_utc(), q, qx)}
 
         assert _CA_FTS in cands
-        assert _CA_FTS_EXCL not in cands
+        # F-match-1 §1.7: la palabra excluida solo en un producto ya no saca la CA.
+        assert _CA_FTS_EXCL in cands
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -78,13 +79,15 @@ def _construir_item(
     guardada: bool,
     ahora: datetime,
     score_max: float | None = None,
+    perfiles: list[str] | None = None,
 ) -> dict[str, Any]:
     """Arma el dict de presentación de una oportunidad para el feed o una
     tarjeta individual (re-render HTMX tras guardar).
 
     `m` es None en Mi registro para una guardada sin match (F-registro): sin score
     ni razones. `score_max` es el mejor score del usuario cuando hay varios matches
-    (varios perfiles) de la misma oportunidad."""
+    (varios perfiles) de la misma oportunidad; `perfiles` son los nombres de los
+    perfiles que la traen (F-match-1)."""
     dias: float | None = None
     if op.fecha_cierre is not None:
         delta = op.fecha_cierre - ahora
@@ -92,21 +95,15 @@ def _construir_item(
 
     monto: float | None = None
     organismo: str | None = None
-    reg: int | None = None
-    region_visible: int | None = None
     fuente = "licitaciones" if isinstance(op, Licitacion) else "compras_agiles"
     if isinstance(op, Licitacion):
         monto = op.monto_clp
         # Nombre y región llegan con el detalle (F-datos-1); el código, de respaldo.
-        # La región de la licitación solo se MUESTRA: `region`, que usan el filtro
-        # y la faceta, sigue en None hasta F-match-1 (ver `_pasa_region`).
         organismo = op.organismo_nombre or op.codigo_organismo
-        region_visible = op.region
     else:
         monto = op.monto_disponible_clp
         organismo = op.organismo_nombre
-        reg = op.region
-        region_visible = reg
+    reg: int | None = op.region
 
     score = score_max if score_max is not None else (m.score if m is not None else None)
     return {
@@ -123,13 +120,24 @@ def _construir_item(
         "monto": monto,
         "organismo": organismo,
         "region": reg,
-        "region_nombre": nombre_region(region_visible),
+        "region_nombre": nombre_region(reg),
         "razones": razones_legibles(m.razones if m is not None else None),
         "url_ficha": _url_ficha(fuente, op.codigo),
         "mostrar_ficha": mostrar_ficha_oficial(op.estado),
         "guardada": guardada,
         "feedback": feedback_valor,
+        "perfiles": list(perfiles or []),
     }
+
+
+def nombres_de_perfiles(matches: Iterable[OportunidadMatch], nombres: dict[int, str]) -> list[str]:
+    """Nombres de los perfiles de esos matches, sin repetir y en el orden recibido."""
+    vistos: list[str] = []
+    for m in matches:
+        nombre = nombres.get(m.perfil_id)
+        if nombre is not None and nombre not in vistos:
+            vistos.append(nombre)
+    return vistos
 
 
 def get_item_oportunidad(
@@ -155,12 +163,16 @@ def get_item_oportunidad(
 
     feedback = obtener_feedback(session, user_id, fuente, codigo)
     ahora = ahora_utc()
+    nombres = {p.id: p.nombre for p in listar_perfiles(session, user_id)}
     return _construir_item(
         m,
         op,
         feedback_valor=feedback.valor if feedback is not None else None,
         guardada=esta_guardada(session, user_id, fuente, codigo),
         ahora=ahora,
+        perfiles=nombres_de_perfiles(
+            matches_de_oportunidad(session, user_id, fuente, codigo), nombres
+        ),
     )
 
 
@@ -227,23 +239,30 @@ def _pasa_fuente(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
 
 
 def _pasa_region(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
-    """OJO: el filtro de región solo discrimina Compra Ágil.
+    """Región de la CA o de la licitación (F-datos-1 la trae con el detalle).
 
-    `Licitacion` no guarda región (es un cambio de modelo y de ingesta, con su
-    propia fase), así que las licitaciones pasan TODAS. Quien exponga este
-    filtro en la UI tiene que decírselo al usuario.
+    Una oportunidad con región NO informada pasa (la licitación sin detalle
+    todavía), igual que un monto no informado.
     """
     if filtros.region is None:
         return True
-    if item["match"].fuente != "compras_agiles":
-        return True
+    if item["region"] is None:
+        return bool(item["match"].fuente == "licitaciones")
     return bool(item["region"] == filtros.region)
 
 
+def _sin_tildes(texto: str | None) -> str:
+    """Minúsculas y sin tildes: "reparacion" calza con "Reparación"."""
+    descompuesto = unicodedata.normalize("NFD", (texto or "").casefold())
+    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+
+
 def _pasa_texto(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
+    """El texto, sin tildes ni mayúsculas, dentro del nombre O del organismo."""
     if not filtros.texto:
         return True
-    return filtros.texto.lower() in (item["nombre"] or "").lower()
+    buscado = _sin_tildes(filtros.texto)
+    return buscado in _sin_tildes(item["nombre"]) or buscado in _sin_tildes(item.get("organismo"))
 
 
 def _pasa_monto(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
@@ -281,8 +300,23 @@ def _pasa_cierre(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
     )
 
 
+def _matches_de(item: dict[str, Any]) -> list[OportunidadMatch]:
+    """Todos los matches del usuario con la oportunidad (uno por perfil). El item
+    trae el mejor en `match`; los tests y las guardadas sin dedupe traen solo ese."""
+    return cast(list[OportunidadMatch], item.get("matches") or [item["match"]])
+
+
 def _pasa_perfiles(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
-    return filtros.perfiles is None or item["match"].perfil_id in filtros.perfiles
+    return filtros.perfiles is None or any(
+        m.perfil_id in filtros.perfiles for m in _matches_de(item)
+    )
+
+
+def _keywords_de(item: dict[str, Any]) -> set[str]:
+    """Unión de `keywords_hit` de todos los matches de la oportunidad."""
+    return {
+        str(kw) for m in _matches_de(item) for kw in ((m.razones or {}).get("keywords_hit") or [])
+    }
 
 
 def _pasa_keywords(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
@@ -290,8 +324,7 @@ def _pasa_keywords(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
     cualquier intersección con las palabras clave elegidas hace pasar el item."""
     if filtros.keywords is None:
         return True
-    hits = set((item["match"].razones or {}).get("keywords_hit") or [])
-    return bool(hits & filtros.keywords)
+    return bool(_keywords_de(item) & filtros.keywords)
 
 
 def _pasa_min_score(item: dict[str, Any], filtros: FiltrosFeed) -> bool:
@@ -329,24 +362,21 @@ def _clave_faceta_fuente(item: dict[str, Any]) -> list[str]:
 
 def _clave_faceta_region(item: dict[str, Any]) -> list[str]:
     """Código de región como string; los nombres los resuelve
-    `presentacion.nombre_region` en la capa de plantilla, no acá.
-
-    Las licitaciones caen todas en "sin_region" porque el modelo no guarda su
-    región (ver `_pasa_region`)."""
+    `presentacion.nombre_region` en la capa de plantilla, no acá. Una región no
+    informada cae en "sin_region"."""
     reg = item["region"]
     return ["sin_region" if reg is None else str(reg)]
 
 
 def _clave_faceta_perfil(item: dict[str, Any]) -> list[str]:
-    return [str(item["match"].perfil_id)]
+    return [str(m.perfil_id) for m in _matches_de(item)]
 
 
 def _clave_faceta_keyword(item: dict[str, Any]) -> list[str]:
     """Un item puede pertenecer a VARIAS claves (repetición intencional: si
     matcheó por 2 keywords, cuenta para las 2), a diferencia de fuente/región/
     perfil (siempre una)."""
-    razones = item["match"].razones or {}
-    return [str(kw) for kw in (razones.get("keywords_hit") or [])]
+    return sorted(_keywords_de(item))
 
 
 # faceta -> (clave del filtro PROPIO que no se le aplica, extractor de claves).
@@ -395,9 +425,12 @@ def contar_nuevas_hoy(items: Iterable[dict[str, Any]], *, hoy: date) -> int:
     fin = borde_del_dia_utc_naive(hoy + timedelta(days=1), fin_de_dia=False)
     total = 0
     for item in items:
-        fecha_match = getattr(item["match"], "fecha_match", None)
-        if fecha_match is None:
+        fechas = [
+            f for f in (getattr(m, "fecha_match", None) for m in _matches_de(item)) if f is not None
+        ]
+        if not fechas:
             continue
+        fecha_match = min(fechas)
         if inicio <= fecha_match < fin:
             total += 1
     return total
@@ -412,7 +445,15 @@ def _ordenar(items: list[dict[str, Any]], orden: str) -> None:
         # no entrega no es un monto cero.
         items.sort(key=lambda r: (r["monto"] is None, -(r["monto"] or 0.0)))
     else:
-        items.sort(key=lambda r: r["match"].score, reverse=True)
+        # Mejor match: relevancia descendente y, a igual relevancia, cierre más
+        # próximo primero (sin cierre al final).
+        items.sort(
+            key=lambda r: (
+                -r["match"].score,
+                r["fecha_cierre"] is None,
+                r["fecha_cierre"] or datetime.min,
+            )
+        )
 
 
 def get_oportunidades_usuario(
@@ -444,14 +485,18 @@ def get_oportunidades_usuario(
     descartó (feedback F10 parte 2) — esas solo se ven en la vista "ver
     descartadas" (`listar_descartadas_detalle`).
 
-    - `orden`: "score" (default, mejor match primero), "cierre" (cierran antes
+    - `orden`: "score" (default, mejor match primero; a igual relevancia, cierre
+      más próximo), "cierre" (cierran antes
       primero, sin fecha al final) o "monto" (mayor primero, no informados al
       final). Paginación después de aplicar todos los filtros y el orden.
     - `min_score`: piso de `OportunidadMatch.score` (umbral de relevancia del
       feed); 0 = sin piso. `total_sin_filtro_relevancia` es el total que habría
       sin aplicarlo, para mostrar "N ocultas por baja relevancia".
-    - `region`: **solo afecta a Compra Ágil**. `Licitacion` no guarda región,
-      así que las licitaciones pasan todas — ver `_pasa_region`.
+    - Una oportunidad que calza con varios perfiles sale UNA vez (con el match de
+      mayor relevancia y `perfiles` con los nombres); los conteos y facetas se
+      calculan después de deduplicar.
+    - `region`: la de la CA o la de la licitación; sin región informada pasa
+      (licitación) — ver `_pasa_region`.
     - `monto_min`/`monto_max` van contra el monto ya normalizado;
       `cierre_desde`/`cierre_hasta` contra `fecha_cierre` (naive en UTC: un
       borde naive se interpreta como hora de Chile, igual que el resto del
@@ -544,8 +589,9 @@ def get_oportunidades_usuario(
     # verdad para el mismo número. Se mantiene el cálculo en Python (ver el
     # resumen de F-coherencia). La vigencia es la excepción: es un prefiltro
     # duro (arriba), no una faceta — no necesita leave-one-out.
-    stmt = stmt.order_by(OportunidadMatch.score.desc())
+    stmt = stmt.order_by(OportunidadMatch.score.desc(), OportunidadMatch.id)
     matches = list(session.execute(stmt).scalars())
+    nombres_perfil = {p.id: p.nombre for p in perfiles}
 
     feedback_map = listar_feedback_usuario(session, user_id)
     guardadas_set = {(s.fuente, s.codigo_oportunidad) for s in listar_seguidas(session, user_id)}
@@ -568,7 +614,11 @@ def get_oportunidades_usuario(
         ).scalars():
             cas[c.codigo] = c
 
+    # Un ítem por oportunidad (F-match-1): los matches vienen del de mayor
+    # relevancia al menor, así que el primero de cada (fuente, código) es el que
+    # se muestra y los demás solo suman su perfil.
     result: list[dict[str, Any]] = []
+    por_oportunidad: dict[tuple[str, str], dict[str, Any]] = {}
 
     for m in matches:
         op: Licitacion | CompraAgil | None
@@ -580,6 +630,12 @@ def get_oportunidades_usuario(
         if op is None:
             continue
 
+        existente = por_oportunidad.get((m.fuente, m.codigo_oportunidad))
+        if existente is not None:
+            existente["matches"].append(m)
+            existente["perfiles"] = nombres_de_perfiles(existente["matches"], nombres_perfil)
+            continue
+
         if solo_vigentes and not es_vigente(
             op.estado, op.fecha_cierre, m.fuente, ahora, op.fecha_publicacion
         ):
@@ -589,15 +645,17 @@ def get_oportunidades_usuario(
         if feedback is not None and feedback.valor == ValorFeedback.DESCARTE.value:
             continue
 
-        result.append(
-            _construir_item(
-                m,
-                op,
-                feedback_valor=feedback.valor if feedback is not None else None,
-                guardada=(m.fuente, m.codigo_oportunidad) in guardadas_set,
-                ahora=ahora,
-            )
+        item = _construir_item(
+            m,
+            op,
+            feedback_valor=feedback.valor if feedback is not None else None,
+            guardada=(m.fuente, m.codigo_oportunidad) in guardadas_set,
+            ahora=ahora,
+            perfiles=nombres_de_perfiles([m], nombres_perfil),
         )
+        item["matches"] = [m]
+        por_oportunidad[(m.fuente, m.codigo_oportunidad)] = item
+        result.append(item)
 
     # `result` es el conjunto cargado (sin filtrar): la base de las facetas.
     total_sin_filtro = len(_aplicar_filtros(result, filtros, excepto="min_score"))
@@ -880,6 +938,7 @@ def _item_sin_oportunidad(s: OportunidadSeguida) -> dict[str, Any]:
         "mostrar_ficha": False,
         "guardada": not s.archivada,
         "feedback": None,
+        "perfiles": [],
     }
 
 
@@ -1218,6 +1277,7 @@ def check_oportunidad_access(
             OportunidadMatch.fuente == fuente,
             OportunidadMatch.codigo_oportunidad == codigo,
         )
+        .order_by(OportunidadMatch.score.desc(), OportunidadMatch.id)
         .limit(1)
     ).scalar_one_or_none()
 

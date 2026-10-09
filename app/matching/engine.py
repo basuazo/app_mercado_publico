@@ -1,7 +1,7 @@
 """Motor de matching: score, candidatos FTS y match_perfil/match_todos.
 
 Arquitectura:
-- score_texto, score_urgencia, score_competencia son funciones puras sin DB.
+- relevancia (y _rubros_hit) son funciones puras sin DB.
 - _candidatos_licitaciones/_candidatos_ca usan Postgres FTS (text() con bindparams).
 - _hits_licitaciones/_hits_ca detectan, también con Postgres FTS y de forma
   set-based (una query por fuente, no por candidato), qué keywords matchean
@@ -18,6 +18,8 @@ score quedan unificados en un solo motor (Postgres FTS 'spanish').
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
@@ -45,6 +47,7 @@ from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_val
 from app.models.tables import (
     CaProducto,
     CompraAgil,
+    InstitucionPAC,
     Licitacion,
     LicitacionItem,
     OportunidadMatch,
@@ -59,53 +62,53 @@ _log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def score_texto(
-    keywords: list[str],
+# Relevancia (F-match-1): mide solo qué tan bien calza la oportunidad con las
+# palabras, rubros y organismos del perfil. Urgencia y competencia NO suman: se
+# ven en el orden y en la fecha. Constantes ajustables tras la simulación.
+BASE_HIT_NOMBRE = 50.0  # >= 1 keyword con acierto en el nombre
+BASE_HIT_OTRO_CAMPO = 35.0  # >= 1 keyword, pero solo en ítem/producto o en la descripción
+BONUS_KEYWORD_ADICIONAL = 10.0  # por cada keyword distinta extra con acierto
+TOPE_BONUS_KEYWORDS = 20.0
+BONUS_RUBRO = 20.0
+BONUS_ORGANISMO = 15.0
+BASE_SIN_KEYWORD = 40.0  # sin keyword pero con rubro u organismo
+BONUS_RUBRO_Y_ORGANISMO_SIN_KEYWORD = 15.0
+TOPE_RELEVANCIA = 100.0
+
+
+def relevancia(
     keywords_hit: list[str],
     hit_en_nombre: bool,
+    rubro_hit: bool,
+    organismo_seguido: bool,
 ) -> float:
-    """Score de relevancia textual, 0–60.
+    """Relevancia 0–100 de una oportunidad para un perfil (función pura).
 
-    proporcion_hit × 60 + bonus_nombre (5 si hit en nombre).
-    Capped a 60.
+    Con keywords: base 50 (acierto en el nombre) o 35 (solo en ítem/producto o en la
+    descripción), +10 por cada keyword distinta adicional (máx. +20), +20 rubro,
+    +15 organismo.
+    Sin keywords: 40 si hay rubro u organismo (55 si están ambos); 0 si ninguno.
     """
-    if not keywords:
-        return 0.0
-    prop = len(keywords_hit) / len(keywords)
-    bonus = 5.0 if hit_en_nombre else 0.0
-    return min(60.0, prop * 60.0 + bonus)
+    distintas = len(set(keywords_hit))
+    if distintas:
+        total = BASE_HIT_NOMBRE if hit_en_nombre else BASE_HIT_OTRO_CAMPO
+        total += min(TOPE_BONUS_KEYWORDS, BONUS_KEYWORD_ADICIONAL * (distintas - 1))
+        if rubro_hit:
+            total += BONUS_RUBRO
+        if organismo_seguido:
+            total += BONUS_ORGANISMO
+    elif rubro_hit or organismo_seguido:
+        total = BASE_SIN_KEYWORD
+        if rubro_hit and organismo_seguido:
+            total += BONUS_RUBRO_Y_ORGANISMO_SIN_KEYWORD
+    else:
+        total = 0.0
+    return min(TOPE_RELEVANCIA, total)
 
 
-def score_urgencia(dias_al_cierre: float) -> float:
-    """Score de urgencia: 25 si 2–7 días, 10 si 8–30 días, 0 en otro caso."""
-    if 2.0 <= dias_al_cierre <= 7.0:
-        return 25.0
-    if 8.0 <= dias_al_cierre <= 30.0:
-        return 10.0
-    return 0.0
-
-
-def score_competencia(fuente: str, total_ofertas: int) -> float:
-    """Score de competencia: 15/10/5 para CA según ofertas; 8 (neutro) para licitaciones."""
-    if fuente == "compras_agiles":
-        if total_ofertas == 0:
-            return 15.0
-        if total_ofertas <= 3:
-            return 10.0
-        return 5.0
-    return 8.0
-
-
-def score_estructural(rubro_hit: bool, organismo_seguido: bool) -> float:
-    """Score por recall aditivo (F9b): +20 si hubo hit de rubro UNSPSC seguido,
-    +15 si la oportunidad es de un organismo seguido. Permite que un match
-    rubro/organismo-only (sin keywords) puntúe de forma razonable."""
-    total = 0.0
-    if rubro_hit:
-        total += 20.0
-    if organismo_seguido:
-        total += 15.0
-    return total
+def normalizar_rut(rut: str | None) -> str:
+    """RUT sin puntos, guion ni espacios y con la `k` en minúscula (para comparar)."""
+    return re.sub(r"[.\-\s]", "", rut or "").lower()
 
 
 def _rubros_hit(categorias_unspsc: list[str], codigos_producto: list[str]) -> list[str]:
@@ -139,13 +142,12 @@ _FTS_LIC_INCLUDE = (
     "AND to_tsvector('spanish', inmutable_unaccent(li.nombre)) "
     f"@@ {_tsq(':q')}))"
 )
+# Exclusión (F-match-1 §1.7): SOLO sobre el nombre. Una palabra excluida dice "no
+# es de lo mío" y eso lo dice el título; un ítem suelto o la descripción
+# ("no incluye arriendo") generaban falsos negativos. La inclusión no cambia.
 _FTS_LIC_EXCLUDE = (
-    f"NOT (licitaciones.tsv @@ {_tsq(':qx')} "
-    "OR EXISTS ("
-    "SELECT 1 FROM licitacion_items li "
-    "WHERE li.licitacion_codigo = licitaciones.codigo "
-    "AND to_tsvector('spanish', inmutable_unaccent(li.nombre)) "
-    f"@@ {_tsq(':qx')}))"
+    "NOT (to_tsvector('spanish', inmutable_unaccent(coalesce(licitaciones.nombre, ''))) "
+    f"@@ {_tsq(':qx')})"
 )
 # Texto de un producto de CA para FTS: nombre + descripción del comprador
 # (F-detalles-match). La MISMA expresión en recall (INCLUDE/EXCLUDE) y en
@@ -161,12 +163,8 @@ _FTS_CA_INCLUDE = (
     f"@@ {_tsq(':q')}))"
 )
 _FTS_CA_EXCLUDE = (
-    f"NOT (compras_agiles.tsv @@ {_tsq(':qx')} "
-    "OR EXISTS ("
-    "SELECT 1 FROM ca_productos p "
-    "WHERE p.ca_codigo = compras_agiles.codigo "
-    f"AND {_FTS_CA_PRODUCTO} "
-    f"@@ {_tsq(':qx')}))"
+    "NOT (to_tsvector('spanish', inmutable_unaccent(coalesce(compras_agiles.nombre, ''))) "
+    f"@@ {_tsq(':qx')})"
 )
 
 
@@ -215,6 +213,11 @@ def _vigencia_ca(ahora: datetime) -> list[Any]:
     return [condicion_ca_vigente(ahora)]
 
 
+def _rut_normalizado(col: Any) -> Any:
+    """`normalizar_rut` en SQL: sin puntos, guion ni espacios, en minúscula."""
+    return func.lower(func.replace(func.replace(func.replace(col, ".", ""), "-", ""), " ", ""))
+
+
 def _criterio_lic(
     q: str | None,
     qx: str | None,
@@ -249,7 +252,10 @@ def _criterio_ca(
     categorias_unspsc: list[str] | None,
     organismos_seguidos: list[str] | None,
 ) -> list[Any]:
-    """Análogo a `_criterio_lic` (rubro vía ca_productos, organismo vía organismo_rut)."""
+    """Análogo a `_criterio_lic` (rubro vía ca_productos, organismo vía organismo_rut).
+
+    `organismos_seguidos` son RUT YA normalizados (`normalizar_rut`): la CA no trae
+    `codigo_entidad`, así que el perfil se traduce antes con `instituciones_pac.rut`."""
     conds: list[Any] = []
     inclusion: list[Any] = []
     if q:
@@ -262,11 +268,32 @@ def _criterio_ca(
             )
         )
     if organismos_seguidos:
-        inclusion.append(CompraAgil.organismo_rut.in_(organismos_seguidos))
+        inclusion.append(_rut_normalizado(CompraAgil.organismo_rut).in_(organismos_seguidos))
     if inclusion:
         conds.append(or_(*inclusion))
     if qx:
         conds.append(text(_FTS_CA_EXCLUDE).bindparams(qx=qx))
+    return conds
+
+
+def _filtro_licitaciones(
+    regiones: Sequence[int] | None, monto_min: float | None, monto_max: float | None
+) -> list[Any]:
+    """Región y monto de una licitación. Región o monto no informados PASAN (el
+    match lleva `region_no_informada` / `monto_no_informado`)."""
+    conds = _monto_pasa(Licitacion.monto_clp, monto_min, monto_max)
+    if regiones:
+        conds.append(or_(Licitacion.region.is_(None), Licitacion.region.in_(list(regiones))))
+    return conds
+
+
+def _filtro_ca(
+    regiones: Sequence[int] | None, monto_min: float | None, monto_max: float | None
+) -> list[Any]:
+    """Región (solo CA, regla 7) y monto de una Compra Ágil; monto no informado pasa."""
+    conds = _monto_pasa(CompraAgil.monto_disponible_clp, monto_min, monto_max)
+    if regiones:
+        conds.append(CompraAgil.region.in_(list(regiones)))
     return conds
 
 
@@ -277,18 +304,23 @@ def _candidatos_licitaciones(
     qx: str | None,
     categorias_unspsc: list[str] | None = None,
     organismos_seguidos: list[str] | None = None,
+    regiones: Sequence[int] | None = None,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
 ) -> list[Licitacion]:
     """Candidatos por FTS, OR'd con recall aditivo de rubro UNSPSC y organismo seguido.
 
     Si no hay keywords (q=None) ni rubros/organismos, no se aplica filtro de
-    inclusión (se conservan todas las licitaciones activas, como antes de F9b):
-    el filtrado por región/monto sigue ocurriendo localmente en match_perfil.
+    inclusión (se conservan todas las licitaciones activas, como antes de F9b).
+    Región y monto se filtran en SQL ANTES del tope de 500 (mismas condiciones
+    que la limpieza), para que el tope no deje fuera lo que sí calza.
     """
     stmt = (
         select(Licitacion)
         .options(selectinload(Licitacion.items))
         .where(*_vigencia_lic(ahora))
         .where(*_criterio_lic(q, qx, categorias_unspsc, organismos_seguidos))
+        .where(*_filtro_licitaciones(regiones, monto_min, monto_max))
         .order_by(Licitacion.fecha_cierre.asc().nulls_last(), Licitacion.codigo)
         .limit(_MAX_CANDIDATOS)
     )
@@ -302,14 +334,18 @@ def _candidatos_ca(
     qx: str | None,
     categorias_unspsc: list[str] | None = None,
     organismos_seguidos: list[str] | None = None,
+    regiones: Sequence[int] | None = None,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
 ) -> list[CompraAgil]:
     """Análogo a _candidatos_licitaciones para Compra Ágil (rubro vía ca_productos,
-    organismo vía organismo_rut)."""
+    organismo vía RUT normalizado: `organismos_seguidos` son RUT ya normalizados)."""
     stmt = (
         select(CompraAgil)
         .options(selectinload(CompraAgil.productos))
         .where(*_vigencia_ca(ahora))
         .where(*_criterio_ca(q, qx, categorias_unspsc, organismos_seguidos))
+        .where(*_filtro_ca(regiones, monto_min, monto_max))
         .order_by(CompraAgil.fecha_cierre.asc().nulls_last(), CompraAgil.codigo)
         .limit(_MAX_CANDIDATOS)
     )
@@ -330,24 +366,45 @@ class CriterioPerfil:
     q: str | None
     qx: str | None
     categorias_unspsc: tuple[str, ...]
-    organismos_seguidos: tuple[str, ...]
+    organismos_seguidos: tuple[str, ...]  # codigo_entidad, tal como los guarda el perfil
+    organismos_ruts: tuple[str, ...]  # los mismos organismos como RUT normalizado (CA)
     regiones: tuple[int, ...]
     monto_min: float | None
     monto_max: float | None
 
 
-def criterio_perfil(perfil: PerfilBusqueda, excluir_extra: list[str] | None = None) -> CriterioPerfil:
+def ruts_de_organismos(session: Session, codigos: Sequence[str]) -> list[str]:
+    """RUT normalizado de cada `codigo_entidad` del perfil, desde `instituciones_pac`
+    (la CA identifica al organismo por RUT, no por código). Un código sin RUT en el
+    catálogo no aporta nada."""
+    numericos = [int(c) for c in codigos if str(c).strip().isdigit()]
+    if not numericos:
+        return []
+    filas = session.execute(
+        select(InstitucionPAC.rut).where(
+            InstitucionPAC.codigo_entidad.in_(numericos), InstitucionPAC.rut.is_not(None)
+        )
+    ).scalars()
+    return sorted({r for r in (normalizar_rut(x) for x in filas) if r})
+
+
+def criterio_perfil(
+    session: Session, perfil: PerfilBusqueda, excluir_extra: list[str] | None = None
+) -> CriterioPerfil:
     """Criterio del perfil; `excluir_extra` suma exclusiones sin escribir nada
-    (vista previa de "Descartar y excluir")."""
+    (vista previa de "Descartar y excluir"). Lee `instituciones_pac` para traducir
+    los organismos seguidos a RUT."""
     keywords = cast(list[str], list(perfil.keywords or []))
     excluir = cast(list[str], list(perfil.keywords_excluir or [])) + list(excluir_extra or [])
+    organismos = cast(list[str], list(perfil.organismos_seguidos or []))
     return CriterioPerfil(
         perfil_id=perfil.id,
         fuentes=tuple(cast(list[str], list(perfil.fuentes or ["licitaciones", "compras_agiles"]))),
         q=build_tsquery(keywords) if keywords_validas(keywords) else None,
         qx=build_exclude_tsquery(excluir) if keywords_validas(excluir) else None,
         categorias_unspsc=tuple(cast(list[str], list(perfil.categorias_unspsc or []))),
-        organismos_seguidos=tuple(cast(list[str], list(perfil.organismos_seguidos or []))),
+        organismos_seguidos=tuple(organismos),
+        organismos_ruts=tuple(ruts_de_organismos(session, organismos)),
         regiones=tuple(cast(list[int], list(perfil.regiones or []))),
         monto_min=perfil.monto_min_clp,
         monto_max=perfil.monto_max_clp,
@@ -370,6 +427,7 @@ def _where_limpieza(c: CriterioPerfil, fuente: str, ahora: datetime) -> list[Any
     """WHERE sobre oportunidades_match: matches de ese perfil y fuente cuya
     oportunidad está vigente y NO pasa el criterio actual.
 
+    Región y monto usan los mismos fragmentos que el recall (`_filtro_*`).
     "No pasa" = no está en el conjunto que el recall devolvería sin el tope de
     500 (mismos fragmentos de `_criterio_*`). Se expresa como NOT IN del
     conjunto que calza, no como NOT (criterio): así un NULL (organismo o región
@@ -380,16 +438,14 @@ def _where_limpieza(c: CriterioPerfil, fuente: str, ahora: datetime) -> list[Any
         calzan = select(Licitacion.codigo).where(
             *_vigencia_lic(ahora),
             *_criterio_lic(c.q, c.qx, list(c.categorias_unspsc), list(c.organismos_seguidos)),
-            *_monto_pasa(Licitacion.monto_clp, c.monto_min, c.monto_max),
+            *_filtro_licitaciones(c.regiones, c.monto_min, c.monto_max),
         )
     else:
         vigentes = select(CompraAgil.codigo).where(*_vigencia_ca(ahora))
-        region = [CompraAgil.region.in_(c.regiones)] if c.regiones else []
         calzan = select(CompraAgil.codigo).where(
             *_vigencia_ca(ahora),
-            *_criterio_ca(c.q, c.qx, list(c.categorias_unspsc), list(c.organismos_seguidos)),
-            *region,
-            *_monto_pasa(CompraAgil.monto_disponible_clp, c.monto_min, c.monto_max),
+            *_criterio_ca(c.q, c.qx, list(c.categorias_unspsc), list(c.organismos_ruts)),
+            *_filtro_ca(c.regiones, c.monto_min, c.monto_max),
         )
     conds: list[Any] = [
         OportunidadMatch.perfil_id == c.perfil_id,
@@ -425,7 +481,9 @@ def limpiar_matches_perfil(
 ) -> int:
     """Borra los matches de ESE perfil cuya oportunidad sigue vigente pero ya no
     pasa su criterio actual (keyword quitada, exclusión agregada, región, monto,
-    rubro, organismo o fuente cambiados). Devuelve cuántos borró.
+    rubro, organismo o fuente cambiados). Devuelve cuántos borró. La exclusión se
+    evalúa solo sobre el título (F-match-1): un ítem o la descripción con la
+    palabra excluida no hacen borrar el match.
 
     Un DELETE por fuente, con los mismos fragmentos SQL del recall y sin el tope
     de 500. No toca matches de oportunidades terminales/vencidas (historial,
@@ -437,7 +495,7 @@ def limpiar_matches_perfil(
     `fecha_match` nueva y reaparece en el resumen (aceptado). No hace commit.
     """
     ahora = ahora or ahora_utc()
-    criterio = criterio_perfil(perfil)
+    criterio = criterio_perfil(session, perfil)
     borrados = 0
     for fuente in _FUENTES:
         r = session.execute(
@@ -530,7 +588,8 @@ _HITS_CA_SQL = text(
 
 # Resultado por candidato sin ningún keyword_hit (perfil sin keywords, o
 # candidato que entró solo por rubro/organismo seguido).
-_SIN_HITS: tuple[list[str], str] = ([], "desconocido")
+# El tercer valor es `hit_en_nombre` (base 50 de `relevancia`; si no, 35).
+_SIN_HITS: tuple[list[str], str, bool] = ([], "desconocido", False)
 
 
 def _campo_hit(hit_nombre: bool, hit_descripcion: bool, hit_producto: bool) -> str:
@@ -546,26 +605,34 @@ def _campo_hit(hit_nombre: bool, hit_descripcion: bool, hit_producto: bool) -> s
 
 def _hits_licitaciones(
     session: Session, codigos: list[str], keywords: list[str]
-) -> dict[str, tuple[list[str], str]]:
-    """keywords_hit + campo_hit por licitación, en una sola query set-based."""
+) -> dict[str, tuple[list[str], str, bool]]:
+    """keywords_hit + campo_hit + hit_en_nombre por licitación, en una sola query set-based."""
     if not codigos or not keywords:
         return {}
     filas = session.execute(_HITS_LIC_SQL, {"codigos": codigos, "keywords": keywords}).all()
     return {
-        codigo: (list(keywords_hit or []), _campo_hit(hit_nombre, hit_descripcion, hit_producto))
+        codigo: (
+            list(keywords_hit or []),
+            _campo_hit(hit_nombre, hit_descripcion, hit_producto),
+            bool(hit_nombre),
+        )
         for codigo, keywords_hit, hit_nombre, hit_descripcion, hit_producto in filas
     }
 
 
 def _hits_ca(
     session: Session, codigos: list[str], keywords: list[str]
-) -> dict[str, tuple[list[str], str]]:
-    """keywords_hit + campo_hit por Compra Ágil, en una sola query set-based."""
+) -> dict[str, tuple[list[str], str, bool]]:
+    """keywords_hit + campo_hit + hit_en_nombre por Compra Ágil, en una sola query set-based."""
     if not codigos or not keywords:
         return {}
     filas = session.execute(_HITS_CA_SQL, {"codigos": codigos, "keywords": keywords}).all()
     return {
-        codigo: (list(keywords_hit or []), _campo_hit(hit_nombre, hit_descripcion, hit_producto))
+        codigo: (
+            list(keywords_hit or []),
+            _campo_hit(hit_nombre, hit_descripcion, hit_producto),
+            bool(hit_nombre),
+        )
         for codigo, keywords_hit, hit_nombre, hit_descripcion, hit_producto in filas
     }
 
@@ -647,90 +714,77 @@ def _upsert_match(
 # ---------------------------------------------------------------------------
 
 
-def _score_licitacion(
-    lic: Licitacion,
-    keywords: list[str],
+def _hit_nombre(campo_hit: str, hit_en_nombre: bool | None) -> bool:
+    """Si el llamador no lo informa, se deduce de `campo_hit` (nombre tiene la
+    máxima precedencia, así que `campo_hit == "nombre"` es exacto)."""
+    return campo_hit == "nombre" if hit_en_nombre is None else hit_en_nombre
+
+
+def _razones(
     keywords_hit: list[str],
     campo_hit: str,
-    ahora: datetime,
+    hit_en_nombre: bool,
+    categorias_hit: list[str],
+    organismo_seguido: bool,
+    ofertas: int | None,
+) -> dict[str, Any]:
+    """`razones` del match. Sin `dias_al_cierre`: cambiaba en cada ciclo y hacía que
+    el WHERE del upsert nunca ahorrara una escritura; la UI lo calcula de `fecha_cierre`."""
+    razones: dict[str, Any] = {
+        "keywords_hit": keywords_hit,
+        "campo_hit": campo_hit,
+        "hit_en_nombre": hit_en_nombre,
+        "ofertas": ofertas,
+    }
+    if categorias_hit:
+        razones["categorias_hit"] = categorias_hit
+    if organismo_seguido:
+        razones["organismo_seguido"] = True
+    return razones
+
+
+def _score_licitacion(
+    lic: Licitacion,
+    keywords_hit: list[str],
+    campo_hit: str,
     categorias_unspsc: list[str] | None = None,
     organismos_seguidos: list[str] | None = None,
+    hit_en_nombre: bool | None = None,
 ) -> tuple[float, dict[str, Any]]:
-    """Combina score_texto/urgencia/competencia/estructural en el score final.
+    """Relevancia (`relevancia`) y razones de una licitación.
 
     keywords_hit/campo_hit vienen de _hits_licitaciones (FTS set-based) —
     misma tsquery que decidió el recall (invariante F9c).
     """
-    hit_en_nombre = campo_hit == "nombre"
-
-    dias = 0.0
-    if lic.fecha_cierre:
-        delta = lic.fecha_cierre - ahora
-        dias = max(0.0, delta.total_seconds() / 86400.0)
-
+    hit_n = _hit_nombre(campo_hit, hit_en_nombre)
     categorias_hit = _rubros_hit(categorias_unspsc or [], [i.codigo_producto for i in lic.items])
     organismo_seguido = bool(lic.codigo_organismo) and lic.codigo_organismo in (
         organismos_seguidos or []
     )
-
-    st = score_texto(keywords, keywords_hit, hit_en_nombre)
-    su = score_urgencia(dias)
-    sc = score_competencia("licitaciones", 0)
-    se = score_estructural(bool(categorias_hit), organismo_seguido)
-    total = min(100.0, st + su + sc + se)
-
-    razones: dict[str, Any] = {
-        "keywords_hit": keywords_hit,
-        "campo_hit": campo_hit,
-        "dias_al_cierre": round(dias, 1),
-        "ofertas": None,
-    }
-    if categorias_hit:
-        razones["categorias_hit"] = categorias_hit
-    if organismo_seguido:
-        razones["organismo_seguido"] = True
-    return total, razones
+    total = relevancia(keywords_hit, hit_n, bool(categorias_hit), organismo_seguido)
+    return total, _razones(keywords_hit, campo_hit, hit_n, categorias_hit, organismo_seguido, None)
 
 
 def _score_ca(
     ca: CompraAgil,
-    keywords: list[str],
     keywords_hit: list[str],
     campo_hit: str,
-    ahora: datetime,
     categorias_unspsc: list[str] | None = None,
-    organismos_seguidos: list[str] | None = None,
+    organismos_ruts: list[str] | None = None,
+    hit_en_nombre: bool | None = None,
 ) -> tuple[float, dict[str, Any]]:
-    """Análogo a _score_licitacion para Compra Ágil."""
-    hit_en_nombre = campo_hit == "nombre"
-
-    dias = 0.0
-    if ca.fecha_cierre:
-        delta = ca.fecha_cierre - ahora
-        dias = max(0.0, delta.total_seconds() / 86400.0)
-
+    """Análogo a _score_licitacion para Compra Ágil. `organismos_ruts` son los RUT de
+    los organismos seguidos; se comparan normalizados (con o sin puntos y guion)."""
+    hit_n = _hit_nombre(campo_hit, hit_en_nombre)
     categorias_hit = _rubros_hit(
         categorias_unspsc or [], [p.codigo_producto for p in ca.productos]
     )
-    organismo_seguido = bool(ca.organismo_rut) and ca.organismo_rut in (organismos_seguidos or [])
-
-    st = score_texto(keywords, keywords_hit, hit_en_nombre)
-    su = score_urgencia(dias)
-    sc = score_competencia("compras_agiles", ca.total_ofertas)
-    se = score_estructural(bool(categorias_hit), organismo_seguido)
-    total = min(100.0, st + su + sc + se)
-
-    razones: dict[str, Any] = {
-        "keywords_hit": keywords_hit,
-        "campo_hit": campo_hit,
-        "dias_al_cierre": round(dias, 1),
-        "ofertas": ca.total_ofertas,
-    }
-    if categorias_hit:
-        razones["categorias_hit"] = categorias_hit
-    if organismo_seguido:
-        razones["organismo_seguido"] = True
-    return total, razones
+    rut = normalizar_rut(ca.organismo_rut)
+    organismo_seguido = bool(rut) and rut in {normalizar_rut(r) for r in organismos_ruts or []}
+    total = relevancia(keywords_hit, hit_n, bool(categorias_hit), organismo_seguido)
+    return total, _razones(
+        keywords_hit, campo_hit, hit_n, categorias_hit, organismo_seguido, ca.total_ofertas
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -753,45 +807,37 @@ def match_perfil(
     if ahora is None:
         ahora = ahora_utc()
 
-    keywords = cast(list[str], list(perfil.keywords or []))
-    keywords_excluir = cast(list[str], list(perfil.keywords_excluir or []))
-    fuentes = cast(list[str], list(perfil.fuentes or ["licitaciones", "compras_agiles"]))
-    regiones = cast(list[int], list(perfil.regiones or []))
-    categorias_unspsc = cast(list[str], list(perfil.categorias_unspsc or []))
-    organismos_seguidos = cast(list[str], list(perfil.organismos_seguidos or []))
+    criterio = criterio_perfil(session, perfil)
+    kws_validas = keywords_validas(cast(list[str], list(perfil.keywords or [])))
+    categorias = list(criterio.categorias_unspsc)
+    ruts = list(criterio.organismos_ruts)
 
-    kws_validas = keywords_validas(keywords)
-    q = build_tsquery(keywords) if kws_validas else None
-    qx = build_exclude_tsquery(keywords_excluir) if keywords_validas(keywords_excluir) else None
-
-    nuevos = actualizados = descartados = 0
+    nuevos = actualizados = 0
     sin_detalle_lic: list[str] = []
     sin_detalle_ca: list[str] = []
 
-    if "licitaciones" in fuentes:
+    if "licitaciones" in criterio.fuentes:
         lics = _candidatos_licitaciones(
-            session, ahora, q, qx, categorias_unspsc, organismos_seguidos
+            session,
+            ahora,
+            criterio.q,
+            criterio.qx,
+            categorias,
+            list(criterio.organismos_seguidos),
+            criterio.regiones,
+            criterio.monto_min,
+            criterio.monto_max,
         )
         hits_lic = _hits_licitaciones(session, [lic.codigo for lic in lics], kws_validas)
         for lic in lics:
-            # Filtro de monto (local)
-            monto = lic.monto_clp
-            razones_extra: dict[str, Any] = {}
-            if monto is not None:
-                if perfil.monto_min_clp is not None and monto < perfil.monto_min_clp:
-                    descartados += 1
-                    continue
-                if perfil.monto_max_clp is not None and monto > perfil.monto_max_clp:
-                    descartados += 1
-                    continue
-            else:
-                razones_extra["monto_no_informado"] = True
-
-            kw_hit, campo_hit = hits_lic.get(lic.codigo, _SIN_HITS)
+            kw_hit, campo_hit, hit_n = hits_lic.get(lic.codigo, _SIN_HITS)
             sc, razones = _score_licitacion(
-                lic, keywords, kw_hit, campo_hit, ahora, categorias_unspsc, organismos_seguidos
+                lic, kw_hit, campo_hit, categorias, list(criterio.organismos_seguidos), hit_n
             )
-            razones.update(razones_extra)
+            if lic.monto_clp is None:
+                razones["monto_no_informado"] = True
+            if criterio.regiones and lic.region is None:
+                razones["region_no_informada"] = True
 
             es_nuevo = _upsert_match(
                 session, perfil.id, "licitaciones", lic.codigo, sc, razones, ahora
@@ -801,32 +847,24 @@ def match_perfil(
             if lic.raw_json is None:
                 sin_detalle_lic.append(lic.codigo)
 
-    if "compras_agiles" in fuentes:
-        cas = _candidatos_ca(session, ahora, q, qx, categorias_unspsc, organismos_seguidos)
+    if "compras_agiles" in criterio.fuentes:
+        cas = _candidatos_ca(
+            session,
+            ahora,
+            criterio.q,
+            criterio.qx,
+            categorias,
+            ruts,
+            criterio.regiones,
+            criterio.monto_min,
+            criterio.monto_max,
+        )
         hits_ca = _hits_ca(session, [ca.codigo for ca in cas], kws_validas)
         for ca in cas:
-            # Filtro de región (solo CA, local — spec regla 7)
-            if regiones and ca.region not in regiones:
-                descartados += 1
-                continue
-            # Filtro de monto (local)
-            monto_ca = ca.monto_disponible_clp
-            razones_extra_ca: dict[str, Any] = {}
-            if monto_ca is not None:
-                if perfil.monto_min_clp is not None and monto_ca < perfil.monto_min_clp:
-                    descartados += 1
-                    continue
-                if perfil.monto_max_clp is not None and monto_ca > perfil.monto_max_clp:
-                    descartados += 1
-                    continue
-            else:
-                razones_extra_ca["monto_no_informado"] = True
-
-            kw_hit_ca, campo_hit_ca = hits_ca.get(ca.codigo, _SIN_HITS)
-            sc, razones = _score_ca(
-                ca, keywords, kw_hit_ca, campo_hit_ca, ahora, categorias_unspsc, organismos_seguidos
-            )
-            razones.update(razones_extra_ca)
+            kw_hit_ca, campo_hit_ca, hit_ni_ca = hits_ca.get(ca.codigo, _SIN_HITS)
+            sc, razones = _score_ca(ca, kw_hit_ca, campo_hit_ca, categorias, ruts, hit_ni_ca)
+            if ca.monto_disponible_clp is None:
+                razones["monto_no_informado"] = True
 
             es_nuevo = _upsert_match(
                 session, perfil.id, "compras_agiles", ca.codigo, sc, razones, ahora
@@ -839,17 +877,15 @@ def match_perfil(
     borrados = limpiar_matches_perfil(session, perfil, ahora)
     session.commit()
     _log.info(
-        "match_perfil id=%d: nuevos=%d act=%d desc=%d borrados=%d",
+        "match_perfil id=%d: nuevos=%d act=%d borrados=%d",
         perfil.id,
         nuevos,
         actualizados,
-        descartados,
         borrados,
     )
     return {
         "nuevos": nuevos,
         "actualizados": actualizados,
-        "descartados": descartados,
         "borrados": borrados,
         "sin_detalle_licitaciones": sin_detalle_lic,
         "sin_detalle_ca": sin_detalle_ca,
@@ -872,7 +908,7 @@ def match_todos(
         ).scalars()
     )
 
-    total_nuevos = total_act = total_desc = total_borrados = 0
+    total_nuevos = total_act = total_borrados = 0
     all_sin_lic: list[str] = []
     all_sin_ca: list[str] = []
 
@@ -884,7 +920,6 @@ def match_todos(
             r = match_perfil(perfil, session, ahora)
             total_nuevos += r["nuevos"]
             total_act += r["actualizados"]
-            total_desc += r["descartados"]
             total_borrados += r.get("borrados", 0)
             all_sin_lic.extend(r["sin_detalle_licitaciones"])
             all_sin_ca.extend(r["sin_detalle_ca"])
@@ -895,18 +930,16 @@ def match_todos(
             _log.error("match_todos: error en perfil_id=%d", perfil_id, exc_info=True)
 
     _log.info(
-        "match_todos: perfiles=%d nuevos=%d act=%d desc=%d borrados=%d",
+        "match_todos: perfiles=%d nuevos=%d act=%d borrados=%d",
         len(perfiles),
         total_nuevos,
         total_act,
-        total_desc,
         total_borrados,
     )
     return {
         "perfiles_procesados": len(perfiles),
         "nuevos": total_nuevos,
         "actualizados": total_act,
-        "descartados": total_desc,
         "borrados": total_borrados,
         "sin_detalle_licitaciones": list(set(all_sin_lic)),
         "sin_detalle_ca": list(set(all_sin_ca)),

@@ -108,12 +108,15 @@
           <dt>Región</dt>
           <dd>{{ region_nombre or 'No informada' }}</dd>
           <dt>Publicación</dt>
-          <dd>{% if oportunidad.fecha_publicacion %}{{ oportunidad.fecha_publicacion.strftime('%d/%m/%Y') }}{% else %}No informada{% endif %}</dd>
+          <dd>{{ oportunidad.fecha_publicacion | fecha_chile }}</dd>
           {% if not es_lic %}
           <dt>Ofertas recibidas</dt>
           <dd class="num">{{ oportunidad.total_ofertas }}</dd>
           {% endif %}
         </dl>
+        {% if perfiles_nombres and perfiles_nombres | length > 1 %}
+        <p class="small text-body-secondary mb-2">Perfiles: {{ perfiles_nombres | join(', ') }}</p>
+        {% endif %}
         {% if razones_chips %}
         <h3 class="fs-6">Por qué calza</h3>
         <div class="d-flex flex-wrap gap-1">

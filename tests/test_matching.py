@@ -24,10 +24,7 @@ from app.matching.engine import (
     _upsert_match,
     match_perfil,
     match_todos,
-    score_competencia,
-    score_estructural,
-    score_texto,
-    score_urgencia,
+    relevancia,
 )
 from app.matching.perfiles import (
     PerfilInvalido,
@@ -37,7 +34,7 @@ from app.matching.perfiles import (
     listar_perfiles,
     obtener_perfil,
 )
-from app.matching.text import build_exclude_tsquery, build_tsquery
+from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
 from app.models.tables import OportunidadMatch, Usuario
 from tests.fixtures.dataset_matching import AHORA, crear_dataset
 
@@ -80,94 +77,46 @@ def session(sqlite_engine):
 # ---------------------------------------------------------------------------
 
 
-class TestScoreTexto:
-    def test_todos_los_keywords_hit(self):
-        kws = ["eléctrico", "cable"]
-        assert score_texto(kws, kws, hit_en_nombre=False) == pytest.approx(60.0)
+class TestRelevancia:
+    """F-match-1: la relevancia no depende de cuántas keywords tenga el perfil ni
+    de la urgencia/competencia (esas ya no suman)."""
 
-    def test_sin_keywords_devuelve_cero(self):
-        assert score_texto([], [], hit_en_nombre=False) == 0.0
+    def test_hit_en_nombre_base_50(self):
+        assert relevancia(["cable"], True, False, False) == 50.0
 
-    def test_hit_parcial_50_pct(self):
-        kws = ["eléctrico", "cable"]
-        # 1/2 keywords hit → 0.5 × 60 = 30
-        assert score_texto(kws, ["eléctrico"], hit_en_nombre=False) == pytest.approx(30.0)
+    def test_hit_solo_en_item_o_descripcion_base_35(self):
+        assert relevancia(["cable"], False, False, False) == 35.0
 
-    def test_bonus_nombre_suma_5(self):
-        kws = ["eléctrico"]
-        # 60 + 5 = 65 → capped a 60
-        assert score_texto(kws, kws, hit_en_nombre=True) == pytest.approx(60.0)
+    def test_keyword_adicional_suma_10_con_tope_20(self):
+        assert relevancia(["a", "b"], True, False, False) == 60.0
+        assert relevancia(["a", "b", "c"], True, False, False) == 70.0
+        assert relevancia(["a", "b", "c", "d", "e"], True, False, False) == 70.0
 
-    def test_bonus_nombre_en_hit_parcial(self):
-        kws = ["eléctrico", "cable", "iluminación"]
-        # 1/3 × 60 + 5 = 25
-        assert score_texto(kws, ["cable"], hit_en_nombre=True) == pytest.approx(25.0)
+    def test_keywords_repetidas_no_suman(self):
+        assert relevancia(["a", "a"], True, False, False) == 50.0
 
-    def test_ningún_hit_con_keywords(self):
-        kws = ["eléctrico", "cable"]
-        assert score_texto(kws, [], hit_en_nombre=False) == 0.0
+    def test_rubro_suma_20_y_organismo_15(self):
+        assert relevancia(["a"], True, True, False) == 70.0
+        assert relevancia(["a"], True, False, True) == 65.0
+        assert relevancia(["a"], False, True, True) == 70.0  # 35 + 20 + 15
 
+    def test_sin_keyword_con_rubro_o_organismo_base_40(self):
+        assert relevancia([], False, True, False) == 40.0
+        assert relevancia([], False, False, True) == 40.0
 
-class TestScoreUrgencia:
-    def test_rango_optimo_2_a_7_dias(self):
-        for dias in (2.0, 5.0, 7.0):
-            assert score_urgencia(dias) == 25.0, f"falló con {dias} días"
+    def test_sin_keyword_con_rubro_y_organismo_55(self):
+        assert relevancia([], False, True, True) == 55.0
 
-    def test_rango_bueno_8_a_30_dias(self):
-        for dias in (8.0, 15.0, 30.0):
-            assert score_urgencia(dias) == 10.0, f"falló con {dias} días"
+    def test_sin_nada_es_cero(self):
+        assert relevancia([], False, False, False) == 0.0
 
-    def test_menos_de_2_dias_urgencia_cero(self):
-        assert score_urgencia(0.0) == 0.0
-        assert score_urgencia(1.9) == 0.0
+    def test_tope_100(self):
+        assert relevancia(["a", "b", "c"], True, True, True) == 100.0
+        assert relevancia(["a", "b", "c", "d"], True, True, True) == 100.0
 
-    def test_mas_de_30_dias_urgencia_cero(self):
-        assert score_urgencia(31.0) == 0.0
-        assert score_urgencia(90.0) == 0.0
-
-    def test_borde_exacto_2_dias(self):
-        assert score_urgencia(2.0) == 25.0
-
-    def test_borde_exacto_7_dias(self):
-        assert score_urgencia(7.0) == 25.0
-
-    def test_borde_exacto_30_dias(self):
-        assert score_urgencia(30.0) == 10.0
-
-
-class TestScoreCompetencia:
-    def test_ca_sin_ofertas(self):
-        assert score_competencia("compras_agiles", 0) == 15.0
-
-    def test_ca_1_oferta(self):
-        assert score_competencia("compras_agiles", 1) == 10.0
-
-    def test_ca_3_ofertas(self):
-        assert score_competencia("compras_agiles", 3) == 10.0
-
-    def test_ca_mas_de_3_ofertas(self):
-        assert score_competencia("compras_agiles", 4) == 5.0
-        assert score_competencia("compras_agiles", 10) == 5.0
-
-    def test_licitacion_neutro(self):
-        assert score_competencia("licitaciones", 0) == 8.0
-        assert score_competencia("licitaciones", 99) == 8.0
-
-
-class TestScoreEstructural:
-    """F9b: recall aditivo por rubro UNSPSC y organismo seguido."""
-
-    def test_sin_hits_es_cero(self):
-        assert score_estructural(False, False) == 0.0
-
-    def test_solo_rubro(self):
-        assert score_estructural(True, False) == 20.0
-
-    def test_solo_organismo(self):
-        assert score_estructural(False, True) == 15.0
-
-    def test_ambos(self):
-        assert score_estructural(True, True) == 35.0
+    def test_perfil_de_20_keywords_con_un_acierto_en_el_nombre_da_50(self):
+        # Antes: 1/20 × 60 + 5 = 8. El denominador ya no se usa.
+        assert relevancia(["kw1"], True, False, False) == 50.0
 
 
 class TestRubrosHit:
@@ -186,6 +135,19 @@ class TestRubrosHit:
 
     def test_sin_codigos_producto(self):
         assert _rubros_hit(["4321"], []) == []
+
+
+class TestKeywordsValidas:
+    def test_quita_el_guion_inicial_suelto(self):
+        # `-algo` sin comillas volvería la tsquery "todo menos algo".
+        assert keywords_validas(["-algo", " - otra ", "--x"]) == ["algo", "otra", "x"]
+
+    def test_un_guion_solo_se_descarta(self):
+        assert keywords_validas(["-", "  ", "ok"]) == ["ok"]
+
+    def test_el_guion_interno_se_conserva(self):
+        assert keywords_validas(["sub-total"]) == ["sub-total"]
+        assert build_tsquery(["-aseo", "cable"]) == "aseo OR cable"
 
 
 class TestBuildTsquery:
@@ -447,8 +409,7 @@ class TestMatchFTS:
     def test_match_monto_fuera_rango_descartado(self, pg_session, ds):
         """LIC-MONTO-BAJO (50k) < monto_min A1 (100k) → descartado."""
         perfil = ds["perfiles"]["a1"]
-        result = match_perfil(perfil, pg_session, ahora=AHORA)
-        assert result["descartados"] >= 1
+        match_perfil(perfil, pg_session, ahora=AHORA)
         codigos = [
             m.codigo_oportunidad
             for m in pg_session.execute(
@@ -495,22 +456,21 @@ class TestMatchFTS:
         assert match is not None
         assert match.razones.get("campo_hit") == "nombre"
 
-    def test_match_orden_score_descendente(self, pg_session, ds):
-        """PERFIL-B1: CA-0OF debe tener mayor score que CA-CIERRE-1DIA."""
+    def test_match_score_no_depende_de_urgencia_ni_ofertas(self, pg_session, ds):
+        """PERFIL-B1: CA-0OF (0 ofertas, 4 días) y CA-CIERRE-1DIA (2 ofertas, <1 día)
+        tienen la misma relevancia: lo urgente se ve en el orden del feed, no en el score."""
         perfil = ds["perfiles"]["b1"]
         match_perfil(perfil, pg_session, ahora=AHORA)
-        matches = list(
-            pg_session.execute(
-                select(OportunidadMatch)
-                .where(OportunidadMatch.perfil_id == perfil.id)
-                .order_by(OportunidadMatch.score.desc())
+        puntajes = {
+            m.codigo_oportunidad: m.score
+            for m in pg_session.execute(
+                select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil.id)
             ).scalars()
-        )
-        codigos_ordenados = [m.codigo_oportunidad for m in matches]
-        assert codigos_ordenados.index("CA-0OF") < codigos_ordenados.index("CA-CIERRE-1DIA")
+        }
+        assert puntajes["CA-0OF"] == puntajes["CA-CIERRE-1DIA"]
 
     def test_match_ca_0_ofertas_score_maximo_competencia(self, pg_session, ds):
-        """CA-0OF: 0 ofertas → score_competencia=15, score total más alto."""
+        """CA-0OF: 0 ofertas ya no suma al score (F-match-1): solo la relevancia textual."""
         perfil = ds["perfiles"]["b1"]
         match_perfil(perfil, pg_session, ahora=AHORA)
         match = pg_session.execute(
@@ -520,11 +480,12 @@ class TestMatchFTS:
             )
         ).scalar_one_or_none()
         assert match is not None
-        # 60 (texto+bonus) + 25 (urgencia 4d) + 15 (0 ofertas) = 100
-        assert match.score == pytest.approx(100.0)
+        # keyword en el nombre: base 50; ni urgencia (4 días) ni 0 ofertas suman
+        assert match.score == pytest.approx(50.0)
+        assert match.razones["ofertas"] == 0
 
     def test_match_ca_urgencia_cero_menos_2dias(self, pg_session, ds):
-        """CA-CIERRE-1DIA (<2 días): score_urgencia=0."""
+        """CA-CIERRE-1DIA (<2 días): la urgencia no es parte del score ni de las razones."""
         perfil = ds["perfiles"]["b1"]
         match_perfil(perfil, pg_session, ahora=AHORA)
         match = pg_session.execute(
@@ -534,7 +495,8 @@ class TestMatchFTS:
             )
         ).scalar_one_or_none()
         assert match is not None
-        assert match.razones["dias_al_cierre"] < 2.0
+        assert "dias_al_cierre" not in match.razones
+        assert match.score == pytest.approx(50.0)
 
     def test_ownership_perfil_a_no_visible_para_owner_b(self, pg_session, ds):
         """Los matches de PERFIL-A1 (owner A) no son accesibles para owner B."""
@@ -623,9 +585,8 @@ class TestMatchFTS:
         assert match is not None
         assert match.razones["keywords_hit"] == ["eléctrico"]
         assert match.razones["campo_hit"] == "nombre"
-        # texto: 1/1 keyword hit + bonus_nombre = 65 → capped a 60
-        # + urgencia (10 días → 10) + competencia neutra licitaciones (8) = 78
-        assert match.score == pytest.approx(78.0)
+        # 1 keyword con acierto en el nombre: base 50 (urgencia y competencia ya no suman)
+        assert match.score == pytest.approx(50.0)
 
     def test_match_variante_morfologica_plural_sube_score(self, pg_session, ds):
         """F9c: keyword 'aseo' (singular) debe contar como hit contra 'aseos'
@@ -694,19 +655,32 @@ class TestScoreLicitacion:
 
     def test_score_con_keyword_en_nombre(self, session: Session):
         lic = _make_lic(session, "LIC-SC1", nombre="material eléctrico", cierre_dias=5)
-        keywords = ["eléctrico"]
-        score, razones = _score_licitacion(lic, keywords, ["eléctrico"], "nombre", _AHORA_LOCAL)
-        assert score > 0
+        score, razones = _score_licitacion(lic, ["eléctrico"], "nombre")
+        assert score == 50.0
         assert razones["campo_hit"] == "nombre"
-        assert razones["dias_al_cierre"] == pytest.approx(5.0, abs=0.1)
+        assert razones["hit_en_nombre"] is True
+        assert "dias_al_cierre" not in razones
 
     def test_score_con_keyword_en_descripcion(self, session: Session):
         lic = _make_lic(session, "LIC-SC2", nombre="compra servicios", cierre_dias=10)
-        keywords = ["prueba"]
-        score, razones = _score_licitacion(
-            lic, keywords, ["prueba"], "descripcion", _AHORA_LOCAL
-        )
+        score, razones = _score_licitacion(lic, ["prueba"], "descripcion")
         assert razones["campo_hit"] == "descripcion"
+        assert razones["hit_en_nombre"] is False
+        assert score == 35.0
+
+    def test_hit_en_nombre_explicito_manda(self, session: Session):
+        """`hit_en_nombre` explícito manda sobre lo que se deduzca de `campo_hit`."""
+        lic = _make_lic(session, "LIC-SC2B", nombre="compra servicios")
+        score, razones = _score_licitacion(lic, ["x"], "descripcion", hit_en_nombre=True)
+        assert score == 50.0
+        assert razones["hit_en_nombre"] is True
+
+    def test_urgencia_no_cambia_el_score(self, session: Session):
+        cerca = _make_lic(session, "LIC-URG1", nombre="material eléctrico", cierre_dias=3)
+        lejos = _make_lic(session, "LIC-URG2", nombre="material eléctrico", cierre_dias=60)
+        assert _score_licitacion(cerca, ["eléctrico"], "nombre")[0] == _score_licitacion(
+            lejos, ["eléctrico"], "nombre"
+        )[0]
 
     def test_score_sin_fecha_cierre(self, session: Session):
         from app.models.tables import Licitacion
@@ -714,16 +688,17 @@ class TestScoreLicitacion:
         lic = Licitacion(codigo="LIC-NODATE", nombre="sin fecha", descripcion="", estado="publicada", fecha_cierre=None)
         session.add(lic)
         session.flush()
-        _, razones = _score_licitacion(lic, ["algo"], [], "desconocido", _AHORA_LOCAL)
-        assert razones["dias_al_cierre"] == 0.0
+        score, razones = _score_licitacion(lic, [], "desconocido")
+        assert score == 0.0
+        assert "dias_al_cierre" not in razones
 
     def test_campo_hit_desconocido(self, session: Session):
         lic = _make_lic(session, "LIC-SC3", nombre="sin match", cierre_dias=5)
-        _, razones = _score_licitacion(lic, ["xyznotfound"], [], "desconocido", _AHORA_LOCAL)
+        _, razones = _score_licitacion(lic, [], "desconocido")
         assert razones["campo_hit"] == "desconocido"
 
     def test_categorias_hit_en_razones_y_score_sin_keywords(self, session: Session):
-        """F9b: rubro-only (sin keywords) debe puntuar > 0 vía score_estructural."""
+        """F9b: rubro-only (sin keywords) puntúa (base 40 de `relevancia`)."""
         from app.models.tables import LicitacionItem
 
         lic = _make_lic(session, "LIC-SCRUBRO", nombre="cosa neutra sin relacion")
@@ -733,25 +708,21 @@ class TestScoreLicitacion:
             )
         )
         session.flush()
-        score, razones = _score_licitacion(
-            lic, [], [], "desconocido", _AHORA_LOCAL, categorias_unspsc=["4321"]
-        )
+        score, razones = _score_licitacion(lic, [], "desconocido", categorias_unspsc=["4321"])
         assert razones["categorias_hit"] == ["4321"]
-        assert score > 0.0
+        assert score == 40.0
 
     def test_organismo_seguido_en_razones_y_score_sin_keywords(self, session: Session):
         lic = _make_lic(session, "LIC-SCORG", nombre="cosa neutra")
         lic.codigo_organismo = "ORG-Y"
         session.flush()
-        score, razones = _score_licitacion(
-            lic, [], [], "desconocido", _AHORA_LOCAL, organismos_seguidos=["ORG-Y"]
-        )
+        score, razones = _score_licitacion(lic, [], "desconocido", organismos_seguidos=["ORG-Y"])
         assert razones["organismo_seguido"] is True
-        assert score > 0.0
+        assert score == 40.0
 
     def test_sin_rubro_ni_organismo_no_aparecen_en_razones(self, session: Session):
         lic = _make_lic(session, "LIC-SCNONE", nombre="sin match", cierre_dias=5)
-        _, razones = _score_licitacion(lic, ["xyznotfound"], [], "desconocido", _AHORA_LOCAL)
+        _, razones = _score_licitacion(lic, [], "desconocido")
         assert "categorias_hit" not in razones
         assert "organismo_seguido" not in razones
 
@@ -762,15 +733,22 @@ class TestScoreCa:
 
     def test_score_ca_con_keyword(self, session: Session):
         ca = _make_ca(session, "CA-SC1", nombre="silla ergonómica", cierre_dias=4, ofertas=0)
-        score, razones = _score_ca(ca, ["ergonómica"], ["ergonómica"], "nombre", _AHORA_LOCAL)
-        assert score > 0
+        score, razones = _score_ca(ca, ["ergonómica"], "nombre")
+        assert score == 50.0
         assert razones["campo_hit"] == "nombre"
         assert razones["ofertas"] == 0
+        assert "dias_al_cierre" not in razones
+
+    def test_ofertas_no_cambian_el_score(self, session: Session):
+        sin = _make_ca(session, "CA-OF0", nombre="silla", ofertas=0)
+        con = _make_ca(session, "CA-OF9", nombre="silla", ofertas=9)
+        assert _score_ca(sin, ["silla"], "nombre")[0] == _score_ca(con, ["silla"], "nombre")[0]
 
     def test_score_ca_campo_hit_descripcion(self, session: Session):
         ca = _make_ca(session, "CA-SC2", nombre="compra varios", cierre_dias=4)
-        score, razones = _score_ca(ca, ["CA"], ["CA"], "descripcion", _AHORA_LOCAL)
+        score, razones = _score_ca(ca, ["CA"], "descripcion")
         assert razones["campo_hit"] == "descripcion"
+        assert score == 35.0
 
     def test_score_ca_sin_fecha_cierre(self, session: Session):
         from app.models.tables import CompraAgil
@@ -778,8 +756,9 @@ class TestScoreCa:
         ca = CompraAgil(codigo="CA-NODATE", nombre="sin fecha", descripcion="", estado="publicada", fecha_cierre=None, total_ofertas=0)
         session.add(ca)
         session.flush()
-        _, razones = _score_ca(ca, ["algo"], [], "desconocido", _AHORA_LOCAL)
-        assert razones["dias_al_cierre"] == 0.0
+        score, razones = _score_ca(ca, [], "desconocido")
+        assert score == 0.0
+        assert "dias_al_cierre" not in razones
 
     def test_ca_categorias_hit_en_razones_sin_keywords(self, session: Session):
         from app.models.tables import CaProducto
@@ -789,21 +768,27 @@ class TestScoreCa:
             CaProducto(ca_codigo=ca.codigo, codigo_producto="43211500", nombre="laptop")
         )
         session.flush()
-        score, razones = _score_ca(
-            ca, [], [], "desconocido", _AHORA_LOCAL, categorias_unspsc=["4321"]
-        )
+        score, razones = _score_ca(ca, [], "desconocido", categorias_unspsc=["4321"])
         assert razones["categorias_hit"] == ["4321"]
-        assert score > 0.0
+        assert score == 40.0
 
     def test_ca_organismo_seguido_en_razones_sin_keywords(self, session: Session):
         ca = _make_ca(session, "CA-SCORG", nombre="cosa neutra")
         ca.organismo_rut = "76999999-9"
         session.flush()
-        score, razones = _score_ca(
-            ca, [], [], "desconocido", _AHORA_LOCAL, organismos_seguidos=["76999999-9"]
-        )
+        score, razones = _score_ca(ca, [], "desconocido", organismos_ruts=["76999999-9"])
         assert razones["organismo_seguido"] is True
-        assert score > 0.0
+        assert score == 40.0
+
+    def test_ca_organismo_seguido_compara_rut_con_o_sin_puntos(self, session: Session):
+        ca = _make_ca(session, "CA-SCORG2", nombre="cosa neutra")
+        ca.organismo_rut = "76.999.999-9"
+        session.flush()
+        _, razones = _score_ca(ca, [], "desconocido", organismos_ruts=["769999999"])
+        assert razones["organismo_seguido"] is True
+        ca.organismo_rut = "7.699.999-K"
+        _, razones = _score_ca(ca, [], "desconocido", organismos_ruts=["7699999-k"])
+        assert razones["organismo_seguido"] is True
 
 
 class TestUpsertMatch:
@@ -867,7 +852,7 @@ class TestMatchPerfilMockedCandidatos:
         p = PerfilBusqueda(
             owner_id=u.id,
             nombre="Test",
-            keywords=keywords or ["eléctrico"],
+            keywords=keywords if keywords is not None else ["eléctrico"],
             regiones=regiones,
             fuentes=fuentes or ["licitaciones", "compras_agiles"],
             monto_min_clp=monto_min,
@@ -890,59 +875,84 @@ class TestMatchPerfilMockedCandidatos:
         assert result["nuevos"] == 1
         assert "LIC-MP1" in result["sin_detalle_licitaciones"]
 
+    # Región y monto se filtran en el SQL de candidatos (F-match-1), no en Python:
+    # estos tests usan los candidatos reales (SQL estándar, sin keywords no hay FTS).
+
+    def _codigos_match(self, session: Session, perfil) -> set[str]:
+        from app.models.tables import OportunidadMatch
+
+        return {
+            m.codigo_oportunidad
+            for m in session.execute(
+                select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil.id)
+            ).scalars()
+        }
+
     def test_match_perfil_descarta_por_monto_min(self, session: Session):
         lic = _make_lic(session, "LIC-MP2")
         lic.monto_clp = 50_000.0  # < monto_min
-        perfil = self._perfil(session, monto_min=100_000.0)
+        perfil = self._perfil(session, keywords=[], monto_min=100_000.0)
 
-        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]), \
-             patch("app.matching.engine._hits_licitaciones", return_value={}):
-            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
-        assert result["descartados"] == 1
         assert result["nuevos"] == 0
+        assert "LIC-MP2" not in self._codigos_match(session, perfil)
 
     def test_match_perfil_descarta_por_monto_max(self, session: Session):
         lic = _make_lic(session, "LIC-MP3")
         lic.monto_clp = 5_000_000.0  # > monto_max
-        perfil = self._perfil(session, monto_max=1_000_000.0)
+        perfil = self._perfil(session, keywords=[], monto_max=1_000_000.0)
 
-        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]), \
-             patch("app.matching.engine._hits_licitaciones", return_value={}):
-            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
-        assert result["descartados"] == 1
+        assert "LIC-MP3" not in self._codigos_match(session, perfil)
 
     def test_match_perfil_monto_none_pasa(self, session: Session):
-        from app.models.tables import Licitacion
+        from app.models.tables import Licitacion, OportunidadMatch
 
         lic = Licitacion(codigo="LIC-MP4", nombre="eléctrico", descripcion="", estado="publicada",
                          fecha_cierre=_AHORA_LOCAL + timedelta(days=5), monto_clp=None, raw_json=None)
         session.add(lic)
         session.flush()
-        perfil = self._perfil(session, monto_min=100_000.0)
+        perfil = self._perfil(session, keywords=[], monto_min=100_000.0)
 
-        with patch("app.matching.engine._candidatos_licitaciones", return_value=[lic]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[]), \
-             patch("app.matching.engine._hits_licitaciones", return_value={}):
-            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["nuevos"] == 1
+        m = session.execute(
+            select(OportunidadMatch).where(OportunidadMatch.perfil_id == perfil.id)
+        ).scalar_one()
+        assert m.razones["monto_no_informado"] is True
 
     def test_match_perfil_ca_filtro_region(self, session: Session):
-        ca_rm = _make_ca(session, "CA-MP1", region=13)
-        ca_otra = _make_ca(session, "CA-MP2", region=7)
-        perfil = self._perfil(session, regiones=[13])
+        _make_ca(session, "CA-MP1", region=13)
+        _make_ca(session, "CA-MP2", region=7)
+        perfil = self._perfil(session, keywords=[], regiones=[13])
 
-        with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[ca_rm, ca_otra]), \
-             patch("app.matching.engine._hits_ca", return_value={}):
-            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
-        assert result["descartados"] == 1
-        assert result["nuevos"] == 1
+        assert self._codigos_match(session, perfil) == {"CA-MP1"}
+
+    def test_match_perfil_licitacion_filtra_region_y_la_no_informada_pasa(self, session: Session):
+        from app.models.tables import OportunidadMatch
+
+        en = _make_lic(session, "LIC-REG-EN")
+        en.region = 13
+        otra = _make_lic(session, "LIC-REG-OTRA")
+        otra.region = 7
+        _make_lic(session, "LIC-REG-NULL")  # region NULL: pasa con la razón
+        perfil = self._perfil(session, keywords=[], regiones=[13], fuentes=["licitaciones"])
+
+        match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+
+        assert self._codigos_match(session, perfil) == {"LIC-REG-EN", "LIC-REG-NULL"}
+        sin_region = session.execute(
+            select(OportunidadMatch).where(
+                OportunidadMatch.perfil_id == perfil.id,
+                OportunidadMatch.codigo_oportunidad == "LIC-REG-NULL",
+            )
+        ).scalar_one()
+        assert sin_region.razones["region_no_informada"] is True
 
     def test_match_perfil_ca_monto_none_pasa(self, session: Session):
         from app.models.tables import CompraAgil
@@ -952,12 +962,9 @@ class TestMatchPerfilMockedCandidatos:
                         region=13, total_ofertas=0, raw_json=None)
         session.add(ca)
         session.flush()
-        perfil = self._perfil(session, fuentes=["compras_agiles"], monto_min=100_000.0)
+        perfil = self._perfil(session, keywords=[], fuentes=["compras_agiles"], monto_min=100_000.0)
 
-        with patch("app.matching.engine._candidatos_licitaciones", return_value=[]), \
-             patch("app.matching.engine._candidatos_ca", return_value=[ca]), \
-             patch("app.matching.engine._hits_ca", return_value={}):
-            result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
+        result = match_perfil(perfil, session, ahora=_AHORA_LOCAL)
 
         assert result["nuevos"] == 1
 
@@ -1084,7 +1091,7 @@ class TestCandidatosRecallAditivo:
         session.flush()
 
         candidatos = _candidatos_ca(
-            session, _AHORA_LOCAL, None, None, organismos_seguidos=["76123456-7"]
+            session, _AHORA_LOCAL, None, None, organismos_seguidos=["761234567"]
         )
         assert "CA-RECALL2" in [c.codigo for c in candidatos]
 
@@ -1215,7 +1222,9 @@ class TestMatchPerfilRecallAditivo:
                 OportunidadMatch.codigo_oportunidad == "CA-E2E-NULL-CIERRE",
             )
         ).scalar_one()
-        assert match.score > 0.0
+        # Perfil solo de región: sin keyword, rubro ni organismo no hay señal de
+        # relevancia (antes sumaba urgencia/competencia). Queda 0 y el piso del feed la oculta.
+        assert match.score == 0.0
 
 
 # ---------------------------------------------------------------------------

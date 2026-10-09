@@ -21,11 +21,15 @@ from __future__ import annotations
 def keywords_validas(keywords: list[str]) -> list[str]:
     """Filtra keywords vacías/blancas y recorta espacios.
 
+    Quita también los `-` iniciales sueltos: en websearch_to_tsquery un `-algo` sin
+    comillas es una negación y volvería la tsquery "todo menos algo".
+
     Usado tanto por build_tsquery/build_exclude_tsquery (OR combinado del
     recall) como por la detección de keywords_hit en app.matching.engine
     (tsquery individual por keyword) — mismo criterio en ambos casos.
     """
-    return [k.strip() for k in keywords if k.strip()]
+    limpias = (k.strip().lstrip("-").strip() for k in keywords)
+    return [k for k in limpias if k]
 
 
 def build_tsquery(keywords: list[str]) -> str:

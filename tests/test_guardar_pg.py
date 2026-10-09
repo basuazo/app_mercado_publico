@@ -185,14 +185,15 @@ class TestLimpieza:
             s.commit()
             assert _codigos_match(s, p.id) == {"GUARD-L-A"}
 
-    def test_exclusion_con_tilde_borra_en_nombre_y_en_producto(self, limpio):
+    def test_exclusion_con_tilde_borra_solo_lo_que_la_tiene_en_el_titulo(self, limpio):
         with Session(limpio) as s:
             uid = _usuario(s)
             _ca(s, "GUARD-C-1", "Servicio zzguardplaga desratización")
             _ca(s, "GUARD-C-2", "Servicio zzguardplaga integral")
             _ca(s, "GUARD-C-3", "Servicio zzguardplaga fumigación")
             s.flush()
-            # El término solo está en el producto, y escrito sin tilde.
+            # El término solo está en el producto, y escrito sin tilde: desde F-match-1 la
+            # exclusión mira solo el título, así que ese match se conserva.
             s.add(
                 CaProducto(
                     ca_codigo="GUARD-C-2", codigo_producto="", nombre="servicio de desratizacion",
@@ -206,8 +207,8 @@ class TestLimpieza:
 
             resultado = excluir_palabras(s, uid, p.id, ["desratización"])
             s.commit()
-            assert resultado == (["desratización"], 2)
-            assert _codigos_match(s, p.id) == {"GUARD-C-3"}
+            assert resultado == (["desratización"], 1)
+            assert _codigos_match(s, p.id) == {"GUARD-C-2", "GUARD-C-3"}
             assert list(p.keywords_excluir) == ["desratización"]
 
     def test_no_toca_terminales_otro_perfil_otro_usuario_seguidas_ni_feedback(self, limpio):
@@ -373,7 +374,7 @@ def test_vista_previa_es_lo_que_se_borra(limpio, settings):
         uid, pid = _sembrar_feed(s)
         perfil = s.get(PerfilBusqueda, pid)
         assert perfil is not None
-        previsto = contar_limpieza(s, criterio_perfil(perfil, ["zzguardrata"]))
+        previsto = contar_limpieza(s, criterio_perfil(s, perfil, ["zzguardrata"]))
 
         client = TestClient(create_app(settings, limpio))
         cookies, _ = _sesion(settings, uid)

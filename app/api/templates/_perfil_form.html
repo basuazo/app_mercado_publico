@@ -50,6 +50,7 @@
         <input type="text" name="excluir" id="{{ i }}_excluir" value="{{ v.excluir }}"
                class="form-control{% if e.get('excluir') %} is-invalid{% endif %}" placeholder="limpieza, aseo"
                {% if e.get('excluir') %}aria-invalid="true" aria-describedby="{{ i }}_excluir_error"{% endif %}>
+        <div class="form-text">Saca una oportunidad solo si la palabra está en su título.</div>
         {{ error_de('excluir') }}
       </div>
       <div class="col-md-3">

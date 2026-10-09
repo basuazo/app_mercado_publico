@@ -163,7 +163,7 @@ def crear_dataset(session: Session) -> dict:
     # 6. Monto None → pasa filtro, razón monto_no_informado=True
     _lic("LIC-MONTO-NULL", "Equipos electricos varios", monto=None, dias=8.0)
 
-    # 7. Hit en nombre → activa bonus_nombre en score_texto
+    # 7. Hit en nombre → base 50 de relevancia (campo_hit="nombre")
     _lic("LIC-NOMBRE-BONUS", "Sistema electrico de automatizacion", monto=500_000.0, dias=5.0)
 
     # 8. Sin keyword match → ningún perfil lo captura
@@ -223,7 +223,7 @@ def crear_dataset(session: Session) -> dict:
         cas[codigo] = c
         return c
 
-    # CA-1: región 13, 0 ofertas, cierre 4 días → score_competencia máximo + urgencia 25
+    # CA-1: región 13, 0 ofertas, cierre 4 días (ofertas y urgencia no suman a la relevancia)
     _ca("CA-0OF", "Instalacion electrica rapida", region=13, ofertas=0, monto=300_000.0, dias=4.0)
 
     # CA-2: región 13, 1 oferta, monto=None, cierre 3 días → monto_no_informado, urgencia 25

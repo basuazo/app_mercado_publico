@@ -723,7 +723,7 @@ class TestVisualizacion:
         base.update(kw)
         return Licitacion(**base)
 
-    def test_la_tarjeta_muestra_nombre_y_region_sin_filtrar_por_region(self) -> None:
+    def test_la_tarjeta_muestra_nombre_y_region_y_filtra_por_region(self) -> None:
         from app.api.query import _construir_item
 
         item = _construir_item(
@@ -736,8 +736,8 @@ class TestVisualizacion:
 
         assert item["organismo"] == "MUNI RENGO"
         assert item["region_nombre"] == "Libertador General Bernardo O'Higgins"
-        # Filtro y faceta de región para licitaciones: F-match-1.
-        assert item["region"] is None
+        # Desde F-match-1 el filtro y la faceta de región también valen para licitaciones.
+        assert item["region"] == 6
 
     def test_sin_nombre_cae_al_codigo(self) -> None:
         from app.api.query import _construir_item

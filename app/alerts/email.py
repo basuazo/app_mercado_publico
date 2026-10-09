@@ -11,27 +11,29 @@ Reglas críticas:
 from __future__ import annotations
 
 import smtplib
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple, cast
 
 import httpx
 from jinja2 import Environment, FileSystemLoader
-from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import and_, exists, or_, select
+from sqlalchemy.orm import Session, defer, selectinload
 
 from app.api.presentacion import fecha_cierre_legible
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.core.vigencia import es_vigente
-from app.models.enums import EstadoAlerta
+from app.models.enums import EstadoAlerta, ValorFeedback
 from app.models.tables import (
     Alerta,
     CompraAgil,
     Licitacion,
+    MatchFeedback,
     OportunidadMatch,
     OportunidadSeguida,
     PerfilBusqueda,
@@ -106,48 +108,45 @@ def _fmt_cierre(dt: datetime | None, fuente: str) -> str:
     return fecha_cierre_legible(dt, fuente)
 
 
-def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, Any]:
-    if fuente == "licitaciones":
-        lic = session.get(Licitacion, codigo)
-        if lic is None:
-            return {
-                "nombre": codigo,
-                "organismo": "",
-                "region": None,
-                "monto": None,
-                "fecha_cierre": None,
-                "fecha_publicacion": None,
-                "estado": "",
-            }
+_DATOS_VACIOS: dict[str, Any] = {
+    "organismo": "",
+    "region": None,
+    "monto": None,
+    "fecha_cierre": None,
+    "fecha_publicacion": None,
+    "estado": "",
+}
+
+
+def _datos_de(op: Licitacion | CompraAgil) -> dict[str, Any]:
+    """Lo que el correo necesita de una oportunidad ya cargada."""
+    if isinstance(op, Licitacion):
         return {
-            "nombre": lic.nombre,
-            "organismo": lic.organismo_nombre or lic.codigo_organismo or "",
-            "region": lic.region,
-            "monto": lic.monto_clp,
-            "fecha_cierre": lic.fecha_cierre,
-            "fecha_publicacion": lic.fecha_publicacion,
-            "estado": lic.estado,
-        }
-    ca = session.get(CompraAgil, codigo)
-    if ca is None:
-        return {
-            "nombre": codigo,
-            "organismo": "",
-            "region": None,
-            "monto": None,
-            "fecha_cierre": None,
-            "fecha_publicacion": None,
-            "estado": "",
+            "nombre": op.nombre,
+            "organismo": op.organismo_nombre or op.codigo_organismo or "",
+            "region": op.region,
+            "monto": op.monto_clp,
+            "fecha_cierre": op.fecha_cierre,
+            "fecha_publicacion": op.fecha_publicacion,
+            "estado": op.estado,
         }
     return {
-        "nombre": ca.nombre,
-        "organismo": ca.organismo_nombre or "",
-        "region": ca.region,
-        "monto": ca.monto_disponible_clp,
-        "fecha_cierre": ca.fecha_cierre,
-        "fecha_publicacion": ca.fecha_publicacion,
-        "estado": ca.estado,
+        "nombre": op.nombre,
+        "organismo": op.organismo_nombre or "",
+        "region": op.region,
+        "monto": op.monto_disponible_clp,
+        "fecha_cierre": op.fecha_cierre,
+        "fecha_publicacion": op.fecha_publicacion,
+        "estado": op.estado,
     }
+
+
+def _datos_oportunidad(session: Session, fuente: str, codigo: str) -> dict[str, Any]:
+    op: Licitacion | CompraAgil | None
+    op = session.get(Licitacion, codigo) if fuente == "licitaciones" else session.get(CompraAgil, codigo)
+    if op is None:
+        return {"nombre": codigo, **_DATOS_VACIOS}
+    return _datos_de(op)
 
 
 _MENSAJES_SEGUIMIENTO: dict[str, str] = {
@@ -187,10 +186,11 @@ def _ctx_alerta_seguimiento(alerta: Alerta, session: Session, settings: Settings
     }
 
 
-def _ctx_resumen_item(match: OportunidadMatch, session: Session, settings: Settings) -> dict[str, Any]:
-    op = _datos_oportunidad(session, match.fuente, match.codigo_oportunidad)
+def _ctx_resumen_item(item: _ItemResumen, settings: Settings) -> dict[str, Any]:
+    op = item.datos
+    match = item.match
     return {
-        "perfil_nombre": match.perfil.nombre,
+        "perfil_nombre": ", ".join(item.perfiles),
         "nombre": op["nombre"],
         "organismo": op["organismo"],
         "monto": _fmt_monto(op["monto"]),
@@ -345,31 +345,158 @@ def _usuario_elegible_resumen(usuario: Usuario, ahora: datetime) -> bool:
     )
 
 
-def _matches_nuevos_usuario(
-    session: Session, usuario: Usuario, ahora: datetime
-) -> list[OportunidadMatch]:
+# Resumen (F-match-1): top de lo nuevo y, aparte, lo que cierra pronto.
+_TOP_RESUMEN = 5
+_MAX_CIERRA_PRONTO = 5
+_HORAS_CIERRA_PRONTO = 48
+_RELEVANCIA_CIERRA_PRONTO = 60
+
+
+class _ItemResumen(NamedTuple):
+    """El mejor match del usuario con una oportunidad, sus datos y los perfiles que la traen."""
+
+    match: OportunidadMatch
+    datos: dict[str, Any]
+    perfiles: list[str]
+
+
+def _cargar_ops_lote(session: Session, fuente: str, codigos: list[str]) -> dict[str, Licitacion | CompraAgil]:
+    """Las oportunidades de esos códigos en UNA query (sin `raw_json`, que el correo no usa)."""
+    if not codigos:
+        return {}
+    modelo: type[Licitacion] | type[CompraAgil] = Licitacion if fuente == "licitaciones" else CompraAgil
+    filas = session.execute(
+        select(modelo).options(defer(modelo.raw_json)).where(modelo.codigo.in_(codigos))
+    ).scalars()
+    return {op.codigo: op for op in cast(Iterable[Licitacion | CompraAgil], filas)}
+
+
+def _items_resumen(
+    session: Session,
+    usuario: Usuario,
+    ahora: datetime,
+    *,
+    min_score: float,
+    nuevos_desde: datetime | None = None,
+    cierra_hasta: datetime | None = None,
+) -> list[_ItemResumen]:
+    """Oportunidades vigentes del usuario, UNA por (fuente, código), ordenadas por
+    relevancia descendente y cierre más próximo.
+
+    Todo el filtrado posible va en SQL: perfiles activos del usuario, piso de
+    relevancia, matches nuevos desde el último resumen, y sin las que el usuario
+    descartó o ya guardó (`NOT EXISTS`). Las oportunidades se cargan en lote
+    (una query por fuente), no una por match. `cierra_hasta` acota a las que
+    cierran entre `ahora` y ese instante.
+    """
+    guardada = exists().where(
+        OportunidadSeguida.owner_id == usuario.id,
+        OportunidadSeguida.fuente == OportunidadMatch.fuente,
+        OportunidadSeguida.codigo_oportunidad == OportunidadMatch.codigo_oportunidad,
+    )
+    descartada = exists().where(
+        MatchFeedback.usuario_id == usuario.id,
+        MatchFeedback.fuente == OportunidadMatch.fuente,
+        MatchFeedback.codigo_oportunidad == OportunidadMatch.codigo_oportunidad,
+        MatchFeedback.valor == ValorFeedback.DESCARTE.value,
+    )
     stmt = (
         select(OportunidadMatch)
         .join(PerfilBusqueda, OportunidadMatch.perfil_id == PerfilBusqueda.id)
         .where(
             PerfilBusqueda.owner_id == usuario.id,
             PerfilBusqueda.activo.is_(True),
+            OportunidadMatch.score >= min_score,
+            ~guardada,
+            ~descartada,
         )
         .options(selectinload(OportunidadMatch.perfil))
-        .order_by(OportunidadMatch.score.desc(), OportunidadMatch.fecha_match.desc())
+        .order_by(OportunidadMatch.score.desc(), OportunidadMatch.id)
     )
-    if usuario.ultimo_resumen_en is not None:
-        stmt = stmt.where(OportunidadMatch.fecha_match > usuario.ultimo_resumen_en)
-    matches = list(session.execute(stmt).scalars())
+    if nuevos_desde is not None:
+        stmt = stmt.where(OportunidadMatch.fecha_match > nuevos_desde)
+    if cierra_hasta is not None:
+        stmt = stmt.where(
+            or_(
+                and_(
+                    OportunidadMatch.fuente == "licitaciones",
+                    OportunidadMatch.codigo_oportunidad.in_(
+                        select(Licitacion.codigo).where(
+                            Licitacion.fecha_cierre > ahora, Licitacion.fecha_cierre <= cierra_hasta
+                        )
+                    ),
+                ),
+                and_(
+                    OportunidadMatch.fuente == "compras_agiles",
+                    OportunidadMatch.codigo_oportunidad.in_(
+                        select(CompraAgil.codigo).where(
+                            CompraAgil.fecha_cierre > ahora, CompraAgil.fecha_cierre <= cierra_hasta
+                        )
+                    ),
+                ),
+            )
+        )
 
-    # F-vigencia: una oportunidad que cerró entre el match y el envío del
-    # resumen no se anuncia (misma definición de "vigente" que el feed).
-    vigentes = []
-    for m in matches:
-        op = _datos_oportunidad(session, m.fuente, m.codigo_oportunidad)
-        if es_vigente(op["estado"], op["fecha_cierre"], m.fuente, ahora, op["fecha_publicacion"]):
-            vigentes.append(m)
-    return vigentes
+    # Un solo item por oportunidad: el primero (mayor relevancia) manda y los
+    # demás matches solo suman el nombre de su perfil.
+    mejores: dict[tuple[str, str], OportunidadMatch] = {}
+    perfiles: dict[tuple[str, str], list[str]] = {}
+    for m in session.execute(stmt).scalars():
+        clave = (m.fuente, m.codigo_oportunidad)
+        mejores.setdefault(clave, m)
+        nombres = perfiles.setdefault(clave, [])
+        if m.perfil.nombre not in nombres:
+            nombres.append(m.perfil.nombre)
+
+    ops: dict[str, dict[str, Licitacion | CompraAgil]] = {
+        fuente: _cargar_ops_lote(session, fuente, [c for f, c in mejores if f == fuente])
+        for fuente in ("licitaciones", "compras_agiles")
+    }
+    items: list[_ItemResumen] = []
+    for clave, m in mejores.items():
+        op = ops[m.fuente].get(m.codigo_oportunidad)
+        if op is None:
+            continue
+        datos = _datos_de(op)
+        # F-vigencia: una oportunidad que cerró entre el match y el envío del
+        # resumen no se anuncia (misma definición de "vigente" que el feed).
+        if es_vigente(datos["estado"], datos["fecha_cierre"], m.fuente, ahora, datos["fecha_publicacion"]):
+            items.append(_ItemResumen(m, datos, perfiles[clave]))
+    items.sort(
+        key=lambda i: (
+            -i.match.score,
+            i.datos["fecha_cierre"] is None,
+            i.datos["fecha_cierre"] or datetime.max,
+        )
+    )
+    return items
+
+
+def _matches_nuevos_usuario(
+    session: Session, usuario: Usuario, ahora: datetime, min_score: float
+) -> list[_ItemResumen]:
+    """Lo nuevo desde el último resumen que pasa el piso de relevancia del feed."""
+    return _items_resumen(
+        session, usuario, ahora, min_score=min_score, nuevos_desde=usuario.ultimo_resumen_en
+    )
+
+
+def _cierra_pronto_usuario(
+    session: Session, usuario: Usuario, ahora: datetime, ya_incluidas: list[_ItemResumen]
+) -> list[_ItemResumen]:
+    """Hasta 5 oportunidades de relevancia alta que cierran en las próximas 48 h y
+    no están ya en el top del correo (el cierre más próximo primero)."""
+    en_top = {(i.match.fuente, i.match.codigo_oportunidad) for i in ya_incluidas}
+    candidatas = _items_resumen(
+        session,
+        usuario,
+        ahora,
+        min_score=_RELEVANCIA_CIERRA_PRONTO,
+        cierra_hasta=ahora + timedelta(hours=_HORAS_CIERRA_PRONTO),
+    )
+    pendientes = [i for i in candidatas if (i.match.fuente, i.match.codigo_oportunidad) not in en_top]
+    pendientes.sort(key=lambda i: (i.datos["fecha_cierre"], -i.match.score))
+    return pendientes[:_MAX_CIERRA_PRONTO]
 
 
 def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None = None) -> dict[str, int]:
@@ -384,7 +511,7 @@ def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None 
         if not _usuario_elegible_resumen(usuario, ahora):
             no_elegibles += 1
             continue
-        matches = _matches_nuevos_usuario(session, usuario, ahora)
+        matches = _matches_nuevos_usuario(session, usuario, ahora, settings.feed_min_score_default)
         if not matches:
             sin_nuevos += 1
             continue
@@ -392,12 +519,17 @@ def enviar_resumen(session: Session, settings: Settings, ahora: datetime | None 
             pospuestos += 1
             continue
 
-        items = [_ctx_resumen_item(m, session, settings) for m in matches[:5]]
+        top = matches[:_TOP_RESUMEN]
+        items = [_ctx_resumen_item(i, settings) for i in top]
+        cierra_pronto = [
+            _ctx_resumen_item(i, settings) for i in _cierra_pronto_usuario(session, usuario, ahora, top)
+        ]
         total = len(matches)
         subject = f"[MP] Encontramos {total} oportunidades para tu perfil en Mercado Público"
         ctx = {
             "total": total,
             "items": items,
+            "cierra_pronto": cierra_pronto,
             "url_app": settings.app_base_url.strip().rstrip("/") or "/",
         }
         try:

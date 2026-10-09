@@ -7,19 +7,26 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
 from app.alerts.detector import (
     detectar_cambio_estado_seguidas,
     detectar_recordatorio_cierre_seguidas,
 )
-from app.alerts.email import EmailCounter, _jinja, enviar_pendientes_inmediatas, enviar_resumen
+from app.alerts.email import (
+    EmailCounter,
+    _items_resumen,
+    _jinja,
+    enviar_pendientes_inmediatas,
+    enviar_resumen,
+)
 from app.matching.engine import _upsert_match
 from app.models.tables import (
     Alerta,
     CompraAgil,
     Licitacion,
+    MatchFeedback,
     OportunidadMatch,
     OportunidadSeguida,
     PerfilBusqueda,
@@ -177,6 +184,7 @@ def _fake_settings(limit: int = 250, app_base_url: str = "") -> Any:
     s.smtp_password = "pw"
     s.smtp_from = "from@test.com"
     s.app_base_url = app_base_url
+    s.feed_min_score_default = 40
     return s
 
 
@@ -433,3 +441,151 @@ class TestPlantillas:
         for secreto in ("TICKET_SECRETO", "SECRET_KEY_SECRETO", "JOBS_TOKEN_SECRETO"):
             assert secreto not in html
             assert secreto not in txt
+
+
+class TestResumenF_match1:
+    """F-match-1: piso de relevancia, sin descartadas/guardadas, sin duplicados,
+    sección "Cierra en ≤ 48 h" y carga en lote."""
+
+    def _enviar(self, session: Session, monkeypatch) -> tuple[dict[str, int], _MailSpy]:
+        spy = _MailSpy()
+        monkeypatch.setattr("app.alerts.email._smtp_send", spy)
+        return enviar_resumen(session, _fake_settings(), ahora=_AHORA), spy
+
+    def test_respeta_el_piso_de_relevancia(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u)
+        _lic(session, "LIC-ALTA")
+        _lic(session, "LIC-BAJA")
+        _match(session, p, "LIC-ALTA", score=45)
+        _match(session, p, "LIC-BAJA", score=39)
+
+        result, spy = self._enviar(session, monkeypatch)
+
+        assert result["resumenes_enviados"] == 1
+        assert "LIC-ALTA" in spy.sent[0][2]
+        assert "LIC-BAJA" not in spy.sent[0][2]
+        assert "Encontramos 1 oportunidades" in spy.sent[0][1]
+
+    def test_solo_bajo_el_piso_no_envia(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u)
+        _lic(session, "LIC-BAJA")
+        _match(session, p, "LIC-BAJA", score=10)
+
+        result, spy = self._enviar(session, monkeypatch)
+
+        assert result["resumenes_sin_nuevos"] == 1
+        assert spy.sent == []
+
+    def test_excluye_descartadas_y_guardadas(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u)
+        for cod in ("LIC-OK", "LIC-DESC", "LIC-GUARD", "LIC-ARCH"):
+            _lic(session, cod)
+            _match(session, p, cod, score=70)
+        session.add(
+            MatchFeedback(usuario_id=u.id, fuente="licitaciones", codigo_oportunidad="LIC-DESC", valor="descarte")
+        )
+        _seguida(session, u, "LIC-GUARD")
+        _seguida(session, u, "LIC-ARCH", archivada=True)
+        session.flush()
+
+        _, spy = self._enviar(session, monkeypatch)
+
+        cuerpo = spy.sent[0][2]
+        assert "LIC-OK" in cuerpo
+        assert "LIC-DESC" not in cuerpo and "LIC-GUARD" not in cuerpo and "LIC-ARCH" not in cuerpo
+        assert "Encontramos 1 oportunidades" in spy.sent[0][1]
+
+    def test_una_oportunidad_que_calza_con_dos_perfiles_sale_una_vez(self, session: Session, monkeypatch):
+        u = _user(session)
+        p1 = _perfil(session, u)
+        p2 = PerfilBusqueda(owner_id=u.id, nombre="Otro Perfil", keywords=["x"], fuentes=["licitaciones"], activo=True)
+        session.add(p2)
+        session.flush()
+        _lic(session, "LIC-DUP")
+        _match(session, p1, "LIC-DUP", score=60)
+        _match(session, p2, "LIC-DUP", score=80)
+
+        _, spy = self._enviar(session, monkeypatch)
+
+        cuerpo = spy.sent[0][2]
+        assert cuerpo.count("Ver ficha:") == 1
+        assert "Match: 80" in cuerpo
+        assert "Test Perfil" in cuerpo and "Otro Perfil" in cuerpo
+        assert "Encontramos 1 oportunidades" in spy.sent[0][1]
+
+    def test_orden_por_relevancia_y_luego_cierre_mas_proximo(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u)
+        _lic(session, "LIC-A", dias=20)
+        _lic(session, "LIC-B-LEJOS", dias=9)
+        _lic(session, "LIC-B-CERCA", dias=4)
+        _match(session, p, "LIC-A", score=90)
+        _match(session, p, "LIC-B-LEJOS", score=60)
+        _match(session, p, "LIC-B-CERCA", score=60)
+
+        _, spy = self._enviar(session, monkeypatch)
+
+        cuerpo = spy.sent[0][2]
+        assert cuerpo.index("LIC-A") < cuerpo.index("LIC-B-CERCA") < cuerpo.index("LIC-B-LEJOS")
+
+    def test_seccion_cierra_en_48_horas(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u)
+        # Seis nuevas que llenan el top 5; la sexta (menor relevancia) cierra en 30 h.
+        for i, score in enumerate([95, 94, 93, 92, 91], start=1):
+            _lic(session, f"LIC-TOP{i}", dias=20)
+            _match(session, p, f"LIC-TOP{i}", score=score)
+        _lic(session, "LIC-PRONTO", dias=30 / 24)  # cierra en 30 h, relevancia 65
+        _match(session, p, "LIC-PRONTO", score=65)
+        _lic(session, "LIC-PRONTO-BAJA", dias=10 / 24)  # cierra pronto pero relevancia 55 < 60
+        _match(session, p, "LIC-PRONTO-BAJA", score=55)
+        _lic(session, "LIC-LEJOS", dias=3)  # cierra en 72 h: fuera de la ventana
+        _match(session, p, "LIC-LEJOS", score=99)
+        _lic(session, "LIC-GUARDADA", dias=1)
+        _match(session, p, "LIC-GUARDADA", score=99)
+        _seguida(session, u, "LIC-GUARDADA")
+
+        _, spy = self._enviar(session, monkeypatch)
+
+        cuerpo = spy.sent[0][2]
+        assert "Cierra en ≤ 48 h" in cuerpo
+        seccion = cuerpo[cuerpo.index("Cierra en ≤ 48 h"):]
+        assert "LIC-PRONTO" in seccion
+        assert "LIC-PRONTO-BAJA" not in cuerpo.split("Cierra en ≤ 48 h")[1]
+        assert "LIC-LEJOS" not in seccion and "LIC-GUARDADA" not in cuerpo
+        # El top ya incluye a TOP1-5, que no se repiten en la sección.
+        assert not any(f"LIC-TOP{i}" in seccion for i in range(1, 6))
+
+    def test_sin_oportunidades_que_cierren_pronto_no_hay_seccion(self, session: Session, monkeypatch):
+        u = _user(session)
+        p = _perfil(session, u)
+        _lic(session, "LIC-1", dias=10)
+        _match(session, p, "LIC-1", score=80)
+
+        _, spy = self._enviar(session, monkeypatch)
+
+        assert "Cierra en ≤ 48 h" not in spy.sent[0][2]
+        assert "Cierra en ≤ 48 h" not in spy.sent[0][3]
+
+    def test_no_hace_una_query_por_match(self, session: Session, sqlite_engine):
+        u = _user(session)
+        p = _perfil(session, u)
+        for i in range(12):
+            _lic(session, f"LIC-Q{i}")
+            _match(session, p, f"LIC-Q{i}", score=70)
+        for i in range(4):
+            _ca(session, f"CA-Q{i}")
+            _match(session, p, f"CA-Q{i}", fuente="compras_agiles", score=70)
+        session.commit()
+        sentencias: list[str] = []
+        event.listen(sqlite_engine, "before_cursor_execute", lambda *a: sentencias.append(a[2]))
+
+        items = _items_resumen(session, u, _AHORA, min_score=40)
+
+        assert len(items) == 16
+        # (releer el usuario tras el commit) + matches + perfiles + licitaciones + compras
+        # ágiles: constante, no una por match (16).
+        assert len(sentencias) <= 5
