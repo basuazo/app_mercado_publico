@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Cuenta — MP Oportunidades{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Mi cuenta</h2>
+
+{% if mensaje %}<div class="alert alert-success" role="status">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header">RUT de proveedor</div>
+      <div class="card-body">
+        <form method="post" action="/perfiles/rut-proveedor" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-md-8">
+            <label class="form-label" for="rut_proveedor">Tu RUT de proveedor (opcional)</label>
+            <input type="text" name="rut_proveedor" id="rut_proveedor" class="form-control" placeholder="76.123.456-7"
+                   value="{{ current_user.rut_proveedor or '' }}">
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary">Guardar</button>
+          </div>
+          <div class="col-12">
+            <span class="text-muted small">
+              Solo si vendes al Estado. Cuando una licitación que sigues se adjudica, resaltamos
+              tu propia oferta en el análisis de competencia. No afecta tus búsquedas.
+            </span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header">Resumen por correo</div>
+      <div class="card-body">
+        <form method="post" action="/cuenta/resumen" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-md-6">
+            <label class="form-label" for="dias_resumen">Resumen de oportunidades nuevas</label>
+            <select name="dias_resumen" id="dias_resumen" class="form-select">
+              <option value="3" {% if current_user.dias_resumen == 3 %}selected{% endif %}>Cada 3 días</option>
+              <option value="7" {% if current_user.dias_resumen == 7 %}selected{% endif %}>Cada 7 días</option>
+              <option value="0" {% if current_user.dias_resumen == 0 %}selected{% endif %}>Nunca</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary">Guardar resumen</button>
+          </div>
+          <div class="col-12">
+            <span class="text-muted small">Te enviaremos un solo correo consolidado cuando haya oportunidades nuevas.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">Cambiar contraseña</div>
+      <div class="card-body">
+        <form method="post" action="/cuenta/password" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-md-4">
+            <label class="form-label" for="password_actual">Contraseña actual</label>
+            <input type="password" name="password_actual" id="password_actual" class="form-control" required autocomplete="current-password">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="password_nueva">Nueva contraseña</label>
+            <input type="password" name="password_nueva" id="password_nueva" class="form-control" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="password_confirmacion">Confirmar nueva</label>
+            <input type="password" name="password_confirmacion" id="password_confirmacion" class="form-control" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-outline-secondary">Cambiar contraseña</button>
+            <span class="text-muted small ms-2">Mínimo 8 caracteres.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

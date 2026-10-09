@@ -262,7 +262,7 @@ def test_toggle_guardar_expone_su_estado(client, settings, usuario, engine) -> N
 
 
 def test_nota_de_alcance_del_filtro_de_region(client, settings, usuario) -> None:
-    html = client.get("/perfiles", cookies=_cookie(settings, usuario)).text
+    html = client.get("/perfiles/nuevo/form", cookies=_cookie(settings, usuario)).text
     plano = " ".join(html.split())  # la nota va envuelta en varias líneas
     assert "El filtro de región aplica solo a Compra Ágil" in plano
     assert "Las licitaciones no traen región en la fuente oficial" in plano

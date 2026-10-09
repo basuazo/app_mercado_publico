@@ -1,0 +1,87 @@
+{#
+  Tarjeta de un perfil (resumen legible). Contexto: `v` (ver `_vistas_perfiles` en
+  pages.py) y `form_ctx` opcional: si es el perfil del formulario con errores (sin JS),
+  el formulario va abierto dentro de la tarjeta.
+  Mientras `v.actualizando`, la tarjeta se vuelve a pedir a los 5 s (el match corre en
+  segundo plano) hasta que el conteo cambie.
+#}
+{% set c = v.conteo %}
+<div class="card mb-3{% if not v.activo %} border-secondary{% endif %}" id="perfil-{{ v.id }}"
+     {% if v.actualizando %}hx-get="/perfiles/{{ v.id }}/tarjeta?intento={{ v.actualizando.intento }}&antes={{ v.actualizando.antes }}"
+     hx-trigger="load delay:5s" hx-swap="outerHTML"{% endif %}>
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h3 class="h5 mb-1">
+          {{ v.nombre }}
+          {% if not v.activo %}<span class="badge text-bg-secondary ms-1">Pausado</span>{% endif %}
+        </h3>
+        <div class="small" role="status">
+          {% if v.actualizando %}
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Actualizando…
+          {% elif c and (c.total or v.activo) %}
+            <strong>{{ c.total }}</strong> {{ 'oportunidad vigente' if c.total == 1 else 'oportunidades vigentes' }}
+            <span class="text-muted">({{ c.licitaciones }} licitaciones · {{ c.compras_agiles }} compras ágiles)</span>
+            {% if v.ultimo_match %}<span class="text-muted"> · último match nuevo: {{ v.ultimo_match }}</span>{% endif %}
+            {% if not v.activo %}<span class="text-muted"> (pausado)</span>{% endif %}
+          {% elif v.activo %}
+            <span class="text-muted">Sin oportunidades vigentes por ahora</span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <form method="post" action="/perfiles/{{ v.id }}/activo" class="m-0"
+              hx-post="/perfiles/{{ v.id }}/activo" hx-target="#perfil-{{ v.id }}" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="form-check form-switch m-0">
+            <input class="form-check-input" type="checkbox" role="switch" name="activo" value="1"
+                   id="activo_{{ v.id }}" {% if v.activo %}checked{% endif %}
+                   onchange="this.form.requestSubmit()">
+            <label class="form-check-label small" for="activo_{{ v.id }}">{{ 'Activo' if v.activo else 'Pausado' }}</label>
+          </div>
+          <noscript><button type="submit" class="btn btn-sm btn-outline-secondary">Aplicar</button></noscript>
+        </form>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                hx-get="/perfiles/{{ v.id }}/form" hx-target="#slot-{{ v.id }}" hx-swap="innerHTML">Editar</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
+                data-bs-target="#modal-eliminar-perfil" data-perfil-id="{{ v.id }}"
+                data-perfil-nombre="{{ v.nombre }}">Eliminar</button>
+      </div>
+    </div>
+
+    <dl class="row small mb-0 mt-2">
+      {% if v.keywords %}
+      <dt class="col-sm-2">Palabras clave</dt>
+      <dd class="col-sm-10">{% for k in v.keywords %}<span class="badge text-bg-primary me-1">{{ k }}</span>{% endfor %}</dd>
+      {% endif %}
+      {% if v.excluir %}
+      <dt class="col-sm-2">Excluye</dt>
+      <dd class="col-sm-10">{% for k in v.excluir %}<span class="badge text-bg-danger me-1">{{ k }}</span>{% endfor %}</dd>
+      {% endif %}
+      <dt class="col-sm-2">Fuentes</dt>
+      <dd class="col-sm-10">{{ v.fuentes | join(' · ') }}</dd>
+      {% if v.regiones %}
+      <dt class="col-sm-2">Regiones</dt>
+      <dd class="col-sm-10">{{ v.regiones | join(', ') }}</dd>
+      {% endif %}
+      {% if v.monto %}
+      <dt class="col-sm-2">Monto</dt>
+      <dd class="col-sm-10">{{ v.monto }}</dd>
+      {% endif %}
+      {% if v.rubros %}
+      <dt class="col-sm-2">Rubros</dt>
+      <dd class="col-sm-10">{{ v.rubros | join(', ') }}</dd>
+      {% endif %}
+      {% if v.organismos %}
+      <dt class="col-sm-2">Organismos</dt>
+      <dd class="col-sm-10">{{ v.organismos | join(', ') }}</dd>
+      {% endif %}
+    </dl>
+
+    <div id="slot-{{ v.id }}" class="mt-3">
+      {% if form_ctx and form_ctx.perfil_id == v.id %}{% include "_perfil_form.html" %}{% endif %}
+    </div>
+  </div>
+</div>

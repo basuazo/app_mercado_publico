@@ -2,9 +2,11 @@
   Selector de rubros UNSPSC (buscador + acordeón por segmento + chips).
   Compartido por /perfiles y por el explorador de Compras Ágiles (F-ca-explorar).
   El comportamiento vive en /static/rubros_widget.js; los checkboxes se llaman
-  `categorias_unspsc`, igual que el campo de prefijos finos del final.
+  `categorias_unspsc`. El campo de prefijos finos se llama igual en el explorador
+  (su URL ya lo usa) y `categorias_unspsc_extra`, dentro de un <details> "Avanzado",
+  en /perfiles (`avanzado=True`): así los dos inputs no comparten `name`.
 #}
-{% macro rubros_widget(form_id, rubros_agrupados, preseleccion, prefijos_extra='') %}
+{% macro rubros_widget(form_id, rubros_agrupados, preseleccion, prefijos_extra='', avanzado=False) %}
 <div class="js-rubros-widget" data-form="{{ form_id }}">
   <input type="text" class="form-control form-control-sm mb-2 js-rubro-buscador"
          placeholder="Buscar rubro o segmento...">
@@ -40,8 +42,17 @@
     </div>
     {% endfor %}
   </div>
+  {% if avanzado %}
+  <details class="mt-2"{% if prefijos_extra %} open{% endif %}>
+    <summary class="small text-muted">Avanzado: prefijos finos</summary>
+    <label class="form-label small mt-1" for="extra_{{ form_id }}">Prefijos de 6 u 8 dígitos, separados por coma</label>
+    <input type="text" name="categorias_unspsc_extra" id="extra_{{ form_id }}" class="form-control form-control-sm"
+           value="{{ prefijos_extra }}" placeholder="43211500,43211503">
+  </details>
+  {% else %}
   <input type="text" name="categorias_unspsc" class="form-control form-control-sm mt-2"
-         value="{{ prefijos_extra }}"
+         value="{{ prefijos_extra }}" aria-label="Prefijos finos opcionales"
          placeholder="Prefijos finos opcionales (6/8 dígitos), separados por coma: 43211500,43211503">
+  {% endif %}
 </div>
 {% endmacro %}

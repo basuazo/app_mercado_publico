@@ -1,0 +1,109 @@
+{#
+  Formulario ÚNICO de perfil (crear y editar). Se pide con HTMX al abrirlo
+  (GET /perfiles/nuevo/form y /perfiles/{id}/form) y, si el servidor lo rechaza,
+  vuelve como 422 con lo escrito y el mensaje junto al campo. Contexto: `f`
+  (form_id, action, valores, errores). Todos los ids llevan el prefijo del formulario.
+#}
+{% from "_rubros_widget.html" import rubros_widget %}
+{% set i = f.form_id %}
+{% set v = f.valores %}
+{% set e = f.errores %}
+
+{% macro error_de(campo) %}
+{% if e.get(campo) %}<div class="invalid-feedback d-block" id="{{ i }}_{{ campo }}_error">{{ e[campo] }}</div>{% endif %}
+{% endmacro %}
+
+<div id="formwrap-{{ i }}" data-perfil-form class="border rounded p-3 mb-3 bg-body-tertiary">
+  <form method="post" action="{{ f.action }}"
+        hx-post="{{ f.action }}" hx-target="#formwrap-{{ i }}" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if e.get('general') %}<div class="alert alert-danger py-2" role="alert">{{ e['general'] }}</div>{% endif %}
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label" for="{{ i }}_nombre">Nombre</label>
+        <input type="text" name="nombre" id="{{ i }}_nombre" required
+               class="form-control{% if e.get('nombre') %} is-invalid{% endif %}" value="{{ v.nombre }}"
+               {% if e.get('nombre') %}aria-invalid="true" aria-describedby="{{ i }}_nombre_error"{% endif %}>
+        {{ error_de('nombre') }}
+      </div>
+      <div class="col-md-4">
+        <span class="form-label d-block" id="{{ i }}_fuentes_etiqueta">Fuentes</span>
+        <div class="d-flex flex-wrap gap-2" role="group" aria-labelledby="{{ i }}_fuentes_etiqueta">
+          <input type="checkbox" class="btn-check" name="fuentes" value="licitaciones" id="{{ i }}_f_lic"
+                 {% if 'licitaciones' in v.fuentes %}checked{% endif %} autocomplete="off">
+          <label class="btn btn-outline-primary btn-sm" for="{{ i }}_f_lic">Licitaciones</label>
+          <input type="checkbox" class="btn-check" name="fuentes" value="compras_agiles" id="{{ i }}_f_ca"
+                 {% if 'compras_agiles' in v.fuentes %}checked{% endif %} autocomplete="off">
+          <label class="btn btn-outline-primary btn-sm" for="{{ i }}_f_ca">Compra Ágil</label>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="{{ i }}_keywords">Keywords (separadas por coma)</label>
+        <input type="text" name="keywords" id="{{ i }}_keywords" value="{{ v.keywords }}"
+               class="form-control{% if e.get('keywords') %} is-invalid{% endif %}"
+               placeholder="software, desarrollo, tecnología"
+               {% if e.get('keywords') %}aria-invalid="true" aria-describedby="{{ i }}_keywords_error"{% endif %}>
+        {{ error_de('keywords') }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="{{ i }}_excluir">Excluir (separadas por coma)</label>
+        <input type="text" name="excluir" id="{{ i }}_excluir" value="{{ v.excluir }}"
+               class="form-control{% if e.get('excluir') %} is-invalid{% endif %}" placeholder="limpieza, aseo"
+               {% if e.get('excluir') %}aria-invalid="true" aria-describedby="{{ i }}_excluir_error"{% endif %}>
+        {{ error_de('excluir') }}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="{{ i }}_monto_min">Monto mín. (CLP)</label>
+        <input type="text" inputmode="numeric" name="monto_min_clp" id="{{ i }}_monto_min"
+               class="form-control js-monto" value="{{ v.monto_min }}" placeholder="5.000.000" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="{{ i }}_monto_max">Monto máx. (CLP)</label>
+        <input type="text" inputmode="numeric" name="monto_max_clp" id="{{ i }}_monto_max"
+               class="form-control js-monto{% if e.get('monto_max_clp') %} is-invalid{% endif %}"
+               value="{{ v.monto_max }}" autocomplete="off"
+               {% if e.get('monto_max_clp') %}aria-invalid="true" aria-describedby="{{ i }}_monto_max_clp_error"{% endif %}>
+        {{ error_de('monto_max_clp') }}
+      </div>
+      <div class="col-12">
+        <span class="form-label d-block" id="{{ i }}_regiones_etiqueta">Regiones (vacío = todas)</span>
+        <p class="text-muted small mb-2">
+          El filtro de región aplica solo a Compra Ágil. Las licitaciones no traen región en la
+          fuente oficial, así que no se filtran por este criterio.
+        </p>
+        <div class="d-flex flex-wrap gap-2" role="group" aria-labelledby="{{ i }}_regiones_etiqueta">
+          {% for codigo, nombre in regiones_disponibles %}
+          <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}"
+                 id="{{ i }}_reg_{{ codigo }}" {% if codigo in v.regiones %}checked{% endif %} autocomplete="off">
+          <label class="btn btn-outline-secondary btn-sm" for="{{ i }}_reg_{{ codigo }}">{{ nombre }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-md-7">
+        <span class="form-label d-block">Rubros UNSPSC que sigues (suman candidatos aunque no haya keyword)</span>
+        {{ rubros_widget(i ~ "-rubros", rubros_agrupados, v.rubros, v.rubros_extra, True) }}
+      </div>
+      <div class="col-md-5">
+        <label class="form-label" for="{{ i }}_org_buscar">Organismos que sigues</label>
+        <div class="js-org-widget" data-preseleccion="{{ v.organismos | join(',') }}">
+          <div class="js-org-con-catalogo">
+            <input type="text" class="form-control form-control-sm mb-2 js-org-buscador" id="{{ i }}_org_buscar"
+                   placeholder="Buscar organismo por nombre o sector..." autocomplete="off">
+            <div class="js-org-chips d-flex flex-wrap gap-1 mb-2"></div>
+            <div class="js-org-lista border rounded p-2 small" style="max-height: 200px; overflow-y: auto;"></div>
+          </div>
+          <div class="js-org-manual alert alert-warning small py-2 mb-2 d-none">
+            Catálogo de organismos no disponible por ahora — escribe los códigos manualmente.
+          </div>
+          <input type="hidden" name="organismos_seguidos" class="js-org-hidden" value="{{ v.organismos | join(',') }}"
+                 aria-label="Códigos de organismos">
+        </div>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">{% if f.perfil_id %}Guardar cambios{% else %}Crear perfil{% endif %}</button>
+        <button type="button" class="btn btn-outline-secondary"
+                onclick="document.getElementById('formwrap-{{ i }}').remove()">Cancelar</button>
+      </div>
+    </div>
+  </form>
+</div>

@@ -394,20 +394,24 @@ def test_formulario_de_perfil_rechaza_exclusion_que_choca(limpio, settings):
 
     r = client.post(
         "/perfiles/nuevo",
-        data={"nombre": "Nuevo", "keywords": "salud", "excluir": "saludable"},
+        data={"nombre": "Nuevo", "keywords": "salud", "excluir": "saludable", "monto_min_clp": "5.000.000"},
         cookies=cookies,
         headers=headers,
         follow_redirects=False,
     )
-    assert r.status_code == 303 and "error=" in r.headers["location"]
+    # F-perfiles-1: 422 con el formulario re-renderizado (lo escrito + el mensaje junto al campo).
+    assert r.status_code == 422 and "sacaría todo lo que trae" in r.text
+    assert 'value="salud"' in r.text and 'value="saludable"' in r.text and 'value="5.000.000"' in r.text
+    assert 'id="nuevo_excluir_error"' in r.text
     r = client.post(
         f"/perfiles/{pid}/editar",
         data={"nombre": "Existente", "keywords": "salud", "excluir": "saludable"},
         cookies=cookies,
-        headers=headers,
+        headers={**headers, "HX-Request": "true"},
         follow_redirects=False,
     )
-    assert r.status_code == 303 and "error=" in r.headers["location"]
+    assert r.status_code == 422 and f'id="p{pid}_excluir_error"' in r.text and "<html" not in r.text
+    assert 'value="saludable"' in r.text
     with Session(limpio) as s:
         perfiles = list(s.execute(select(PerfilBusqueda).where(PerfilBusqueda.owner_id == uid)).scalars())
         assert [x.nombre for x in perfiles] == ["Existente"]

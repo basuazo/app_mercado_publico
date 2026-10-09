@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import quote
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session, defer
 
 from app.api.presentacion import nombre_region, razones_legibles, texto_cierre
@@ -17,6 +17,8 @@ from app.catalogos.unspsc import nombre_rubro
 from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_naive
 from app.core.vigencia import (
     CA_SIN_CIERRE_VIGENCIA_DIAS,
+    condicion_ca_vigente,
+    condicion_lic_vigente,
     condicion_vencida_en_ventana,
     es_vigente,
     fecha_vencimiento,
@@ -1122,6 +1124,65 @@ def buscar_instituciones_pac(
             .limit(limit)
         ).scalars()
     )
+
+
+@dataclass(frozen=True)
+class ConteoPerfil:
+    """Oportunidades de un perfil que siguen vigentes, por fuente, y cuándo entró
+    el último match (cualquiera, vigente o no)."""
+
+    licitaciones: int = 0
+    compras_agiles: int = 0
+    ultimo_match: datetime | None = None
+
+    @property
+    def total(self) -> int:
+        return self.licitaciones + self.compras_agiles
+
+
+def conteo_vigentes_por_perfil(
+    session: Session, perfil_ids: list[int], ahora: datetime | None = None
+) -> dict[int, ConteoPerfil]:
+    """Vigentes por perfil en UNA consulta agrupada (no una por perfil): matches
+    con join a licitaciones/compras ágiles y la definición de `vigencia.py`.
+    Perfiles sin matches no aparecen en el resultado."""
+    if not perfil_ids:
+        return {}
+    ahora = ahora or ahora_utc()
+    es_lic = OportunidadMatch.fuente == "licitaciones"
+    es_ca = OportunidadMatch.fuente == "compras_agiles"
+    filas = session.execute(
+        select(
+            OportunidadMatch.perfil_id,
+            func.count(case((and_(es_lic, condicion_lic_vigente(ahora)), 1))),
+            func.count(case((and_(es_ca, condicion_ca_vigente(ahora)), 1))),
+            func.max(OportunidadMatch.fecha_match),
+        )
+        .select_from(OportunidadMatch)
+        .outerjoin(
+            Licitacion, and_(es_lic, Licitacion.codigo == OportunidadMatch.codigo_oportunidad)
+        )
+        .outerjoin(
+            CompraAgil, and_(es_ca, CompraAgil.codigo == OportunidadMatch.codigo_oportunidad)
+        )
+        .where(OportunidadMatch.perfil_id.in_(perfil_ids))
+        .group_by(OportunidadMatch.perfil_id)
+    ).all()
+    return {pid: ConteoPerfil(int(n_lic), int(n_ca), ultimo) for pid, n_lic, n_ca, ultimo in filas}
+
+
+def razones_sociales(session: Session, codigos: Iterable[str]) -> dict[str, str]:
+    """Razón social por código de organismo (los numéricos, desde `instituciones_pac`).
+    El código que no esté en el catálogo no aparece: el llamador muestra el código."""
+    numericos = {int(c): c for c in codigos if str(c).strip().isdigit()}
+    if not numericos:
+        return {}
+    filas = session.execute(
+        select(InstitucionPAC.codigo_entidad, InstitucionPAC.razon_social).where(
+            InstitucionPAC.codigo_entidad.in_(list(numericos))
+        )
+    ).all()
+    return {numericos[cod]: " ".join(nombre.split()) for cod, nombre in filas if nombre.strip()}
 
 
 def listar_organismos_catalogo(session: Session) -> list[InstitucionPAC]:

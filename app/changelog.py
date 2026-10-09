@@ -15,6 +15,16 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 10, 9),
+        titulo="Mis perfiles carga más rápido y se lee mejor",
+        descripcion=(
+            "Mis perfiles carga más rápido y se lee mejor: cada perfil muestra cuántas "
+            "oportunidades vigentes trae, sus montos y organismos con nombre, y se puede "
+            "pausar sin borrarlo. Si algo falla al guardar, no pierdes lo escrito. Los ajustes "
+            "de tu cuenta están ahora en 'Cuenta'. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 10, 8),
         titulo="Las licitaciones muestran su organismo y su región",
         descripcion=(

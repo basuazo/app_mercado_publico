@@ -20,7 +20,14 @@ _log = get_logger(__name__)
 
 
 class PerfilInvalido(ValueError):
-    """Perfil sin al menos 1 keyword o 1 filtro estructurado."""
+    """Perfil sin al menos 1 keyword o 1 filtro estructurado.
+
+    `campo` (opcional) dice a qué campo del formulario corresponde el mensaje
+    ("keywords", "excluir"), para mostrarlo junto a ese campo."""
+
+    def __init__(self, mensaje: str, campo: str | None = None) -> None:
+        super().__init__(mensaje)
+        self.campo = campo
 
 
 def _validar(
@@ -37,7 +44,8 @@ def _validar(
     if not (tiene_keywords or tiene_filtro or tiene_rubro_organismo):
         raise PerfilInvalido(
             "Se necesita al menos 1 keyword o 1 filtro estructurado "
-            "(región, monto, rubro UNSPSC u organismo seguido)"
+            "(región, monto, rubro UNSPSC u organismo seguido)",
+            campo="keywords",
         )
 
 
@@ -96,16 +104,15 @@ def obtener_perfil(
     return p
 
 
-def listar_perfiles(session: Session, owner_id: int) -> list[PerfilBusqueda]:
-    """Devuelve todos los perfiles activos del usuario."""
-    return list(
-        session.execute(
-            select(PerfilBusqueda).where(
-                PerfilBusqueda.owner_id == owner_id,
-                PerfilBusqueda.activo.is_(True),
-            )
-        ).scalars()
-    )
+def listar_perfiles(
+    session: Session, owner_id: int, *, incluir_pausados: bool = False
+) -> list[PerfilBusqueda]:
+    """Perfiles activos del usuario; con `incluir_pausados` también los pausados
+    (solo para /perfiles: el matching, el feed y el resumen usan solo activos)."""
+    consulta = select(PerfilBusqueda).where(PerfilBusqueda.owner_id == owner_id)
+    if not incluir_pausados:
+        consulta = consulta.where(PerfilBusqueda.activo.is_(True))
+    return list(session.execute(consulta).scalars())
 
 
 def actualizar_perfil(
@@ -185,7 +192,8 @@ def verificar_exclusiones(session: Session, keywords: list[str], palabras: list[
         listado = ", ".join(f"«{w}»" for w in chocan)
         raise PerfilInvalido(
             f"{listado} sacaría{'n' if len(chocan) > 1 else ''} todo lo que trae una palabra "
-            "de búsqueda de este perfil; elige otra palabra"
+            "de búsqueda de este perfil; elige otra palabra",
+            campo="excluir",
         )
 
 

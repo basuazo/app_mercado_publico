@@ -6,14 +6,14 @@ import calendar
 import csv
 import io
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, quote_plus, urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from markupsafe import escape
 from sqlalchemy import select
@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
+    api_require_user,
     check_csrf,
     get_db,
     html_require_admin,
@@ -46,6 +47,7 @@ from app.api.query import (
     contar_archivadas,
     contar_descartadas,
     contar_vencidas_recientes,
+    conteo_vigentes_por_perfil,
     detalle_competencia,
     estado_acciones,
     get_item_oportunidad,
@@ -56,6 +58,7 @@ from app.api.query import (
     listar_vencidas_recientes,
     matches_de_oportunidad,
     puede_actuar,
+    razones_sociales,
     resumen_competencia,
 )
 from app.api.salud_data import get_salud_data
@@ -1735,53 +1738,310 @@ def _agrupar_familias_por_segmento(
     ]
 
 
+_FUENTES_NOMBRE = {"licitaciones": "Licitaciones", "compras_agiles": "Compras Ágiles"}
+_AVISO_PERFIL_GUARDADO = "Perfil guardado. Buscando oportunidades…"
+# La tarjeta se vuelve a pedir a los 5 s, como mucho esta cantidad de veces, hasta que
+# el conteo cambie (el match corre en segundo plano; nada de websockets).
+_REINTENTOS_TARJETA = 2
+
+
+def _miles(valor: float | None) -> str:
+    """5000000.0 -> "5.000.000" (el campo del formulario lo muestra así)."""
+    return "" if valor is None else f"{int(valor):,}".replace(",", ".")
+
+
+def _texto_monto(minimo: float | None, maximo: float | None) -> str | None:
+    if minimo is None and maximo is None:
+        return None
+    izquierda = formato_clp(minimo) if minimo is not None else "sin mínimo"
+    derecha = formato_clp(maximo) if maximo is not None else "sin máximo"
+    return f"{izquierda} – {derecha}"
+
+
+def _separar_rubros(prefijos: list[str]) -> tuple[list[str], str]:
+    """Familias que tienen casilla en el selector vs. prefijos finos (campo Avanzado)."""
+    con_casilla = {codigo for codigo, _ in familias()}
+    return (
+        [p for p in prefijos if p in con_casilla],
+        ",".join(p for p in prefijos if p not in con_casilla),
+    )
+
+
+def _fecha_chile(valor: datetime | None) -> str | None:
+    if valor is None:
+        return None
+    return valor.replace(tzinfo=UTC).astimezone(TZ_CHILE).strftime("%d-%m-%Y")
+
+
+def _valores_form_vacios() -> dict[str, Any]:
+    return {
+        "nombre": "",
+        "keywords": "",
+        "excluir": "",
+        "fuentes": ["licitaciones", "compras_agiles"],
+        "regiones": [],
+        "monto_min": "",
+        "monto_max": "",
+        "rubros": [],
+        "rubros_extra": "",
+        "organismos": [],
+    }
+
+
+def _valores_form_de_perfil(p: PerfilBusqueda) -> dict[str, Any]:
+    rubros, extra = _separar_rubros([str(c) for c in (p.categorias_unspsc or [])])
+    return {
+        "nombre": p.nombre,
+        "keywords": ", ".join(p.keywords or []),
+        "excluir": ", ".join(p.keywords_excluir or []),
+        "fuentes": list(p.fuentes or []),
+        "regiones": [int(r) for r in (p.regiones or [])],
+        "monto_min": _miles(p.monto_min_clp),
+        "monto_max": _miles(p.monto_max_clp),
+        "rubros": rubros,
+        "rubros_extra": extra,
+        "organismos": [str(o) for o in (p.organismos_seguidos or [])],
+    }
+
+
+def _form_ctx(
+    perfil_id: int | None,
+    valores: dict[str, Any],
+    errores: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Datos del parcial `_perfil_form.html`. `errores` va por campo; la clave
+    "general" es para lo que no pertenece a ninguno."""
+    return {
+        "form_id": "nuevo" if perfil_id is None else f"p{perfil_id}",
+        "action": "/perfiles/nuevo" if perfil_id is None else f"/perfiles/{perfil_id}/editar",
+        "perfil_id": perfil_id,
+        "valores": valores,
+        "errores": errores or {},
+    }
+
+
+def _ctx_form(request: Request, user: Usuario, form: dict[str, Any]) -> dict[str, Any]:
+    return _ctx(
+        request,
+        user,
+        f=form,
+        regiones_disponibles=REGIONES,
+        rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
+    )
+
+
+def _vistas_perfiles(
+    session: Session,
+    perfiles: list[PerfilBusqueda],
+    actualizando: dict[int, dict[str, int]] | None = None,
+) -> list[dict[str, Any]]:
+    """Todo lo que pinta la tarjeta, con DOS consultas para todos los perfiles
+    (conteo agrupado y razones sociales), no una por perfil."""
+    conteos = conteo_vigentes_por_perfil(session, [p.id for p in perfiles])
+    codigos = [str(o) for p in perfiles for o in (p.organismos_seguidos or [])]
+    nombres = razones_sociales(session, codigos)
+    vistas: list[dict[str, Any]] = []
+    for p in perfiles:
+        conteo = conteos.get(p.id)
+        vistas.append(
+            {
+                "id": p.id,
+                "nombre": p.nombre,
+                "activo": bool(p.activo),
+                "keywords": list(p.keywords or []),
+                "excluir": list(p.keywords_excluir or []),
+                "fuentes": [_FUENTES_NOMBRE.get(f, f) for f in (p.fuentes or [])],
+                "regiones": [nombre_region(int(r)) for r in (p.regiones or [])],
+                "monto": _texto_monto(p.monto_min_clp, p.monto_max_clp),
+                "rubros": [nombre_rubro(str(c)) or str(c) for c in (p.categorias_unspsc or [])],
+                "organismos": [nombres.get(str(o), str(o)) for o in (p.organismos_seguidos or [])],
+                "conteo": conteo,
+                "ultimo_match": _fecha_chile(conteo.ultimo_match) if conteo else None,
+                "actualizando": (actualizando or {}).get(p.id),
+            }
+        )
+    return vistas
+
+
+def _perfiles_pagina(  # noqa: PLR0913 - contexto de una página
+    request: Request,
+    user: Usuario,
+    session: Session,
+    *,
+    form_ctx: dict[str, Any] | None = None,
+    mensaje: str = "",
+    error: str = "",
+    reciente: int = 0,
+    antes: int = -1,
+    status_code: int = 200,
+) -> HTMLResponse:
+    perfiles = sorted(listar_perfiles(session, user.id, incluir_pausados=True), key=lambda p: p.id)
+    actualizando = {reciente: {"intento": 1, "antes": antes}} if reciente and antes >= 0 else None
+    contexto = _ctx_form(request, user, form_ctx) if form_ctx else _ctx(request, user)
+    contexto.update(
+        perfiles=_vistas_perfiles(session, perfiles, actualizando),
+        form_ctx=form_ctx,
+        rubros_favoritos=[
+            {"prefijo": p, "nombre": nombre_rubro(p) or p} for p in listar_favoritos(session, user.id)
+        ],
+        mensaje=mensaje,
+        error=error,
+    )
+    return _TEMPLATES.TemplateResponse(request, "perfiles.html", contexto, status_code=status_code)
+
+
 @router.get("/perfiles", response_class=HTMLResponse)
-async def perfiles_get(
+async def perfiles_get(  # noqa: PLR0913 - parámetros de query de la página
     request: Request,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
     mensaje: str = "",
     error: str = "",
+    reciente: int = 0,
+    antes: int = -1,
 ) -> HTMLResponse:
+    # Liviana a propósito: el formulario (rubros, organismos) se pide al abrirlo y el
+    # catálogo de organismos tiene su propia ruta, que es la que sincroniza por red.
+    return _perfiles_pagina(
+        request, user, session, mensaje=mensaje, error=error, reciente=reciente, antes=antes
+    )
+
+
+@router.get("/perfiles/nuevo/form", response_class=HTMLResponse)
+async def perfil_form_nuevo(
+    request: Request,
+    user: Usuario = Depends(html_require_user),
+) -> HTMLResponse:
+    form = _form_ctx(None, _valores_form_vacios())
+    return _TEMPLATES.TemplateResponse(request, "_perfil_form.html", _ctx_form(request, user, form))
+
+
+@router.get("/perfiles/{perfil_id}/form", response_class=HTMLResponse)
+async def perfil_form_editar(
+    request: Request,
+    perfil_id: int,
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    perfil = obtener_perfil(session, perfil_id, user.id)
+    if perfil is None:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    form = _form_ctx(perfil.id, _valores_form_de_perfil(perfil))
+    return _TEMPLATES.TemplateResponse(request, "_perfil_form.html", _ctx_form(request, user, form))
+
+
+def _tarjeta(
+    request: Request,
+    user: Usuario,
+    session: Session,
+    perfil: PerfilBusqueda,
+    actualizando: dict[str, int] | None = None,
+) -> HTMLResponse:
+    vista = _vistas_perfiles(session, [perfil], {perfil.id: actualizando} if actualizando else None)[0]
+    return _TEMPLATES.TemplateResponse(request, "_perfil_card.html", _ctx(request, user, v=vista))
+
+
+@router.get("/perfiles/{perfil_id}/tarjeta", response_class=HTMLResponse)
+async def perfil_tarjeta(
+    request: Request,
+    perfil_id: int,
+    intento: int = 1,
+    antes: int = -1,
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """La tarjeta sola, para refrescar el conteo mientras el match corre en segundo plano."""
+    perfil = obtener_perfil(session, perfil_id, user.id)
+    if perfil is None:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    conteo = conteo_vigentes_por_perfil(session, [perfil.id]).get(perfil.id)
+    total = conteo.total if conteo else 0
+    sigue = antes >= 0 and total == antes and intento < _REINTENTOS_TARJETA and perfil.activo
+    return _tarjeta(
+        request, user, session, perfil, {"intento": intento + 1, "antes": antes} if sigue else None
+    )
+
+
+@router.post("/perfiles/{perfil_id}/activo", response_model=None)
+async def perfil_activo(  # noqa: PLR0913 - dependencias de la ruta
+    request: Request,
+    perfil_id: int,
+    background_tasks: BackgroundTasks,
+    activo: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> Response:
+    """Pausa o reactiva un perfil (`activo=1` lo activa). Pausado no entra al
+    matching, al feed ni al resumen, pero sigue en /perfiles y conserva sus matches."""
+    check_csrf(request, csrf_token)
+    perfil = obtener_perfil(session, perfil_id, user.id)
+    if perfil is None:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    quiere_activo = activo == "1"
+    reactivado = quiere_activo and not perfil.activo
+    perfil.activo = quiere_activo
+    session.commit()
+    antes = -1
+    if reactivado:
+        conteo = conteo_vigentes_por_perfil(session, [perfil.id]).get(perfil.id)
+        antes = conteo.total if conteo else 0
+        background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_id)
+    if _es_htmx(request):
+        actualizando = {"intento": 1, "antes": antes} if reactivado else None
+        return _tarjeta(request, user, session, perfil, actualizando)
+    destino = "/perfiles?mensaje=" + quote_plus("Perfil activado" if quiere_activo else "Perfil pausado")
+    return RedirectResponse(url=destino, status_code=303)
+
+
+@router.get("/rubros-favoritos/form", response_class=HTMLResponse)
+async def rubros_favoritos_form(
+    request: Request,
+    user: Usuario = Depends(html_require_user),
+) -> HTMLResponse:
+    """El <select> de ~510 rubros para agregar un favorito, solo al desplegar la tarjeta."""
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_favorito_agregar.html",
+        _ctx(request, user, rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias())),
+    )
+
+
+@router.get("/organismos/catalogo.json")
+async def organismos_catalogo(
+    request: Request,
+    user: Usuario = Depends(api_require_user),  # noqa: ARG001
+    session: Session = Depends(get_db),
+) -> JSONResponse:
+    """Catálogo de organismos para el widget del formulario de perfil. Es la ruta que
+    sincroniza instituciones y sectores (con su TTL); si falla la red entrega lo que haya
+    en caché. Cacheable por el navegador: el formulario lo pide una vez por página."""
     settings = request.app.state.settings
     try:
         sync_instituciones_pac(session, settings)
         sync_sectores_organismos(session, settings)
     except httpx.HTTPError:
-        # Catálogo de organismos (F-plan/F-datos) sin red disponible: degrada al
-        # input manual en vez de romper la página (regla 6). Si ya había caché
-        # de una corrida anterior, listar_organismos_catalogo igual la sirve.
-        _log.warning("perfiles_get: no se pudo sincronizar el catálogo de organismos", exc_info=True)
-
-    organismos_catalogo = listar_organismos_catalogo(session)
-    organismos_json = [
-        {"id": o.codigo_entidad, "nombre": o.razon_social, "sector": o.sector or "Sin clasificación"}
-        for o in organismos_catalogo
+        # Sin red: se sirve la caché (regla 6), o vacío y el widget degrada al input manual.
+        _log.warning("organismos_catalogo: no se pudo sincronizar el catálogo", exc_info=True)
+    filas = [
+        {"id": o.codigo_entidad, "nombre": o.razon_social, "sector": o.sector or SECTOR_SIN_CLASIFICACION}
+        for o in listar_organismos_catalogo(session)
     ]
+    return JSONResponse(filas, headers={"Cache-Control": "private, max-age=86400"})
 
-    perfiles = listar_perfiles(session, user.id)
-    rubros_por_perfil = {
-        p.id: [nombre_rubro(c) or c for c in (p.categorias_unspsc or [])] for p in perfiles
-    }
+
+# --- Cuenta (RUT de proveedor, resumen, contraseña) -------------------------
+
+
+@router.get("/cuenta", response_class=HTMLResponse)
+async def cuenta_get(
+    request: Request,
+    user: Usuario = Depends(html_require_user),
+    mensaje: str = "",
+    error: str = "",
+) -> HTMLResponse:
     return _TEMPLATES.TemplateResponse(
-        request,
-        "perfiles.html",
-        _ctx(
-            request,
-            user,
-            perfiles=perfiles,
-            regiones_disponibles=REGIONES,
-            rubros_agrupados=_agrupar_familias_por_segmento(segmentos(), familias()),
-            rubros_por_perfil=rubros_por_perfil,
-            rubros_favoritos=[
-                {"prefijo": p, "nombre": nombre_rubro(p) or p}
-                for p in listar_favoritos(session, user.id)
-            ],
-            organismos_catalogo_disponible=bool(organismos_json),
-            organismos_json=organismos_json,
-            mensaje=mensaje,
-            error=error,
-        ),
+        request, "cuenta.html", _ctx(request, user, mensaje=mensaje, error=error)
     )
 
 
@@ -1798,7 +2058,7 @@ async def perfil_rut_proveedor(
     check_csrf(request, csrf_token)
     user.rut_proveedor = rut_proveedor.strip() or None
     session.commit()
-    return RedirectResponse(url="/perfiles?mensaje=RUT+de+proveedor+actualizado", status_code=303)
+    return RedirectResponse(url="/cuenta?mensaje=RUT+de+proveedor+actualizado", status_code=303)
 
 
 @router.post("/cuenta/resumen")
@@ -1816,12 +2076,12 @@ async def cuenta_resumen_configurar(
         dias = -1
     if dias not in _DIAS_RESUMEN_VALIDOS:
         return RedirectResponse(
-            url=f"/perfiles?error={quote('Cadencia de resumen inválida')}",
+            url=f"/cuenta?error={quote('Cadencia de resumen inválida')}",
             status_code=303,
         )
     user.dias_resumen = dias
     session.commit()
-    return RedirectResponse(url="/perfiles?mensaje=Preferencia+de+resumen+actualizada", status_code=303)
+    return RedirectResponse(url="/cuenta?mensaje=Preferencia+de+resumen+actualizada", status_code=303)
 
 
 @router.post("/cuenta/tutorial-visto")
@@ -1863,29 +2123,127 @@ async def cuenta_password_cambiar(
     check_csrf(request, csrf_token)
     if not verify_password(password_actual, user.password_hash):
         return RedirectResponse(
-            url=f"/perfiles?error={quote('Contraseña actual incorrecta')}",
+            url=f"/cuenta?error={quote('Contraseña actual incorrecta')}",
             status_code=303,
         )
     if password_nueva != password_confirmacion:
         return RedirectResponse(
-            url=f"/perfiles?error={quote('La nueva contraseña y su confirmación no coinciden')}",
+            url=f"/cuenta?error={quote('La nueva contraseña y su confirmación no coinciden')}",
             status_code=303,
         )
     if not _password_valida(password_nueva):
         return RedirectResponse(
-            url=f"/perfiles?error={quote('La nueva contraseña debe tener al menos 8 caracteres')}",
+            url=f"/cuenta?error={quote('La nueva contraseña debe tener al menos 8 caracteres')}",
             status_code=303,
         )
     user.password_hash = hash_password(password_nueva)
     session.commit()
-    return RedirectResponse(url="/perfiles?mensaje=Contraseña+actualizada", status_code=303)
+    return RedirectResponse(url="/cuenta?mensaje=Contraseña+actualizada", status_code=303)
 
 
-@router.post("/perfiles/nuevo")
-async def perfil_crear(
+# --- Crear / editar / eliminar ---------------------------------------------
+
+
+def _guardar_perfil(  # noqa: PLR0913 - un campo del formulario = un parámetro
     request: Request,
     background_tasks: BackgroundTasks,
-    nombre: str = Form(...),
+    session: Session,
+    user: Usuario,
+    perfil_id: int | None,
+    *,
+    nombre: str,
+    keywords: str,
+    excluir: str,
+    fuentes: list[str],
+    regiones: list[str],
+    monto_min_clp: str,
+    monto_max_clp: str,
+    categorias_unspsc: list[str],
+    categorias_unspsc_extra: str,
+    organismos_seguidos: str,
+) -> Response:
+    """Crea (`perfil_id` None) o edita un perfil. Con un error de validación NO toca la
+    base y responde 422 con el formulario re-renderizado: con lo que se envió y el
+    mensaje junto al campo (parcial con HTMX; página completa sin JS)."""
+    nombre = " ".join(nombre.split())
+    kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+    ex_list = [k.strip() for k in excluir.split(",") if k.strip()]
+    fuentes_list = fuentes or ["licitaciones", "compras_agiles"]
+    regiones_list = _parse_regiones(regiones)
+    monto_min = _monto(monto_min_clp)
+    monto_max = _monto(monto_max_clp)
+    categorias_list = _parse_categorias([*categorias_unspsc, categorias_unspsc_extra])
+    organismos_list = _parse_organismos(organismos_seguidos)
+
+    errores: dict[str, str] = {}
+    if not nombre:
+        errores["nombre"] = "Escribe un nombre para el perfil"
+    if monto_min is not None and monto_max is not None and monto_min > monto_max:
+        errores["monto_max_clp"] = "El monto mínimo no puede ser mayor al monto máximo"
+    campos: dict[str, Any] = {
+        "nombre": nombre,
+        "keywords": kw_list,
+        "keywords_excluir": ex_list,
+        "regiones": regiones_list,
+        "monto_min_clp": monto_min,
+        "monto_max_clp": monto_max,
+        "categorias_unspsc": categorias_list,
+        "organismos_seguidos": organismos_list,
+        "fuentes": fuentes_list,
+    }
+    antes = 0
+    perfil: PerfilBusqueda | None = None
+    if not errores:
+        try:
+            if perfil_id is None:
+                perfil = crear_perfil(session, owner_id=user.id, **campos)
+            else:
+                previo = conteo_vigentes_por_perfil(session, [perfil_id]).get(perfil_id)
+                antes = previo.total if previo else 0
+                perfil = actualizar_perfil(session, perfil_id=perfil_id, owner_id=user.id, **campos)
+                if perfil is None:
+                    raise HTTPException(status_code=404, detail="Perfil no encontrado")
+        except PerfilInvalido as exc:
+            errores[exc.campo or "general"] = str(exc)
+    if errores or perfil is None:
+        session.rollback()  # actualizar_perfil muta el objeto antes de validar
+        rubros, extra = _separar_rubros(categorias_list)
+        valores = {
+            "nombre": nombre,
+            "keywords": keywords,
+            "excluir": excluir,
+            "fuentes": fuentes_list,
+            "regiones": regiones_list,
+            "monto_min": monto_min_clp,
+            "monto_max": monto_max_clp,
+            "rubros": rubros,
+            "rubros_extra": extra,
+            "organismos": organismos_list,
+        }
+        form = _form_ctx(perfil_id, valores, errores)
+        if _es_htmx(request):
+            return _TEMPLATES.TemplateResponse(
+                request, "_perfil_form.html", _ctx_form(request, user, form), status_code=422
+            )
+        return _perfiles_pagina(request, user, session, form_ctx=form, status_code=422)
+    perfil_guardado = perfil.id
+    session.commit()
+    # El match en segundo plano agrega lo nuevo y, al final, borra lo vigente que
+    # ya no calza con el perfil editado (`limpiar_matches_perfil`, F-guardar).
+    background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_guardado)
+    destino = "/perfiles?" + urlencode(
+        {"mensaje": _AVISO_PERFIL_GUARDADO, "reciente": perfil_guardado, "antes": antes}
+    )
+    if _es_htmx(request):
+        return Response(status_code=200, headers={"HX-Redirect": destino})
+    return RedirectResponse(url=destino, status_code=303)
+
+
+@router.post("/perfiles/nuevo", response_model=None)
+async def perfil_crear(  # noqa: PLR0913 - un campo del formulario = un parámetro
+    request: Request,
+    background_tasks: BackgroundTasks,
+    nombre: str = Form(""),
     keywords: str = Form(""),
     excluir: str = Form(""),
     fuentes: list[str] = Form(default=[]),
@@ -1893,42 +2251,30 @@ async def perfil_crear(
     monto_min_clp: str = Form(""),
     monto_max_clp: str = Form(""),
     categorias_unspsc: list[str] = Form(default=[]),
+    categorias_unspsc_extra: str = Form(""),
     organismos_seguidos: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     check_csrf(request, csrf_token)
-    kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-    ex_list = [k.strip() for k in excluir.split(",") if k.strip()]
-    fuentes_list = fuentes or ["licitaciones", "compras_agiles"]
-    regiones_list = _parse_regiones(regiones)
-    monto_min = _parse_monto(monto_min_clp)
-    monto_max = _parse_monto(monto_max_clp)
-    categorias_list = _parse_categorias(categorias_unspsc)
-    organismos_list = _parse_organismos(organismos_seguidos)
-    if monto_min is not None and monto_max is not None and monto_min > monto_max:
-        msg = quote("El monto mínimo no puede ser mayor al monto máximo")
-        return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
-    try:
-        perfil = crear_perfil(
-            session,
-            owner_id=user.id,
-            nombre=nombre,
-            keywords=kw_list,
-            keywords_excluir=ex_list,
-            regiones=regiones_list,
-            monto_min_clp=monto_min,
-            monto_max_clp=monto_max,
-            categorias_unspsc=categorias_list,
-            organismos_seguidos=organismos_list,
-            fuentes=fuentes_list,
-        )
-    except PerfilInvalido as exc:
-        return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
-    session.commit()
-    background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil.id)
-    return RedirectResponse(url="/perfiles?mensaje=Perfil+creado", status_code=303)
+    return _guardar_perfil(
+        request,
+        background_tasks,
+        session,
+        user,
+        None,
+        nombre=nombre,
+        keywords=keywords,
+        excluir=excluir,
+        fuentes=fuentes,
+        regiones=regiones,
+        monto_min_clp=monto_min_clp,
+        monto_max_clp=monto_max_clp,
+        categorias_unspsc=categorias_unspsc,
+        categorias_unspsc_extra=categorias_unspsc_extra,
+        organismos_seguidos=organismos_seguidos,
+    )
 
 
 @router.post("/perfiles/{perfil_id}/eliminar")
@@ -1948,12 +2294,12 @@ async def perfil_eliminar(
     return RedirectResponse(url="/perfiles?mensaje=Perfil+eliminado", status_code=303)
 
 
-@router.post("/perfiles/{perfil_id}/editar")
-async def perfil_editar(
+@router.post("/perfiles/{perfil_id}/editar", response_model=None)
+async def perfil_editar(  # noqa: PLR0913 - un campo del formulario = un parámetro
     request: Request,
     perfil_id: int,
     background_tasks: BackgroundTasks,
-    nombre: str = Form(...),
+    nombre: str = Form(""),
     keywords: str = Form(""),
     excluir: str = Form(""),
     fuentes: list[str] = Form(default=[]),
@@ -1961,48 +2307,32 @@ async def perfil_editar(
     monto_min_clp: str = Form(""),
     monto_max_clp: str = Form(""),
     categorias_unspsc: list[str] = Form(default=[]),
+    categorias_unspsc_extra: str = Form(""),
     organismos_seguidos: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+) -> Response:
     check_csrf(request, csrf_token)
-    perfil = obtener_perfil(session, perfil_id, user.id)
-    if perfil is None:
+    if obtener_perfil(session, perfil_id, user.id) is None:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-    kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-    ex_list = [k.strip() for k in excluir.split(",") if k.strip()]
-    fuentes_list = fuentes or ["licitaciones", "compras_agiles"]
-    regiones_list = _parse_regiones(regiones)
-    monto_min = _parse_monto(monto_min_clp)
-    monto_max = _parse_monto(monto_max_clp)
-    categorias_list = _parse_categorias(categorias_unspsc)
-    organismos_list = _parse_organismos(organismos_seguidos)
-    if monto_min is not None and monto_max is not None and monto_min > monto_max:
-        msg = quote("El monto mínimo no puede ser mayor al monto máximo")
-        return RedirectResponse(url=f"/perfiles?error={msg}", status_code=303)
-    try:
-        actualizar_perfil(
-            session,
-            perfil_id=perfil_id,
-            owner_id=user.id,
-            nombre=nombre,
-            keywords=kw_list,
-            keywords_excluir=ex_list,
-            regiones=regiones_list,
-            monto_min_clp=monto_min,
-            monto_max_clp=monto_max,
-            categorias_unspsc=categorias_list,
-            organismos_seguidos=organismos_list,
-            fuentes=fuentes_list,
-        )
-    except PerfilInvalido as exc:
-        return RedirectResponse(url=f"/perfiles?error={quote(str(exc))}", status_code=303)
-    session.commit()
-    # El match en segundo plano agrega lo nuevo y, al final, borra lo vigente que
-    # ya no calza con el perfil editado (`limpiar_matches_perfil`, F-guardar).
-    background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_id)
-    return RedirectResponse(url="/perfiles?mensaje=Perfil+actualizado", status_code=303)
+    return _guardar_perfil(
+        request,
+        background_tasks,
+        session,
+        user,
+        perfil_id,
+        nombre=nombre,
+        keywords=keywords,
+        excluir=excluir,
+        fuentes=fuentes,
+        regiones=regiones,
+        monto_min_clp=monto_min_clp,
+        monto_max_clp=monto_max_clp,
+        categorias_unspsc=categorias_unspsc,
+        categorias_unspsc_extra=categorias_unspsc_extra,
+        organismos_seguidos=organismos_seguidos,
+    )
 
 
 # ---------------------------------------------------------------------------

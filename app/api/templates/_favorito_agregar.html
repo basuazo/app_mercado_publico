@@ -1,0 +1,22 @@
+{# Formulario para agregar un rubro favorito: se pide al desplegar la tarjeta (el <select> pesa). #}
+<form method="post" action="/rubros-favoritos/agregar" class="row g-2 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="next" value="/perfiles#rubros-favoritos">
+  <div class="col-md-8">
+    <label class="form-label" for="rubro-favorito-nuevo">Agregar un rubro</label>
+    <select name="prefijo" id="rubro-favorito-nuevo" class="form-select" required>
+      <option value="">Elige un segmento o una familia…</option>
+      {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
+      <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
+        <option value="{{ seg_codigo }}">Todo el segmento {{ seg_codigo }}</option>
+        {% for fam_codigo, fam_nombre in fams %}
+        <option value="{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-outline-primary">Agregar</button>
+  </div>
+</form>

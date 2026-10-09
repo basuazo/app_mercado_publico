@@ -1470,7 +1470,7 @@ def test_perfil_crear_persiste_regiones_y_montos(engine, client, usuario, settin
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "Perfil+creado" in r.headers["location"]
+    assert "Perfil+guardado" in r.headers["location"]
 
     with Session(engine) as s:
         perfil = s.execute(
@@ -1495,8 +1495,8 @@ def test_perfil_crear_monto_min_mayor_que_max_no_persiste(engine, client, usuari
         cookies=cookies,
         follow_redirects=False,
     )
-    assert r.status_code == 303
-    assert "error=" in r.headers["location"]
+    assert r.status_code == 422
+    assert "El monto mínimo no puede ser mayor al monto máximo" in r.text
 
     with Session(engine) as s:
         existe = s.execute(
@@ -1514,8 +1514,9 @@ def test_perfil_crear_sin_keywords_ni_filtros_error_amistoso(client, usuario, se
         cookies=cookies,
         follow_redirects=False,
     )
-    assert r.status_code == 303
-    assert "error=" in r.headers["location"]
+    assert r.status_code == 422
+    assert "Se necesita al menos 1 keyword o 1 filtro estructurado" in r.text
+    assert 'value="Vacío total"' in r.text
 
 
 def test_perfil_editar_persiste_regiones_y_montos(engine, client, usuario, settings):
@@ -1541,7 +1542,7 @@ def test_perfil_editar_persiste_regiones_y_montos(engine, client, usuario, setti
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "Perfil+actualizado" in r.headers["location"]
+    assert "Perfil+guardado" in r.headers["location"]
 
     with Session(engine) as s:
         actualizado = s.get(PerfilBusqueda, perfil_id)
@@ -1659,7 +1660,7 @@ def test_automatch_background_perfil_inexistente_o_inactivo_noop(engine, usuario
 def test_perfiles_get_muestra_regiones_disponibles(client, usuario, settings, engine):
     _marcar_catalogo_organismos_fresco(engine)
     cookies, _ = _session(settings, usuario)
-    r = client.get("/perfiles", cookies=cookies)
+    r = client.get("/perfiles/nuevo/form", cookies=cookies)
     assert r.status_code == 200
     assert "Tarapacá" in r.text
     assert "Metropolitana de Santiago" in r.text
@@ -1787,7 +1788,7 @@ def test_perfil_crear_persiste_categorias_y_organismos(engine, client, usuario, 
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "Perfil+creado" in r.headers["location"]
+    assert "Perfil+guardado" in r.headers["location"]
 
     with Session(engine) as s:
         perfil = s.execute(
@@ -1808,7 +1809,7 @@ def test_perfil_crear_solo_rubro_sin_keywords_no_da_error(engine, client, usuari
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "Perfil+creado" in r.headers["location"]
+    assert "Perfil+guardado" in r.headers["location"]
 
 
 def test_perfil_editar_persiste_categorias_y_organismos(engine, client, usuario, settings):
@@ -1833,7 +1834,7 @@ def test_perfil_editar_persiste_categorias_y_organismos(engine, client, usuario,
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "Perfil+actualizado" in r.headers["location"]
+    assert "Perfil+guardado" in r.headers["location"]
 
     with Session(engine) as s:
         actualizado = s.get(PerfilBusqueda, perfil_id)
@@ -1870,10 +1871,10 @@ def test_perfiles_get_muestra_rubros_y_organismos(engine, client, usuario, setti
 # ---------------------------------------------------------------------------
 
 
-def test_perfiles_get_catalogo_disponible_muestra_multiselect(client, usuario, settings):
+def test_catalogo_organismos_json_sincroniza_y_lo_entrega(client, usuario, settings):
     """Con el bulk de instituciones/sectores mockeado (red mockeada, regla del
-    proyecto), GET /perfiles sincroniza el catálogo y renderiza el widget JS
-    en vez del input de texto libre de organismos."""
+    proyecto), GET /organismos/catalogo.json sincroniza el catálogo y lo entrega
+    cacheable (F-perfiles-1: ya no lo sincroniza GET /perfiles)."""
     cookies, _ = _session(settings, usuario)
     with respx.mock:
         respx.get(settings.plan_compra_kpi_url).mock(
@@ -1888,24 +1889,31 @@ def test_perfiles_get_catalogo_disponible_muestra_multiselect(client, usuario, s
                 json=[{"type": "comprador", "entcode": 224060, "idSector": 3, "sector": "Legislativo y Judicial"}],
             )
         )
-        r = client.get("/perfiles", cookies=cookies)
+        r = client.get("/organismos/catalogo.json", cookies=cookies)
 
     assert r.status_code == 200
-    assert 'class="js-org-widget"' in r.text
-    assert "Catálogo de organismos no disponible" not in r.text
-    assert "MINISTERIO  PUBLICO" in r.text  # vive en el const JS del catálogo
+    assert r.headers["cache-control"] == "private, max-age=86400"
+    assert r.json() == [
+        {"id": 224060, "nombre": "MINISTERIO  PUBLICO", "sector": "Legislativo y Judicial"}
+    ]
 
 
-def test_perfiles_get_sin_red_degrada_a_input_manual(client, usuario, settings):
-    """Sin red disponible para el catálogo (primer arranque / sin conexión),
-    la página no debe romper: degrada al input de texto libre de organismos
-    (regla 6)."""
+def test_catalogo_organismos_json_sin_red_devuelve_la_cache(client, usuario, settings, engine):
+    """Sin red la ruta no rompe (regla 6): entrega lo que haya en caché, o vacío
+    (y el widget degrada al input de códigos)."""
+    from app.models.tables import InstitucionPAC
+
     cookies, _ = _session(settings, usuario)
+    with Session(engine) as s:
+        s.add(InstitucionPAC(codigo_entidad=1, razon_social="Municipalidad X", sector="Municipal"))
+        s.commit()
     with respx.mock:
         respx.get(settings.plan_compra_kpi_url).mock(side_effect=httpx.ConnectError("sin red"))
-        r = client.get("/perfiles", cookies=cookies)
+        r = client.get("/organismos/catalogo.json", cookies=cookies)
 
     assert r.status_code == 200
-    assert "Catálogo de organismos no disponible" in r.text
-    assert 'class="js-org-widget"' not in r.text
-    assert 'placeholder="ej: 12345,76123456-7"' in r.text
+    assert r.json() == [{"id": 1, "nombre": "Municipalidad X", "sector": "Municipal"}]
+
+
+def test_catalogo_organismos_json_exige_login(client):
+    assert client.get("/organismos/catalogo.json").status_code == 401

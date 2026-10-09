@@ -1,169 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Perfiles — MP Oportunidades{% endblock %}
 
-{% from "_rubros_widget.html" import rubros_widget %}
-
-{% macro organismos_widget(form_id, preseleccion, catalogo_disponible) %}
-{% if catalogo_disponible %}
-<div class="js-org-widget" data-form="{{ form_id }}" data-preseleccion="{{ preseleccion | join(',') }}">
-  <input type="text" class="form-control form-control-sm mb-2 js-org-buscador"
-         placeholder="Buscar organismo por nombre o sector...">
-  <div class="js-org-chips d-flex flex-wrap gap-1 mb-2"></div>
-  <div class="js-org-lista border rounded p-2 small" style="max-height: 200px; overflow-y: auto;"></div>
-  <input type="hidden" name="organismos_seguidos" class="js-org-hidden">
-</div>
-{% else %}
-<div class="alert alert-warning small py-2 mb-2">
-  Catálogo de organismos no disponible por ahora — escribe los códigos manualmente.
-</div>
-<input type="text" name="organismos_seguidos" class="form-control"
-       placeholder="ej: 12345,76123456-7" value="{{ preseleccion | join(',') }}">
-{% endif %}
-{% endmacro %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
   <h2 class="mb-0">Mis perfiles de búsqueda</h2>
-  <button type="button" class="btn btn-outline-secondary" data-open-tutorial>Revisar tutorial</button>
-</div>
-
-{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
-{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-
-<!-- Ajustes de cuenta -->
-<div class="card mb-4">
-  <div class="card-header">Ajustes de tu cuenta</div>
-  <div class="card-body">
-    <div class="row g-4">
-      <div class="col-lg-5">
-        <form method="post" action="/perfiles/rut-proveedor" class="row g-2 align-items-end">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div class="col-md-8">
-            <label class="form-label">Tu RUT de proveedor (opcional)</label>
-            <input type="text" name="rut_proveedor" class="form-control" placeholder="76.123.456-7"
-                   value="{{ current_user.rut_proveedor or '' }}">
-          </div>
-          <div class="col-auto">
-            <button type="submit" class="btn btn-outline-primary">Guardar</button>
-          </div>
-          <div class="col-12">
-            <span class="text-muted small">
-              Solo si vendes al Estado. Cuando una licitación que sigues se adjudica, resaltamos
-              tu propia oferta en el análisis de competencia. No afecta tus búsquedas.
-            </span>
-          </div>
-        </form>
-      </div>
-      <div class="col-lg-7">
-        <form method="post" action="/cuenta/resumen" class="row g-2 align-items-end mb-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div class="col-md-6">
-            <label class="form-label">Resumen de oportunidades nuevas</label>
-            <select name="dias_resumen" class="form-select">
-              <option value="3" {% if current_user.dias_resumen == 3 %}selected{% endif %}>Cada 3 días</option>
-              <option value="7" {% if current_user.dias_resumen == 7 %}selected{% endif %}>Cada 7 días</option>
-              <option value="0" {% if current_user.dias_resumen == 0 %}selected{% endif %}>Nunca</option>
-            </select>
-          </div>
-          <div class="col-auto">
-            <button type="submit" class="btn btn-outline-primary">Guardar resumen</button>
-          </div>
-          <div class="col-12">
-            <span class="text-muted small">Te enviaremos un solo correo consolidado cuando haya oportunidades nuevas.</span>
-          </div>
-        </form>
-        <form method="post" action="/cuenta/password" class="row g-2 align-items-end">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div class="col-md-4">
-            <label class="form-label">Contraseña actual</label>
-            <input type="password" name="password_actual" class="form-control" required autocomplete="current-password">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Nueva contraseña</label>
-            <input type="password" name="password_nueva" class="form-control" required minlength="8" autocomplete="new-password">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Confirmar nueva</label>
-            <input type="password" name="password_confirmacion" class="form-control" required minlength="8" autocomplete="new-password">
-          </div>
-          <div class="col-12">
-            <button type="submit" class="btn btn-outline-secondary">Cambiar contraseña</button>
-            <span class="text-muted small ms-2">Mínimo 8 caracteres.</span>
-          </div>
-        </form>
-      </div>
-    </div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary" data-open-tutorial>Revisar tutorial</button>
+    <button type="button" class="btn btn-primary"
+            hx-get="/perfiles/nuevo/form" hx-target="#nuevo-slot" hx-swap="innerHTML">Nuevo perfil</button>
   </div>
 </div>
 
-<!-- Formulario nuevo perfil -->
-<div class="card mb-4">
-  <div class="card-header">Nuevo perfil</div>
-  <div class="card-body">
-    <form method="post" action="/perfiles/nuevo">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="row g-3">
-        <div class="col-md-4">
-          <label class="form-label">Nombre</label>
-          <input type="text" name="nombre" class="form-control" required>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Fuentes</label>
-          <div class="d-flex flex-wrap gap-2">
-            <input type="checkbox" class="btn-check" name="fuentes" value="licitaciones" id="f_lic" checked autocomplete="off">
-            <label class="btn btn-outline-primary btn-sm" for="f_lic">Licitaciones</label>
-            <input type="checkbox" class="btn-check" name="fuentes" value="compras_agiles" id="f_ca" checked autocomplete="off">
-            <label class="btn btn-outline-primary btn-sm" for="f_ca">Compra Ágil</label>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Keywords (separadas por coma)</label>
-          <input type="text" name="keywords" class="form-control" placeholder="software, desarrollo, tecnología">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Excluir (separadas por coma)</label>
-          <input type="text" name="excluir" class="form-control" placeholder="limpieza, aseo">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Monto mín. (CLP)</label>
-          <input type="number" name="monto_min_clp" class="form-control" min="0" step="1">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Monto máx. (CLP)</label>
-          <input type="number" name="monto_max_clp" class="form-control" min="0" step="1">
-        </div>
-        <div class="col-12">
-          <label class="form-label">Regiones (vacío = todas)</label>
-          <p class="text-muted small mb-2">
-            El filtro de región aplica solo a Compra Ágil. Las licitaciones no traen región en la
-            fuente oficial, así que no se filtran por este criterio.
-          </p>
-          <div class="d-flex flex-wrap gap-2">
-            {% for codigo, nombre in regiones_disponibles %}
-            <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}" id="reg_{{ codigo }}" autocomplete="off">
-            <label class="btn btn-outline-secondary btn-sm" for="reg_{{ codigo }}">{{ nombre }}</label>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="col-md-7">
-          <label class="form-label">Rubros UNSPSC que sigues (recall aditivo: suman candidatos aunque no haya keyword)</label>
-          {{ rubros_widget("nuevo", rubros_agrupados, []) }}
-        </div>
-        <div class="col-md-5">
-          <label class="form-label">Organismos que sigues</label>
-          {{ organismos_widget("nuevo", [], organismos_catalogo_disponible) }}
-        </div>
-        <div class="col-12">
-          <button type="submit" class="btn btn-primary">Crear perfil</button>
-        </div>
-      </div>
-    </form>
-  </div>
+{% if mensaje %}<div class="alert alert-success" role="status">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+
+<!-- Formulario de un perfil nuevo: llega por HTMX al abrirlo (o ya abierto tras un error sin JS) -->
+<div id="nuevo-slot">
+  {% if form_ctx and form_ctx.perfil_id is none %}{% include "_perfil_form.html" %}{% endif %}
 </div>
+
+<!-- Lista de perfiles -->
+{% if perfiles %}
+  {% for v in perfiles %}
+    {% include "_perfil_card.html" %}
+  {% endfor %}
+{% else %}
+<div class="alert alert-info">Aún no tienes perfiles. Crea uno para recibir alertas.</div>
+{% endif %}
 
 <!-- Rubros favoritos (F-ca-explorar). Fuera de los formularios de perfiles a propósito. -->
-<div class="card mb-4" id="rubros-favoritos">
-  <div class="card-header">Rubros favoritos</div>
+<details class="card mb-4" id="rubros-favoritos">
+  <summary class="card-header">Rubros favoritos{% if rubros_favoritos %} ({{ rubros_favoritos | length }}){% endif %}</summary>
   <div class="card-body">
     <p class="text-muted small mb-3">
       Vienen preseleccionados en <a href="/compras-agiles">Explorar Compras Ágiles</a>.
@@ -189,264 +56,41 @@
     {% else %}
     <p class="text-muted small">Todavía no marcas ninguno.</p>
     {% endif %}
-    <form method="post" action="/rubros-favoritos/agregar" class="row g-2 align-items-end">
+    {# El <select> de ~510 rubros se pide la primera vez que se despliega la tarjeta. #}
+    <div hx-get="/rubros-favoritos/form" hx-trigger="toggle from:#rubros-favoritos once" hx-swap="innerHTML">
+      <p class="text-muted small mb-0">Cargando…</p>
+    </div>
+  </div>
+</details>
+
+<!-- Confirmación de eliminación (un solo modal para todas las tarjetas) -->
+<div class="modal fade" id="modal-eliminar-perfil" tabindex="-1" aria-labelledby="modal-eliminar-perfil-titulo" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" action="" class="modal-content" id="form-eliminar-perfil">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="/perfiles#rubros-favoritos">
-      <div class="col-md-8">
-        <label class="form-label" for="rubro-favorito-nuevo">Agregar un rubro</label>
-        <select name="prefijo" id="rubro-favorito-nuevo" class="form-select" required>
-          <option value="">Elige un segmento o una familia…</option>
-          {% for seg_codigo, seg_nombre, fams in rubros_agrupados %}
-          <optgroup label="{{ seg_codigo }} — {{ seg_nombre }}">
-            <option value="{{ seg_codigo }}">Todo el segmento {{ seg_codigo }}</option>
-            {% for fam_codigo, fam_nombre in fams %}
-            <option value="{{ fam_codigo }}">{{ fam_codigo }} — {{ fam_nombre }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endfor %}
-        </select>
+      <div class="modal-header">
+        <h3 class="modal-title h5" id="modal-eliminar-perfil-titulo">Eliminar perfil</h3>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
-      <div class="col-auto">
-        <button type="submit" class="btn btn-outline-primary">Agregar</button>
+      <div class="modal-body">
+        ¿Eliminar el perfil <strong id="modal-eliminar-perfil-nombre"></strong>? Se pierden también sus
+        oportunidades encontradas. Si solo quieres dejar de recibirlas por un tiempo, pausa el perfil.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Eliminar</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- Lista de perfiles -->
-{% if perfiles %}
-<div class="list-group">
-  {% for p in perfiles %}
-  <div class="list-group-item">
-    <div class="d-flex justify-content-between align-items-center">
-      <div>
-        <strong>{{ p.nombre }}</strong>
-      </div>
-      <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-outline-secondary" type="button"
-                data-bs-toggle="collapse" data-bs-target="#editar_{{ p.id }}">
-          Editar
-        </button>
-        <form method="post" action="/perfiles/{{ p.id }}/eliminar"
-              onsubmit="return confirm('¿Eliminar perfil ' + {{ p.nombre|tojson }} + '?')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="btn btn-sm btn-outline-danger">Eliminar</button>
-        </form>
-      </div>
-    </div>
-    <small class="text-muted">
-      Keywords: {{ p.keywords | join(', ') or '(ninguna)' }}
-      {% if p.keywords_excluir %} | Excluir: {{ p.keywords_excluir | join(', ') }}{% endif %}
-      | Fuentes: {{ p.fuentes | join(', ') }}
-      {% if p.regiones %}
-        | Regiones: {{ p.regiones | join(', ') }}
-      {% endif %}
-      {% if p.monto_min_clp is not none or p.monto_max_clp is not none %}
-        | Monto: {{ p.monto_min_clp | int if p.monto_min_clp is not none else '—' }}
-        – {{ p.monto_max_clp | int if p.monto_max_clp is not none else '—' }} CLP
-      {% endif %}
-      {% if p.categorias_unspsc %}
-        | Rubros: {{ rubros_por_perfil.get(p.id, []) | join(', ') }}
-      {% endif %}
-      {% if p.organismos_seguidos %}
-        | Organismos seguidos: {{ p.organismos_seguidos | join(', ') }}
-      {% endif %}
-    </small>
-
-    <div class="collapse mt-3" id="editar_{{ p.id }}">
-      <form method="post" action="/perfiles/{{ p.id }}/editar" class="border-top pt-3">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label">Nombre</label>
-            <input type="text" name="nombre" class="form-control" value="{{ p.nombre }}" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Fuentes</label>
-            <div class="d-flex flex-wrap gap-2">
-              <input type="checkbox" class="btn-check" name="fuentes" value="licitaciones"
-                     id="ef_lic_{{ p.id }}" {% if 'licitaciones' in p.fuentes %}checked{% endif %} autocomplete="off">
-              <label class="btn btn-outline-primary btn-sm" for="ef_lic_{{ p.id }}">Licitaciones</label>
-              <input type="checkbox" class="btn-check" name="fuentes" value="compras_agiles"
-                     id="ef_ca_{{ p.id }}" {% if 'compras_agiles' in p.fuentes %}checked{% endif %} autocomplete="off">
-              <label class="btn btn-outline-primary btn-sm" for="ef_ca_{{ p.id }}">Compra Ágil</label>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Keywords (separadas por coma)</label>
-            <input type="text" name="keywords" class="form-control" value="{{ p.keywords | join(', ') }}">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Excluir (separadas por coma)</label>
-            <input type="text" name="excluir" class="form-control" value="{{ p.keywords_excluir | join(', ') }}">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Monto mín. (CLP)</label>
-            <input type="number" name="monto_min_clp" class="form-control" min="0" step="1"
-                   value="{{ p.monto_min_clp | int if p.monto_min_clp is not none else '' }}">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Monto máx. (CLP)</label>
-            <input type="number" name="monto_max_clp" class="form-control" min="0" step="1"
-                   value="{{ p.monto_max_clp | int if p.monto_max_clp is not none else '' }}">
-          </div>
-          <div class="col-12">
-            <label class="form-label">Regiones (vacío = todas)</label>
-            <p class="text-muted small mb-2">
-              El filtro de región aplica solo a Compra Ágil. Las licitaciones no traen región en la
-              fuente oficial, así que no se filtran por este criterio.
-            </p>
-            <div class="d-flex flex-wrap gap-2">
-              {% for codigo, nombre in regiones_disponibles %}
-              <input type="checkbox" class="btn-check" name="regiones" value="{{ codigo }}"
-                     id="ereg_{{ p.id }}_{{ codigo }}" {% if codigo in p.regiones %}checked{% endif %} autocomplete="off">
-              <label class="btn btn-outline-secondary btn-sm" for="ereg_{{ p.id }}_{{ codigo }}">{{ nombre }}</label>
-              {% endfor %}
-            </div>
-          </div>
-          <div class="col-md-7">
-            <label class="form-label">Rubros UNSPSC que sigues</label>
-            {{ rubros_widget("ed" ~ p.id, rubros_agrupados, p.categorias_unspsc or []) }}
-          </div>
-          <div class="col-md-5">
-            <label class="form-label">Organismos que sigues</label>
-            {{ organismos_widget("ed" ~ p.id, p.organismos_seguidos or [], organismos_catalogo_disponible) }}
-          </div>
-          <div class="col-12">
-            <button type="submit" class="btn btn-primary btn-sm">Guardar cambios</button>
-          </div>
-        </div>
-      </form>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% else %}
-<div class="alert alert-info">Aún no tienes perfiles. Crea uno para recibir alertas.</div>
-{% endif %}
-
 <script src="/static/rubros_widget.js?v={{ version_estaticos }}" defer></script>
+<script src="/static/organismos_widget.js?v={{ version_estaticos }}" defer></script>
 <script>
-const MP_ORGANISMOS_CATALOGO = {{ organismos_json | tojson }};
-</script>
-<script>
-(function () {
-  "use strict";
-
-  function debounce(fn, wait) {
-    let temporizador;
-    return function (...args) {
-      clearTimeout(temporizador);
-      temporizador = setTimeout(() => fn.apply(this, args), wait);
-    };
-  }
-
-  function quitarChip(boton, texto, alQuitar) {
-    boton.type = "button";
-    boton.className = "btn-close btn-close-white";
-    boton.style.fontSize = "0.55rem";
-    boton.setAttribute("aria-label", "Quitar " + texto);
-    boton.addEventListener("click", alQuitar);
-  }
-
-  function crearChip(texto, alQuitar) {
-    const chip = document.createElement("span");
-    chip.className = "badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-1";
-    chip.textContent = texto;
-    const boton = document.createElement("button");
-    quitarChip(boton, texto, alQuitar);
-    chip.appendChild(boton);
-    return chip;
-  }
-
-  // ---- Organismos: buscador + lista filtrada agrupada por sector + chips ----
-  // El catálogo (MP_ORGANISMOS_CATALOGO) se emite UNA sola vez para toda la
-  // página; cada widget (nuevo + cada edición) lo reusa por referencia, sin
-  // duplicar las ~1.333 filas en el DOM por formulario.
-  function initOrganismosWidget(widget, catalogo) {
-    const buscador = widget.querySelector(".js-org-buscador");
-    const chipsBox = widget.querySelector(".js-org-chips");
-    const lista = widget.querySelector(".js-org-lista");
-    const hidden = widget.querySelector(".js-org-hidden");
-    const porId = new Map(catalogo.map((o) => [String(o.id), o]));
-    const MAX_RESULTADOS = 80;
-
-    const preseleccion = (widget.dataset.preseleccion || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const seleccionados = new Map();
-    preseleccion.forEach((codigo) => {
-      seleccionados.set(codigo, porId.get(codigo) || { id: codigo, nombre: codigo, sector: null });
-    });
-
-    function actualizarHidden() {
-      hidden.value = Array.from(seleccionados.keys()).join(",");
-    }
-
-    function renderChips() {
-      chipsBox.innerHTML = "";
-      seleccionados.forEach((org, codigo) => {
-        chipsBox.appendChild(
-          crearChip(org.nombre, () => {
-            seleccionados.delete(codigo);
-            actualizarHidden();
-            renderChips();
-            renderLista(buscador.value);
-          })
-        );
-      });
-    }
-
-    function renderLista(query) {
-      const q = query.trim().toLowerCase();
-      lista.innerHTML = "";
-      if (!q) {
-        lista.innerHTML =
-          '<div class="text-muted px-1">Escribe para buscar entre ' + catalogo.length + " organismos…</div>";
-        return;
-      }
-      let sectorActual = null;
-      let mostrados = 0;
-      for (const org of catalogo) {
-        if (seleccionados.has(String(org.id))) continue;
-        const texto = (org.nombre + " " + (org.sector || "")).toLowerCase();
-        if (!texto.includes(q)) continue;
-        if (org.sector !== sectorActual) {
-          sectorActual = org.sector;
-          const header = document.createElement("div");
-          header.className = "text-muted fw-semibold mt-1";
-          header.textContent = sectorActual;
-          lista.appendChild(header);
-        }
-        const fila = document.createElement("button");
-        fila.type = "button";
-        fila.className = "btn btn-sm btn-light text-start w-100 mb-1";
-        fila.textContent = org.nombre;
-        fila.addEventListener("click", () => {
-          seleccionados.set(String(org.id), org);
-          actualizarHidden();
-          renderChips();
-          renderLista(buscador.value);
-        });
-        lista.appendChild(fila);
-        mostrados += 1;
-        if (mostrados >= MAX_RESULTADOS) break;
-      }
-      if (mostrados === 0) {
-        lista.innerHTML = '<div class="text-muted px-1">No se encontraron organismos.</div>';
-      }
-    }
-
-    buscador.addEventListener("input", debounce(() => renderLista(buscador.value), 150));
-    actualizarHidden();
-    renderChips();
-    renderLista("");
-  }
-
-  document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".js-org-widget").forEach((w) => initOrganismosWidget(w, MP_ORGANISMOS_CATALOGO));
+  document.getElementById("modal-eliminar-perfil").addEventListener("show.bs.modal", function (evt) {
+    var boton = evt.relatedTarget;
+    document.getElementById("form-eliminar-perfil").action = "/perfiles/" + boton.dataset.perfilId + "/eliminar";
+    document.getElementById("modal-eliminar-perfil-nombre").textContent = boton.dataset.perfilNombre;
   });
-})();
 </script>
 {% endblock %}

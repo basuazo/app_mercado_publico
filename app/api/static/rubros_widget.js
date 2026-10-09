@@ -1,36 +1,15 @@
-/* Selector de rubros UNSPSC (F-ca-explorar): extraído de perfiles.html para
-   compartirlo con el explorador de Compras Ágiles. Sin red: todo en cliente. */
+/* Selector de rubros UNSPSC (F-ca-explorar): compartido por /perfiles y el explorador
+   de Compras Ágiles. Sin red: todo en cliente. */
 (function () {
   "use strict";
 
-  function debounce(fn, wait) {
-    let temporizador;
-    return function (...args) {
-      clearTimeout(temporizador);
-      temporizador = setTimeout(() => fn.apply(this, args), wait);
-    };
-  }
-
-  function quitarChip(boton, texto, alQuitar) {
-    boton.type = "button";
-    boton.className = "btn-close btn-close-white";
-    boton.style.fontSize = "0.55rem";
-    boton.setAttribute("aria-label", "Quitar " + texto);
-    boton.addEventListener("click", alQuitar);
-  }
-
-  function crearChip(texto, alQuitar) {
-    const chip = document.createElement("span");
-    chip.className = "badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-1";
-    chip.textContent = texto;
-    const boton = document.createElement("button");
-    quitarChip(boton, texto, alQuitar);
-    chip.appendChild(boton);
-    return chip;
-  }
+  // debounce y chips viven en util.js (cargado antes que este script).
+  const { debounce, crearChip } = window.MP;
 
   // ---- Rubros: acordeón + chips + buscador (en cliente, sin red) ----
   function initRubrosWidget(widget) {
+    if (widget.dataset.iniciado) return;
+    widget.dataset.iniciado = "1";
     const buscador = widget.querySelector(".js-rubro-buscador");
     const chipsBox = widget.querySelector(".js-rubro-chips");
     const segmentos = Array.from(widget.querySelectorAll(".js-rubro-segmento"));
@@ -120,6 +99,8 @@
   const MAX_PALABRAS = 20;
 
   function initPalabrasWidget(widget) {
+    if (widget.dataset.iniciado) return;
+    widget.dataset.iniciado = "1";
     const form = widget.closest("form");
     const chipsBox = widget.querySelector(".js-palabras-chips");
     const inputsBox = widget.querySelector(".js-palabras-inputs");
@@ -198,8 +179,13 @@
     render();
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".js-rubros-widget").forEach(initRubrosWidget);
-    document.querySelectorAll(".js-palabras-widget").forEach(initPalabrasWidget);
-  });
+  function iniciar(raiz) {
+    const base = raiz || document;
+    base.querySelectorAll(".js-rubros-widget").forEach(initRubrosWidget);
+    base.querySelectorAll(".js-palabras-widget").forEach(initPalabrasWidget);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => iniciar(document));
+  // En /perfiles el formulario llega por HTMX al abrirlo.
+  document.addEventListener("htmx:load", (e) => iniciar(e.detail && e.detail.elt));
 })();

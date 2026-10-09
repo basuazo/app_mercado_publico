@@ -223,7 +223,7 @@ def test_guardar_rut_proveedor(client, usuario, settings, engine):
     )
     assert r.status_code == 303
 
-    r2 = client.get("/perfiles", cookies=cookies)
+    r2 = client.get("/cuenta", cookies=cookies)
     assert "76.123.456-7" in r2.text
 
 
