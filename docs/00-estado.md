@@ -25,8 +25,8 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
    ver `decisiones.md`).
 2. ~~F-datos-1~~ (`647900a`), ~~F-indices~~ (`e8e064a`), ~~F-perfiles-1~~ (`08cabc8`): en producción.
 3. **F-match-1** (Sonnet, `prompt-F-match-1.md`; F-datos-1 ya está en producción): relevancia
-   separada de urgencia, organismos seguidos, feed y resumen sin duplicados. Revisar el prompt
-   contra el código actual antes (es del 08-oct; F-perfiles-1 movió el widget de organismos).
+   separada de urgencia, organismos seguidos, exclusión solo en el título (§1.7), feed y resumen
+   sin duplicados. Prompt revisado contra el código el 09-oct; listo para Claude Code.
 4. F-perfiles-2 → F-retencion-filas → F-bandeja → spikes de fuentes (OCDS, `COT_`, RFI) → F-mcp-1.
 
 ## Prompts pendientes

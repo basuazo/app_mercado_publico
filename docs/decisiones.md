@@ -38,6 +38,9 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   versión.
 - **Ficha en modal** sobre el feed y Mi registro (URL con `ficha=`); la página `/oportunidad/...` se
   mantiene porque la enlazan los correos.
+- **Exclusiones solo sobre el título** (09-oct, Boris): una palabra excluida saca la oportunidad
+  solo si está en su nombre, no por la descripción ni por un ítem ("agua" en un ítem de una
+  licitación de adulto mayor no la saca). Sin flag por perfil. Se implementa en F-match-1 §1.7.
 - **Descartar** tiene dos caminos: "Solo descartar" y "Descartar y excluir términos" (valida
   choques antes de descartar).
 - Perfil 8 (30 rubros) es de prueba; los perfiles reales (5, 6, 7) son por keywords.
