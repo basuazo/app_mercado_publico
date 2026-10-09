@@ -7,9 +7,10 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
 `decisiones.md`. Reglas duras: `../CLAUDE.md`.
 
 ## En producción
-- `main` = `origin/main`. Última fase: **F-ficha-modal** (`29c0dc6`, 07-oct).
+- `main` = `origin/main`. Última fase: **F-perfiles-1** (`08cabc8`, 09-oct; `/perfiles` de 1,66 MB a 53 KB,
+  pausar perfil, formulario único bajo demanda, `/cuenta`; probada en navegador por Boris).
 - Fases de sep–oct: F-vigencia · F-ca-explorar · F-ca-vocab · F-acentos · F-guardar · F-ajustes ·
-  F-registro · F-ficha-modal. Detalle de cada una en `app/changelog.py` y en
+  F-registro · F-ficha-modal · F-datos-1 · F-indices · F-perfiles-1. Detalle de cada una en `app/changelog.py` y en
   `archivo/prompts/`.
 - Lo que hace la app: perfiles (keywords, regiones, montos, exclusiones, rubros UNSPSC,
   organismos), matching con score, feed solo vigente con filtros y ficha en modal, Guardar /
@@ -22,18 +23,18 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).
    **D12:** Plan Anual en pausa hasta el PAC 2027 (403 desde Actions, 200 desde el PC de Boris;
    ver `decisiones.md`).
-2. **F-datos-1** (`647900a`, auditado 08-oct; push tras un `ca` de los :05): organismo, región, tipo y fecha de publicación de
-   licitaciones; fechas de CA; CA desiertas/canceladas; 429 diario persistido; reserva de cuota.
-3. **F-match-1** (Sonnet, `prompt-F-match-1.md`, después de F-datos-1 en producción): relevancia
-   separada de urgencia, organismos seguidos, feed y resumen sin duplicados.
-4. F-indices → F-perfiles-1/2 → F-retencion-filas → F-bandeja → spikes de fuentes (OCDS, `COT_`,
-   RFI) → F-mcp-1.
+2. ~~F-datos-1~~ (`647900a`), ~~F-indices~~ (`e8e064a`), ~~F-perfiles-1~~ (`08cabc8`): en producción.
+3. **F-match-1** (Sonnet, `prompt-F-match-1.md`; F-datos-1 ya está en producción): relevancia
+   separada de urgencia, organismos seguidos, feed y resumen sin duplicados. Revisar el prompt
+   contra el código actual antes (es del 08-oct; F-perfiles-1 movió el widget de organismos).
+4. F-perfiles-2 → F-retencion-filas → F-bandeja → spikes de fuentes (OCDS, `COT_`, RFI) → F-mcp-1.
 
 ## Prompts pendientes
 - `prompt-F-indices.md` — en producción (`e8e064a`, migración `b8c2d5e9a1f7`; 9 índices ~7,7 MB, candidatos en 7–45 ms).
-- `prompt-F-perfiles-1.md` — siguiente (Sonnet, sin migración).
-- `prompt-F-datos-1.md` — ejecutado (`647900a`), pendiente de push.
-- `prompt-F-match-1.md` — después de F-datos-1 (Sonnet).
+- `prompt-F-perfiles-1.md` — en producción (`08cabc8`). Desvíos: `_parse_monto` sigue (lo usa Plan Anual),
+  catálogo JSON responde 401 sin sesión, rubros favoritos también bajo demanda.
+- `prompt-F-datos-1.md` — en producción (`647900a`).
+- `prompt-F-match-1.md` — siguiente (Sonnet, sin migración).
 - `prompt-F-ca-rubro.md` — próxima versión (rediseñar el prefiltro; ver auditoría 14).
 - `prompt-F-secretos.md` — rotación de credenciales; la parte de código (`repr=False`) ya está.
 
@@ -45,7 +46,7 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 4. Pendiente de F-guardar: confirmar `borrados` del primer `ciclo-match` y `/salud` sin ráfaga.
 
 ## Backlog chico
-`alembic/env.py` que lea `.env`; `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin
+`alembic/env.py` que lea `.env`; tests PG leen `os.environ` y no normalizan `postgresql://` (con el `.env` tal cual se saltan 109: exportar `DATABASE_URL=postgresql+psycopg://…`); `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin
 fila `cancelado` y CLI sin SIGTERM; retención escribe JSON `null` en `raw_json`; campos del detalle
 de CA sin usar (`presupuesto.moneda`, `fecha_cierre_segundo_llamado`, `proveedores_cotizando`);
 `ruff format` marca 48 archivos heredados (no formatear en masa); tasas UF/UTM/USD/EUR fijas;
