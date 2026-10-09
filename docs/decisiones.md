@@ -41,6 +41,10 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 - **Exclusiones solo sobre el título** (09-oct, Boris): una palabra excluida saca la oportunidad
   solo si está en su nombre, no por la descripción ni por un ítem ("agua" en un ítem de una
   licitación de adulto mayor no la saca). Sin flag por perfil. Se implementa en F-match-1 §1.7.
+- **Relevancia del match** (F-match-1, 09-oct, Boris tras simular contra producción): keyword en el título
+  50; solo en ítem o descripción 35; cada keyword adicional distinta +10 (máx. +20); rubro +20;
+  organismo +15; sin keyword, rubro u organismo 40 (55 ambos); tope 100. Urgencia y competencia no
+  suman: ordenan. Piso del feed 40, "Alta" 60.
 - **Descartar** tiene dos caminos: "Solo descartar" y "Descartar y excluir términos" (valida
   choques antes de descartar).
 - Perfil 8 (30 rubros) es de prueba; los perfiles reales (5, 6, 7) son por keywords.

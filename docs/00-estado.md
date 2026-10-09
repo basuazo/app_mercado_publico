@@ -27,7 +27,11 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 3. **F-match-1** (Sonnet, `prompt-F-match-1.md`; F-datos-1 ya está en producción): relevancia
    separada de urgencia, organismos seguidos, exclusión solo en el título (§1.7), feed y resumen
    sin duplicados. Prompt revisado contra el código el 09-oct; listo para Claude Code.
-4. F-perfiles-2 → F-retencion-filas → F-bandeja → spikes de fuentes (OCDS, `COT_`, RFI) → F-mcp-1.
+4. **Medición de precisión del match** (después de 2–3 semanas de F-match-1 en producción): script de
+   solo lectura que use guardadas (acierto) y descartadas (error) como etiquetas, por usuario, fuente y
+   banda de relevancia (35/40–59/60+), y por dónde calzó (título/ítem/descripción, rubro, organismo).
+   Sirve para recalibrar las constantes de F-match-1 con datos y no a ojo. Línea base: `data/logs/paso0_score_nuevo.txt`.
+5. F-perfiles-2 → F-retencion-filas → F-bandeja → spikes de fuentes (OCDS, `COT_`, RFI) → F-mcp-1.
 
 ## Prompts pendientes
 - `prompt-F-indices.md` — en producción (`e8e064a`, migración `b8c2d5e9a1f7`; 9 índices ~7,7 MB, candidatos en 7–45 ms).

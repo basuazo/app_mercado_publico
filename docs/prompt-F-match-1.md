@@ -44,12 +44,16 @@ Función pura `relevancia(...)` con estos valores por defecto. Son decisión de 
 
 | Señal | Puntos |
 |---|---|
-| ≥ 1 keyword con acierto en **nombre** o en **ítem/producto** | base 50 |
-| ≥ 1 keyword con acierto **solo en la descripción** | base 35 |
-| cada keyword **adicional distinta** con acierto | +8 (máx. +16) |
+| ≥ 1 keyword con acierto en el **nombre** | base 50 |
+| ≥ 1 keyword con acierto **solo en ítem/producto o en la descripción** | base 35 |
+| cada keyword **adicional distinta** con acierto | +10 (máx. +20) |
 | rubro UNSPSC confirmado | +20 |
 | organismo seguido | +15 |
 | sin keyword, con rubro **o** con organismo | base 40 en vez de 0 (+15 si están ambos) |
+
+> **Ajuste tras la simulación §1.c (Boris, 09-oct):** el ítem baja de 50 a 35 (el título dice qué es la
+> licitación; un ítem suelto no) y la keyword adicional sube a +10 (máx. +20), para que título + una
+> segunda keyword llegue a 60 ("Alta"). Salida de la simulación: `data/logs/paso0_score_nuevo.txt`.
 | tope | 100 |
 
 - `campo_hit` hoy prioriza nombre > descripcion > producto. Para la base de 50 basta con que haya acierto en nombre o en producto, así que ese dato se agrega a las razones (`hit_en_nombre_o_item: bool`).
