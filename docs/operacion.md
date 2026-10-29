@@ -135,6 +135,13 @@ Tres casos (ver `01-analisis-api-mercado-publico.md` §10 y `15-diagnostico-ca-4
   `::warning::[job] cortado por …`. La siguiente corrida tras la pausa retoma sola.
 - **429 con otro código o sin código**: igual, con pausa de 60 min y log ERROR "429 con código no
   visto". Si aparece, anotar el cuerpo del log: puede ser el código de tope diario (aún no visto).
+- **Un job con API que arranca en pausa** (`ca`, `activas`, `detalles`, `lifecycle`,
+  `detalles-match`, `catalogos`; F-429-pausa-ca) espera si la pausa vence en ≤ 15 min
+  (`ESPERA_PAUSA_MAX_MIN`) y corre; si vence más tarde se **omite**: sale 0 con
+  `::warning::[job] omitido: API en pausa por 429 hasta HH:MM Chile` y fila `omitido` en
+  `job_runs`. Lo mismo si la pausa la pone otro proceso después del chequeo y el job no alcanzó a
+  avanzar. Un 429 propio en la primera request sigue en **rojo**: la API nos rechazó a nosotros.
+  `nocturno` y `estados-vencidos` no esperan: sus pasos sin API corren y los con API cortan.
 - Ningún 429 marca el día como agotado. Para cortar una pausa a mano (Neon, rama de producción):
   `DELETE FROM sync_state WHERE fuente = 'api_pausa';`
 

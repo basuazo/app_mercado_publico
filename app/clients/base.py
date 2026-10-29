@@ -352,6 +352,28 @@ def _iso_pausa(dt: datetime) -> str:
     return dt.astimezone(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
+def leer_pausa(engine: Engine) -> datetime | None:
+    """Fin de la última pausa registrada (UTC, con zona), vigente o no. None si no hay.
+
+    Abre y devuelve su conexión al pool: quien espera la pausa no la retiene
+    (F-429-pausa-ca). Supone que sync_state existe, como en producción.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(text(_SELECT_PAUSA), {"fuente": _FUENTE_PAUSA}).fetchone()
+    if row is None or not row[0]:
+        return None
+    try:
+        return datetime.fromisoformat(row[0]).replace(tzinfo=UTC)
+    except ValueError:
+        _log.warning("Cuota: pausa ilegible en sync_state: %r — se ignora", row[0])
+        return None
+
+
+def texto_pausa(hasta: datetime) -> str:
+    """"API en pausa por 429 hasta HH:MM Chile": mismo texto en el error y en el CLI."""
+    return f"API en pausa por 429 hasta {hasta.astimezone(TZ_CHILE):%H:%M} Chile"
+
+
 def _ahora_chile() -> datetime:
     return datetime.now(TZ_CHILE)
 
@@ -456,24 +478,14 @@ class QuotaTracker:
         """Fin de la última pausa registrada (UTC, con zona), vigente o no. None si no hay."""
         if not self._con_pausa:
             return None
-        with self._engine.connect() as conn:
-            row = conn.execute(text(_SELECT_PAUSA), {"fuente": _FUENTE_PAUSA}).fetchone()
-        if row is None or not row[0]:
-            return None
-        try:
-            return datetime.fromisoformat(row[0]).replace(tzinfo=UTC)
-        except ValueError:
-            _log.warning("Cuota: pausa ilegible en sync_state: %r — se ignora", row[0])
-            return None
+        return leer_pausa(self._engine)
 
     def check_budget(self, n: int = 1) -> None:
         # La pausa va ANTES del presupuesto: tras un 429 de tasa no se emite
         # nada hasta que venza, aunque quede cuota (F-429-tasa).
         hasta = self.pausada_hasta()
         if hasta is not None and self._now_fn() < hasta:
-            raise APIPausadaError(
-                f"API en pausa por 429 hasta {hasta.astimezone(TZ_CHILE):%H:%M} Chile"
-            )
+            raise APIPausadaError(texto_pausa(hasta))
         rem = self.remaining()
         if rem < n:
             raise QuotaExceededError(f"Presupuesto diario agotado (quedan {rem} requests)")

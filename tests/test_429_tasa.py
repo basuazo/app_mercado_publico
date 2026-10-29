@@ -242,6 +242,8 @@ def _correr_cli(job: str, resultado: Any, capsys) -> tuple[str, str]:
         patch.object(cli, "run_sync_ca", return_value=resultado),
         patch.object(cli, "run_detalles_match", return_value=resultado),
         patch.object(cli, "_ciclo_nocturno", return_value=resultado),
+        # Sin pausa vigente: el chequeo previo es de F-429-pausa-ca.
+        patch.object(cli, "_esperar_pausa", return_value=None),
     ):
         cli.cmd_run_once(job)  # sale 0: no lanza SystemExit
     salida = capsys.readouterr()

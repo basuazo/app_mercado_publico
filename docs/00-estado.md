@@ -26,6 +26,12 @@ la corrida corta guardando el avance y Actions muestra `::warning::`. Ningún 42
 Al desplegar el mismo día de un 429 ya marcado: `UPDATE quota_log SET requests_usadas = <consumo
 real> WHERE fecha = '<hoy>';` en Neon (una vez).
 
+**F-429-pausa-ca** (29-oct, commit local sin push hasta auditar, sobre F-429-tasa): un job con API
+que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omitido** (0,
+`::warning::`, fila `omitido`), en vez de quedar rojo con 0 requests. Ojo con los timeouts
+(sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
+cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
+
 ## Siguiente
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).
@@ -64,9 +70,7 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 
 ## Backlog chico
 F-429-tasa: mostrar "API en pausa hasta …" (hora Chile) en `/salud` (hoy se ve la fila `api_pausa`
-con el cursor en UTC); `activas`, `detalles`, `lifecycle` y `rellenar-organismo` siguen re-lanzando
-el 429 de tasa (job en rojo en vez de `::warning::`) y en `nocturno` un paso que falla queda como
-`None` sin aviso;
+con el cursor en UTC); en `nocturno` un paso que falla queda como `None` sin aviso;
 `alembic/env.py` que lea `.env`; tests PG leen `os.environ` y no normalizan `postgresql://` (con el `.env` tal cual se saltan 109: exportar `DATABASE_URL=postgresql+psycopg://…`); `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin
 fila `cancelado` y CLI sin SIGTERM; retención escribe JSON `null` en `raw_json`; campos del detalle
 de CA sin usar (`presupuesto.moneda`, `fecha_cierre_segundo_llamado`, `proveedores_cotizando`);

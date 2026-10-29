@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.catalogos.vocabulario_rubro import construir_vocabulario
 from app.clients.base import (
+    APIPausadaError,
     MPAuthError,
     MPRateLimitError,
     MPTransportError,
@@ -764,6 +765,12 @@ def _run_with_lock(
     igual y re-lanza, para que el proceso salga ≠ 0 y GitHub Actions quede en
     rojo. Así el CLI distingue "omitido" (None, sin excepción) de "error".
 
+    F-429-pausa-ca: con `propagar=True`, un APIPausadaError que llega hasta acá
+    (la pausa la puso otro proceso después del chequeo del CLI y el runner no
+    alcanzó a avanzar) deja la fila `omitido` y se re-lanza: el CLI lo muestra
+    como omitido y sale 0. Un MPTasaError (la API nos rechazó a nosotros) sigue
+    siendo error. Con `propagar=False` no cambia nada.
+
     Cada corrida deja UNA fila en job_runs (ok | error | omitido). Este es el
     único camino por el que pasan todos los disparadores —scheduler, endpoint
     y CLI—, así que es el único lugar donde hay que instrumentar. La telemetría
@@ -783,7 +790,17 @@ def _run_with_lock(
             _log.info("job=%s: OK %s", job_name, result)
             _registrar_corrida_segura(engine, job_name, iniciado_en, "ok", resultado=result)
             return result
-        except Exception:
+        except Exception as exc:
+            if propagar and isinstance(exc, APIPausadaError):
+                _log.warning("job=%s: omitido — %s", job_name, exc)
+                _registrar_corrida_segura(
+                    engine,
+                    job_name,
+                    iniciado_en,
+                    "omitido",
+                    resultado={"omitido_por": "APIPausadaError"},
+                )
+                raise
             tb = traceback.format_exc()
             _log.error("job=%s: ERROR\n%s", job_name, tb)
             _registrar_corrida_segura(engine, job_name, iniciado_en, "error", error=tb)

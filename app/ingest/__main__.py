@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from app.core.logging import setup_logging
+from app.clients.base import APIPausadaError, leer_pausa, texto_pausa
+from app.core.logging import get_logger, setup_logging
 from app.core.settings import Settings, get_settings
+from app.core.tiempo import ahora_utc
 from app.ingest.orchestrator import (
     _ciclo_nocturno,
+    _registrar_corrida_segura,
     _run_with_lock,
     run_alerts,
     run_catalogos,
@@ -51,6 +56,54 @@ _JOBS = (
     "plan-anual",
     "vocabulario-rubros",
 )
+
+_log = get_logger(__name__)
+
+# Jobs cuyo runner llama a la API de Mercado Público (verificado contra cada
+# runner, F-429-pausa-ca). Antes de tomar el lock esperan una pausa que vence
+# pronto o se omiten. Fuera A PROPÓSITO `nocturno` y `estados-vencidos`: tienen
+# pasos sin API (datos abiertos, competencia) que deben correr igual, y sus pasos
+# con API ya cortan limpio ante APIPausadaError. El resto no usa la API.
+_JOBS_CON_API = frozenset({"ca", "activas", "detalles", "lifecycle", "detalles-match", "catalogos"})
+
+# Margen tras el fin de la pausa antes de correr.
+_MARGEN_PAUSA_S = 30.0
+
+
+def _ahora() -> datetime:
+    return datetime.now(UTC)
+
+
+def _esperar_pausa(
+    job: str,
+    engine: Engine,
+    espera_max_s: float,
+    sleep_fn: Callable[[float], None] | None = None,
+    now_fn: Callable[[], datetime] | None = None,
+) -> datetime | None:
+    """Espera una pausa de la API que vence pronto. Devuelve None si el job puede
+    correr, o el fin de la pausa si hay que omitirlo (F-429-pausa-ca).
+
+    Sin pausa vigente, corre de inmediato. Si vence dentro de lo que queda de
+    `espera_max_s` (contado desde el primer chequeo), duerme hasta el
+    vencimiento + 30 s y relee: otro proceso pudo alargarla. Mientras duerme no
+    retiene ninguna conexión (`leer_pausa` devuelve la suya al pool), mismo
+    criterio que `_adquirir_lock`.
+    """
+    dormir = sleep_fn or time.sleep
+    ahora = now_fn or _ahora
+    inicio = ahora()
+    while True:
+        hasta = leer_pausa(engine)
+        momento = ahora()
+        if hasta is None or momento >= hasta:
+            return None
+        falta = (hasta - momento).total_seconds()
+        if falta > espera_max_s - (momento - inicio).total_seconds():
+            return hasta
+        espera = falta + _MARGEN_PAUSA_S
+        _log.info("job=%s: %s; espero %.1f min", job, texto_pausa(hasta), espera / 60)
+        dormir(espera)
 
 
 def _make_engine(settings: Settings) -> Engine:
@@ -126,8 +179,29 @@ def cmd_run_once(
         print(f"Job desconocido: {job}. Opciones: {', '.join(_JOBS)}", file=sys.stderr)
         sys.exit(1)
 
+    if job in _JOBS_CON_API:
+        iniciado_en = ahora_utc()
+        hasta = _esperar_pausa(job, engine, settings.espera_pausa_max_min * 60)
+        if hasta is not None:
+            # Antes del lock: un job que sale omitido no tiene por qué esperarlo.
+            _registrar_corrida_segura(
+                engine,
+                job,
+                iniciado_en,
+                "omitido",
+                resultado={"omitido_por": "api_pausa", "pausada_hasta": hasta.isoformat()},
+            )
+            print(f"::warning::[{job}] omitido: {texto_pausa(hasta)}")
+            return
+
     try:
         result = dispatch[job]()
+    except APIPausadaError as exc:
+        # La pausa la puso otro proceso después del chequeo, antes de que el job
+        # avanzara: `_run_with_lock` ya dejó la fila `omitido`. El mensaje es
+        # texto_pausa, sin URL ni ticket.
+        print(f"::warning::[{job}] omitido: {exc}")
+        return
     except Exception as exc:
         # Solo el tipo, no el mensaje: el traceback completo ya quedó en el log
         # (con _SecretFilter) y en job_runs, mientras que print() no enmascara y

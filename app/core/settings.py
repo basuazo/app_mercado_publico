@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     pausa_429_desconocido_min: int = Field(
         default=60, description="Minutos de pausa de la API tras un 429 con un código no visto"
     )
+    # F-429-pausa-ca: un job con API que arranca dentro de una pausa la espera si
+    # vence pronto; si no, se omite (sale 0) en vez de fallar con 0 requests.
+    espera_pausa_max_min: int = Field(
+        default=15,
+        description="Minutos máximos que un job con API espera a que venza una pausa antes de omitirse",
+    )
     email_daily_limit: int = Field(default=250, description="Tope de correos por día")
 
     # --- Ingesta por lotes (regla 12: nunca un día completo en memoria) ---
