@@ -43,6 +43,14 @@ class Settings(BaseSettings):
         default=2500,
         description="Requests del presupuesto diario que solo puede usar el job `ca`",
     )
+    # F-429-tasa: el 429 "límite de tasa" es transitorio [V, 29-oct-2026]. Ningún
+    # 429 marca el día agotado: pausa la API para todos los procesos y la corrida corta.
+    pausa_tasa_min: int = Field(
+        default=20, description="Minutos de pausa de la API tras un 429 con codigo 429 (límite de tasa)"
+    )
+    pausa_429_desconocido_min: int = Field(
+        default=60, description="Minutos de pausa de la API tras un 429 con un código no visto"
+    )
     email_daily_limit: int = Field(default=250, description="Tope de correos por día")
 
     # --- Ingesta por lotes (regla 12: nunca un día completo en memoria) ---

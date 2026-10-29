@@ -22,6 +22,7 @@ from app.clients.base import (
     MPConcurrencyError,
     MPRateLimitError,
     MPServerError,
+    MPTasaError,
     QuotaExceededError,
     QuotaTracker,
     RateLimiter,
@@ -201,15 +202,18 @@ def test_las_esperas_del_10500_pasan_por_enfriar(client, limiter) -> None:
 )
 @respx.mock
 def test_otro_429_sigue_sin_reintentarse(client, quota, reloj, respuesta) -> None:
+    """Sin código o con uno no visto: MPTasaError con pausa de 60 min (F-429-tasa)."""
     ruta = respx.get(_URL).mock(return_value=respuesta)
     antes = reloj.t
-    with pytest.raises(MPRateLimitError) as exc:
+    with pytest.raises(MPTasaError) as exc:
         client._request("GET", _URL)
 
+    assert isinstance(exc.value, MPRateLimitError), "los runners lo cortan sin conocerlo"
     assert not isinstance(exc.value, MPConcurrencyError)
-    assert "Cuota agotada (429)" in str(exc.value)
+    assert exc.value.retry_after_seconds == 3600
+    assert exc.value.causa.startswith("429/desconocido:")
     assert ruta.call_count == 1
-    assert quota.remaining() == 0  # día agotado hasta el cambio de día (F-datos-1)
+    assert quota.remaining() == 99  # cuenta 1 y el día NO queda agotado
     assert reloj.t - antes < 0.01, "sin espera"
 
 

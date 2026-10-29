@@ -167,7 +167,13 @@ class MercadoPublicoV1Client:
         rl = rate_limiter_compartido(settings.rate_limit_rps)
         quota = QuotaTracker(engine, settings.api_daily_budget, reserva=reserva)
         self._ticket = settings.mp_ticket
-        self._client = BaseClient(ticket=settings.mp_ticket, rate_limiter=rl, quota=quota)
+        self._client = BaseClient(
+            ticket=settings.mp_ticket,
+            rate_limiter=rl,
+            quota=quota,
+            pausa_tasa_s=settings.pausa_tasa_min * 60,
+            pausa_429_desconocido_s=settings.pausa_429_desconocido_min * 60,
+        )
 
     def _get(
         self,

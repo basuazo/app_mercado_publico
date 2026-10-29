@@ -1,6 +1,6 @@
 # Estado actual — mp-oportunidades
 
-*09-oct-2026. Documento corto y vivo: se reescribe, no se apila. La bitácora larga de jul–sep
+*29-oct-2026. Documento corto y vivo: se reescribe, no se apila. La bitácora larga de jul–sep
 quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
 
 **Al retomar:** leer este archivo → `14-auditoria-integral.md` (auditoría vigente y plan) →
@@ -17,6 +17,14 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Descartar (solo o excluyendo términos) / Archivar con Deshacer, Mi registro, explorador de
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
+
+## F-429-tasa (29-oct, commit local sin push hasta auditar)
+Desde ~18-oct la API manda un 429 nuevo, `codigo: "429"` ("límite de tasa"), que la app trataba
+como tope diario: el día quedaba bloqueado y `ca` se atrasó ~2 días (`15-diagnostico-ca-429.md`).
+F-429-tasa lo trata como transitorio: pausa de 20 min persistida en `sync_state` (`api_pausa`),
+la corrida corta guardando el avance y Actions muestra `::warning::`. Ningún 429 agota el día.
+Al desplegar el mismo día de un 429 ya marcado: `UPDATE quota_log SET requests_usadas = <consumo
+real> WHERE fecha = '<hoy>';` en Neon (una vez).
 
 ## Siguiente
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
@@ -48,8 +56,17 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 2. Vencimiento anual del PAT de cron-job.org → GitHub (`operacion-disparos.md` §2).
 3. Revisar CU-horas de Neon del mes y tamaño de la base (umbral 70 %).
 4. Pendiente de F-guardar: confirmar `borrados` del primer `ciclo-match` y `/salud` sin ráfaga.
+5. **Decidir si se adelanta el cursor de CA** (F-429-tasa; ~2 días atrasado al 29-oct): adelantarlo
+   a "ahora − 2 h" y dejar el hueco para un relleno nocturno, o dejar que se ponga al día solo
+   (~110 requests/h con `CA_TAMANO_PAGINA=10`).
+6. Probar H1 del 429 (límite por IP de los runners): cuando `ca` reciba un 429/429, correr
+   `python scripts/smoke_test.py` desde el PC en ese minuto.
 
 ## Backlog chico
+F-429-tasa: mostrar "API en pausa hasta …" (hora Chile) en `/salud` (hoy se ve la fila `api_pausa`
+con el cursor en UTC); `activas`, `detalles`, `lifecycle` y `rellenar-organismo` siguen re-lanzando
+el 429 de tasa (job en rojo en vez de `::warning::`) y en `nocturno` un paso que falla queda como
+`None` sin aviso;
 `alembic/env.py` que lea `.env`; tests PG leen `os.environ` y no normalizan `postgresql://` (con el `.env` tal cual se saltan 109: exportar `DATABASE_URL=postgresql+psycopg://…`); `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin
 fila `cancelado` y CLI sin SIGTERM; retención escribe JSON `null` en `raw_json`; campos del detalle
 de CA sin usar (`presupuesto.moneda`, `fecha_cierre_segundo_llamado`, `proveedores_cotizando`);

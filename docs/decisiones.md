@@ -19,7 +19,17 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 
 ## Datos y API
 - **429 código 10500 = concurrencia, no cuota** (verificado 22-sep): 3 reintentos 30/60/120 s y
-  cortar. Otro 429 = tope diario. Tras 504/timeout, 60 s de enfriamiento.
+  cortar. ~~Otro 429 = tope diario.~~ (reemplazado el 29-oct por F-429-tasa, ver abajo). Tras
+  504/timeout, 60 s de enfriamiento.
+- **429 código 429 ("límite de tasa") = transitorio; ningún 429 agota el día** (29-oct, F-429-tasa;
+  reemplaza a "otro 429 = tope diario"). Evidencia [V, logs de Actions 18–29 oct]: llegó con 8
+  requests (23-oct) y 21 (24-oct) en la primera corrida del día y otro día tras ~1.700; tras el
+  429 de la 01:05 del 29-oct y un `UPDATE` manual de `quota_log`, `ca` hizo 113 requests con 200
+  el mismo día. El tope diario de 10.000 nunca se ha visto en un 429 real. Política: sin
+  reintento, pausa persistida en Postgres de 20 min (`PAUSA_TASA_MIN`; 60 min para un código no
+  visto, `PAUSA_429_DESCONOCIDO_MIN`, con log ERROR), cortar la corrida guardando el avance.
+  `marcar_agotado` queda sin uso hasta verificar un código de tope diario: un falso positivo
+  cuesta un día entero de ingesta (`15-diagnostico-ca-429.md`).
 - **Detalle de CA inevitable:** el listado v2 no trae descripción ni productos [V]. Por eso
   `detalles-match` va aparte, con tope por tiempo (20 min día / 120 noche) y contador de fallos.
 - **`ca` cada hora** (en punta hay ~2.000 cambios/h; la API entrega ~42 CA/min).

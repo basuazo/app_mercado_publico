@@ -1,9 +1,9 @@
 """Tests F-datos-1: organismo, región y fechas de licitaciones, fechas de CA, 429
-diario persistido, reserva de cuota para `ca`, errores de transporte y el paso
-`rellenar-organismo`.
+persistido (pausa desde F-429-tasa), reserva de cuota para `ca`, errores de
+transporte y el paso `rellenar-organismo`.
 
 Red mockeada con respx; base SQLite en memoria (no hace falta nada propio de
-Postgres: el GREATEST del 429 diario tiene su gemelo MAX en SQLite).
+Postgres: el GREATEST de `marcar_agotado` tiene su gemelo MAX en SQLite).
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.clients.base import (
+    APIPausadaError,
     BaseClient,
     MPRateLimitError,
     MPServerError,
@@ -346,7 +347,7 @@ class TestUpsertCaBasica:
 
 
 # ---------------------------------------------------------------------------
-# R1 · 429 diario persistido, por día calendario de Chile
+# R1 · 429 persistido. Desde F-429-tasa pausa la API en vez de agotar el día
 # ---------------------------------------------------------------------------
 
 
@@ -356,30 +357,31 @@ def _cliente(quota: QuotaTracker) -> BaseClient:
 
 class TestTopeDiarioPersistido:
     @respx.mock
-    def test_otra_corrida_del_mismo_dia_no_emite_y_al_dia_siguiente_si(self, engine) -> None:
-        # 23:50 del 8 en Chile: en UTC ya es el 9. Manda el día de Chile.
-        hoy = datetime(2026, 10, 8, 23, 50, tzinfo=TZ_CHILE)
+    def test_otra_corrida_en_la_pausa_no_emite_y_al_vencer_si(self, engine) -> None:
+        """F-429-tasa: un 429 con código no visto pausa 60 min, no agota el día."""
+        hoy = datetime(2026, 10, 8, 13, 0, tzinfo=TZ_CHILE)
         ruta = respx.get(_URL).mock(return_value=httpx.Response(429, json={"Codigo": 999}))
 
         with pytest.raises(MPRateLimitError):
             _cliente(QuotaTracker(engine, budget=100, now_fn=lambda: hoy))._request("GET", _URL)
         assert ruta.call_count == 1
 
-        # "Otra corrida": tracker nuevo, misma base, mismo día de Chile.
+        # "Otra corrida": tracker nuevo, misma base, dentro de la pausa.
         mas_tarde = hoy + timedelta(minutes=5)
         otra = QuotaTracker(engine, budget=100, now_fn=lambda: mas_tarde)
-        with pytest.raises(QuotaExceededError):
+        with pytest.raises(APIPausadaError):
             otra.check_budget()
         with pytest.raises(QuotaExceededError):
             _cliente(otra)._request("GET", _URL)
         assert ruta.call_count == 1  # no salió nada
 
-        # Con reserva también corta (el contador subió al presupuesto completo).
-        with pytest.raises(QuotaExceededError):
+        # Con reserva también corta: la pausa va antes del presupuesto.
+        with pytest.raises(APIPausadaError):
             QuotaTracker(engine, budget=100, reserva=30, now_fn=lambda: mas_tarde).check_budget()
+        assert otra.remaining() == 99  # el día NO quedó agotado
 
-        manana = datetime(2026, 10, 9, 0, 1, tzinfo=TZ_CHILE)
-        QuotaTracker(engine, budget=100, now_fn=lambda: manana).check_budget()
+        al_vencer = hoy + timedelta(minutes=61)
+        QuotaTracker(engine, budget=100, now_fn=lambda: al_vencer).check_budget()
 
     @respx.mock
     def test_el_10500_no_marca_el_dia(self, engine, monkeypatch) -> None:

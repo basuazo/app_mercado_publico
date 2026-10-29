@@ -6,11 +6,11 @@ import random
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 
 import httpx
-from sqlalchemy import Engine, text
+from sqlalchemy import DateTime, Engine, bindparam, inspect, text
 
 from app.core.logging import get_logger
 from app.core.tiempo import TZ_CHILE
@@ -32,10 +32,10 @@ class MPAuthError(MPError):
 
 
 class MPRateLimitError(MPError):
-    """Error 429 — la API rechaza por límite.
+    """Error 429 — la API rechaza por límite. Base de las dos clases de 429.
 
-    Salvo la subclase MPConcurrencyError, se trata como tope diario: no se
-    reintenta hasta el cambio de día en TZ Chile (regla 3).
+    Los runners cortan su loop ante cualquier MPRateLimitError (regla 3); qué
+    hace el cliente antes de lanzarlo depende de la subclase.
     """
 
     def __init__(self, message: str, retry_after_seconds: int) -> None:
@@ -50,6 +50,21 @@ class MPConcurrencyError(MPRateLimitError):
     reintentos se agotan los runners lo cortan igual que a cualquier
     MPRateLimitError, sin tener que conocerlo.
     """
+
+
+class MPTasaError(MPRateLimitError):
+    """Error 429 que no es 10500: "límite de tasa" (codigo 429) o código no visto.
+
+    F-429-tasa: es transitorio [V, 29-oct-2026], no tope diario. _request no lo
+    reintenta, persiste una pausa de la API (`retry_after_seconds`) y lo
+    re-lanza. Subclase de MPRateLimitError A PROPÓSITO, como MPConcurrencyError:
+    los runners que ya cortan ante MPRateLimitError cortan sin conocerla.
+    `causa` va a sync_state: "429/429" o "429/desconocido:<código>".
+    """
+
+    def __init__(self, message: str, retry_after_seconds: int, causa: str) -> None:
+        super().__init__(message, retry_after_seconds=retry_after_seconds)
+        self.causa = causa
 
 
 class MPServerError(MPError):
@@ -85,16 +100,22 @@ class QuotaExceededError(MPError):
     """El presupuesto local de requests/día se ha agotado."""
 
 
+class APIPausadaError(QuotaExceededError):
+    """La API está en pausa por un 429 de tasa reciente; no se emite nada.
+
+    Subclase de QuotaExceededError A PROPÓSITO: todos los llamadores ya cortan
+    limpio ante ella sin conocerla (F-429-tasa).
+    """
+
+
+# Cortes por pausa de la API (F-429-tasa): `ca` y `estados-vencidos` los cierran
+# como corrida OK con avance parcial; el resto de errores de canal se re-lanza.
+ERRORES_DE_PAUSA = (MPTasaError, APIPausadaError)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _seconds_until_next_day_chile() -> int:
-    """Segundos hasta las 00:01 del día siguiente en America/Santiago + 60 s de margen."""
-    now = datetime.now(TZ_CHILE)
-    next_day = (now + timedelta(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
-    return max(0, int((next_day - now).total_seconds())) + 60
 
 
 # Cabeceras que, si la API las manda, dicen cuánto esperar de verdad. Se
@@ -140,10 +161,17 @@ def _parse_retry_after(valor: str | None) -> int | None:
     return max(0, int((cuando - datetime.now(cuando.tzinfo)).total_seconds()))
 
 
-# Único código de 429 verificado (22-sep-2026): "Hemos detectado que existen
-# peticiones simultáneas". Cualquier otro se sigue tratando como tope diario.
+# Códigos de 429 verificados. 10500 (22-sep-2026): "Hemos detectado que existen
+# peticiones simultáneas". 429 (29-oct-2026): "Se ha superado el límite de tasa
+# de solicitudes"; transitorio, la API vuelve a atender el mismo día Chile.
+# No hay código de tope diario verificado: ningún 429 marca el día agotado.
 _CODIGO_CONCURRENCIA = 10500
 _RETRY_AFTER_CONCURRENCIA = 900
+_CODIGO_TASA = 429
+# Defaults de BaseClient; en producción mandan PAUSA_TASA_MIN y
+# PAUSA_429_DESCONOCIDO_MIN de Settings.
+_PAUSA_TASA_S = 20 * 60
+_PAUSA_429_DESCONOCIDO_S = 60 * 60
 
 
 def _codigo_de_error(response: httpx.Response) -> int | None:
@@ -301,6 +329,28 @@ INSERT INTO quota_log (fecha, requests_usadas) VALUES (:fecha, :n)
 ON CONFLICT(fecha) DO UPDATE SET requests_usadas = MAX(requests_usadas, :n)
 """
 
+# Pausa de la API por 429 de tasa (F-429-tasa): fila propia de sync_state, sin
+# migración. `cursor` = "pausada hasta" en ISO-8601 UTC sin zona, siempre con
+# segundos: así la comparación de texto ordena igual que la de fechas, y el
+# WHERE del upsert impide que una pausa más corta acorte una más larga. Misma
+# sintaxis en Postgres y SQLite (≥ 3.24).
+_FUENTE_PAUSA = "api_pausa"
+
+_SELECT_PAUSA = "SELECT cursor FROM sync_state WHERE fuente = :fuente"
+
+_UPSERT_PAUSA = """
+INSERT INTO sync_state (fuente, cursor, notas, ultima_ejecucion, requests_usadas_hoy)
+VALUES (:fuente, :hasta, :causa, :ahora, 0)
+ON CONFLICT (fuente) DO UPDATE
+    SET cursor = excluded.cursor, notas = excluded.notas,
+        ultima_ejecucion = excluded.ultima_ejecucion
+    WHERE sync_state.cursor IS NULL OR sync_state.cursor < excluded.cursor
+"""
+
+
+def _iso_pausa(dt: datetime) -> str:
+    return dt.astimezone(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
+
 
 def _ahora_chile() -> datetime:
     return datetime.now(TZ_CHILE)
@@ -328,6 +378,10 @@ class QuotaTracker:
         self._lock = threading.Lock()
         self._is_sqlite = engine.dialect.name == "sqlite"
         self._ensure_table()
+        # sync_state la define app/models (migración). Siempre existe en
+        # producción; algunos tests usan una base solo con quota_log, y ahí la
+        # pausa simplemente no aplica.
+        self._con_pausa = inspect(engine).has_table("sync_state")
 
     def _ensure_table(self) -> None:
         with self._engine.begin() as conn:
@@ -343,13 +397,18 @@ class QuotaTracker:
         used = int(row[0]) if row else 0
         return max(0, self._budget - self._reserva - used)
 
-    def marcar_agotado(self) -> None:
-        """Da por agotado el día calendario de Chile para TODOS los procesos (regla 3).
+    def ahora(self) -> datetime:
+        return self._now_fn()
 
-        Tras un 429 que no es de concurrencia la API ya no nos atiende hasta el
-        cambio de día: el contador sube al presupuesto completo, así que
-        `check_budget` de cualquier tracker —con o sin reserva, de esta corrida
-        o de la siguiente— corta sin emitir. El día siguiente parte en cero.
+    def marcar_agotado(self) -> None:
+        """Da por agotado el día calendario de Chile para TODOS los procesos.
+
+        SIN USO desde F-429-tasa, hasta verificar un código de 429 de tope
+        diario: el único 429 que llamaba acá resultó transitorio y un falso
+        positivo cuesta un día entero de ingesta. Si se usa, el contador sube al
+        presupuesto completo, así que `check_budget` de cualquier tracker —con o
+        sin reserva, de esta corrida o de la siguiente— corta sin emitir. El día
+        siguiente parte en cero.
         """
         today = self._today()
         agotar = _AGOTAR_QUOTA_SQLITE if self._is_sqlite else _AGOTAR_QUOTA_PG
@@ -366,7 +425,55 @@ class QuotaTracker:
         with self._lock, self._engine.begin() as conn:
             conn.execute(text(upsert), {"fecha": today, "n": n})
 
+    def pausar(self, hasta: datetime, causa: str) -> None:
+        """Pone la API en pausa hasta `hasta` para TODOS los procesos (F-429-tasa).
+
+        Vive en Postgres (regla 10). Idempotente; una pausa más corta nunca
+        acorta una más larga que siga vigente.
+        """
+        if not self._con_pausa:
+            _log.warning("Cuota: sin tabla sync_state; la pausa de la API no se persiste")
+            return
+        with self._lock, self._engine.begin() as conn:
+            conn.execute(
+                # DateTime explícito: en SQLite el adaptador por defecto de
+                # datetime está deprecado; el tipo de SQLAlchemy lo serializa.
+                text(_UPSERT_PAUSA).bindparams(bindparam("ahora", type_=DateTime())),
+                {
+                    "fuente": _FUENTE_PAUSA,
+                    "hasta": _iso_pausa(hasta),
+                    "causa": causa,
+                    "ahora": self._now_fn().astimezone(UTC).replace(tzinfo=None),
+                },
+            )
+        _log.warning(
+            "Cuota: API en pausa hasta %s Chile (%s)",
+            hasta.astimezone(TZ_CHILE).strftime("%Y-%m-%d %H:%M"),
+            causa,
+        )
+
+    def pausada_hasta(self) -> datetime | None:
+        """Fin de la última pausa registrada (UTC, con zona), vigente o no. None si no hay."""
+        if not self._con_pausa:
+            return None
+        with self._engine.connect() as conn:
+            row = conn.execute(text(_SELECT_PAUSA), {"fuente": _FUENTE_PAUSA}).fetchone()
+        if row is None or not row[0]:
+            return None
+        try:
+            return datetime.fromisoformat(row[0]).replace(tzinfo=UTC)
+        except ValueError:
+            _log.warning("Cuota: pausa ilegible en sync_state: %r — se ignora", row[0])
+            return None
+
     def check_budget(self, n: int = 1) -> None:
+        # La pausa va ANTES del presupuesto: tras un 429 de tasa no se emite
+        # nada hasta que venza, aunque quede cuota (F-429-tasa).
+        hasta = self.pausada_hasta()
+        if hasta is not None and self._now_fn() < hasta:
+            raise APIPausadaError(
+                f"API en pausa por 429 hasta {hasta.astimezone(TZ_CHILE):%H:%M} Chile"
+            )
         rem = self.remaining()
         if rem < n:
             raise QuotaExceededError(f"Presupuesto diario agotado (quedan {rem} requests)")
@@ -387,11 +494,15 @@ class BaseClient:
         quota: QuotaTracker,
         default_headers: dict[str, str] | None = None,
         timeout: float = 30.0,
+        pausa_tasa_s: int = _PAUSA_TASA_S,
+        pausa_429_desconocido_s: int = _PAUSA_429_DESCONOCIDO_S,
     ) -> None:
         self._ticket = ticket
         self._rate_limiter = rate_limiter
         self._quota = quota
         self._timeout = timeout
+        self._pausa_tasa_s = pausa_tasa_s
+        self._pausa_429_desconocido_s = pausa_429_desconocido_s
         self._http = httpx.Client(headers=default_headers or {}, timeout=timeout)
 
     def _handle_response(self, response: httpx.Response) -> dict[str, object]:
@@ -401,8 +512,10 @@ class BaseClient:
             # Instrumentación (F-cuota): se registra lo que llega de verdad.
             # F-429-concurrencia: los logs mostraron que la API distingue por
             # `Codigo` del cuerpo. El 10500 (peticiones simultáneas) es
-            # transitorio y _request lo reintenta; cualquier otro 429 se sigue
-            # tratando como tope diario, sin reintento (regla 3).
+            # transitorio y _request lo reintenta. F-429-tasa: cualquier otro
+            # 429 es MPTasaError, sin reintento y con pausa persistida; el
+            # codigo 429 ("límite de tasa") pausa PAUSA_TASA_MIN, uno no visto
+            # PAUSA_429_DESCONOCIDO_MIN (regla 3).
             cabeceras = _headers_de_cuota(response.headers)
             cuerpo = response.text[:500]
             codigo = _codigo_de_error(response)
@@ -417,15 +530,24 @@ class BaseClient:
                     f"Concurrencia (429/{_CODIGO_CONCURRENCIA}): peticiones simultáneas",
                     retry_after_seconds=_RETRY_AFTER_CONCURRENCIA,
                 )
-            secs = _parse_retry_after(response.headers.get("Retry-After"))
-            if secs is None:
-                secs = _seconds_until_next_day_chile()
-                origen = "00:01 Chile"
+            if codigo == _CODIGO_TASA:
+                pausa = self._pausa_tasa_s
+                causa = "429/429"
             else:
-                origen = "Retry-After"
-            raise MPRateLimitError(
-                f"Cuota agotada (429). Reintentar en {secs} s ({origen})",
-                retry_after_seconds=secs,
+                pausa = self._pausa_429_desconocido_s
+                causa = f"429/desconocido:{codigo if codigo is not None else 'ninguno'}"
+                _log.error(
+                    "429 con código no visto: %s — pausa de %d min; revisar el body",
+                    codigo if codigo is not None else "(ninguno)",
+                    pausa // 60,
+                )
+            retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+            if retry_after is not None:
+                pausa = max(retry_after, pausa)
+            raise MPTasaError(
+                f"Límite de tasa ({causa}); API en pausa {pausa} s",
+                retry_after_seconds=pausa,
+                causa=causa,
             )
         if response.status_code >= 500:
             # Cuerpo crudo truncado: la API a veces trae un mensaje útil en el
@@ -455,7 +577,8 @@ class BaseClient:
         # httpx.TimeoutException y errores de transporte: máx 3 intentos totales
         # (2 reintentos), con un contador compartido
         # MPConcurrencyError (429/10500): máx 4 intentos totales, backoff 30/60/120 s + jitter
-        # MPRateLimitError (cualquier otro 429): nunca reintentar; marca el día agotado
+        # MPTasaError (cualquier otro 429): nunca reintentar; persiste una pausa
+        # de la API y re-lanza (F-429-tasa). No marca el día agotado.
         # Los tres contadores son independientes.
         #
         # `reintentar_transitorios=False` (F-detalles-match): 5xx y timeout NO se
@@ -508,14 +631,21 @@ class BaseClient:
                     delay,
                 )
                 self._rate_limiter.enfriar(delay, causa="429/10500")
-            except MPRateLimitError:
-                # No es concurrencia (esa la atrapa el except de arriba): tope
-                # diario. Se persiste para que ninguna corrida lo reintente hasta
-                # el cambio de día en Chile (regla 3, F-datos-1).
+            except MPTasaError as exc:
+                # Transitorio, no tope diario (F-429-tasa, verificado 29-oct-2026).
+                # La pausa se persiste para que ninguna corrida emita hasta que
+                # venza (check_budget). No se duerme esperándola: dormir 20 min
+                # quema minutos de Actions; la corrida corta y la siguiente
+                # retoma. El limiter del proceso se enfría igual: con la pausa
+                # persistida check_budget corta antes de llegar al limiter; si no
+                # se pudo persistir, el limiter es lo que frena al proceso (y ahí
+                # sí espera) si sigue con otro paso del nocturno.
+                hasta = self._quota.ahora() + timedelta(seconds=exc.retry_after_seconds)
                 try:
-                    self._quota.marcar_agotado()
+                    self._quota.pausar(hasta, exc.causa)
                 except Exception:
-                    _log.warning("Cuota: no pude marcar el día como agotado", exc_info=True)
+                    _log.warning("Cuota: no pude persistir la pausa de la API", exc_info=True)
+                self._rate_limiter.enfriar(exc.retry_after_seconds, causa=exc.causa)
                 raise
             except (MPAuthError, MPParseError):
                 raise

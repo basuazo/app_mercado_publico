@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
-from app.clients.base import MPAuthError, MPRateLimitError, QuotaExceededError
+from app.clients.base import (
+    ERRORES_DE_PAUSA,
+    MPAuthError,
+    MPRateLimitError,
+    QuotaExceededError,
+)
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.core.logging import get_logger
@@ -164,7 +170,7 @@ _FUENTE_VENCIDOS = "estados_vencidos"
 _DIAS_VENCIDA = 7
 
 
-def _guardar_vencidos(session: Session, resultado: dict[str, int], *, ok: bool) -> None:
+def _guardar_vencidos(session: Session, resultado: dict[str, Any], *, ok: bool) -> None:
     state = session.get(SyncState, _FUENTE_VENCIDOS)
     if state is None:
         state = SyncState(fuente=_FUENTE_VENCIDOS)
@@ -218,7 +224,7 @@ def refresh_estados_vencidos(
     settings: Settings,
     zips: CacheZipsDA | None = None,
     now_fn: Callable[..., datetime] | None = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Pone al día licitaciones que cerraron y quedaron con su último estado.
 
     `sync_activas` solo ve lo que sigue en el listado de activas y
@@ -230,9 +236,11 @@ def refresh_estados_vencidos(
        no dejó terminales. Solo dentro de 22:00–07:00 Chile (regla 5), validado acá y no
        en el cron. Ante 429/cuota/auth corta igual que `refresh_estados`
        (regla 3), dejando grabado lo avanzado.
+       Un 429 de tasa o la API en pausa (F-429-tasa) no se re-lanza: la
+       corrida termina OK con `cortado_por`.
     """
     da, resueltas_da = sync_estados_datos_abiertos(session, settings, zips)
-    resultado = {
+    resultado: dict[str, Any] = {
         "actualizadas_da": da["actualizadas"],
         "vistas_da": da["vistas"],
         "desconocidos_da": da["desconocidos"],
@@ -263,7 +271,7 @@ def refresh_estados_vencidos(
                 despues = session.get(Licitacion, codigo)
                 if despues is not None and despues.estado != estado_antes:
                     resultado["cambiadas_api"] += 1
-            except (MPRateLimitError, QuotaExceededError, MPAuthError):
+            except (MPRateLimitError, QuotaExceededError, MPAuthError) as exc:
                 session.rollback()
                 resultado["rezagadas"] = len(pendientes) - resultado["consultadas_api"]
                 _log.warning(
@@ -272,7 +280,12 @@ def refresh_estados_vencidos(
                 )
                 _guardar_vencidos(session, resultado, ok=False)
                 session.commit()
-                raise
+                if not isinstance(exc, ERRORES_DE_PAUSA):
+                    raise
+                # F-429-tasa: la API pidió una pausa; lo que falta lo retoma la
+                # noche siguiente. Corrida OK con avance parcial, como `ca`.
+                resultado["cortado_por"] = type(exc).__name__
+                return resultado
             except Exception as exc:
                 _log.warning("refresh_estados_vencidos: error lic %s: %s", codigo, exc)
                 session.rollback()

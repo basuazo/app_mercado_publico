@@ -194,6 +194,8 @@ class MercadoPublicoV2Client:
             rate_limiter=rl,
             quota=quota,
             default_headers={"ticket": settings.mp_ticket},
+            pausa_tasa_s=settings.pausa_tasa_min * 60,
+            pausa_429_desconocido_s=settings.pausa_429_desconocido_min * 60,
         )
 
     def _get(

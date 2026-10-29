@@ -4,7 +4,8 @@ Reglas críticas:
 - pg_advisory_lock adquirido al inicio de cada ciclo; liberado SIEMPRE en finally.
 - Si otro proceso tiene el lock (Render levanta 2 instancias en deploy), se salta el ciclo.
 - Backfill nocturno solo 22:00–07:00 hora Chile, validado con ZoneInfo.
-- MPRateLimitError: aborta limpio, persiste progreso, agenda reintento post-medianoche.
+- MPRateLimitError / API en pausa: aborta limpio y persiste progreso; la corrida
+  siguiente retoma cuando vence la pausa (F-429-tasa).
 """
 
 from __future__ import annotations
@@ -139,7 +140,7 @@ def run_estados_vencidos(
     engine: Engine,
     zips: CacheZipsDA | None = None,
     now_fn: Callable[..., datetime] | None = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Estados de licitaciones ya cerradas: datos abiertos y, de noche, API con tope."""
     v1, _ = _make_clients(settings, engine)
     with Session(engine) as session:
@@ -418,8 +419,9 @@ def run_detalles_match(
     rechazada o cortada, F-datos-1) se cuenta pero no suma fallo. Con DETALLES_FALLOS_MAX fallos
     seguidos sale de la cola por una espera creciente (ver
     :func:`_espera_detalle`); un éxito resetea el contador. Un error del CANAL
-    (429 que no es 10500, 10500 con reintentos agotados, cuota, 401) corta el
-    loop sin sumar fallos —no es culpa de la oportunidad— (regla 3).
+    (429 de tasa, 10500 con reintentos agotados, API en pausa, cuota, 401) corta
+    el loop sin sumar fallos —no es culpa de la oportunidad— (regla 3) y deja
+    `cortado_por` en el resultado.
     Idempotente: lo guardado ya no entra en la cola, y lo que está en espera
     no se vuelve a pedir ni a contar.
 
@@ -483,6 +485,8 @@ def run_detalles_match(
             # Insistir contra una API que nos rechaza solo quema cuota (regla 3).
             _log.warning("detalles-match: corte del canal — %s", exc)
             result["detalles_interrumpidos"] = True
+            # F-429-tasa: el CLI lo muestra como ::warning:: en Actions.
+            result["cortado_por"] = type(exc).__name__
 
     result.update(
         {
@@ -806,7 +810,7 @@ def _ciclo_nocturno(
     engine: Engine,
     now_fn: Callable[..., datetime] | None = None,
     esperar_lock_s: int = 0,
-) -> None:
+) -> dict[str, Any] | None:
     """Datos abiertos + estados vencidos + lifecycle + competencia + backfill del día anterior
     + relleno de organismo + detalles-match.
 
@@ -827,31 +831,37 @@ def _ciclo_nocturno(
 
     `esperar_lock_s` se aplica a CADA paso (lo pasa el CLI, F-actions-2): entre
     un paso y otro otra corrida puede quedarse con el lock.
+
+    Devuelve el resultado de cada paso por nombre (None si se omitió o falló),
+    para que el CLI avise de los cortes por canal (F-429-tasa); None si está
+    fuera de la ventana.
     """
     if not en_ventana_nocturna(now_fn):
         _log.warning("ciclo_nocturno: fuera de ventana horaria — abortando")
-        return
+        return None
+
+    resultados: dict[str, Any] = {}
 
     with CacheZipsDA(settings) as zips:
-        _run_with_lock(
+        resultados["datos_abiertos"] = _run_with_lock(
             "datos_abiertos",
             lambda: run_datos_abiertos(settings, engine, zips=zips),
             engine,
             esperar_lock_s=esperar_lock_s,
         )
-        _run_with_lock(
+        resultados["estados-vencidos"] = _run_with_lock(
             "estados-vencidos",
             lambda: run_estados_vencidos(settings, engine, zips=zips, now_fn=now_fn),
             engine,
             esperar_lock_s=esperar_lock_s,
         )
-        _run_with_lock(
+        resultados["lifecycle"] = _run_with_lock(
             "lifecycle",
             lambda: run_lifecycle(settings, engine),
             engine,
             esperar_lock_s=esperar_lock_s,
         )
-        _run_with_lock(
+        resultados["competencia"] = _run_with_lock(
             "competencia",
             lambda: run_competencia(settings, engine, zips=zips),
             engine,
@@ -860,7 +870,7 @@ def _ciclo_nocturno(
 
     # Backfill: ayer (simple, se puede extender a rangos mayores)
     ayer = (datetime.now(UTC) - timedelta(days=1)).date()
-    _run_with_lock(
+    resultados["backfill_ayer"] = _run_with_lock(
         "backfill_ayer",
         lambda: run_backfill_fecha(settings, engine, ayer),
         engine,
@@ -869,19 +879,20 @@ def _ciclo_nocturno(
 
     # Antes de detalles-match, que es el único paso que se corta por tiempo sin
     # perder nada. Tiene su propio tope de minutos (F-datos-1).
-    _run_with_lock(
+    resultados["rellenar-organismo"] = _run_with_lock(
         "rellenar-organismo",
         lambda: run_rellenar_organismo(settings, engine, now_fn=now_fn),
         engine,
         esperar_lock_s=esperar_lock_s,
     )
 
-    _run_with_lock(
+    resultados["detalles-match"] = _run_with_lock(
         "detalles-match",
         lambda: run_detalles_match(settings, engine, now_fn=now_fn),
         engine,
         esperar_lock_s=esperar_lock_s,
     )
+    return resultados
 
 
 # ---------------------------------------------------------------------------

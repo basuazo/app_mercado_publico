@@ -8,7 +8,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.clients.base import MPRateLimitError, MPServerError
+from app.clients.base import (
+    ERRORES_DE_PAUSA,
+    APIPausadaError,
+    MPConcurrencyError,
+    MPRateLimitError,
+    MPServerError,
+)
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.clients.types import CompraAgilBasica, CompraAgilDetalle, RespuestaListadoV2
 from app.core.db_retry import commit_con_retry
@@ -296,7 +302,8 @@ def sync_incremental(
     Ante cualquier error el cursor queda en la última ventana completa, se
     registra el intento en sync_state y se re-lanza. Única excepción: un error
     transitorio (5xx o timeout) con al menos una ventana ya cerrada en la
-    corrida termina OK con ``cortado_por_error`` (ver :func:`_sync_en_ventanas`).
+    corrida termina OK con ``cortado_por_error`` (ver :func:`_sync_en_ventanas`);
+    desde F-429-tasa también un 429 de tasa o la API en pausa.
     """
     cursor = _leer_cursor(session)
     try:
@@ -304,10 +311,21 @@ def sync_incremental(
             resultado = _sync_arranque_en_frio(session, v2_client)
         else:
             resultado = _sync_en_ventanas(session, v2_client, settings, cursor.replace(tzinfo=None))
-    except MPRateLimitError:
-        _log.warning(
-            "429 en CA incremental — progreso parcial guardado, cursor en la última ventana completa"
+    except MPRateLimitError as exc:
+        tipo = (
+            "concurrencia (10500, reintentos agotados)"
+            if isinstance(exc, MPConcurrencyError)
+            else "límite de tasa (API en pausa)"
         )
+        _log.warning(
+            "429 de %s en CA incremental — progreso parcial guardado, cursor en la "
+            "última ventana completa",
+            tipo,
+        )
+        _registrar_intento(session, ok=False)
+        raise
+    except APIPausadaError as exc:
+        _log.warning("CA incremental sin emitir: %s", exc)
         _registrar_intento(session, ok=False)
         raise
     except Exception:
@@ -492,15 +510,17 @@ def _sync_en_ventanas(
             hasta, resp, por_volumen = abrir(desde, hasta)
             paginas_informadas = resp.paginacion.total_paginas
             paginar(desde, hasta, resp)
-        except MPServerError as exc:
+        except (MPServerError, *ERRORES_DE_PAUSA) as exc:
             # Cierre parcial. MPServerError cubre 5xx y timeout: el cliente ya agotó
             # sus reintentos y convierte el timeout de red en MPServerError(0).
+            # MPTasaError y APIPausadaError (F-429-tasa): la API pidió una pausa;
+            # la corrida siguiente retoma desde el cursor.
             # Si la corrida ya cerró ventanas, hizo trabajo útil y lo guardó: `ca`
             # termina OK. Si no cerró ninguna, un "OK" escondería una caída y se
             # re-lanza. El dead-man's switch de /api/salud/jobs mira el último OK
             # de `ca`, así que una corrida parcial con avance cuenta como viva, y
-            # `atraso_horas` muestra si se va quedando atrás. Los 429, el tope de
-            # 10 000, los commits fallidos y el resto de excepciones no pasan por acá.
+            # `atraso_horas` muestra si se va quedando atrás. El 429/10500, el tope
+            # de 10 000, los commits fallidos y el resto de excepciones no pasan por acá.
             if ventanas == 0:
                 raise
             cortado_por_error = type(exc).__name__

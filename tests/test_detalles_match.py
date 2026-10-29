@@ -22,10 +22,12 @@ from sqlalchemy import create_engine, delete, select, text
 from sqlalchemy.orm import Session
 
 from app.clients.base import (
+    APIPausadaError,
     BaseClient,
     MPConcurrencyError,
     MPRateLimitError,
     MPServerError,
+    MPTasaError,
     QuotaTracker,
     RateLimiter,
 )
@@ -177,10 +179,11 @@ class TestPresupuestoDeTiempo:
     @pytest.mark.parametrize(
         "exc",
         [
-            MPRateLimitError("tope diario", retry_after_seconds=3600),
+            MPTasaError("límite de tasa", retry_after_seconds=1200, causa="429/429"),
+            APIPausadaError("API en pausa por 429 hasta 10:20 Chile"),
             MPConcurrencyError("10500 agotado", retry_after_seconds=900),
         ],
-        ids=["429-no-10500", "10500-agotado"],
+        ids=["429-tasa", "api-en-pausa", "10500-agotado"],
     )
     def test_error_del_canal_corta_el_job(self, settings, sqlite_engine, exc):
         n = 0
@@ -194,6 +197,7 @@ class TestPresupuestoDeTiempo:
         r = self._correr(settings, sqlite_engine, _cola(10), _bajar, _Reloj())
 
         assert r["detalles_interrumpidos"] is True
+        assert r["cortado_por"] == type(exc).__name__  # el CLI lo avisa (F-429-tasa)
         assert r["detalles_intentados"] == 2
         assert r["detalles_guardados"] == 1
         assert r["detalles_fallidos"] == 1
@@ -744,7 +748,7 @@ class TestContadorSinBase:
             patch("app.ingest.orchestrator._make_clients", return_value=(MagicMock(), MagicMock())),
             patch(
                 "app.ingest.orchestrator._bajar_detalle",
-                side_effect=MPRateLimitError("tope diario", retry_after_seconds=3600),
+                side_effect=MPTasaError("límite de tasa", retry_after_seconds=1200, causa="429/429"),
             ),
             patch("app.ingest.orchestrator._registrar_fallo_detalle") as registrar,
         ):
@@ -941,10 +945,11 @@ class TestFallosPostgres:
     @pytest.mark.parametrize(
         "exc",
         [
-            MPRateLimitError("tope diario", retry_after_seconds=3600),
+            MPTasaError("límite de tasa", retry_after_seconds=1200, causa="429/429"),
+            APIPausadaError("API en pausa por 429 hasta 10:20 Chile"),
             MPConcurrencyError("10500 agotado", retry_after_seconds=900),
         ],
-        ids=["429-no-10500", "10500-agotado"],
+        ids=["429-tasa", "api-en-pausa", "10500-agotado"],
     )
     def test_un_error_del_canal_no_toca_el_contador(self, pg_engine, cfg, opps_pg, exc):
         codigo = opps_pg.crear("CANAL", fallos=1, hace_h=1)
@@ -952,6 +957,7 @@ class TestFallosPostgres:
         r = self._correr(cfg, pg_engine, v2=self._v2_que_falla(exc))
 
         assert r["detalles_interrumpidos"] is True
+        assert r["cortado_por"] == type(exc).__name__
         fallos, ultimo, _ = _estado_fallos(pg_engine, CompraAgil, codigo)
         assert fallos == 1
         assert ultimo == opps_pg.ahora - timedelta(hours=1)

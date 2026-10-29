@@ -124,12 +124,19 @@ Causa más probable: ticket vencido o revocado.
 
 ## 7. Error 429
 
-Dos casos distintos (verificado el 22-sep; ver `01-analisis-api-mercado-publico.md` §10):
+Tres casos (ver `01-analisis-api-mercado-publico.md` §10 y `15-diagnostico-ca-429.md`):
 
-- **429 con `Codigo: 10500` = peticiones simultáneas** (concurrencia, no cuota). La app reintenta
-  hasta 3 veces con 30/60/120 s y luego corta el job; el siguiente disparo corre normal.
-- **Cualquier otro 429 = tope diario.** No reintentar hasta el cambio de día calendario en
-  `America/Santiago`. Ojo: hoy ese bloqueo no se persiste entre corridas (auditoría 14, R1).
+- **429 con `Codigo: 10500` = peticiones simultáneas** (concurrencia, no cuota, verificado
+  22-sep). La app reintenta hasta 3 veces con 30/60/120 s y luego corta el job; el siguiente
+  disparo corre normal.
+- **429 con `codigo: "429"` = límite de tasa** (transitorio, verificado 29-oct). Sin reintento: la
+  API queda en pausa 20 min para todas las corridas (fila `api_pausa` de `sync_state`, visible en
+  `/salud` → Estado de sincronización; el cursor es el fin de la pausa en UTC) y la corrida corta guardando el avance. En Actions sale verde con
+  `::warning::[job] cortado por …`. La siguiente corrida tras la pausa retoma sola.
+- **429 con otro código o sin código**: igual, con pausa de 60 min y log ERROR "429 con código no
+  visto". Si aparece, anotar el cuerpo del log: puede ser el código de tope diario (aún no visto).
+- Ningún 429 marca el día como agotado. Para cortar una pausa a mano (Neon, rama de producción):
+  `DELETE FROM sync_state WHERE fuente = 'api_pausa';`
 
 Revisar `/salud` → `cuota_api` (presupuesto local 9.000/día). Máximo medido: ~3.600/día.
 

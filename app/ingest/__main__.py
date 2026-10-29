@@ -140,7 +140,32 @@ def cmd_run_once(
         # no dejar el workflow en rojo por una falsa alarma.
         print(f"[{job}] omitido: advisory lock ocupado por otra corrida")
         return
+    for nombre, causa in _cortes(job, result):
+        print(f"::warning::[{nombre}] cortado por {causa}; avance parcial guardado")
     print(f"[{job}] {result}")
+
+
+# Claves con las que un runner informa que cortó por el canal (cuota, pausa, 429).
+_CLAVES_DE_CORTE = ("cortado_por_error", "cortado_por")
+
+
+def _cortes(job: str, result: Any) -> list[tuple[str, str]]:
+    """(paso, causa) de cada corte por canal en el resultado (F-429-tasa).
+
+    Un corte así sale 0 —el avance parcial quedó guardado—, pero tiene que
+    verse en Actions: antes los jobs salían verdes sin haber hecho nada. En
+    `nocturno` se revisa el resultado de cada paso.
+    """
+    pasos = result.items() if job == "nocturno" and isinstance(result, dict) else [(job, result)]
+    cortes: list[tuple[str, str]] = []
+    for nombre, res in pasos:
+        if not isinstance(res, dict):
+            continue
+        for clave in _CLAVES_DE_CORTE:
+            if res.get(clave):
+                cortes.append((nombre, str(res[clave])))
+                break
+    return cortes
 
 
 def _minutos_no_negativos(valor: str) -> int:

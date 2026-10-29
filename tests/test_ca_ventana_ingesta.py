@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
@@ -21,9 +21,12 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from app.clients.base import (
+    APIPausadaError,
     MPConcurrencyError,
     MPRateLimitError,
     MPServerError,
+    MPTasaError,
+    QuotaTracker,
     reset_rate_limiter_compartido,
 )
 from app.clients.mp_v2 import MercadoPublicoV2Client
@@ -587,14 +590,15 @@ class TestCortes:
         "exc",
         [
             MPConcurrencyError("429/10500 persistente", retry_after_seconds=900),
-            MPRateLimitError("Cuota agotada (429)", retry_after_seconds=3600),
+            MPRateLimitError("429 genérico", retry_after_seconds=3600),
         ],
-        ids=["429-10500", "429-diario"],
+        ids=["429-10500", "429-generico"],
     )
     def test_429_con_ventanas_cerradas_sigue_siendo_error(
         self, monkeypatch, session, engine, exc
     ) -> None:
-        """El cierre parcial es solo para 5xx/timeout: un 429 lo decide la regla 3."""
+        """El cierre parcial es para 5xx/timeout y, desde F-429-tasa, para el 429 de
+        tasa y la API en pausa (ver TestPausa429). El 10500 sigue siendo error."""
         settings = _settings(monkeypatch)
         _con_cursor(session, _AHORA - timedelta(hours=30))
         api = _ApiFalsa(paginas=2, fallar={(3, 2): exc})
@@ -783,6 +787,117 @@ class TestCortes:
         with caplog.at_level(logging.WARNING, logger="app.ingest.compra_agil"):
             sync_incremental(session, _ApiFalsa(paginas=2), settings)  # type: ignore[arg-type]
         assert not [r for r in caplog.records if "posible salto" in r.getMessage()]
+
+
+# ---------------------------------------------------------------------------
+# F-429-tasa: el 429 de tasa y la API en pausa cierran con avance parcial
+# ---------------------------------------------------------------------------
+
+_V2_LISTADO = "https://api2.mercadopublico.cl/v2/compra-agil"
+_CUERPO_429_TASA = {
+    "success": "NOK",
+    "errors": [
+        {
+            "codigo": "429",
+            "mensaje": "Se ha superado el límite de tasa de solicitudes. "
+            "Intente nuevamente más tarde.",
+        }
+    ],
+}
+
+
+def _listado_ok(n: int) -> httpx.Response:
+    item = {
+        "codigo": f"TASA-{n}",
+        "nombre": "x",
+        "estado": "publicada",
+        "fechas": {"fecha_ultimo_cambio": "2026-09-21T09:00:00Z"},
+    }
+    return httpx.Response(
+        200,
+        json={
+            "success": "OK",
+            "payload": {
+                "convocatorias": [item],
+                "paginacion": {"total_paginas": 1, "total_resultados": 1},
+            },
+        },
+    )
+
+
+@freeze_time(_AHORA)
+class TestPausa429:
+    def test_429_tasa_en_la_ventana_3_cierra_ok_parcial(
+        self, monkeypatch, session, engine
+    ) -> None:
+        settings = _settings(monkeypatch)
+        _con_cursor(session, _AHORA - timedelta(hours=30))
+        exc = MPTasaError("límite de tasa", retry_after_seconds=1200, causa="429/429")
+        api = _ApiFalsa(fallar={(3, 1): exc})
+
+        resultado = sync_incremental(session, api, settings)  # type: ignore[arg-type]
+
+        ventanas = api.ventanas()
+        assert len(ventanas) == 3
+        assert _cursor(engine) == ventanas[1][1]  # fin de la ventana 2
+        assert resultado["cortado_por_error"] == "MPTasaError"
+        assert resultado["ventanas_completadas"] == 2
+
+    def test_429_tasa_en_la_ventana_1_relanza(self, monkeypatch, session, engine) -> None:
+        settings = _settings(monkeypatch)
+        cursor0 = _AHORA - timedelta(hours=30)
+        _con_cursor(session, cursor0)
+        exc = MPTasaError("límite de tasa", retry_after_seconds=1200, causa="429/429")
+
+        with pytest.raises(MPTasaError):
+            sync_incremental(session, _ApiFalsa(fallar={(1, 1): exc}), settings)  # type: ignore[arg-type]
+        assert _cursor(engine) == cursor0
+
+    @respx.mock
+    def test_cliente_real_429_tasa_tras_dos_ventanas(self, monkeypatch, session, engine) -> None:
+        """De punta a punta: el 429/429 del cuerpo real deja la pausa y `ca` sale OK."""
+        settings = _settings(monkeypatch, rate_limit_rps=1000, ca_ventana_horas=2)
+        _con_cursor(session, _AHORA - timedelta(hours=30))
+        ruta = respx.get(_V2_LISTADO).mock(
+            side_effect=[_listado_ok(1), _listado_ok(2), httpx.Response(429, json=_CUERPO_429_TASA)]
+        )
+        reset_rate_limiter_compartido()
+        try:
+            resultado = sync_incremental(
+                session, MercadoPublicoV2Client(settings, engine), settings
+            )
+        finally:
+            reset_rate_limiter_compartido()
+
+        assert ruta.call_count == 3
+        assert resultado["cortado_por_error"] == "MPTasaError"
+        assert resultado["ventanas_completadas"] == 2
+        with Session(engine) as s:
+            pausa = s.get(SyncState, "api_pausa")
+        assert pausa is not None
+        assert pausa.cursor == (_AHORA + timedelta(minutes=20)).isoformat(timespec="seconds")
+        assert pausa.notas == "429/429"
+        q = QuotaTracker(engine, budget=9000)
+        assert q.remaining() == 9000 - 3  # 3 emitidas, el día no quedó agotado
+
+    @respx.mock
+    def test_arranca_dentro_de_la_pausa_sin_emitir(self, monkeypatch, session, engine) -> None:
+        settings = _settings(monkeypatch, rate_limit_rps=1000)
+        cursor0 = _AHORA - timedelta(hours=30)
+        _con_cursor(session, cursor0)
+        QuotaTracker(engine, budget=9000).pausar(
+            (_AHORA + timedelta(minutes=15)).replace(tzinfo=UTC), "429/429"
+        )
+        ruta = respx.get(_V2_LISTADO).mock(return_value=_listado_ok(1))
+        reset_rate_limiter_compartido()
+        try:
+            with pytest.raises(APIPausadaError):
+                sync_incremental(session, MercadoPublicoV2Client(settings, engine), settings)
+        finally:
+            reset_rate_limiter_compartido()
+
+        assert ruta.call_count == 0
+        assert _cursor(engine) == cursor0
 
 
 # ---------------------------------------------------------------------------

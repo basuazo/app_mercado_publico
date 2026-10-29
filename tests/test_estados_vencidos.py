@@ -16,7 +16,7 @@ from freezegun import freeze_time
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.clients.base import MPRateLimitError
+from app.clients.base import MPConcurrencyError, MPRateLimitError, MPTasaError
 from app.clients.datos_abiertos import stream_estados, url_lic_da
 from app.clients.types import CompraAgilBasica, LicitacionDetalle, PaginacionV2, RespuestaListadoV2
 from app.core.settings import Settings
@@ -420,7 +420,8 @@ class TestRefreshEstadosVencidos:
 
     @freeze_time(_HOY)
     @respx.mock
-    def test_429_corta_guarda_lo_avanzado_y_relanza(self, session, settings):
+    def test_429_de_tasa_corta_guarda_lo_avanzado_y_termina_ok(self, session, settings):
+        """F-429-tasa: la API pidió una pausa; no se re-lanza, queda `cortado_por`."""
         for dias in (10, 20, 30):
             _lic(session, f"LIC-{dias}", "publicada", dias_desde_cierre=dias)
         _con_match(session, "LIC-10", "LIC-20", "LIC-30")
@@ -429,7 +430,35 @@ class TestRefreshEstadosVencidos:
 
         def _detalle_o_429(codigo: str) -> LicitacionDetalle:
             if codigo == "LIC-20":
-                raise MPRateLimitError("429", retry_after_seconds=60)
+                raise MPTasaError("límite de tasa", retry_after_seconds=1200, causa="429/429")
+            return _detalle(codigo)
+
+        v1.licitacion_detalle.side_effect = _detalle_o_429
+
+        r = refresh_estados_vencidos(session, v1, settings, now_fn=_NOCHE)
+
+        assert r["cortado_por"] == "MPTasaError"
+        assert r["consultadas_api"] == 1
+        assert r["rezagadas"] == 2
+        assert v1.licitacion_detalle.call_count == 2
+        assert _estado(session, "LIC-10")[0] == "adjudicada"
+        state = session.get(SyncState, "estados_vencidos")
+        assert state is not None
+        assert state.notas is not None and "cortado" in state.notas
+        assert state.ultimo_ok is None
+
+    @freeze_time(_HOY)
+    @respx.mock
+    def test_10500_agotado_corta_guarda_lo_avanzado_y_relanza(self, session, settings):
+        for dias in (10, 20, 30):
+            _lic(session, f"LIC-{dias}", "publicada", dias_desde_cierre=dias)
+        _con_match(session, "LIC-10", "LIC-20", "LIC-30")
+        _mock_zip(settings, _zip())
+        v1 = MagicMock()
+
+        def _detalle_o_429(codigo: str) -> LicitacionDetalle:
+            if codigo == "LIC-20":
+                raise MPConcurrencyError("10500 agotado", retry_after_seconds=900)
             return _detalle(codigo)
 
         v1.licitacion_detalle.side_effect = _detalle_o_429

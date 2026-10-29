@@ -87,17 +87,17 @@ def test_el_429_cuenta_aunque_falle(client, quota) -> None:
     respx.get(_URL).mock(return_value=httpx.Response(429, text="limite"))
     with pytest.raises(MPRateLimitError):
         client._request("GET", _URL)
-    # Cuenta y, además, deja el día agotado: un 429 que no es 10500 es tope
-    # diario (regla 3, F-datos-1). Ver tests/test_datos_1.py.
-    assert quota.remaining() == 0
+    # Cuenta como cualquier request emitida y NO agota el día: desde F-429-tasa
+    # ningún 429 es tope diario (ver tests/test_429_tasa.py).
+    assert quota.remaining() == 99
 
 
 @respx.mock
 def test_secuencia_completa_deja_el_contador_en_4(client, quota) -> None:
     """1 éxito + 1 error 504 con su reintento + 1 error 401 = 4 requests.
 
-    El último era un 429; desde F-datos-1 un 429 que no es 10500 agota el día y
-    el contador deja de reflejar lo emitido, así que se usa otro error.
+    El último era un 429; entre F-datos-1 y F-429-tasa un 429 agotaba el día y
+    el contador dejaba de reflejar lo emitido, así que se usa otro error.
     """
     respx.get(_URL).mock(
         side_effect=[
@@ -182,27 +182,27 @@ def test_el_429_no_loguea_headers_de_request(client, caplog) -> None:
 
 
 @respx.mock
-def test_retry_after_en_segundos_manda_sobre_el_fallback(client) -> None:
-    respx.get(_URL).mock(return_value=httpx.Response(429, headers={"Retry-After": "90"}))
+def test_retry_after_mayor_que_la_pausa_manda(client) -> None:
+    respx.get(_URL).mock(return_value=httpx.Response(429, headers={"Retry-After": "7200"}))
     with pytest.raises(MPRateLimitError) as exc:
         client._request("GET", _URL)
-    assert exc.value.retry_after_seconds == 90
-    assert "Retry-After" in str(exc.value)
+    assert exc.value.retry_after_seconds == 7200
 
 
 @respx.mock
-def test_sin_retry_after_se_mantiene_el_fallback_de_medianoche(client) -> None:
+def test_sin_retry_after_ni_codigo_pausa_60_min(client) -> None:
+    """F-429-tasa: ya no hay fallback a medianoche; un 429 sin código pausa
+    PAUSA_429_DESCONOCIDO_MIN (60 por defecto)."""
     respx.get(_URL).mock(return_value=httpx.Response(429, text="limite"))
     with pytest.raises(MPRateLimitError) as exc:
         client._request("GET", _URL)
-    # Fallback a 00:01 Chile: siempre positivo y nunca más de ~25 h.
-    assert 0 < exc.value.retry_after_seconds <= 25 * 3600
-    assert "00:01 Chile" in str(exc.value)
+    assert exc.value.retry_after_seconds == 3600
+    assert "429/desconocido:ninguno" in str(exc.value)
 
 
 @respx.mock
 def test_el_429_sigue_sin_reintentarse(client, quota) -> None:
-    """Regla 3: un 429 que NO es 10500 se trata como tope diario y no se reintenta.
+    """Regla 3: un 429 que NO es 10500 no se reintenta (F-429-tasa: pausa la API).
 
     El 10500 (concurrencia) sí se reintenta: ver tests/test_429_concurrencia.py.
     """

@@ -141,7 +141,7 @@ Base: `https://api2.mercadopublico.cl` · Auth: header `ticket`.
 | Restricción | Detalle | Implicancia en la app |
 |---|---|---|
 | **Cuota diaria** | 10.000 solicitudes/día por ticket (v1, no modificable). En v2 la cuota depende del tipo de ticket; `-1` = ilimitada | Presupuestar requests: priorizar listados con filtros, pedir detalle solo de candidatos; contador local de consumo |
-| **Error 429** | Con `Codigo: 10500` = peticiones simultáneas (concurrencia). Cualquier otro 429 = tope diario, que se restablece **por día calendario** (ver §10) | 10500: 3 reintentos 30/60/120 s y cortar el job. Otro 429: no reintentar hasta el cambio de día en Chile |
+| **Error 429** | Con `Codigo: 10500` = peticiones simultáneas (concurrencia). Con `codigo: "429"` = "límite de tasa", transitorio (ver §10). Ningún código de tope diario verificado | 10500: 3 reintentos 30/60/120 s y cortar el job. 429/429: sin reintento, pausa de 20 min persistida y cortar la corrida guardando el avance. Otro código: igual, pausa de 60 min y log ERROR |
 | **Error 401** | Ticket ausente/ inválido (v2 lo exige en header) | Validación temprana del ticket al arrancar |
 | **Throttling por IP** | ChileCompra monitorea y puede restringir por volumen desde una misma IP | Rate limiting propio (p. ej. 1–2 req/s con jitter), no paralelizar agresivamente |
 | **Descargas masivas** | Recomendado entre **22:00 y 07:00** | Programar backfills históricos en ventana nocturna |
@@ -184,6 +184,15 @@ La información necesaria está disponible vía API oficial y los términos exig
 - **429 `Codigo: 10500` es concurrencia, no cuota** [V, 22-sep]: aparece encadenado tras 504 cuando
   el backend sigue procesando la request anterior. Política: enfriar 60 s tras 504/timeout; 10500 →
   3 reintentos 30/60/120 s y cortar.
+- **429 `codigo: "429"` = "límite de tasa", transitorio, no tope diario** [V, 18–29 oct]: cuerpo
+  `{"errors":[{"codigo":"429","mensaje":"Se ha superado el límite de tasa de solicitudes. Intente
+  nuevamente más tarde."}]}`, sin `Retry-After` ni cabeceras de cuota. Llegó con 8 y 21 requests en
+  la primera corrida del día y otro día tras ~1.700; el 29-oct, tras un 429 a la 01:05, `ca` hizo
+  113 requests con 200 el mismo día y recién ahí volvió el 429. Forma [I]: ~110–190 requests
+  seguidas, o pocas si hubo ráfaga en la hora previa; compatible con ventana deslizante de ~1 h o
+  con limitador por IP compartida de los runners. Política (F-429-tasa): pausa de 20 min
+  persistida, cortar la corrida guardando el avance. El tope diario de 10.000 nunca se ha visto en
+  un 429 real. Detalle: `15-diagnostico-ca-429.md`.
 - **v2: todas las fechas vienen en hora de Chile y la `Z` es falsa** [V, 22-sep] (el desfase sigue
   el cambio de horario de Chile). Enviar `cambio_desde/hasta` en hora de Chile. En v1 las fechas
   también son hora de Chile.

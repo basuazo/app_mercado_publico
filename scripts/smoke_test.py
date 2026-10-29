@@ -412,7 +412,7 @@ def correr_sonda(
     """Pide la página 1 de cada variante e imprime lo observado.
 
     Devuelve las letras que sí se pidieron: la sonda se corta ante un 429 que
-    no sea 10500 (regla 3: tope diario, no se sigue pidiendo ese día), ante la
+    no sea 10500 (regla 3: la API queda en pausa, no se sigue pidiendo), ante la
     cuota local agotada y ante un 401.
     """
     from app.clients.base import (
@@ -448,7 +448,7 @@ def correr_sonda(
             continue
         except MPRateLimitError as exc:
             print(f"    -> 429 NO-10500 tras {reloj() - t0:.1f} s  ({_error_seguro(exc)})")
-            print("    DETENIDA: tope diario (regla 3). No pedir más hoy.")
+            print("    DETENIDA: API en pausa por 429 de tasa (regla 3). Esperar la pausa.")
             break
         except (QuotaExceededError, MPAuthError) as exc:
             print(f"    -> {_error_seguro(exc)}")

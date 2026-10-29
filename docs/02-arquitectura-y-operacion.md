@@ -43,8 +43,10 @@ Brevo (API REST HTTPS) ◀── resumen diario y alertas (desde Actions)
 
 - **Un solo `pg_advisory_lock`** para todos los jobs; el CLI **espera** el lock (no omite).
 - **Cuota:** contador persistido en Postgres, presupuesto 9.000/día. 429 con código 10500 =
-  concurrencia (3 reintentos 30/60/120 s y cortar); otro 429 = tope diario; tras 504/timeout,
-  60 s de enfriamiento (ver CLAUDE.md regla 3 y `01-analisis-api-mercado-publico.md`).
+  concurrencia (3 reintentos 30/60/120 s y cortar); 429 con código 429 ("límite de tasa") =
+  pausa de 20 min persistida en `sync_state` (`fuente='api_pausa'`) y la corrida corta con su
+  avance; otro código = pausa de 60 min. Ningún 429 agota el día. Tras 504/timeout, 60 s de
+  enfriamiento (ver CLAUDE.md regla 3 y `01-analisis-api-mercado-publico.md`).
 - **Backfill** solo entre 22:00 y 07:00 de Chile, validado en código.
 - Detalle de cómo se configuran los crons y el token de GitHub: `operacion-disparos.md`.
 
