@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from datetime import datetime
 
@@ -18,8 +19,11 @@ from app.clients.types import (
     CompraAgilBasica,
     CompraAgilDetalle,
     CompraAgilItem,
+    CotizacionCA,
+    CotizacionCAProducto,
     PaginacionV2,
     RespuestaListadoV2,
+    parse_binario,
     parse_fecha_v2,
     parse_float,
     parse_int,
@@ -131,6 +135,129 @@ def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
     )
 
 
+# Claves de cotización ausentes ya avisadas: un log.debug por clave y proceso,
+# no uno por oferta (F-merc-0b).
+_claves_ausentes: set[str] = set()
+
+_RE_MILES = re.compile(r"^-?\d{1,3}(\.\d{3})+$")
+
+
+def _campo(d: dict[str, object], clave: str, contexto: str) -> object:
+    """`d[clave]`, o None si falta; la primera ausencia de cada clave se loguea."""
+    if clave in d:
+        return d[clave]
+    etiqueta = f"{contexto}.{clave}"
+    if etiqueta not in _claves_ausentes:
+        _claves_ausentes.add(etiqueta)
+        _log.debug("Detalle CA: falta %s (queda None)", etiqueta)
+    return None
+
+
+def _monto(v: object) -> float | None:
+    """Monto tolerante: número, '1234.5', '1234,5', '1.234,5' o '1.234.567'.
+
+    `parse_float` lee '1.234' como 1,234; acá un texto con puntos de miles se
+    lee como entero chileno. Ilegible → None (regla 6).
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, int | float):
+        return float(v)
+    txt = str(v).strip().replace("$", "").replace(" ", "")
+    if not txt:
+        return None
+    if "," in txt and "." in txt:
+        txt = txt.replace(".", "").replace(",", ".")
+    elif "," in txt:
+        txt = txt.replace(",", ".")
+    elif _RE_MILES.match(txt):
+        txt = txt.replace(".", "")
+    return parse_float(txt)
+
+
+def _parse_producto_cotizado(p: dict[str, object]) -> CotizacionCAProducto:
+    ctx = "productos_cotizados[]"
+    return CotizacionCAProducto(
+        # int|str → str, como en productos_solicitados.
+        codigo_producto=_texto_o_none(_campo(p, "codigo_producto", ctx)),
+        nombre_producto=_texto_o_none(_campo(p, "nombre_producto", ctx)),
+        descripcion=_texto_o_none(_campo(p, "descripcion", ctx)),
+        cantidad=_monto(_campo(p, "cantidad", ctx)),
+        precio_unitario=_monto(_campo(p, "precio_unitario", ctx)),
+        monto_total_producto=_monto(_campo(p, "monto_total_producto", ctx)),
+    )
+
+
+def _parse_cotizacion(c: dict[str, object]) -> CotizacionCA:
+    ctx = "proveedores_cotizando[]"
+    rut = _texto_o_none(_campo(c, "rut_proveedor", ctx))
+    if rut is None:
+        _log.warning("Detalle CA: oferta sin rut_proveedor; se conserva con RUT vacío")
+
+    estado = _campo(c, "estado_cotizacion", ctx)
+    if isinstance(estado, dict):
+        estado_id, estado_glosa = parse_int(estado.get("id")), _texto_o_none(estado.get("glosa"))
+    else:
+        estado_id, estado_glosa = None, _texto_o_none(estado)
+
+    # `seleccion` ausente → None, no False: no confirmado en la respuesta real.
+    seleccion = _campo(c, "seleccion", ctx)
+    seleccionado = motivo = criterio = None
+    if isinstance(seleccion, dict):
+        seleccionado = parse_binario(seleccion.get("proveedor_seleccionado"))
+        motivo = _texto_o_none(seleccion.get("motivo_seleccion"))
+        criterio = _texto_o_none(seleccion.get("criterio_seleccion"))
+
+    productos_raw = _campo(c, "productos_cotizados", ctx)
+    productos = (
+        [_parse_producto_cotizado(p) for p in productos_raw if isinstance(p, dict)]
+        if isinstance(productos_raw, list)
+        else []
+    )
+
+    descripcion = _texto_o_none(c.get("descripcion_cotizacion")) or _texto_o_none(
+        c.get("descripcion")
+    )
+    return CotizacionCA(
+        rut_proveedor=rut or "",
+        razon_social=_texto_o_none(_campo(c, "razon_social", ctx)),
+        es_emt=parse_binario(_campo(c, "es_emt", ctx)),
+        codigo_empresa=_texto_o_none(_campo(c, "codigo_empresa", ctx)),
+        codigo_sucursal=_texto_o_none(_campo(c, "codigo_sucursal_empresa", ctx)),
+        id_cotizacion=_texto_o_none(_campo(c, "id_cotizacion", ctx)),
+        estado_id=estado_id,
+        estado_glosa=estado_glosa,
+        estado_por_comprador=_texto_o_none(_campo(c, "estado_por_comprador", ctx)),
+        activo=parse_binario(_campo(c, "activo", ctx)),
+        justificacion_inadmisibilidad=_texto_o_none(c.get("justificacion_inadmisibilidad")),
+        seleccionado=seleccionado,
+        motivo_seleccion=motivo,
+        criterio_seleccion=criterio,
+        fecha_creacion=parse_fecha_v2(_campo(c, "fecha_creacion", ctx)),
+        fecha_vigencia=parse_fecha_v2(_campo(c, "fecha_vigencia", ctx)),
+        valor_neto=_monto(_campo(c, "valor_neto", ctx)),
+        total_impuesto=_monto(_campo(c, "total_impuesto", ctx)),
+        monto_despacho=_monto(_campo(c, "monto_despacho", ctx)),
+        monto_total=_monto(_campo(c, "monto_total", ctx)),
+        nombre_impuesto=_texto_o_none(_campo(c, "nombre_impuesto", ctx)),
+        porcentaje_impuesto=_monto(_campo(c, "porcentaje_impuesto", ctx)),
+        descripcion=descripcion,
+        productos=productos,
+    )
+
+
+def _parse_cotizaciones(payload: dict[str, object]) -> list[CotizacionCA]:
+    """`proveedores_cotizando[]`: ausente, null o no-lista → [] (regla 6).
+
+    Según la guía refleja solo el llamado vigente y llega completo desde
+    "Cerrada en segundo llamado" [I].
+    """
+    raw = payload.get("proveedores_cotizando")
+    if not isinstance(raw, list):
+        return []
+    return [_parse_cotizacion(c) for c in raw if isinstance(c, dict)]
+
+
 def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
     base = _parse_ca_basica(payload)
     productos_raw = payload.get("productos_solicitados") or []
@@ -162,6 +289,13 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
     if convocatoria is None:
         convocatoria = parse_int(payload.get("estado_convocatoria"))
 
+    # Rutas de la guía (F-merc-0b), no verificadas en una respuesta real [I].
+    institucion = _dict(payload.get("institucion"))
+    entrega = _dict(payload.get("entrega"))
+    presupuesto = _dict(payload.get("presupuesto"))
+    motivos = _dict(payload.get("motivos"))
+    documentos = payload.get("documentos")
+
     return CompraAgilDetalle(
         codigo=base.codigo,
         nombre=base.nombre,
@@ -178,6 +312,18 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
         productos=productos,
         id_orden_compra=id_oc,
         estado_convocatoria=convocatoria,
+        cotizaciones=_parse_cotizaciones(payload),
+        unidad_compra=_texto_o_none(institucion.get("unidad_compra")),
+        direccion_entrega=_texto_o_none(entrega.get("direccion_entrega")),
+        plazo_entrega_dias=parse_int(entrega.get("plazo_entrega_dias")),
+        tipo_presupuesto=_texto_o_none(presupuesto.get("tipo_presupuesto")),
+        moneda=_texto_o_none(presupuesto.get("moneda")),
+        fecha_cierre_segundo_llamado=parse_fecha_v2(
+            _dict(payload.get("convocatoria")).get("fecha_cierre_segundo_llamado")
+        ),
+        motivo_desierta=_texto_o_none(motivos.get("motivo_desierta")),
+        motivo_cancelacion=_texto_o_none(motivos.get("motivo_cancelacion")),
+        n_documentos=len(documentos) if isinstance(documentos, list) else None,
     )
 
 

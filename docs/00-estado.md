@@ -33,6 +33,25 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
 ## Siguiente
+**Pivote (31-oct):** mesa de precios de Compra Ágil, piloto Ñuble, **alimentos como giro principal** y
+otros rubros como expansión → `16-pivote-compra-agil-nuble.md` e informe en `data/mercado/informe/`.
+Siguientes fases: **F-merc-1** (`prompt-F-merc-1.md`, Opus: segunda key `MP_TICKET_MERCADO`, cotizaciones
+de CA de Ñuble con precio por producto, en vivo y backfill nocturno de los meses que faltan en `COT_`) y
+**F-merc-2** (`prompt-F-merc-2.md`, Sonnet: órdenes de compra de CA de Ñuble desde `oc-da` a la base).
+Antes de habilitar el backfill: sonda humana `scripts/smoke_test.py --mercado`.
+**Ingesta actual en pausa desde el 31-oct** (ver `decisiones.md`): apagar en cron-job.org los disparos de
+`ca`, `ciclo-ca`, `ciclo-match`, `ciclo-activas`, `nocturno`, `resumen`, `catalogos` y `retencion`.
+**Puente mientras no hay segunda key: F-merc-0b** (31-oct, commit local sin push hasta auditar): parser de
+`proveedores_cotizando` / `productos_cotizados` en `mp_v2.py` (aditivo, se reutiliza en F-merc-1 §1.4) +
+`scripts/backfill_cot_nuble.py` con `MP_TICKET`, desde el PC, solo 22–07 Chile, `--rps 0.5`, `reserva=0`
+(la ingesta de la app está en pausa: disparos apagados en cron-job.org), persiste la pausa de 429; salida
+`data/mercado/cot_api_{AAAA-MM}.csv.gz` y avance en `_backfill_estado.json`. El observatorio
+(`data/mercado_observatorio.py`, fuera de git) prefiere `cot_api_*` a `COT_` por mes y agrega precio
+unitario ganador/perdedores por producto de alimentos. **Pasos de Boris:** (1) de día,
+`--fuera-de-ventana --meses 2026-08 --max-requests 30` y pegar la salida (¿trae `precio_unitario` y
+`seleccion`?); (2) lo mismo con `--meses 2026-03` (antigüedad); (3) primera noche sin flags y revisar los
+429 del resumen. Los campos del detalle nuevo son [I] (guía) hasta esa prueba.
+
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).
    **D12:** Plan Anual en pausa hasta el PAC 2027 (403 desde Actions, 200 desde el PC de Boris;

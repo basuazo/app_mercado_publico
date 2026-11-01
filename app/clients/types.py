@@ -278,11 +278,69 @@ class CompraAgilBasica:
 
 
 @dataclass
+class CotizacionCAProducto:
+    """Un producto de una oferta (`productos_cotizados[]`, guía CA v2 §5–§7) [I]."""
+
+    codigo_producto: str | None = None
+    nombre_producto: str | None = None
+    descripcion: str | None = None
+    cantidad: float | None = None
+    # Neto, según la guía.
+    precio_unitario: float | None = None
+    monto_total_producto: float | None = None
+
+
+@dataclass
+class CotizacionCA:
+    """Una oferta de `proveedores_cotizando[]` (F-merc-0b). Campos de la guía [I].
+
+    `seleccionado=None` cuando la respuesta no trae `seleccion`: no es lo mismo
+    que `False`, y el cliente no infiere ganadores.
+    """
+
+    rut_proveedor: str
+    razon_social: str | None = None
+    es_emt: bool | None = None
+    codigo_empresa: str | None = None
+    codigo_sucursal: str | None = None
+    id_cotizacion: str | None = None
+    estado_id: int | None = None
+    estado_glosa: str | None = None
+    estado_por_comprador: str | None = None
+    activo: bool | None = None
+    justificacion_inadmisibilidad: str | None = None
+    seleccionado: bool | None = None
+    motivo_seleccion: str | None = None
+    criterio_seleccion: str | None = None
+    fecha_creacion: datetime | None = None
+    fecha_vigencia: datetime | None = None
+    valor_neto: float | None = None
+    total_impuesto: float | None = None
+    monto_despacho: float | None = None
+    monto_total: float | None = None
+    nombre_impuesto: str | None = None
+    porcentaje_impuesto: float | None = None
+    descripcion: str | None = None
+    productos: list[CotizacionCAProducto] = field(default_factory=list)
+
+
+@dataclass
 class CompraAgilDetalle(CompraAgilBasica):
     descripcion: str = ""
     productos: list[CompraAgilItem] = field(default_factory=list)
     id_orden_compra: str | None = None
     estado_convocatoria: int | None = None
+    # F-merc-0b: aditivos, con default; los consumidores de antes no los ven.
+    cotizaciones: list[CotizacionCA] = field(default_factory=list)
+    unidad_compra: str | None = None
+    direccion_entrega: str | None = None
+    plazo_entrega_dias: int | None = None
+    tipo_presupuesto: str | None = None
+    moneda: str | None = None
+    fecha_cierre_segundo_llamado: datetime | None = None
+    motivo_desierta: str | None = None
+    motivo_cancelacion: str | None = None
+    n_documentos: int | None = None
 
 
 @dataclass
