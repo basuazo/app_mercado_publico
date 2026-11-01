@@ -44,7 +44,8 @@ Antes de habilitar el backfill: sonda humana `scripts/smoke_test.py --mercado`.
 **Puente mientras no hay segunda key: F-merc-0b** (31-oct, commit local sin push hasta auditar): parser de
 `proveedores_cotizando` / `productos_cotizados` en `mp_v2.py` (aditivo, se reutiliza en F-merc-1 §1.4) +
 `scripts/backfill_cot_nuble.py` con `MP_TICKET`, desde el PC, solo 22–07 Chile, `--rps 0.5`, `reserva=0`
-(la ingesta de la app está en pausa: disparos apagados en cron-job.org), persiste la pausa de 429; salida
+(la ingesta de la app está en pausa: disparos apagados en cron-job.org), persiste la pausa de 429 y de
+noche espera su fin y sigue (F-merc-0b-fix: hasta 15 pausas y 6.000 requests por noche); salida
 `data/mercado/cot_api_{AAAA-MM}.csv.gz` y avance en `_backfill_estado.json`. El observatorio
 (`data/mercado_observatorio.py`, fuera de git) prefiere `cot_api_*` a `COT_` por mes y agrega precio
 unitario ganador/perdedores por producto de alimentos. **Pasos de Boris:** (1) de día,

@@ -6,7 +6,10 @@ como `smoke_test.py`: NO en Actions ni en tests automáticos. Usa `MP_TICKET`, e
 Corrección 31-oct: la ingesta de la app está en pausa mientras corre este puente, así que
 no compite con producción: `reserva=0` y `--rps 0.5` por defecto (el ritmo de producción).
 
-Solo entre 22:00 y 07:00 de Chile (regla 5).
+Solo entre 22:00 y 07:00 de Chile (regla 5). Un 429 cierra la corrida guardando el avance
+(regla 3); de noche, con `--seguir-tras-pausa` (default), el script duerme hasta el fin de la
+pausa de `api_pausa` + 30–90 s y empieza otra corrida con el mismo estado, hasta
+`--max-pausas` (15), `--max-requests` (6000) o el fin de la ventana.
 
 Uso (PowerShell, desde la raíz del repo):
     $env:PYTHONIOENCODING = "utf-8"
@@ -32,10 +35,12 @@ import calendar
 import csv
 import gzip
 import json
+import random
 import sys
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import httpx  # noqa: E402
 
 from app.clients.base import (  # noqa: E402
+    APIPausadaError,
     MPAuthError,
     MPParseError,
     MPRateLimitError,
@@ -61,6 +67,8 @@ ESTADOS_DEFAULT = "proveedor_seleccionado,desierta,cancelada,cerrada"
 _PRIMERO = "proveedor_seleccionado"
 # Fallos seguidos de detalle (5xx, timeout, JSON roto) antes de cortar la noche.
 _MAX_FALLOS_SEGUIDOS = 3
+# Margen sobre el fin de la pausa antes de la corrida siguiente (F-merc-0b-fix).
+_JITTER_PAUSA_S = (30.0, 90.0)
 
 # Columnas de COT_ que lee data/mercado_observatorio.py, más las que solo da la API.
 COLUMNAS = [
@@ -70,6 +78,8 @@ COLUMNAS = [
     "ProveedorSeleccionado", "MontoTotal", "archivo",
     "PrecioUnitario", "MontoTotalProducto", "CantidadCotizada", "DireccionEntrega",
     "PlazoEntrega",
+    # Por oferta: según la guía MontoTotal incluye IVA y despacho; el neto va aparte.
+    "ValorNeto", "TotalImpuesto", "MontoDespacho",
 ]
 
 # Glosas como las escribe COT_ (el observatorio compara "desierta"/"cancelada" normalizado).
@@ -158,6 +168,9 @@ def filas_de_detalle(d: CompraAgilDetalle, mes: str) -> list[dict[str, str]]:
             "Tamano": "" if c.es_emt is None else ("MiPyme" if c.es_emt else "Grande"),
             "ProveedorSeleccionado": _si_no(c.seleccionado),
             "MontoTotal": _txt(c.monto_total),
+            "ValorNeto": _txt(c.valor_neto),
+            "TotalImpuesto": _txt(c.total_impuesto),
+            "MontoDespacho": _txt(c.monto_despacho),
         }
         for p in c.productos or [None]:  # type: ignore[list-item]
             pedido = pedidos.get(p.codigo_producto or "") if p is not None else None
@@ -209,7 +222,11 @@ class Resumen:
     filas: int = 0
     fallidos: int = 0
     horas_429: list[str] = field(default_factory=list)
+    # Pausa que pidió la API en el último 429 de tasa.
     minutos_pausa: float = 0.0
+    corridas: int = 0
+    pausas: int = 0
+    minutos_esperados: float = 0.0
     motivo_fin: str = "completo"
 
     def imprimir(self) -> None:
@@ -219,7 +236,8 @@ class Resumen:
         print(f"Detalles:          {self.detalles} (fallidos, quedan pendientes: {self.fallidos})")
         print(f"Filas escritas:    {self.filas}")
         print(f"429 recibidos:     {len(self.horas_429)} {self.horas_429 or ''}".rstrip())
-        print(f"Minutos de pausa:  {self.minutos_pausa:.0f}")
+        print(f"Corridas:          {self.corridas} ({self.pausas} pausas esperadas)")
+        print(f"Minutos esperados: {self.minutos_esperados:.0f}")
         print(f"Fin:               {self.motivo_fin}")
         print("Fuente: Dirección ChileCompra.")
 
@@ -251,7 +269,11 @@ class Backfill:
         tamano_pagina: int,
         dir_salida: Path,
         fuera_de_ventana: bool = False,
+        seguir_tras_pausa: bool = False,
+        max_pausas: int = 15,
         now_fn: Callable[..., datetime] | None = None,
+        sleep_fn: Callable[[float], None] = time.sleep,
+        jitter_fn: Callable[[], float] = lambda: random.uniform(*_JITTER_PAUSA_S),
     ) -> None:
         self.cliente = cliente
         self.meses = meses
@@ -261,7 +283,11 @@ class Backfill:
         self.tamano_pagina = tamano_pagina
         self.dir_salida = dir_salida
         self.fuera_de_ventana = fuera_de_ventana
+        self.seguir_tras_pausa = seguir_tras_pausa
+        self.max_pausas = max_pausas
         self.now_fn = now_fn or (lambda tz=TZ_CHILE: datetime.now(tz))
+        self.sleep_fn = sleep_fn
+        self.jitter_fn = jitter_fn
         self.estado = Estado(dir_salida / "_backfill_estado.json")
         self.resumen = Resumen()
         self._fallos_seguidos = 0
@@ -341,11 +367,24 @@ class Backfill:
                         self._detalle(codigo, mes)
             print(f"{mes} {pase}: listo")
         dias = _dias_del_mes(mes, date.max)
-        if dias and dias[-1] < hoy:  # el mes en curso nunca queda completo
+        # Completo solo si el mes ya terminó y no quedan detalles pendientes
+        # (un 5xx deja el código fuera de `hechos` y la corrida siguiente lo pide).
+        listados = {c for k, cs in self.estado.listados.items() if k.startswith(f"{mes}|") for c in cs}
+        pendientes = listados - self.estado.hechos
+        if pendientes:
+            print(f"{mes}: {len(pendientes)} detalles pendientes; el mes sigue abierto")
+        elif dias and dias[-1] < hoy:  # el mes en curso nunca queda completo
             self.estado.meses_completos.add(mes)
             self.estado.guardar()
 
-    def correr(self) -> Resumen:
+    def _una_corrida(self) -> bool:
+        """Una corrida sobre los meses pendientes. True si terminó por una pausa de la API.
+
+        Ante un 429 de tasa o una pausa vigente guarda el avance y cierra la
+        corrida, como pide la regla 3; reanudar es decisión de `correr`.
+        """
+        self.resumen.corridas += 1
+        self.resumen.motivo_fin = "completo"
         try:
             for mes in self.meses:
                 if mes in self.estado.meses_completos:
@@ -356,13 +395,54 @@ class Backfill:
         except Corte as exc:
             self.resumen.motivo_fin = str(exc)
         except MPTasaError as exc:
-            # El cliente ya persistió la pausa en api_pausa: producción también para.
+            # El cliente ya persistió la pausa en api_pausa.
             self.resumen.minutos_pausa = exc.retry_after_seconds / 60
             self.resumen.motivo_fin = f"429 ({exc.causa}): API en pausa"
-        except QuotaExceededError as exc:  # incluye APIPausadaError
+            return True
+        except APIPausadaError as exc:
+            self.resumen.motivo_fin = f"sin emitir: {exc}"
+            return True
+        except QuotaExceededError as exc:
             self.resumen.motivo_fin = f"sin emitir: {exc}"
         except MPRateLimitError as exc:  # 10500 con los reintentos agotados
             self.resumen.motivo_fin = f"429 de concurrencia: {exc}"
+        finally:
+            self.estado.guardar()
+        return False
+
+    def _fin_de_pausa(self) -> datetime | None:
+        return self.cliente._client._quota.pausada_hasta()
+
+    def _esperar_pausa(self) -> bool:
+        """Duerme hasta el fin de la pausa + jitter si se puede seguir. True si durmió.
+
+        Mismo patrón que F-429-pausa-ca: el fin se lee de sync_state (api_pausa),
+        así que vale también una pausa que puso otro proceso.
+        """
+        if self.resumen.pausas >= self.max_pausas:
+            self.resumen.motivo_fin += f"; --max-pausas {self.max_pausas} alcanzado"
+            return False
+        if self.resumen.requests >= self.max_requests:
+            self.resumen.motivo_fin += f"; --max-requests {self.max_requests} alcanzado"
+            return False
+        ahora = self.now_fn(TZ_CHILE)
+        hasta = self._fin_de_pausa()
+        espera = max(0.0, (hasta - ahora).total_seconds()) if hasta is not None else 0.0
+        espera += self.jitter_fn()
+        despertar = ahora + timedelta(seconds=espera)
+        if not en_ventana_nocturna(lambda tz: despertar.astimezone(tz)):
+            self.resumen.motivo_fin += "; la pausa termina fuera de la ventana 22–07, no se reanuda"
+            return False
+        print(f"Pausa: espero {espera / 60:.1f} min, hasta {despertar.astimezone(TZ_CHILE):%H:%M} Chile")
+        self.resumen.pausas += 1
+        self.resumen.minutos_esperados += espera / 60
+        self.sleep_fn(espera)
+        return True
+
+    def correr(self) -> Resumen:
+        try:
+            while self._una_corrida() and self.seguir_tras_pausa and self._esperar_pausa():
+                pass
         except KeyboardInterrupt:
             self.resumen.motivo_fin = "interrumpido a mano"
         finally:
@@ -383,16 +463,25 @@ def parsear_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--region", type=int, default=16)
     ap.add_argument("--estados", default=ESTADOS_DEFAULT)
     ap.add_argument("--rps", type=float, default=0.5, help="requests por segundo (def. 0.5)")
-    ap.add_argument("--max-requests", type=int, default=2500)
+    ap.add_argument("--max-requests", type=int, default=6000)
     ap.add_argument("--tamano-pagina", type=int, default=50)
     ap.add_argument(
         "--fuera-de-ventana",
         action="store_true",
         help="solo para la prueba corta de día; exige --max-requests ≤ 30",
     )
+    ap.add_argument(
+        "--seguir-tras-pausa",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="tras un 429, esperar la pausa y seguir (def.: sí de noche, no con --fuera-de-ventana)",
+    )
+    ap.add_argument("--max-pausas", type=int, default=15, help="pausas esperadas por noche (def. 15)")
     a = ap.parse_args(argv)
     if a.fuera_de_ventana and a.max_requests > 30:
         ap.error("--fuera-de-ventana solo se permite con --max-requests 30 o menos")
+    # Con --fuera-de-ventana nunca se espera una pausa: la prueba de día es corta.
+    a.seguir_tras_pausa = not a.fuera_de_ventana and a.seguir_tras_pausa is not False
     return a
 
 
@@ -428,6 +517,8 @@ def main(argv: list[str] | None = None) -> int:
         tamano_pagina=a.tamano_pagina,
         dir_salida=DIR_SALIDA,
         fuera_de_ventana=a.fuera_de_ventana,
+        seguir_tras_pausa=a.seguir_tras_pausa,
+        max_pausas=a.max_pausas,
     )
     try:
         bf.correr().imprimir()

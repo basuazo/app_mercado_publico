@@ -14,7 +14,7 @@ import importlib.util
 import json
 import sys
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -84,6 +84,9 @@ def _detalle(codigo: str, *, con_ofertas: bool = True) -> dict[str, Any]:
             "es_emt": True,
             "seleccion": {"proveedor_seleccionado": True},
             "monto_total": 11305,
+            "valor_neto": 9000,
+            "total_impuesto": 1710,
+            "monto_despacho": 595,
             "productos_cotizados": [
                 {"codigo_producto": 50131700, "nombre_producto": "Leche", "cantidad": 10,
                  "precio_unitario": 950, "monto_total_producto": 9500},
@@ -195,6 +198,17 @@ def test_fuera_de_ventana_exige_max_requests_chico():
     a = bf.parsear_args(["--fuera-de-ventana", "--max-requests", "30", "--meses", "2026-08"])
     assert a.max_requests == 30
     assert a.rps == 0.5
+    assert a.seguir_tras_pausa is False  # apagada con --fuera-de-ventana
+    a = bf.parsear_args(["--fuera-de-ventana", "--max-requests", "30", "--seguir-tras-pausa"])
+    assert a.seguir_tras_pausa is False
+
+
+def test_defaults_de_noche():
+    a = bf.parsear_args([])
+    assert a.seguir_tras_pausa is True
+    assert a.max_pausas == 15
+    assert a.max_requests == 6000
+    assert bf.parsear_args(["--no-seguir-tras-pausa"]).seguir_tras_pausa is False
 
 
 @respx.mock
@@ -226,6 +240,8 @@ def test_corrida_completa_csv_con_las_columnas(cliente, tmp_path):
     assert leche_gana["CantidadSolicitada"] == "10"
     assert leche_gana["Estado"] == "Proveedor seleccionado"
     assert leche_gana["archivo"] == "2026-08"
+    assert (leche_gana["MontoTotal"], leche_gana["ValorNeto"]) == ("11305", "9000")
+    assert (leche_gana["TotalImpuesto"], leche_gana["MontoDespacho"]) == ("1710", "595")
     arroz = next(f for f in ca1 if f["CodigoProducto"] == "50221100")
     assert arroz["PrecioUnitario"] == "1200"
     ca2 = [f for f in filas if f["CodigoCotizacion"] == "CA-2"]
@@ -341,6 +357,119 @@ def test_detalle_con_5xx_queda_pendiente_y_sigue(cliente, tmp_path):
     assert r.detalles == 1
     estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
     assert estado["hechos"] == ["CA-2"]
+    # El mes queda abierto: un detalle pendiente no se pierde.
+    assert estado["meses_completos"] == []
+
+
+@respx.mock
+def test_detalle_fallido_se_vuelve_a_pedir_en_la_corrida_siguiente(cliente, tmp_path):
+    _mock_listado({("2026-08-01", "proveedor_seleccionado"): ["CA-1", "CA-2"]})
+    d1 = respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        side_effect=[httpx.Response(500, text="x"), httpx.Response(500, text="x"),
+                     httpx.Response(200, json=_detalle("CA-1"))]
+    )
+    respx.get(_DETALLE.format(codigo="CA-2")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-2"))
+    )
+
+    _backfill(cliente, tmp_path).correr()
+    r2 = _backfill(cliente, tmp_path).correr()
+
+    assert d1.call_count == 3  # 2 intentos de la primera corrida + 1 de la segunda
+    assert r2.detalles == 1
+    estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
+    assert estado["hechos"] == ["CA-1", "CA-2"]
+    assert estado["meses_completos"] == ["2026-08"]
+
+
+class _Reloj:
+    """Reloj inyectado que avanza al dormir; maneja también el QuotaTracker."""
+
+    def __init__(self, inicio: datetime) -> None:
+        self.t = inicio
+        self.dormido: list[float] = []
+
+    def __call__(self, tz: Any = TZ_CHILE) -> datetime:
+        return self.t.astimezone(tz)
+
+    def dormir(self, s: float) -> None:
+        self.dormido.append(s)
+        self.t += timedelta(seconds=s)
+
+
+_429 = httpx.Response(429, json={"errors": [{"codigo": "429", "mensaje": "límite de tasa"}]})
+
+
+def _con_reloj(cliente: MercadoPublicoV2Client, tmp_path: Path, reloj: _Reloj, **kw: Any) -> Any:
+    # La pausa se persiste y se compara con el mismo reloj que la ventana.
+    cliente._client._quota._now_fn = reloj
+    return _backfill(cliente, tmp_path, now_fn=reloj, sleep_fn=reloj.dormir,
+                     jitter_fn=lambda: 60.0, seguir_tras_pausa=True, **kw)
+
+
+@respx.mock
+def test_tras_la_pausa_se_reanuda_con_el_mismo_estado(cliente, tmp_path):
+    reloj = _Reloj(_NOCHE)
+    _mock_listado({("2026-08-01", "proveedor_seleccionado"): ["CA-1", "CA-2", "CA-3"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-1"))
+    )
+    d2 = respx.get(_DETALLE.format(codigo="CA-2")).mock(
+        side_effect=[_429, httpx.Response(200, json=_detalle("CA-2"))]
+    )
+    respx.get(_DETALLE.format(codigo="CA-3")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-3"))
+    )
+
+    r = _con_reloj(cliente, tmp_path, reloj).correr()
+
+    assert r.motivo_fin == "completo"
+    assert (r.corridas, r.pausas) == (2, 1)
+    assert reloj.dormido == [20 * 60 + 60.0]  # fin de la pausa + jitter
+    assert r.minutos_esperados == 21
+    assert d2.call_count == 2
+    assert r.detalles == 3
+    estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
+    assert estado["meses_completos"] == ["2026-08"]
+
+
+@respx.mock
+def test_no_se_reanuda_si_la_pausa_termina_fuera_de_ventana(cliente, tmp_path):
+    reloj = _Reloj(datetime(2026, 10, 31, 6, 50, tzinfo=TZ_CHILE))
+    _mock_listado({("2026-08-01", "proveedor_seleccionado"): ["CA-1"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(return_value=_429)
+
+    r = _con_reloj(cliente, tmp_path, reloj).correr()
+
+    assert (r.corridas, r.pausas) == (1, 0)
+    assert reloj.dormido == []
+    assert "fuera de la ventana" in r.motivo_fin
+
+
+@respx.mock
+def test_respeta_max_pausas(cliente, tmp_path):
+    reloj = _Reloj(_NOCHE)
+    _mock_listado({("2026-08-01", "proveedor_seleccionado"): ["CA-1"]})
+    d1 = respx.get(_DETALLE.format(codigo="CA-1")).mock(return_value=_429)
+
+    r = _con_reloj(cliente, tmp_path, reloj, max_pausas=2).correr()
+
+    assert (r.corridas, r.pausas) == (3, 2)
+    assert d1.call_count == 3
+    assert "--max-pausas 2" in r.motivo_fin
+
+
+@respx.mock
+def test_sin_seguir_tras_pausa_el_429_cierra_la_noche(cliente, tmp_path):
+    reloj = _Reloj(_NOCHE)
+    _mock_listado({("2026-08-01", "proveedor_seleccionado"): ["CA-1"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(return_value=_429)
+
+    cliente._client._quota._now_fn = reloj
+    r = _backfill(cliente, tmp_path, now_fn=reloj, sleep_fn=reloj.dormir).correr()
+
+    assert (r.corridas, r.pausas) == (1, 0)
+    assert reloj.dormido == []
 
 
 @respx.mock
