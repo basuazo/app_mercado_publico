@@ -41,7 +41,7 @@
      dos veces un detalle ya guardado. El archivo local está bien acá: es una herramienta del PC, no un
      proceso de Render (regla 10 aplica a la app).
    - Salida: `data/mercado/cot_api_{AAAA-MM}.csv.gz` con las columnas que lee
-     `data/mercado_observatorio.py` (`CodigoCotizacion`, `Region`, `RUTUnidaddeCompra`,
+     `scripts/mercado/mercado_observatorio.py` (`CodigoCotizacion`, `Region`, `RUTUnidaddeCompra`,
      `NombreUnidaddeCompra`, `MontoTotalDisponble`, `CodigoProducto`, `NombreProductoGenerico`,
      `ProductoCotizado`, `CantidadSolicitada`, `Estado`, `RazonSocialProveedor`, `RUTProveedor`, `Tamano`
      (de `es_emt`), `ProveedorSeleccionado`, `MontoTotal`, `archivo`) **más** `PrecioUnitario`,
@@ -50,7 +50,7 @@
    - Corta limpio ante pausa, 429, cuota o `--max-requests`, guardando avance. Al final imprime: requests,
      CA listadas, detalles, filas, 429 recibidos y a qué hora, y minutos de pausa.
    - Nunca imprime el ticket ni lo escribe en el CSV o el estado (regla 1).
-3. **Observatorio** (`data/mercado_observatorio.py`): `analizar_cot` lee también `cot_api_*` y, para un
+3. **Observatorio** (`scripts/mercado/mercado_observatorio.py`): `analizar_cot` lee también `cot_api_*` y, para un
    mismo mes, **prefiere la API** sobre `COT_`. Con `PrecioUnitario`, agregar al resumen de alimentos:
    por producto de la canasta, mediana del precio unitario ganador y de los perdedores, y distancia
    ganador–segundo por producto.

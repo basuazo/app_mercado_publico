@@ -70,7 +70,7 @@ _MAX_FALLOS_SEGUIDOS = 3
 # Margen sobre el fin de la pausa antes de la corrida siguiente (F-merc-0b-fix).
 _JITTER_PAUSA_S = (30.0, 90.0)
 
-# Columnas de COT_ que lee data/mercado_observatorio.py, más las que solo da la API.
+# Columnas de COT_ que lee scripts/mercado/mercado_observatorio.py, más las que solo da la API.
 COLUMNAS = [
     "CodigoCotizacion", "Region", "RUTUnidaddeCompra", "NombreUnidaddeCompra",
     "MontoTotalDisponble", "CodigoProducto", "NombreProductoGenerico", "ProductoCotizado",

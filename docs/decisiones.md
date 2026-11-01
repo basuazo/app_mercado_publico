@@ -71,3 +71,11 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 - **Retención nunca borra lo que un usuario tocó (09-oct):** guardadas (también archivadas) y
   descartadas conservan fila, descripción, ítems y competencia para analizar perfiles. La purga de
   filas (F-retencion-filas) solo alcanza oportunidades terminales sin ninguna relación con usuarios.
+
+## Pivote (31-oct)
+- **Pausa de la ingesta actual (31-oct, Boris):** la app la usan Boris y Mario; el foco pasa al pivote de
+  Compra Ágil en Ñuble (`16-pivote-compra-agil-nuble.md`). Se apagan en cron-job.org los disparos de `ca`,
+  `ciclo-ca`, `ciclo-match`, `ciclo-activas`, `nocturno`, `resumen`, `catalogos` y `retencion` (retención
+  también, para no purgar CA de Ñuble antes de F-merc-1 §1.7). La web en Render queda como está. Una sola
+  key: `MP_TICKET` queda entera para el pivote.
+- **Alimentos es el giro principal del pivote**; los demás rubros son expansión, no prioritarios.

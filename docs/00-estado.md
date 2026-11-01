@@ -47,7 +47,7 @@ Antes de habilitar el backfill: sonda humana `scripts/smoke_test.py --mercado`.
 (la ingesta de la app está en pausa: disparos apagados en cron-job.org), persiste la pausa de 429 y de
 noche espera su fin y sigue (F-merc-0b-fix: hasta 15 pausas y 6.000 requests por noche); salida
 `data/mercado/cot_api_{AAAA-MM}.csv.gz` y avance en `_backfill_estado.json`. El observatorio
-(`data/mercado_observatorio.py`, fuera de git) prefiere `cot_api_*` a `COT_` por mes y agrega precio
+(`scripts/mercado/mercado_observatorio.py`; sus salidas quedan en `data/mercado/`, fuera de git) prefiere `cot_api_*` a `COT_` por mes y agrega precio
 unitario ganador/perdedores por producto de alimentos. **Pasos de Boris:** (1) de día,
 `--fuera-de-ventana --meses 2026-08 --max-requests 30` y pegar la salida (¿trae `precio_unitario` y
 `seleccion`?); (2) lo mismo con `--meses 2026-03` (antigüedad); (3) primera noche sin flags y revisar los
