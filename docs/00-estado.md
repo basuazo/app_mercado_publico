@@ -45,13 +45,16 @@ Antes de habilitar el backfill: sonda humana `scripts/smoke_test.py --mercado`.
 `proveedores_cotizando` / `productos_cotizados` en `mp_v2.py` (aditivo, se reutiliza en F-merc-1 §1.4) +
 `scripts/backfill_cot_nuble.py` con `MP_TICKET`, desde el PC, solo 22–07 Chile, `--rps 0.5`, `reserva=0`
 (la ingesta de la app está en pausa: disparos apagados en cron-job.org), persiste la pausa de 429 y de
-noche espera su fin y sigue (F-merc-0b-fix: hasta 15 pausas y 6.000 requests por noche); salida
-`data/mercado/cot_api_{AAAA-MM}.csv.gz` y avance en `_backfill_estado.json`. El observatorio
+noche espera su fin y sigue (F-merc-0b-fix: hasta 15 pausas y 6.000 requests por noche). Tras la sonda
+del 31-oct (F-merc-0b-fix2, [V] en `01-analisis-api-mercado-publico.md` §10) lista cada día **sin `estado`**
+(el filtro `estado=proveedor_seleccionado` devuelve 0) y filtra local; solo `--estados-detalle`
+(`proveedor_seleccionado`) pide detalle. Salidas: `data/mercado/cot_api_{AAAA-MM}.csv.gz`, el listado completo de
+CA de cualquier estado en `ca_api_listado_{AAAA-MM}.csv.gz` y el avance en `_backfill_estado.json`. El observatorio
 (`scripts/mercado/mercado_observatorio.py`; sus salidas quedan en `data/mercado/`, fuera de git) prefiere `cot_api_*` a `COT_` por mes y agrega precio
 unitario ganador/perdedores por producto de alimentos. **Pasos de Boris:** (1) de día,
-`--fuera-de-ventana --meses 2026-08 --max-requests 30` y pegar la salida (¿trae `precio_unitario` y
-`seleccion`?); (2) lo mismo con `--meses 2026-03` (antigüedad); (3) primera noche sin flags y revisar los
-429 del resumen. Los campos del detalle nuevo son [I] (guía) hasta esa prueba.
+`--fuera-de-ventana --meses 2026-08 --max-requests 30` y pegar la salida (el resumen trae el control de
+calidad de ganadores por CA); (2) lo mismo con `--meses 2026-03`; (3) primera noche sin flags y revisar los 429
+del resumen. Las claves de la oferta son [V] (sonda 31-oct); `monto_total` con o sin IVA sigue [I].
 
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).
@@ -89,6 +92,9 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
    `python scripts/smoke_test.py` desde el PC en ese minuto.
 
 ## Backlog chico
+**`ca` pide `estado=proveedor_seleccionado` en el listado y ese filtro devuelve 0 [V 31-oct]; revisar al
+retomar la ingesta** (en pausa; no se tocó en F-merc-0b-fix2).
+
 F-429-tasa: mostrar "API en pausa hasta …" (hora Chile) en `/salud` (hoy se ve la fila `api_pausa`
 con el cursor en UTC); en `nocturno` un paso que falla queda como `None` sin aviso;
 `alembic/env.py` que lea `.env`; tests PG leen `os.environ` y no normalizan `postgresql://` (con el `.env` tal cual se saltan 109: exportar `DATABASE_URL=postgresql+psycopg://…`); `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin

@@ -242,6 +242,24 @@ La información necesaria está disponible vía API oficial y los términos exig
 - **`BuscarComprador` responde 200 pero el parser lee 0 organismos** [V, `catalogos` 05-oct]: la
   forma de la respuesta no es la que espera `listar_compradores` (sin verificar cuál es).
 
+- **v2: el filtro `estado=proveedor_seleccionado` devuelve 0 resultados** [V, sonda 31-oct-2026]: región 16
+  con ese estado → 0 (con y sin fechas), mientras el mismo listado sin `estado` trae CA cuyo `estado.codigo`
+  es `proveedor_seleccionado`. Consecuencia: la ingesta `ca` (que pide `cerrada,proveedor_seleccionado,publicada`)
+  no recibe las CA en ese estado por el filtro [I: verificar si llegan por otra vía]. Para el pivote: listar
+  **sin `estado`** y filtrar localmente.
+- **v2: `publicado_desde/hasta` funciona hacia atrás** [V, 31-oct]: región 16, agosto 2026 → 3.639 CA (todos los
+  estados). `total_resultados` se topa en **10.000** (sin región, agosto → 10000): ventanas chicas.
+- **v2: forma real de `proveedores_cotizando[]`** [V, sonda 31-oct, detalle `3166-311-COT26`]: claves
+  `activo, codigo_empresa, codigo_sucursal_empresa, descripcion, descripcion_cotizacion, es_emt, estado,
+  estado_por_comprador, fecha_creacion, fecha_vigencia, id_cotizacion, id_oc, justificacion_inadmisibilidad,
+  monto_despacho, monto_total, nombre_impuesto, porcentaje_impuesto, productos_cotizados,
+  proveedor_seleccionado, razon_social, rut_proveedor, total_impuesto, valor_neto`. **No existe `seleccion`**
+  (la guía v3.0 la documenta): el ganador va en `proveedor_seleccionado` al nivel de la oferta, y el estado en
+  `estado` (no `estado_cotizacion`). `productos_cotizados[]`: `cantidad, codigo_producto, descripcion,
+  monto_total_producto, nombre_producto, precio_unitario` [V]. Detalle de primer nivel: `codigo, convocatoria,
+  descripcion, documentos, entrega, estado, fechas, flags, id_orden_compra, institucion, motivos, nombre,
+  presupuesto, productos_solicitados, proveedores_cotizando, resumen` (sin `orden_compra`).
+
 ## 9. Referencias oficiales
 - Portal API: https://www.chilecompra.cl/api/
 - Solicitud de ticket: https://api.mercadopublico.cl/modules/IniciarSesion.aspx

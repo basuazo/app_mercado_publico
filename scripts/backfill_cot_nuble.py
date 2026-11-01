@@ -16,11 +16,18 @@ Uso (PowerShell, desde la raíz del repo):
     python scripts\\backfill_cot_nuble.py                                    # noche
     python scripts\\backfill_cot_nuble.py --fuera-de-ventana --meses 2026-08 --max-requests 30
 
-Por mes: primero las CA `proveedor_seleccionado` (las que tienen ganador), después el resto;
-listado por ventanas de un día de publicación y luego el detalle de cada CA. Avance en
-`data/mercado/_backfill_estado.json`: reanudable, nunca pide dos veces un detalle guardado.
-Salida: `data/mercado/cot_api_{AAAA-MM}.csv.gz`, una fila por (CA × proveedor × producto
-cotizado); una CA sin ofertas deja una fila por producto solicitado con el proveedor vacío.
+Por mes: listado por ventanas de un día de publicación SIN parámetro `estado` (el filtro
+`estado=proveedor_seleccionado` devuelve 0 [V, 31-oct]) y filtro local por `estado.codigo`:
+solo las CA en `--estados-detalle` (default `proveedor_seleccionado`) piden detalle. Avance
+en `data/mercado/_backfill_estado.json`: reanudable, nunca pide dos veces un detalle guardado.
+Un día con 0 resultados no se guarda como listado; un mes cuyos días terminados dan todos 0
+no se marca completo y corta con aviso, igual que un día con `total_resultados` >= 10.000.
+Salidas:
+  - `cot_api_{AAAA-MM}.csv.gz`: una fila por (CA × proveedor × producto cotizado); una CA
+    sin ofertas deja una fila por producto solicitado con el proveedor vacío.
+  - `ca_api_listado_{AAAA-MM}.csv.gz`: TODAS las CA listadas, de cualquier estado, sin gastar
+    detalles (sirve para medir desiertas, canceladas y CA sin ofertas). Si una noche se corta
+    entre escribir un día y guardar el avance, ese día puede repetirse: deduplicar por `codigo`.
 
 Nunca imprime ni escribe el ticket (regla 1). No escribe en la base salvo `quota_log` y la
 pausa, que ya escriben los jobs.
@@ -58,13 +65,19 @@ from app.clients.base import (  # noqa: E402
     QuotaExceededError,
 )
 from app.clients.mp_v2 import MercadoPublicoV2Client  # noqa: E402
-from app.clients.types import CompraAgilDetalle  # noqa: E402
-from app.core.tiempo import TZ_CHILE, borde_del_dia_utc_naive, en_ventana_nocturna  # noqa: E402
+from app.clients.types import CompraAgilBasica, CompraAgilDetalle  # noqa: E402
+from app.core.tiempo import (  # noqa: E402
+    TZ_CHILE,
+    a_naive_como_la_api,
+    borde_del_dia_utc_naive,
+    en_ventana_nocturna,
+)
 
 DIR_SALIDA = Path(__file__).resolve().parent.parent / "data" / "mercado"
 MESES_DEFAULT = "2026-08,2026-07,2026-06,2026-04,2026-03"
-ESTADOS_DEFAULT = "proveedor_seleccionado,desierta,cancelada,cerrada"
-_PRIMERO = "proveedor_seleccionado"
+ESTADOS_DETALLE_DEFAULT = "proveedor_seleccionado"
+# La API topa `total_resultados` en 10.000 [V, 31-oct]: más allá la ventana ya no es confiable.
+_TOPE_RESULTADOS = 10_000
 # Fallos seguidos de detalle (5xx, timeout, JSON roto) antes de cortar la noche.
 _MAX_FALLOS_SEGUIDOS = 3
 # Margen sobre el fin de la pausa antes de la corrida siguiente (F-merc-0b-fix).
@@ -80,6 +93,12 @@ COLUMNAS = [
     "PlazoEntrega",
     # Por oferta: según la guía MontoTotal incluye IVA y despacho; el neto va aparte.
     "ValorNeto", "TotalImpuesto", "MontoDespacho",
+]
+
+# Listado completo de CA (cualquier estado), una fila por CA.
+COLUMNAS_LISTADO = [
+    "codigo", "estado", "fecha_publicacion", "fecha_cierre", "organismo", "unidad",
+    "monto_disponible", "total_ofertas",
 ]
 
 # Glosas como las escribe COT_ (el observatorio compara "desierta"/"cancelada" normalizado).
@@ -101,10 +120,10 @@ class Corte(Exception):
 
 
 class Estado:
-    """`_backfill_estado.json`: días ya listados (con sus códigos) y detalles hechos.
+    """`_backfill_estado.json`: días ya listados (con su estado por código) y detalles hechos.
 
-    `listados["AAAA-MM|pase|AAAA-MM-DD"]` = códigos de ese día; `hechos` = códigos
-    cuyo detalle ya está en el CSV. Escritura atómica (tmp + replace).
+    `listados["AAAA-MM|AAAA-MM-DD"]` = {código: estado} de ese día (nunca un día vacío);
+    `hechos` = códigos cuyo detalle ya está en el CSV. Escritura atómica (tmp + replace).
     """
 
     def __init__(self, ruta: Path) -> None:
@@ -112,7 +131,10 @@ class Estado:
         datos: dict[str, Any] = {}
         if ruta.exists():
             datos = json.loads(ruta.read_text(encoding="utf-8"))
-        self.listados: dict[str, list[str]] = dict(datos.get("listados", {}))
+        # Solo el formato actual: las claves por "pase" de F-merc-0b se descartan.
+        self.listados: dict[str, dict[str, str]] = {
+            k: dict(v) for k, v in datos.get("listados", {}).items() if isinstance(v, dict)
+        }
         self.hechos: set[str] = set(datos.get("hechos", []))
         self.meses_completos: set[str] = set(datos.get("meses_completos", []))
 
@@ -198,12 +220,35 @@ def filas_de_detalle(d: CompraAgilDetalle, mes: str) -> list[dict[str, str]]:
     return [{col: f.get(col, "") for col in COLUMNAS} for f in filas]
 
 
-def escribir_filas(ruta: Path, filas: Iterable[dict[str, str]]) -> None:
+def filas_de_listado(items: Iterable[CompraAgilBasica]) -> list[dict[str, str]]:
+    """Una fila por CA del listado, de cualquier estado. Fechas en hora de Chile, como la API."""
+
+    def fecha(dt: datetime | None) -> str:
+        return "" if dt is None else a_naive_como_la_api(dt).isoformat(sep=" ", timespec="minutes")
+
+    return [
+        {
+            "codigo": ca.codigo,
+            "estado": ca.estado,
+            "fecha_publicacion": fecha(ca.fecha_publicacion),
+            "fecha_cierre": fecha(ca.fecha_cierre),
+            "organismo": ca.organismo_nombre or "",
+            "unidad": ca.unidad_compra or "",
+            "monto_disponible": _txt(ca.monto_clp),
+            "total_ofertas": _txt(ca.total_ofertas),
+        }
+        for ca in items
+    ]
+
+
+def escribir_filas(
+    ruta: Path, filas: Iterable[dict[str, str]], columnas: list[str] = COLUMNAS
+) -> None:
     """Agrega filas al .csv.gz del mes (gzip multi-miembro: lo lee cualquier lector)."""
     nuevo = not ruta.exists()
     ruta.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(ruta, "at", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COLUMNAS, delimiter=";")
+        w = csv.DictWriter(f, fieldnames=columnas, delimiter=";")
         if nuevo:
             w.writeheader()
         w.writerows(filas)
@@ -227,6 +272,10 @@ class Resumen:
     corridas: int = 0
     pausas: int = 0
     minutos_esperados: float = 0.0
+    # Control de calidad: ofertas con proveedor_seleccionado=true por CA con detalle.
+    ganador_1: int = 0
+    ganador_0: int = 0
+    ganador_varios: int = 0
     motivo_fin: str = "completo"
 
     def imprimir(self) -> None:
@@ -235,6 +284,10 @@ class Resumen:
         print(f"CA listadas:       {self.ca_listadas}")
         print(f"Detalles:          {self.detalles} (fallidos, quedan pendientes: {self.fallidos})")
         print(f"Filas escritas:    {self.filas}")
+        print(
+            "Ganadores por CA con detalle: "
+            f"exactamente 1 = {self.ganador_1}, 0 = {self.ganador_0}, más de 1 = {self.ganador_varios}"
+        )
         print(f"429 recibidos:     {len(self.horas_429)} {self.horas_429 or ''}".rstrip())
         print(f"Corridas:          {self.corridas} ({self.pausas} pausas esperadas)")
         print(f"Minutos esperados: {self.minutos_esperados:.0f}")
@@ -248,15 +301,6 @@ def _dias_del_mes(mes: str, hoy: date) -> list[date]:
     return [date(y, m, d) for d in range(1, ultimo + 1) if date(y, m, d) <= hoy]
 
 
-def _pases(estados: list[str]) -> list[tuple[str, list[str]]]:
-    """Primero las seleccionadas (tienen ganador), después el resto, en dos listados."""
-    resto = [e for e in estados if e != _PRIMERO]
-    pases = [(_PRIMERO, [_PRIMERO])] if _PRIMERO in estados else []
-    if resto:
-        pases.append(("resto", resto))
-    return pases
-
-
 class Backfill:
     def __init__(
         self,
@@ -264,7 +308,7 @@ class Backfill:
         *,
         meses: list[str],
         region: int,
-        estados: list[str],
+        estados_detalle: list[str],
         max_requests: int,
         tamano_pagina: int,
         dir_salida: Path,
@@ -278,7 +322,7 @@ class Backfill:
         self.cliente = cliente
         self.meses = meses
         self.region = region
-        self.estados = estados
+        self.estados_detalle = {e.strip().lower() for e in estados_detalle}
         self.max_requests = max_requests
         self.tamano_pagina = tamano_pagina
         self.dir_salida = dir_salida
@@ -317,25 +361,50 @@ class Backfill:
 
     # -- pasos ---------------------------------------------------------------
 
-    def _listar_dia(self, clave: str, dia: date, estados: list[str]) -> list[str]:
+    def _listar_dia(self, dia: date) -> list[CompraAgilBasica]:
+        """Todas las CA publicadas ese día en la región, de cualquier estado (sin `estado`)."""
+        items: list[CompraAgilBasica] = []
+        pagina = 1
+        while True:
+            self._revisar()
+            resp = self.cliente.listar_compra_agil(
+                publicado_desde=borde_del_dia_utc_naive(dia, fin_de_dia=False),
+                publicado_hasta=borde_del_dia_utc_naive(dia, fin_de_dia=True),
+                regiones=[self.region],
+                tamano_pagina=self.tamano_pagina,
+                numero_pagina=pagina,
+                ordenar_por="FechaPublicacion",
+            )
+            if resp.paginacion.total_resultados >= _TOPE_RESULTADOS:
+                raise Corte(
+                    f"{dia}: total_resultados >= {_TOPE_RESULTADOS}; la API topa ahí, "
+                    "ventana demasiado grande: revisar filtros"
+                )
+            items += resp.items
+            if pagina >= resp.paginacion.total_paginas:
+                return items
+            pagina += 1
+
+    def _dia(self, mes: str, dia: date) -> dict[str, str]:
+        """{código: estado} del día, de la caché del estado o listándolo.
+
+        Un día con 0 resultados no se guarda: la próxima corrida lo vuelve a listar
+        (1 request), así un filtro roto no deja un mes "listado" y vacío.
+        """
+        clave = f"{mes}|{dia.isoformat()}"
         if clave in self.estado.listados:
             return self.estado.listados[clave]
-        self._revisar()
-        codigos: list[str] = []
-        for ca in self.cliente.iterar_compra_agil(
-            publicado_desde=borde_del_dia_utc_naive(dia, fin_de_dia=False),
-            publicado_hasta=borde_del_dia_utc_naive(dia, fin_de_dia=True),
-            estados=estados,
-            regiones=[self.region],
-            tamano_pagina=self.tamano_pagina,
-            ordenar_por="FechaPublicacion",
-        ):
-            if ca.codigo and ca.codigo not in codigos:
-                codigos.append(ca.codigo)
-        self.estado.listados[clave] = codigos
+        items = self._listar_dia(dia)
+        if not items:
+            return {}
+        escribir_filas(
+            self.dir_salida / f"ca_api_listado_{mes}.csv.gz", filas_de_listado(items), COLUMNAS_LISTADO
+        )
+        por_codigo = {ca.codigo: ca.estado for ca in items if ca.codigo}
+        self.estado.listados[clave] = por_codigo
         self.estado.guardar()
-        self.resumen.ca_listadas += len(codigos)
-        return codigos
+        self.resumen.ca_listadas += len(por_codigo)
+        return por_codigo
 
     def _detalle(self, codigo: str, mes: str) -> None:
         self._revisar()
@@ -350,6 +419,13 @@ class Backfill:
                 raise Corte(f"{_MAX_FALLOS_SEGUIDOS} detalles fallidos seguidos") from exc
             return
         self._fallos_seguidos = 0
+        ganadores = sum(1 for c in d.cotizaciones if c.seleccionado is True)
+        if ganadores == 1:
+            self.resumen.ganador_1 += 1
+        elif ganadores == 0:
+            self.resumen.ganador_0 += 1
+        else:
+            self.resumen.ganador_varios += 1
         filas = filas_de_detalle(d, mes)
         escribir_filas(self.dir_salida / f"cot_api_{mes}.csv.gz", filas)
         self.estado.hechos.add(codigo)
@@ -357,20 +433,33 @@ class Backfill:
         self.resumen.detalles += 1
         self.resumen.filas += len(filas)
 
+    def _pendientes(self, mes: str) -> set[str]:
+        """Códigos del mes en `--estados-detalle` cuyo detalle aún no está guardado."""
+        return {
+            codigo
+            for k, por_codigo in self.estado.listados.items()
+            if k.startswith(f"{mes}|")
+            for codigo, estado in por_codigo.items()
+            if estado.strip().lower() in self.estados_detalle and codigo not in self.estado.hechos
+        }
+
     def _mes(self, mes: str) -> None:
         hoy = self.now_fn(TZ_CHILE).date()
-        for pase, estados in _pases(self.estados):
-            for dia in _dias_del_mes(mes, hoy):
-                codigos = self._listar_dia(f"{mes}|{pase}|{dia.isoformat()}", dia, estados)
-                for codigo in codigos:
-                    if codigo not in self.estado.hechos:
-                        self._detalle(codigo, mes)
-            print(f"{mes} {pase}: listo")
+        terminados = [d for d in _dias_del_mes(mes, hoy) if d < hoy]
+        con_resultados = 0
+        for dia in _dias_del_mes(mes, hoy):
+            por_codigo = self._dia(mes, dia)
+            con_resultados += bool(por_codigo) and dia < hoy
+            for codigo, estado in por_codigo.items():
+                if estado.strip().lower() in self.estados_detalle and codigo not in self.estado.hechos:
+                    self._detalle(codigo, mes)
+        print(f"{mes}: listo")
+        if terminados and not con_resultados:
+            raise Corte("mes sin resultados: revisar filtros")
         dias = _dias_del_mes(mes, date.max)
         # Completo solo si el mes ya terminó y no quedan detalles pendientes
         # (un 5xx deja el código fuera de `hechos` y la corrida siguiente lo pide).
-        listados = {c for k, cs in self.estado.listados.items() if k.startswith(f"{mes}|") for c in cs}
-        pendientes = listados - self.estado.hechos
+        pendientes = self._pendientes(mes)
         if pendientes:
             print(f"{mes}: {len(pendientes)} detalles pendientes; el mes sigue abierto")
         elif dias and dias[-1] < hoy:  # el mes en curso nunca queda completo
@@ -461,7 +550,12 @@ def parsear_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     ap.add_argument("--meses", default=MESES_DEFAULT, help=f"AAAA-MM separados por coma (def. {MESES_DEFAULT})")
     ap.add_argument("--region", type=int, default=16)
-    ap.add_argument("--estados", default=ESTADOS_DEFAULT)
+    ap.add_argument(
+        "--estados-detalle",
+        default=ESTADOS_DETALLE_DEFAULT,
+        help="estados (estado.codigo) cuyas CA piden detalle; el listado trae todos (def. "
+        f"{ESTADOS_DETALLE_DEFAULT})",
+    )
     ap.add_argument("--rps", type=float, default=0.5, help="requests por segundo (def. 0.5)")
     ap.add_argument("--max-requests", type=int, default=6000)
     ap.add_argument("--tamano-pagina", type=int, default=50)
@@ -512,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
         cliente,
         meses=[m.strip() for m in a.meses.split(",") if m.strip()],
         region=a.region,
-        estados=[e.strip() for e in a.estados.split(",") if e.strip()],
+        estados_detalle=[e.strip() for e in a.estados_detalle.split(",") if e.strip()],
         max_requests=a.max_requests,
         tamano_pagina=a.tamano_pagina,
         dir_salida=DIR_SALIDA,

@@ -1,7 +1,9 @@
 """Tests F-merc-0b: parser de `proveedores_cotizando` del detalle de Compra Ágil v2.
 
-Fixtures SINTÉTICAS construidas desde la Guía API Compra Ágil v2 (§5–§7): sin RUT
-ni datos reales. Los campos son [I] hasta que la sonda los confirme.
+Fixtures SINTÉTICAS (sin RUT ni datos reales) con las CLAVES de la forma real del detalle
+[V, sonda 31-oct, docs/01 §10]: el ganador va en `proveedor_seleccionado` al nivel de la
+oferta, el estado en `estado` y existe `id_oc`; `seleccion.*` y `estado_cotizacion` (guía
+v3.0) no existen y quedan solo como respaldo.
 """
 
 from __future__ import annotations
@@ -27,15 +29,12 @@ _COTIZACION = {
     "codigo_empresa": 123,
     "codigo_sucursal_empresa": "456",
     "id_cotizacion": 789,
-    "estado_cotizacion": {"id": 3, "glosa": "Enviada"},
+    "estado": {"id": 3, "glosa": "Enviada"},
     "estado_por_comprador": "Aceptada",
     "activo": 1,
+    "id_oc": 4455,
     "justificacion_inadmisibilidad": None,
-    "seleccion": {
-        "proveedor_seleccionado": True,
-        "motivo_seleccion": "Menor precio",
-        "criterio_seleccion": "Precio",
-    },
+    "proveedor_seleccionado": True,
     "fecha_creacion": "2026-08-03T10:00:00Z",
     "fecha_vigencia": "2026-08-20T23:59:00",
     "valor_neto": 9500,
@@ -102,10 +101,10 @@ def test_detalle_completo():
     assert c.codigo_empresa == "123"
     assert c.codigo_sucursal == "456"
     assert c.id_cotizacion == "789"
+    assert c.id_oc == "4455"
     assert (c.estado_id, c.estado_glosa) == (3, "Enviada")
     assert c.activo is True
     assert c.seleccionado is True
-    assert c.motivo_seleccion == "Menor precio"
     assert c.monto_total == 11305.0
     assert c.porcentaje_impuesto == 19.0
     assert c.descripcion == "Entrega en 48 h"
@@ -150,15 +149,59 @@ def test_producto_sin_precio_unitario():
     assert p.monto_total_producto == 9500.0
 
 
-def test_seleccion_ausente_da_none_y_no_false():
-    c = {k: v for k, v in _COTIZACION.items() if k != "seleccion"}
+def test_proveedor_seleccionado_al_nivel_de_la_oferta():
+    ganadora = _parse_ca_detalle(_con_cotizacion(proveedor_seleccionado=True)).cotizaciones[0]
+    perdedora = _parse_ca_detalle(_con_cotizacion(proveedor_seleccionado=False)).cotizaciones[0]
+    assert ganadora.seleccionado is True
+    assert perdedora.seleccionado is False
+
+
+def test_proveedor_seleccionado_como_texto_o_numero():
+    for crudo, esperado in (("NO", False), ("si", True), (1, True), (0, False)):
+        d = _parse_ca_detalle(_con_cotizacion(proveedor_seleccionado=crudo))
+        assert d.cotizaciones[0].seleccionado is esperado, crudo
+
+
+def test_ausente_da_none_y_no_false():
+    c = {k: v for k, v in _COTIZACION.items() if k != "proveedor_seleccionado"}
     d = _parse_ca_detalle(_detalle(proveedores_cotizando=[c]))
     assert d.cotizaciones[0].seleccionado is None
 
 
-def test_seleccion_como_texto():
-    d = _parse_ca_detalle(_con_cotizacion(seleccion={"proveedor_seleccionado": "NO"}))
+def test_seleccion_de_la_guia_queda_de_respaldo():
+    c = {k: v for k, v in _COTIZACION.items() if k != "proveedor_seleccionado"}
+    c["seleccion"] = {"proveedor_seleccionado": True, "motivo_seleccion": "Menor precio",
+                      "criterio_seleccion": "Precio"}
+    oferta = _parse_ca_detalle(_detalle(proveedores_cotizando=[c])).cotizaciones[0]
+    assert oferta.seleccionado is True
+    assert oferta.motivo_seleccion == "Menor precio"
+    assert oferta.criterio_seleccion == "Precio"
+
+
+def test_el_nivel_de_la_oferta_manda_sobre_seleccion():
+    d = _parse_ca_detalle(_con_cotizacion(
+        proveedor_seleccionado=False, seleccion={"proveedor_seleccionado": True}))
     assert d.cotizaciones[0].seleccionado is False
+
+
+def test_estado_de_la_oferta_dict_texto_o_respaldo():
+    assert _parse_ca_detalle(_con_cotizacion(estado={"id": 7, "glosa": "Aceptada"})
+                             ).cotizaciones[0].estado_glosa == "Aceptada"
+    texto = _parse_ca_detalle(_con_cotizacion(estado="Enviada")).cotizaciones[0]
+    assert (texto.estado_id, texto.estado_glosa) == (None, "Enviada")
+    c = {k: v for k, v in _COTIZACION.items() if k != "estado"}
+    c["estado_cotizacion"] = {"id": 9, "glosa": "Rechazada"}
+    respaldo = _parse_ca_detalle(_detalle(proveedores_cotizando=[c])).cotizaciones[0]
+    assert (respaldo.estado_id, respaldo.estado_glosa) == (9, "Rechazada")
+
+
+def test_la_unidad_de_compra_tambien_llega_en_el_listado():
+    from app.clients.mp_v2 import _parse_ca_basica
+
+    ca = _parse_ca_basica({"codigo": "CA-1", "estado": "publicada",
+                           "institucion": {"unidad_compra": "Educación"}})
+    assert ca.unidad_compra == "Educación"
+    assert _parse_ca_basica({"codigo": "CA-1", "estado": "publicada"}).unidad_compra is None
 
 
 def test_codigo_producto_int():

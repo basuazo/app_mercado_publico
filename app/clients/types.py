@@ -275,6 +275,8 @@ class CompraAgilBasica:
     organismo_nombre: str | None
     organismo_rut: str | None
     total_ofertas: int
+    # `institucion.unidad_compra`: el detalle la trae y el listado, si viene (F-merc-0b-fix2).
+    unidad_compra: str | None = None
 
 
 @dataclass
@@ -292,10 +294,12 @@ class CotizacionCAProducto:
 
 @dataclass
 class CotizacionCA:
-    """Una oferta de `proveedores_cotizando[]` (F-merc-0b). Campos de la guía [I].
+    """Una oferta de `proveedores_cotizando[]` (F-merc-0b).
 
-    `seleccionado=None` cuando la respuesta no trae `seleccion`: no es lo mismo
-    que `False`, y el cliente no infiere ganadores.
+    Claves verificadas en la sonda del 31-oct [V]: el ganador va en
+    `proveedor_seleccionado` al nivel de la oferta y el estado en `estado`; la
+    `seleccion.*` de la guía no existe. `seleccionado=None` cuando no viene ninguna
+    de las dos: no es lo mismo que `False`, y el cliente no infiere ganadores.
     """
 
     rut_proveedor: str
@@ -304,6 +308,7 @@ class CotizacionCA:
     codigo_empresa: str | None = None
     codigo_sucursal: str | None = None
     id_cotizacion: str | None = None
+    id_oc: str | None = None
     estado_id: int | None = None
     estado_glosa: str | None = None
     estado_por_comprador: str | None = None
@@ -332,7 +337,6 @@ class CompraAgilDetalle(CompraAgilBasica):
     estado_convocatoria: int | None = None
     # F-merc-0b: aditivos, con default; los consumidores de antes no los ven.
     cotizaciones: list[CotizacionCA] = field(default_factory=list)
-    unidad_compra: str | None = None
     direccion_entrega: str | None = None
     plazo_entrega_dias: int | None = None
     tipo_presupuesto: str | None = None

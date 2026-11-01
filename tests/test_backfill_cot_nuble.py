@@ -82,7 +82,7 @@ def _detalle(codigo: str, *, con_ofertas: bool = True) -> dict[str, Any]:
             "rut_proveedor": "11111111-1",
             "razon_social": "Uno SpA",
             "es_emt": True,
-            "seleccion": {"proveedor_seleccionado": True},
+            "proveedor_seleccionado": True,
             "monto_total": 11305,
             "valor_neto": 9000,
             "total_impuesto": 1710,
@@ -98,7 +98,7 @@ def _detalle(codigo: str, *, con_ofertas: bool = True) -> dict[str, Any]:
             "rut_proveedor": "22222222-2",
             "razon_social": "Dos Ltda",
             "es_emt": False,
-            "seleccion": {"proveedor_seleccionado": False},
+            "proveedor_seleccionado": False,
             "monto_total": 13000,
             "productos_cotizados": [
                 {"codigo_producto": 50131700, "nombre_producto": "Leche", "cantidad": 10,
@@ -122,24 +122,59 @@ def _detalle(codigo: str, *, con_ofertas: bool = True) -> dict[str, Any]:
     return {"success": "OK", "payload": payload, "errors": []}
 
 
-def _listado(codigos: list[str]) -> dict[str, Any]:
+def _listado(
+    items: list[tuple[str, str]], total_resultados: int | None = None
+) -> dict[str, Any]:
     return {
         "success": "OK",
         "payload": {
-            "convocatorias": [{"codigo": c, "estado": "proveedor_seleccionado"} for c in codigos],
-            "paginacion": {"total_paginas": 1, "total_resultados": len(codigos)},
+            "convocatorias": [
+                {
+                    "codigo": c,
+                    "nombre": f"CA {c}",
+                    "estado": {"codigo": estado, "glosa": estado},
+                    "fechas": {"fecha_publicacion": "2026-08-01 09:00",
+                               "fecha_cierre": "2026-08-05 15:00"},
+                    "institucion": {"region": 16, "organismo_comprador": "Muni Ficticia",
+                                    "unidad_compra": "Educación"},
+                    "montos": {"monto_disponible_clp": 20000},
+                    "resumen": {"total_ofertas_recibidas": 2},
+                }
+                for c, estado in items
+            ],
+            "paginacion": {
+                "total_paginas": 1,
+                "total_resultados": len(items) if total_resultados is None else total_resultados,
+            },
         },
         "errors": [],
     }
 
 
-def _mock_listado(por_dia: dict[tuple[str, str], list[str]]) -> respx.Route:
-    """`por_dia[(AAAA-MM-DD, estado_param)]` = códigos; el resto de días, vacío."""
+def _mock_listado(
+    por_dia: dict[Any, list[Any]], total_resultados: int | None = None
+) -> respx.Route:
+    """`por_dia[AAAA-MM-DD]` = CA de ese día; el resto de días, vacío.
+
+    Cada CA es un código (estado `proveedor_seleccionado`) o `(código, estado)`. La clave
+    `(día, estado)` de antes también vale y pone ese estado a sus códigos. El listado NO
+    recibe `estado` (el filtro devuelve 0 [V]): si llegara, la respuesta sería vacía.
+    """
+
+    def normalizar(clave: Any, cas: list[Any]) -> tuple[str, list[tuple[str, str]]]:
+        dia, estado = clave if isinstance(clave, tuple) else (clave, "proveedor_seleccionado")
+        return dia, [ca if isinstance(ca, tuple) else (ca, estado) for ca in cas]
+
+    dias: dict[str, list[tuple[str, str]]] = {}
+    for clave, cas in por_dia.items():
+        dia, items = normalizar(clave, cas)
+        dias.setdefault(dia, []).extend(items)
 
     def responder(request: httpx.Request) -> httpx.Response:
+        if "estado" in request.url.params:
+            return httpx.Response(200, json=_listado([]))
         dia = request.url.params["publicado_desde"][:10]
-        estado = request.url.params["estado"]
-        return httpx.Response(200, json=_listado(por_dia.get((dia, estado), [])))
+        return httpx.Response(200, json=_listado(dias.get(dia, []), total_resultados))
 
     return respx.get(_LISTADO).mock(side_effect=responder)
 
@@ -148,7 +183,7 @@ def _backfill(cliente: MercadoPublicoV2Client, tmp_path: Path, **kw: Any) -> Any
     opciones: dict[str, Any] = {
         "meses": ["2026-08"],
         "region": 16,
-        "estados": ["proveedor_seleccionado", "desierta"],
+        "estados_detalle": ["proveedor_seleccionado"],
         "max_requests": 500,
         "tamano_pagina": 50,
         "dir_salida": tmp_path,
@@ -213,21 +248,21 @@ def test_defaults_de_noche():
 
 @respx.mock
 def test_corrida_completa_csv_con_las_columnas(cliente, tmp_path):
-    _mock_listado({("2026-08-01", "proveedor_seleccionado"): ["CA-1"],
-                   ("2026-08-02", "desierta"): ["CA-2"]})
+    _mock_listado({"2026-08-01": ["CA-1"], "2026-08-02": [("CA-2", "desierta")]})
     respx.get(_DETALLE.format(codigo="CA-1")).mock(
         return_value=httpx.Response(200, json=_detalle("CA-1"))
     )
-    d2 = _detalle("CA-2", con_ofertas=False)
-    d2["payload"]["estado"] = {"codigo": "desierta"}
-    respx.get(_DETALLE.format(codigo="CA-2")).mock(return_value=httpx.Response(200, json=d2))
+    d2 = respx.get(_DETALLE.format(codigo="CA-2")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-2", con_ofertas=False))
+    )
 
     r = _backfill(cliente, tmp_path).correr()
 
     assert r.motivo_fin == "completo"
-    assert r.detalles == 2
-    # 31 días × 2 pases de listado + 2 detalles.
-    assert r.requests == 64
+    assert r.detalles == 1
+    assert not d2.called  # desierta: se lista, no pide detalle
+    # 31 días de listado (una sola pasada, sin pases) + 1 detalle.
+    assert r.requests == 32
     columnas, filas = _leer_csv(tmp_path / "cot_api_2026-08.csv.gz")
     assert columnas == bf.COLUMNAS
     ca1 = [f for f in filas if f["CodigoCotizacion"] == "CA-1"]
@@ -244,35 +279,125 @@ def test_corrida_completa_csv_con_las_columnas(cliente, tmp_path):
     assert (leche_gana["TotalImpuesto"], leche_gana["MontoDespacho"]) == ("1710", "595")
     arroz = next(f for f in ca1 if f["CodigoProducto"] == "50221100")
     assert arroz["PrecioUnitario"] == "1200"
-    ca2 = [f for f in filas if f["CodigoCotizacion"] == "CA-2"]
-    assert len(ca2) == 2  # sin ofertas: una fila por producto pedido
-    assert all(f["RUTProveedor"] == "" for f in ca2)
     estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
     assert estado["meses_completos"] == ["2026-08"]
 
 
 @respx.mock
-def test_seleccionadas_primero(cliente, tmp_path):
-    _mock_listado({("2026-08-01", "desierta"): ["CA-D"],
-                   ("2026-08-31", "proveedor_seleccionado"): ["CA-S"]})
-    orden: list[str] = []
-    for c in ("CA-D", "CA-S"):
-        def responder(request: httpx.Request, c: str = c) -> httpx.Response:
-            orden.append(c)
-            return httpx.Response(200, json=_detalle(c))
-        respx.get(_DETALLE.format(codigo=c)).mock(side_effect=responder)
+def test_lista_sin_estado_y_filtra_localmente(cliente, tmp_path):
+    ruta = _mock_listado({
+        "2026-08-01": ["CA-1", ("CA-2", "desierta"), ("CA-3", "cancelada"), ("CA-4", "cerrada")],
+    })
+    detalle = respx.get(url__regex=r".*/v2/compra-agil/CA-.*").mock(
+        side_effect=lambda req: httpx.Response(
+            200, json=_detalle(req.url.path.rsplit("/", 1)[1])
+        )
+    )
+
+    r = _backfill(cliente, tmp_path).correr()
+
+    assert all("estado" not in c.request.url.params for c in ruta.calls)
+    assert [c.request.url.path.rsplit("/", 1)[1] for c in detalle.calls] == ["CA-1"]
+    assert r.ca_listadas == 4
+    # Con --estados-detalle ampliado, las otras también piden detalle.
+    r2 = _backfill(cliente, tmp_path / "otra",
+                   estados_detalle=["proveedor_seleccionado", "desierta"]).correr()
+    assert r2.detalles == 2
+
+
+@respx.mock
+def test_listado_completo_a_csv_con_todos_los_estados(cliente, tmp_path):
+    _mock_listado({"2026-08-01": ["CA-1", ("CA-2", "desierta"), ("CA-3", "cancelada")]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-1"))
+    )
 
     _backfill(cliente, tmp_path).correr()
 
-    assert orden == ["CA-S", "CA-D"]
+    columnas, filas = _leer_csv(tmp_path / "ca_api_listado_2026-08.csv.gz")
+    assert columnas == bf.COLUMNAS_LISTADO
+    assert {f["codigo"]: f["estado"] for f in filas} == {
+        "CA-1": "proveedor_seleccionado", "CA-2": "desierta", "CA-3": "cancelada"}
+    ca2 = next(f for f in filas if f["codigo"] == "CA-2")
+    assert ca2["organismo"] == "Muni Ficticia"
+    assert ca2["unidad"] == "Educación"
+    assert ca2["monto_disponible"] == "20000"
+    assert ca2["total_ofertas"] == "2"
+    assert ca2["fecha_publicacion"] == "2026-08-01 09:00"
+    assert ca2["fecha_cierre"] == "2026-08-05 15:00"
+
+
+@respx.mock
+def test_dia_vacio_no_se_guarda_como_listado(cliente, tmp_path):
+    _mock_listado({"2026-08-01": ["CA-1"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-1"))
+    )
+
+    _backfill(cliente, tmp_path).correr()
+
+    estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
+    assert list(estado["listados"]) == ["2026-08|2026-08-01"]
+
+
+@respx.mock
+def test_mes_sin_resultados_corta_y_no_se_marca_completo(cliente, tmp_path):
+    ruta = _mock_listado({})
+
+    r = _backfill(cliente, tmp_path, meses=["2026-08", "2026-07"]).correr()
+
+    assert r.motivo_fin == "mes sin resultados: revisar filtros"
+    assert r.requests == 31  # los 31 días de agosto; julio ni se toca
+    assert ruta.call_count == 31
+    estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
+    assert estado["meses_completos"] == []
+    assert estado["listados"] == {}
+
+
+@respx.mock
+def test_dia_con_10000_resultados_corta_con_aviso(cliente, tmp_path):
+    _mock_listado({"2026-08-01": ["CA-1"]}, total_resultados=10_000)
+
+    r = _backfill(cliente, tmp_path).correr()
+
+    assert "total_resultados >= 10000" in r.motivo_fin
+    assert r.requests == 1
+    estado = json.loads((tmp_path / "_backfill_estado.json").read_text(encoding="utf-8"))
+    assert estado["listados"] == {}
+    assert not (tmp_path / "ca_api_listado_2026-08.csv.gz").exists()
+
+
+@respx.mock
+def test_control_de_calidad_de_ganadores(cliente, tmp_path, capsys):
+    _mock_listado({"2026-08-01": ["CA-1", "CA-0", "CA-N", "CA-X"]})
+    ninguno = _detalle("CA-0")
+    for o in ninguno["payload"]["proveedores_cotizando"]:
+        o["proveedor_seleccionado"] = False
+    sin_ofertas = _detalle("CA-N", con_ofertas=False)
+    varios = _detalle("CA-X")
+    for o in varios["payload"]["proveedores_cotizando"]:
+        o["proveedor_seleccionado"] = True
+    for codigo, cuerpo in (("CA-1", _detalle("CA-1")), ("CA-0", ninguno),
+                           ("CA-N", sin_ofertas), ("CA-X", varios)):
+        respx.get(_DETALLE.format(codigo=codigo)).mock(
+            return_value=httpx.Response(200, json=cuerpo)
+        )
+
+    r = _backfill(cliente, tmp_path).correr()
+    r.imprimir()
+
+    assert (r.ganador_1, r.ganador_0, r.ganador_varios) == (1, 2, 1)
+    assert "exactamente 1 = 1, 0 = 2, más de 1 = 1" in capsys.readouterr().out
 
 
 @respx.mock
 def test_reanuda_desde_el_json_sin_repetir_detalles(cliente, tmp_path):
     (tmp_path / "_backfill_estado.json").write_text(json.dumps({
-        "listados": {f"2026-08|{p}|2026-08-{d:02d}": [] for p in ("proveedor_seleccionado", "resto")
-                     for d in range(1, 32)} | {
-            "2026-08|proveedor_seleccionado|2026-08-01": ["CA-1", "CA-2"]},
+        "listados": {
+            "2026-08|2026-08-01": {"CA-1": "proveedor_seleccionado", "CA-2": "proveedor_seleccionado"},
+            # Formato viejo (por "pase"): se descarta, no rompe.
+            "2026-08|resto|2026-08-02": ["CA-9"],
+        },
         "hechos": ["CA-1"],
     }), encoding="utf-8")
     listado = _mock_listado({})
@@ -285,10 +410,13 @@ def test_reanuda_desde_el_json_sin_repetir_detalles(cliente, tmp_path):
 
     r = _backfill(cliente, tmp_path).correr()
 
-    assert not listado.called
+    # El día 1 está en el estado: no se vuelve a listar. Los otros 30 sí (1 request c/u).
+    pedidos = {c.request.url.params["publicado_desde"][:10] for c in listado.calls}
+    assert "2026-08-01" not in pedidos
+    assert len(pedidos) == 30
     assert not d1.called
     assert d2.call_count == 1
-    assert r.requests == 1
+    assert r.requests == 31
 
 
 @respx.mock

@@ -132,6 +132,7 @@ def _parse_ca_basica(item: dict[str, object]) -> CompraAgilBasica:
         organismo_nombre=_texto_o_none(institucion.get("organismo_comprador")),
         organismo_rut=_texto_o_none(institucion.get("rut")),
         total_ofertas=total_ofertas,
+        unidad_compra=_texto_o_none(institucion.get("unidad_compra")),
     )
 
 
@@ -194,19 +195,26 @@ def _parse_cotizacion(c: dict[str, object]) -> CotizacionCA:
     if rut is None:
         _log.warning("Detalle CA: oferta sin rut_proveedor; se conserva con RUT vacío")
 
-    estado = _campo(c, "estado_cotizacion", ctx)
+    # Forma real [V, sonda 31-oct]: `estado` (dict o texto). `estado_cotizacion`, que
+    # documenta la guía, queda de respaldo.
+    estado = c.get("estado")
+    if estado is None:
+        estado = c.get("estado_cotizacion")
     if isinstance(estado, dict):
-        estado_id, estado_glosa = parse_int(estado.get("id")), _texto_o_none(estado.get("glosa"))
+        estado_id = parse_int(estado.get("id"))
+        estado_glosa = _texto_o_none(estado.get("glosa")) or _texto_o_none(estado.get("codigo"))
     else:
         estado_id, estado_glosa = None, _texto_o_none(estado)
 
-    # `seleccion` ausente → None, no False: no confirmado en la respuesta real.
-    seleccion = _campo(c, "seleccion", ctx)
-    seleccionado = motivo = criterio = None
-    if isinstance(seleccion, dict):
+    # Forma real [V]: `proveedor_seleccionado` al nivel de la oferta. `seleccion.*`
+    # (guía v3.0, no existe en la respuesta real) queda de respaldo. Ausente → None,
+    # no False: el cliente no infiere ganadores.
+    seleccionado = parse_binario(_campo(c, "proveedor_seleccionado", ctx))
+    seleccion = _dict(c.get("seleccion"))
+    if seleccionado is None:
         seleccionado = parse_binario(seleccion.get("proveedor_seleccionado"))
-        motivo = _texto_o_none(seleccion.get("motivo_seleccion"))
-        criterio = _texto_o_none(seleccion.get("criterio_seleccion"))
+    motivo = _texto_o_none(seleccion.get("motivo_seleccion"))
+    criterio = _texto_o_none(seleccion.get("criterio_seleccion"))
 
     productos_raw = _campo(c, "productos_cotizados", ctx)
     productos = (
@@ -225,6 +233,7 @@ def _parse_cotizacion(c: dict[str, object]) -> CotizacionCA:
         codigo_empresa=_texto_o_none(_campo(c, "codigo_empresa", ctx)),
         codigo_sucursal=_texto_o_none(_campo(c, "codigo_sucursal_empresa", ctx)),
         id_cotizacion=_texto_o_none(_campo(c, "id_cotizacion", ctx)),
+        id_oc=_texto_o_none(_campo(c, "id_oc", ctx)),
         estado_id=estado_id,
         estado_glosa=estado_glosa,
         estado_por_comprador=_texto_o_none(_campo(c, "estado_por_comprador", ctx)),
@@ -290,7 +299,6 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
         convocatoria = parse_int(payload.get("estado_convocatoria"))
 
     # Rutas de la guía (F-merc-0b), no verificadas en una respuesta real [I].
-    institucion = _dict(payload.get("institucion"))
     entrega = _dict(payload.get("entrega"))
     presupuesto = _dict(payload.get("presupuesto"))
     motivos = _dict(payload.get("motivos"))
@@ -313,7 +321,7 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
         id_orden_compra=id_oc,
         estado_convocatoria=convocatoria,
         cotizaciones=_parse_cotizaciones(payload),
-        unidad_compra=_texto_o_none(institucion.get("unidad_compra")),
+        unidad_compra=base.unidad_compra,
         direccion_entrega=_texto_o_none(entrega.get("direccion_entrega")),
         plazo_entrega_dias=parse_int(entrega.get("plazo_entrega_dias")),
         tipo_presupuesto=_texto_o_none(presupuesto.get("tipo_presupuesto")),
