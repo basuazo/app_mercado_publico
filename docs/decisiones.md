@@ -79,3 +79,9 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   también, para no purgar CA de Ñuble antes de F-merc-1 §1.7). La web en Render queda como está. Una sola
   key: `MP_TICKET` queda entera para el pivote.
 - **Alimentos es el giro principal del pivote**; los demás rubros son expansión, no prioritarios.
+- **Backfill diurno (2-nov-2026, Boris):** excepción a la regla 5 de `CLAUDE.md` mientras la ingesta de la
+  app esté en pausa: `scripts/backfill_cot_nuble.py --diurno` puede correr fuera de 22:00–07:00 si no supera
+  0,5 req/s (el ritmo de producción) ni 2.000 requests por corrida (el script baja con aviso un `--rps` o un
+  `--max-requests` mayores). La espera tras un 429 y `--max-pausas` funcionan igual que de noche, y el modo se
+  fija al arrancar: una corrida diurna que entra a la ventana nocturna sigue con los límites diurnos. Sin
+  `--diurno` nada cambia (fuera de ventana no emite). Al retomar la ingesta de la app, la excepción deja de valer.

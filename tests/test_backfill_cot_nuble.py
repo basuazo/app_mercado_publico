@@ -244,6 +244,50 @@ def test_defaults_de_noche():
     assert a.max_pausas == 15
     assert a.max_requests == 6000
     assert bf.parsear_args(["--no-seguir-tras-pausa"]).seguir_tras_pausa is False
+    assert bf.parsear_args([]).diurno is False
+
+
+def test_diurno_defaults_y_topes(capsys):
+    a = bf.parsear_args(["--diurno"])
+    assert a.diurno is True
+    assert a.max_requests == 2000
+    assert a.rps == 0.5
+    assert a.seguir_tras_pausa is True
+    assert a.max_pausas == 15
+    assert capsys.readouterr().out == ""  # sin pedir de más no hay aviso
+
+
+def test_diurno_baja_el_rps_a_0_5_con_aviso(capsys):
+    a = bf.parsear_args(["--diurno", "--rps", "2"])
+    assert a.rps == 0.5
+    assert "limita --rps a 0.5" in capsys.readouterr().out
+    # Un ritmo menor se respeta.
+    assert bf.parsear_args(["--diurno", "--rps", "0.2"]).rps == 0.2
+
+
+def test_diurno_baja_max_requests_a_2000_con_aviso(capsys):
+    a = bf.parsear_args(["--diurno", "--max-requests", "5000"])
+    assert a.max_requests == 2000
+    assert "limita --max-requests a 2000" in capsys.readouterr().out
+    assert bf.parsear_args(["--diurno", "--max-requests", "300"]).max_requests == 300
+
+
+def test_sin_diurno_nada_cambia(capsys):
+    a = bf.parsear_args(["--rps", "2", "--max-requests", "5000"])
+    assert (a.rps, a.max_requests) == (2.0, 5000)  # de noche no hay tope de rps
+    assert bf.parsear_args([]).max_requests == 6000
+    assert capsys.readouterr().out == ""
+
+
+def test_diurno_y_fuera_de_ventana_son_excluyentes():
+    with pytest.raises(SystemExit):
+        bf.parsear_args(["--diurno", "--fuera-de-ventana", "--max-requests", "30"])
+
+
+def test_main_sin_diurno_fuera_de_ventana_no_emite(monkeypatch, capsys):
+    monkeypatch.setattr(bf, "en_ventana_nocturna", lambda *a, **k: False)
+    assert bf.main([]) == 0
+    assert "No se emite nada" in capsys.readouterr().out
 
 
 @respx.mock
@@ -627,3 +671,82 @@ def test_filas_de_detalle_sin_productos_ni_ofertas():
     assert len(filas) == 1
     assert filas[0]["CodigoCotizacion"] == "CA-9"
     assert filas[0]["RUTProveedor"] == ""
+
+
+@respx.mock
+def test_diurno_fuera_de_ventana_corre(cliente, tmp_path):
+    _mock_listado({"2026-08-01": ["CA-1"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-1"))
+    )
+
+    r = _backfill(cliente, tmp_path, now_fn=lambda tz=TZ_CHILE: _DIA.astimezone(tz),
+                  diurno=True).correr()
+
+    assert r.motivo_fin == "completo"
+    assert r.modo == "diurno"
+    assert r.detalles == 1
+    assert r.requests == 32
+
+
+@respx.mock
+def test_sin_diurno_fuera_de_ventana_no_emite_y_dice_nocturno(cliente, tmp_path):
+    ruta = _mock_listado({"2026-08-01": ["CA-1"]})
+
+    r = _backfill(cliente, tmp_path, now_fn=lambda tz=TZ_CHILE: _DIA.astimezone(tz)).correr()
+
+    assert "fuera de la ventana" in r.motivo_fin
+    assert r.modo == "nocturno"
+    assert not ruta.called
+
+
+@respx.mock
+def test_el_resumen_indica_el_modo(cliente, tmp_path, capsys):
+    _mock_listado({})
+    _backfill(cliente, tmp_path, diurno=True).correr().imprimir()
+    assert "Modo:              diurno" in capsys.readouterr().out
+    _backfill(cliente, tmp_path).correr().imprimir()
+    assert "Modo:              nocturno" in capsys.readouterr().out
+
+
+@respx.mock
+def test_diurno_espera_la_pausa_igual_que_de_noche(cliente, tmp_path):
+    reloj = _Reloj(_DIA)  # 15:00, fuera de la ventana nocturna
+    _mock_listado({"2026-08-01": ["CA-1", "CA-2"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-1"))
+    )
+    respx.get(_DETALLE.format(codigo="CA-2")).mock(
+        side_effect=[_429, httpx.Response(200, json=_detalle("CA-2"))]
+    )
+
+    r = _con_reloj(cliente, tmp_path, reloj, diurno=True).correr()
+
+    assert r.motivo_fin == "completo"
+    assert (r.corridas, r.pausas) == (2, 1)
+    assert reloj.dormido == [20 * 60 + 60.0]
+
+
+@respx.mock
+def test_diurno_que_entra_a_la_noche_sigue_con_los_limites_diurnos(cliente, tmp_path):
+    # 21:50 Chile: la pausa de 20 min + jitter despierta a las 22:11, ya en la ventana nocturna.
+    reloj = _Reloj(datetime(2026, 10, 31, 21, 50, tzinfo=TZ_CHILE))
+    _mock_listado({"2026-08-01": ["CA-1", "CA-2", "CA-3"]})
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-1"))
+    )
+    respx.get(_DETALLE.format(codigo="CA-2")).mock(
+        side_effect=[_429, httpx.Response(200, json=_detalle("CA-2"))]
+    )
+    respx.get(_DETALLE.format(codigo="CA-3")).mock(
+        return_value=httpx.Response(200, json=_detalle("CA-3"))
+    )
+
+    # max_requests fijo de la corrida (el tope diurno): se respeta aunque ya sea de noche.
+    r = _con_reloj(cliente, tmp_path, reloj, diurno=True, max_requests=4).correr()
+
+    assert r.modo == "diurno"
+    assert reloj.t.astimezone(TZ_CHILE).hour == 22  # despertó dentro de la ventana nocturna
+    assert (r.corridas, r.pausas) == (2, 1)
+    assert "--max-requests 4" in r.motivo_fin
+    assert r.requests == 4

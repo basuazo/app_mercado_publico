@@ -51,10 +51,12 @@ del 31-oct (F-merc-0b-fix2, [V] en `01-analisis-api-mercado-publico.md` §10) li
 (`proveedor_seleccionado`) pide detalle. Salidas: `data/mercado/cot_api_{AAAA-MM}.csv.gz`, el listado completo de
 CA de cualquier estado en `ca_api_listado_{AAAA-MM}.csv.gz` y el avance en `_backfill_estado.json`. El observatorio
 (`scripts/mercado/mercado_observatorio.py`; sus salidas quedan en `data/mercado/`, fuera de git) prefiere `cot_api_*` a `COT_` por mes y agrega precio
-unitario ganador/perdedores por producto de alimentos. **Pasos de Boris:** (1) de día,
-`--fuera-de-ventana --meses 2026-08 --max-requests 30` y pegar la salida (el resumen trae el control de
-calidad de ganadores por CA); (2) lo mismo con `--meses 2026-03`; (3) primera noche sin flags y revisar los 429
-del resumen. Las claves de la oferta son [V] (sonda 31-oct); `monto_total` con o sin IVA sigue [I].
+unitario ganador/perdedores por producto de alimentos. **Backfill diurno (F-merc-0b-diurno, 2-nov):** `--diurno` permite correr de día mientras la ingesta de la
+app esté en pausa, con tope de 0,5 req/s y 2.000 requests por corrida (regla 5, excepción en `CLAUDE.md`).
+**Pasos de Boris:** (1) `--diurno --meses 2026-08 --max-requests 300` y pegar la salida (el resumen indica el
+modo y trae el control de calidad de ganadores por CA); (2) lo mismo con `--meses 2026-03`; (3) corrida
+completa de noche sin flags (hasta 6.000 requests) o de día con `--diurno` (2.000 por corrida), y revisar los
+429 del resumen. Las claves de la oferta son [V] (sonda 31-oct); `monto_total` con o sin IVA sigue [I].
 
 Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
 1. ~~Paso 0 de la auditoría~~ hecho el 08-oct (resultado en `14-auditoria-integral.md` §7-bis).

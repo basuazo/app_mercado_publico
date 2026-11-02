@@ -6,7 +6,10 @@ como `smoke_test.py`: NO en Actions ni en tests automáticos. Usa `MP_TICKET`, e
 Corrección 31-oct: la ingesta de la app está en pausa mientras corre este puente, así que
 no compite con producción: `reserva=0` y `--rps 0.5` por defecto (el ritmo de producción).
 
-Solo entre 22:00 y 07:00 de Chile (regla 5). Un 429 cierra la corrida guardando el avance
+Solo entre 22:00 y 07:00 de Chile (regla 5), salvo `--diurno` (excepción 2-nov-2026, Boris,
+mientras la ingesta de la app esté en pausa): corre de día con `--rps` <= 0.5 y
+`--max-requests` <= 2000 (default 2000; de noche, 6000). El modo se fija al arrancar: una
+corrida diurna que entra a la ventana nocturna sigue con los límites diurnos. Un 429 cierra la corrida guardando el avance
 (regla 3); de noche, con `--seguir-tras-pausa` (default), el script duerme hasta el fin de la
 pausa de `api_pausa` + 30–90 s y empieza otra corrida con el mismo estado, hasta
 `--max-pausas` (15), `--max-requests` (6000) o el fin de la ventana.
@@ -14,6 +17,7 @@ pausa de `api_pausa` + 30–90 s y empieza otra corrida con el mismo estado, has
 Uso (PowerShell, desde la raíz del repo):
     $env:PYTHONIOENCODING = "utf-8"
     python scripts\\backfill_cot_nuble.py                                    # noche
+    python scripts\\backfill_cot_nuble.py --diurno                           # de dia, 0.5 req/s, 2000 req
     python scripts\\backfill_cot_nuble.py --fuera-de-ventana --meses 2026-08 --max-requests 30
 
 Por mes: listado por ventanas de un día de publicación SIN parámetro `estado` (el filtro
@@ -76,6 +80,10 @@ from app.core.tiempo import (  # noqa: E402
 DIR_SALIDA = Path(__file__).resolve().parent.parent / "data" / "mercado"
 MESES_DEFAULT = "2026-08,2026-07,2026-06,2026-04,2026-03"
 ESTADOS_DETALLE_DEFAULT = "proveedor_seleccionado"
+# Tope del modo diurno (regla 5, excepción 2-nov-2026): ritmo de producción y requests por corrida.
+_RPS_DIURNO_MAX = 0.5
+_MAX_REQUESTS_DIURNO = 2000
+_MAX_REQUESTS_NOCTURNO = 6000
 # La API topa `total_resultados` en 10.000 [V, 31-oct]: más allá la ventana ya no es confiable.
 _TOPE_RESULTADOS = 10_000
 # Fallos seguidos de detalle (5xx, timeout, JSON roto) antes de cortar la noche.
@@ -276,10 +284,12 @@ class Resumen:
     ganador_1: int = 0
     ganador_0: int = 0
     ganador_varios: int = 0
+    modo: str = "nocturno"
     motivo_fin: str = "completo"
 
     def imprimir(self) -> None:
         print("\n=== Resumen backfill COT Ñuble ===")
+        print(f"Modo:              {self.modo}")
         print(f"Requests emitidas: {self.requests}")
         print(f"CA listadas:       {self.ca_listadas}")
         print(f"Detalles:          {self.detalles} (fallidos, quedan pendientes: {self.fallidos})")
@@ -313,6 +323,7 @@ class Backfill:
         tamano_pagina: int,
         dir_salida: Path,
         fuera_de_ventana: bool = False,
+        diurno: bool = False,
         seguir_tras_pausa: bool = False,
         max_pausas: int = 15,
         now_fn: Callable[..., datetime] | None = None,
@@ -327,13 +338,17 @@ class Backfill:
         self.tamano_pagina = tamano_pagina
         self.dir_salida = dir_salida
         self.fuera_de_ventana = fuera_de_ventana
+        # El modo queda fijo toda la corrida: entrar a la ventana nocturna no cambia los límites.
+        self.diurno = diurno
+        self.resumen = Resumen(modo="diurno" if diurno else "nocturno")
+        if fuera_de_ventana:
+            self.resumen.modo = "prueba fuera de ventana"
         self.seguir_tras_pausa = seguir_tras_pausa
         self.max_pausas = max_pausas
         self.now_fn = now_fn or (lambda tz=TZ_CHILE: datetime.now(tz))
         self.sleep_fn = sleep_fn
         self.jitter_fn = jitter_fn
         self.estado = Estado(dir_salida / "_backfill_estado.json")
-        self.resumen = Resumen()
         self._fallos_seguidos = 0
         # Cuenta CADA request emitida (también los reintentos del cliente) y
         # anota la hora de cada 429. Solo lee status y hora: el header `ticket`
@@ -354,7 +369,7 @@ class Backfill:
     # -- cortes --------------------------------------------------------------
 
     def _revisar(self) -> None:
-        if not self.fuera_de_ventana and not en_ventana_nocturna(self.now_fn):
+        if not (self.fuera_de_ventana or self.diurno) and not en_ventana_nocturna(self.now_fn):
             raise Corte("fuera de la ventana 22:00–07:00 Chile")
         if self.resumen.requests >= self.max_requests:
             raise Corte(f"--max-requests {self.max_requests} alcanzado")
@@ -519,7 +534,7 @@ class Backfill:
         espera = max(0.0, (hasta - ahora).total_seconds()) if hasta is not None else 0.0
         espera += self.jitter_fn()
         despertar = ahora + timedelta(seconds=espera)
-        if not en_ventana_nocturna(lambda tz: despertar.astimezone(tz)):
+        if not self.diurno and not en_ventana_nocturna(lambda tz: despertar.astimezone(tz)):
             self.resumen.motivo_fin += "; la pausa termina fuera de la ventana 22–07, no se reanuda"
             return False
         print(f"Pausa: espero {espera / 60:.1f} min, hasta {despertar.astimezone(TZ_CHILE):%H:%M} Chile")
@@ -557,12 +572,24 @@ def parsear_args(argv: list[str] | None = None) -> argparse.Namespace:
         f"{ESTADOS_DETALLE_DEFAULT})",
     )
     ap.add_argument("--rps", type=float, default=0.5, help="requests por segundo (def. 0.5)")
-    ap.add_argument("--max-requests", type=int, default=6000)
+    ap.add_argument(
+        "--max-requests",
+        type=int,
+        default=None,
+        help=f"tope de requests por corrida (def. {_MAX_REQUESTS_NOCTURNO}; "
+        f"{_MAX_REQUESTS_DIURNO} con --diurno)",
+    )
     ap.add_argument("--tamano-pagina", type=int, default=50)
     ap.add_argument(
         "--fuera-de-ventana",
         action="store_true",
         help="solo para la prueba corta de día; exige --max-requests ≤ 30",
+    )
+    ap.add_argument(
+        "--diurno",
+        action="store_true",
+        help=f"correr fuera de 22:00–07:00 con rps <= {_RPS_DIURNO_MAX} y <= {_MAX_REQUESTS_DIURNO} "
+        "requests (regla 5, excepción 2-nov-2026: solo con la ingesta de la app en pausa)",
     )
     ap.add_argument(
         "--seguir-tras-pausa",
@@ -572,8 +599,23 @@ def parsear_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     ap.add_argument("--max-pausas", type=int, default=15, help="pausas esperadas por noche (def. 15)")
     a = ap.parse_args(argv)
+    if a.diurno and a.fuera_de_ventana:
+        ap.error("--diurno y --fuera-de-ventana son excluyentes")
+    if a.max_requests is None:
+        a.max_requests = _MAX_REQUESTS_DIURNO if a.diurno else _MAX_REQUESTS_NOCTURNO
     if a.fuera_de_ventana and a.max_requests > 30:
         ap.error("--fuera-de-ventana solo se permite con --max-requests 30 o menos")
+    if a.diurno:
+        # Los topes diurnos no se pueden superar: se bajan con aviso.
+        if a.rps > _RPS_DIURNO_MAX:
+            print(f"Aviso: --diurno limita --rps a {_RPS_DIURNO_MAX} (pidieron {a.rps}).")
+            a.rps = _RPS_DIURNO_MAX
+        if a.max_requests > _MAX_REQUESTS_DIURNO:
+            print(
+                f"Aviso: --diurno limita --max-requests a {_MAX_REQUESTS_DIURNO} "
+                f"(pidieron {a.max_requests})."
+            )
+            a.max_requests = _MAX_REQUESTS_DIURNO
     # Con --fuera-de-ventana nunca se espera una pausa: la prueba de día es corta.
     a.seguir_tras_pausa = not a.fuera_de_ventana and a.seguir_tras_pausa is not False
     return a
@@ -588,8 +630,9 @@ def main(argv: list[str] | None = None) -> int:
     from app.core.settings import Settings
 
     a = parsear_args(argv)
-    if not a.fuera_de_ventana and not en_ventana_nocturna():
-        print("Fuera de la ventana 22:00–07:00 de Chile (regla 5). No se emite nada.")
+    if not (a.fuera_de_ventana or a.diurno) and not en_ventana_nocturna():
+        print("Fuera de la ventana 22:00–07:00 de Chile (regla 5). No se emite nada; "
+              "con la ingesta de la app en pausa se puede usar --diurno.")
         return 0
 
     load_dotenv()
@@ -611,6 +654,7 @@ def main(argv: list[str] | None = None) -> int:
         tamano_pagina=a.tamano_pagina,
         dir_salida=DIR_SALIDA,
         fuera_de_ventana=a.fuera_de_ventana,
+        diurno=a.diurno,
         seguir_tras_pausa=a.seguir_tras_pausa,
         max_pausas=a.max_pausas,
     )

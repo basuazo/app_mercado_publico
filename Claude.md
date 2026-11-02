@@ -38,6 +38,9 @@ Render solo sirve la web; correo por API REST de Brevo.
 4. Rate limit propio 1 req/s con jitter. Sin paralelismo agresivo.
 5. Backfills masivos SOLO entre 22:00 y 07:00 hora de Chile, validado en código
    con ZoneInfo("America/Santiago") (los crons externos corren en UTC: no confiar en ellos).
+   Excepción (2-nov-2026, Boris): mientras la ingesta de la app esté en pausa, un backfill
+   puede correr de día si no supera el ritmo de producción (0,5 req/s) ni 2.000 requests por
+   corrida (`backfill_cot_nuble.py --diurno`).
 6. Parseo SIEMPRE defensivo: binarios v1 inconsistentes; en v2 codigo_orden_compra
    es null aunque exista OC (usar id_orden_compra); slugs de estado de OC con
    erratas oficiales (usar tal cual); tipologías obsoletas; desconocido → enum
