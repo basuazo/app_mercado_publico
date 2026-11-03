@@ -33,6 +33,13 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
 ## Siguiente
+**Plan confirmado (3-nov):** `17-plan-pivote-plataforma-ca.md` (plataforma de intermediación de CA: líneas 1:1,
+anexos, proveedores y costos, P(ganar), mesa del día, demanda) con prompts `prompt-F-plat-1..7.md` y reglas 24–26
+en `CLAUDE.md`. Orden: **F-merc-1 (Opus, ahora)** → F-merc-2 (Sonnet) → F-plat-3 (Sonnet) → F-plat-1 (Opus) →
+F-plat-2 (Opus) → F-plat-4 (Opus) → F-plat-5 (Sonnet, 4 semanas en sombra) → F-plat-6 (Opus) → F-plat-7 (Sonnet).
+Pendientes de Boris para las fases plat: 30 anexos reales con sus líneas, cuenta OpenRouter, 3 proveedores y
+tarifa por provincia, canasta de 80 productos, confirmar en la guía v3.0 si hay API de oferta.
+
 **Pivote (31-oct):** mesa de precios de Compra Ágil, piloto Ñuble, **alimentos como giro principal** y
 otros rubros como expansión → `16-pivote-compra-agil-nuble.md` e informe en `data/mercado/informe/`.
 Siguientes fases: **F-merc-1** (`prompt-F-merc-1.md`, Opus: segunda key `MP_TICKET_MERCADO`, cotizaciones

@@ -85,3 +85,12 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   `--max-requests` mayores). La espera tras un 429 y `--max-pausas` funcionan igual que de noche, y el modo se
   fija al arrancar: una corrida diurna que entra a la ventana nocturna sigue con los límites diurnos. Sin
   `--diurno` nada cambia (fuera de ventana no emite). Al retomar la ingesta de la app, la excepción deja de valer.
+- **Plataforma de intermediación de CA (3-nov-2026, Boris confirma `17-plan-pivote-plataforma-ca.md`):**
+  solo Compra Ágil y cuota solo para CA (regla 24); app actual congelada, el pivote vive al lado con el mismo
+  login y base (`/mesa`, `/proveedores`, `/catalogo`, `/abastecimiento`); empresas con territorio priorizado y
+  usuarios asignados por el admin (reglas 25 y 26); anexos: sonda a la API primero y, si no hay descarga, carga
+  manual desde la ficha pública con bandera "CA sin detalle" y corrección en la plataforma; extracción de anexos y
+  listas de precios con modelo de lenguaje vía OpenRouter (modelo elegido por set de evaluación de 30 anexos, el
+  más barato con ≥ 95 % de líneas correctas; presupuesto mensual persistido en Postgres y caché); proveedores y
+  costos se cargan desde cero. Orden de fases: F-merc-1 → F-merc-2 → F-plat-3 → F-plat-1 → F-plat-2 → F-plat-4 →
+  F-plat-5 (4 semanas en sombra) → F-plat-6 → F-plat-7.

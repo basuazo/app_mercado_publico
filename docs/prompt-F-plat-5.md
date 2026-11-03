@@ -1,0 +1,84 @@
+# Prompt de implementación — F-plat-5 (Mesa del día, ficha ampliada, ofertas propias y modo sombra) · 3-nov-2026
+
+> Para Claude Code. **Modelo: Sonnet** (UI HTMX sobre funciones ya existentes; contrato claro). Una fase = un
+> commit, **sin push**. **Con migración.** Va después de F-merc-1, F-merc-2, F-plat-1, F-plat-2, F-plat-3,
+> F-plat-4. Origen: `docs/17-plan-pivote-plataforma-ca.md` §2 C6; `16-pivote` §2 peldaño 2.
+
+## 0. Antes de escribir código
+- Leer `CLAUDE.md` (8, 17, 18), `17-plan` §2 C6 y R-p2/R-p3, `app/api/routes/pages.py` (feed `/`, ficha
+  modal, `/compras-agiles` explorador, `_card_oportunidad.html`, `_modal_ficha.html`), `app/api/query.py`
+  (`evaluacion_ca`, F-plat-4), `app/mercado/*`, `templates/base.html` (menú "Mesa" de F-plat-3).
+- **No hay API para enviar ofertas** [I: confirmar en la guía v3.0 antes de escribir la exportación; si la
+  hay, anotarlo [V] y dejar el envío automático como fase futura, no en esta]. La oferta se sube en el portal
+  a mano; la plataforma prepara y registra.
+
+## 1. Cambios
+
+### 1.1 Esquema
+- `predicciones`: `id`, `ca_codigo` FK, `empresa_id`, `creada_en`, `cierre_ca`, `modelo_id` FK,
+  `precio_sugerido`, `intervalo_80_min/max`, `p_ganar_sugerido`, `margen_esperado`, `cobertura`, `detalle` JSONB
+  (por línea), `resultado_precio_ganador` nullable, `resultado_gano_prediccion` nullable (si la empresa
+  ofertó), `cerrada_en`. **Se escribe antes del cierre y no se edita** (modo sombra). `UNIQUE (ca_codigo,
+  empresa_id, modelo_id)`.
+- `ofertas_propias`: `id`, `ca_codigo`, `empresa_id`, `usuario_id`, `estado` (`borrador|enviada|ganada|
+  perdida|desierta|no_enviada`), `lineas` JSONB (`[{linea_id, precio_unitario, proveedor_producto_id}]`),
+  `total_neto`, `plazo_entrega_dias`, `enviada_en`, `resultado_en`, `precio_ganador_real`, `margen_realizado`,
+  `notas`. `UNIQUE (ca_codigo, empresa_id)`.
+- `ca_descartes_mesa`: `ca_codigo`, `empresa_id`, `usuario_id`, `motivo`, `en`. (Separado de los descartes
+  de perfiles de la app antigua.)
+
+### 1.2 `/mesa` (usuarios con empresa)
+- Query: CA de `regiones_activas` con `estado` publicada y `fecha_cierre` futura, en familias del alcance
+  (`app/catalogos/mercado.py`), no descartadas por la empresa. Para cada una, `evaluacion_ca` (cacheada por
+  CA en la corrida de `mercado-ca`, tabla `evaluaciones_cache` o columna JSONB en `predicciones`: elegir y
+  justificar; la mesa **no** recalcula el modelo en cada request).
+- Orden por defecto: `margen_esperado × p_ganar` desc, con las **comunas priorizadas** de la empresa primero
+  (R-p2); luego cierre asc. Filtros: familia, comuna, cierra hoy/mañana/esta semana, "sin detalle",
+  "anexo pendiente", "con costo", "margen ≥ X %".
+- Tarjeta: comprador y unidad, comuna de entrega, cierre (hora Chile y cuenta regresiva), n líneas y estado
+  del detalle (bandera), precio sugerido con intervalo, costo, logística, margen, P(ganar) en 3 puntos,
+  competidores probables (top 3 proveedores por unidad compradora × familia en 12 meses, con tasa de
+  victoria), botones Cotizar / Descartar / Marcar sin detalle. Conteo por filtro vía HTMX como en
+  `/compras-agiles/conteo`.
+- Pie: "Fuente: Dirección ChileCompra" (regla 8).
+
+### 1.3 Ficha ampliada (`/mesa/ca/{codigo}`)
+- Pestañas: **Líneas** (F-plat-1 y F-plat-2: edición, anexo), **Precio y margen** (por línea: referencia con
+  ámbito y n, costo con proveedor elegido editable entre los de la empresa, logística, margen; total y
+  curva P(ganar)), **Comprador** (histórico 24 meses: qué compró de la familia, a quién, precio, n ofertas;
+  desde `oc_lineas_ca` y `ca_cotizaciones`), **Mi oferta**.
+- **Mi oferta**: parte de los precios sugeridos; el usuario ajusta por línea y ve margen y P(ganar)
+  recalculados (endpoint HTMX `POST /mesa/ca/{codigo}/simular`, sin persistir). "Guardar borrador",
+  "Marcar enviada" (fecha), "Exportar" → XLSX (openpyxl) con líneas, cantidades, precio unitario, total y
+  plazo, lista para transcribir al portal.
+- Enlace a la ficha pública de la CA (`_url_ficha("ca", codigo)`) para subir la oferta y bajar anexos.
+
+### 1.4 Modo sombra y cierre automático
+- En `mercado-ca`, para cada CA vigente en alcance con `cobertura ≥ 0,5`: si no hay `prediccion` de la
+  empresa y faltan ≥ 2 h para el cierre, se crea. Para cada empresa activa.
+- Al llegar el detalle con `proveedor_seleccionado` (F-merc-1), se cierra la predicción: `resultado_precio_
+  ganador`, y si hay `oferta_propia` enviada, su `estado` pasa a `ganada|perdida` comparando RUT de la
+  empresa con el ganador (campo `empresas.rut`), `precio_ganador_real` y `margen_realizado` (si ganó:
+  total − costo de las líneas al momento de la oferta − logística).
+- `/mesa/resultados`: tabla de predicciones cerradas de la empresa (últimas 8 semanas): predicho vs. real,
+  acierto del intervalo, ofertas propias y resultado; totales arriba (acierto %, ganadas, margen realizado).
+  Es la vista del juez del peldaño 2.
+
+### 1.5 Permisos y límites
+Ownership por `empresa_id` en predicciones, ofertas, descartes (regla 17; tests GET/POST cruzados → 404).
+CSRF en mutaciones. Un usuario sin empresa no ve `/mesa`.
+
+## 2. Tests
+Query de la mesa (alcance, territorio, descartes, orden con comunas priorizadas); simulación recalcula sin
+persistir; exportación XLSX con las columnas; predicción inmutable (segundo intento no la cambia); cierre
+automático con fixture de detalle con ganador = RUT de la empresa y ≠; ownership. `ruff`, `mypy app`,
+`pytest -rs` sin saltados.
+
+## 3. Cierre
+Changelog ("Mesa del día: qué cotizar, a qué precio y con qué margen"). `00-estado.md`: arranca el modo
+sombra de 4 semanas con fecha. Commit: `F-plat-5: mesa del día, ofertas propias y modo sombra`.
+
+## 4. Pasos de Boris
+1. Migración; activar en cron-job.org `mercado` cada 15 min (si no estaba) y `mercado-indices` nocturno.
+2. Usar `/mesa` 4 semanas: cotizar de verdad al menos 10 CA de alimentos; registrar enviadas y resultados.
+3. Al cierre de las 4 semanas: pegar `/mesa/resultados` → decide el paso al peldaño 3 (`16-pivote` §2).

@@ -11,6 +11,14 @@
 > `QuotaTracker` y la pausa `api_pausa` de siempre, sin `reserva`, y el lock existente. La sonda de §1.1 usa
 > `MP_TICKET`. No se edita `CLAUDE.md`. Todo lo demás (§1.1, 1.4–1.8, tests y cierre) sigue igual.
 
+> **Ajustes 3-nov (plan 17):** (a) la sonda del 31-oct [V, `01-analisis` §8] mostró que **no existe `seleccion`**:
+> el ganador es `proveedores_cotizando[].proveedor_seleccionado` y el estado es `estado`; el parser de F-merc-0b ya
+> lo hace, reutilizarlo tal cual (§1.4 queda cubierto por F-merc-0b salvo lo que falte de `CompraAgilDetalle`).
+> (b) Como §1.2 se eliminó, crear igual el setting `mercado_regiones: list[int] = [16]` (sin segunda key) para que
+> los jobs `mercado-*` filtren por región; F-plat-3 lo reemplaza por las regiones de las empresas activas.
+> (c) §1.1 ya está hecha (sonda 31-oct): no repetirla; solo el punto 1 (antigüedad) si no quedó anotado.
+> (d) Regla 24: ningún job de esta fase pide licitaciones.
+
 ## 0. Antes de escribir código
 
 ### 0.a Por qué
