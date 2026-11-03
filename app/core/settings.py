@@ -121,6 +121,63 @@ class Settings(BaseSettings):
         description="Minutos máximos por noche del paso `rellenar-organismo`",
     )
 
+    # --- Mercado: cotizaciones de Compra Ágil por región (F-merc-1) ---
+    # Una sola key (corrección 31-oct): los jobs `mercado-*` usan MP_TICKET, el
+    # QuotaTracker y la pausa `api_pausa` de siempre, sin reserva. F-plat-3 reemplaza
+    # `mercado_regiones` por las regiones de las empresas activas (regla 25).
+    mercado_regiones: list[int] = Field(
+        default=[16],
+        description='Regiones cuyas CA se ingestan con cotizaciones. JSON: "[16]"',
+    )
+    mercado_detalles_max: int = Field(
+        default=120, description="Tope de detalles de CA por corrida de `mercado-ca`"
+    )
+    mercado_detalles_minutos: int = Field(
+        default=10, description="Minutos máximos de detalles por corrida de `mercado-ca`"
+    )
+    mercado_backfill_meses: str = Field(
+        default="",
+        description=(
+            "Meses del backfill (AAAA-MM separados por coma, en orden). Vacío: los 5 que "
+            "faltan en COT_ y luego 2024-10 … mes anterior, del más reciente al más antiguo"
+        ),
+    )
+    # Horizonte: sonda del 3-nov [V] oct-2024 → 0 CA en Ñuble; Boris lo fija con el barrido
+    # de `smoke_test.py --mercado`. Ningún mes anterior se pide.
+    mercado_backfill_primer_mes: str = Field(
+        default="2024-10",
+        description="Mes más antiguo (AAAA-MM) que `mercado-backfill` pide",
+    )
+    # Filtro local: el listado va sin `estado` [V, 31-oct]. Solo estas CA piden
+    # detalle; mismo default que el puente F-merc-0b (las únicas con ganador).
+    mercado_backfill_estados_detalle: list[str] = Field(
+        default=["proveedor_seleccionado"],
+        description='Estados cuyas CA piden detalle en `mercado-backfill`. JSON: \'["proveedor_seleccionado"]\'',
+    )
+    mercado_backfill_tamano_pagina: int = Field(
+        default=50, description="Ítems por página del listado de `mercado-backfill` (10–50)"
+    )
+    mercado_backfill_margen_cuota: int = Field(
+        default=300,
+        description="Requests del día que `mercado-backfill` deja libres para `mercado-ca`",
+    )
+    # §1.5: el estimado con el volumen real pasa de 120 MB a 24 meses (decisiones.md).
+    mercado_productos_solo_grupos: bool = Field(
+        default=True,
+        description=(
+            "Guardar productos_cotizados solo de CA con algún producto en los grupos del "
+            "observatorio (app/catalogos/mercado.py); las ofertas se guardan siempre"
+        ),
+    )
+    mercado_backfill_tope_bd_mb: int = Field(
+        default=350,
+        description="Tamaño de la base (MB) desde el que `mercado-backfill` se detiene (Neon: 512)",
+    )
+    mercado_backfill_minutos: int = Field(
+        default=300,
+        description="Minutos máximos por corrida de `mercado-backfill` (timeout del workflow: 330)",
+    )
+
     # --- Estados vencidos (F-estados-vencidos) ---
     estados_vencidos_max_requests: int = Field(
         default=150,

@@ -29,6 +29,8 @@ from app.ingest.orchestrator import (
     run_estados_vencidos,
     run_lifecycle,
     run_match,
+    run_mercado_backfill,
+    run_mercado_ca,
     run_plan_anual,
     run_resumen,
     run_retencion,
@@ -55,6 +57,8 @@ _JOBS = (
     "nocturno",
     "plan-anual",
     "vocabulario-rubros",
+    "mercado-ca",
+    "mercado-backfill",
 )
 
 _log = get_logger(__name__)
@@ -64,7 +68,18 @@ _log = get_logger(__name__)
 # pronto o se omiten. Fuera A PROPÓSITO `nocturno` y `estados-vencidos`: tienen
 # pasos sin API (datos abiertos, competencia) que deben correr igual, y sus pasos
 # con API ya cortan limpio ante APIPausadaError. El resto no usa la API.
-_JOBS_CON_API = frozenset({"ca", "activas", "detalles", "lifecycle", "detalles-match", "catalogos"})
+_JOBS_CON_API = frozenset(
+    {
+        "ca",
+        "activas",
+        "detalles",
+        "lifecycle",
+        "detalles-match",
+        "catalogos",
+        "mercado-ca",
+        "mercado-backfill",
+    }
+)
 
 # Margen tras el fin de la pausa antes de correr.
 _MARGEN_PAUSA_S = 30.0
@@ -150,7 +165,7 @@ def cmd_run_once(
         "detalles": _locked("detalles", lambda: run_detalles(settings, engine)),
         "lifecycle": _locked("lifecycle", lambda: run_lifecycle(settings, engine)),
         "catalogos": _locked("catalogos", lambda: run_catalogos(settings, engine)),
-        "retencion": _locked("retencion", lambda: run_retencion(engine)),
+        "retencion": _locked("retencion", lambda: run_retencion(engine, settings)),
         "match": _locked("match", lambda: run_match(settings, engine)),
         "alerts": _locked("alerts", lambda: run_alerts(settings, engine)),
         "detalles-match": _locked(
@@ -168,6 +183,12 @@ def cmd_run_once(
         "plan-anual": _locked("plan-anual", lambda: run_plan_anual(settings, engine)),
         "vocabulario-rubros": _locked(
             "vocabulario-rubros", lambda: run_vocabulario_rubros(settings, engine)
+        ),
+        # F-merc-1: MP_TICKET y el lock de siempre (corrección 31-oct). El backfill
+        # valida por sí mismo la ventana 22:00–07:00 de Chile (regla 5).
+        "mercado-ca": _locked("mercado-ca", lambda: run_mercado_ca(settings, engine)),
+        "mercado-backfill": _locked(
+            "mercado-backfill", lambda: run_mercado_backfill(settings, engine)
         ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y

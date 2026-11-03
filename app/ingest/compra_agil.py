@@ -179,22 +179,24 @@ def upsert_ca_detalle(session: Session, det: CompraAgilDetalle) -> None:
         )
 
 
-def _leer_cursor(session: Session) -> datetime | None:
+def _leer_cursor(session: Session, fuente: str = _FUENTE) -> datetime | None:
     """Lee el cursor de sync_state como datetime UTC, None si no existe."""
-    state = session.get(SyncState, _FUENTE)
+    state = session.get(SyncState, fuente)
     if state is None or not state.cursor:
         return None
     try:
         return datetime.fromisoformat(state.cursor).replace(tzinfo=UTC)
     except ValueError:
-        _log.warning("Cursor de %s inválido: %r — empezando desde cero", _FUENTE, state.cursor)
+        _log.warning("Cursor de %s inválido: %r — empezando desde cero", fuente, state.cursor)
         return None
 
 
-def _guardar_cursor(session: Session, nuevo_cursor_dt: datetime, ok: bool) -> None:
-    state = session.get(SyncState, _FUENTE)
+def _guardar_cursor(
+    session: Session, nuevo_cursor_dt: datetime, ok: bool, fuente: str = _FUENTE
+) -> None:
+    state = session.get(SyncState, fuente)
     if state is None:
-        state = SyncState(fuente=_FUENTE)
+        state = SyncState(fuente=fuente)
         session.add(state)
     ahora = ahora_utc()
     state.ultima_ejecucion = ahora
@@ -203,12 +205,12 @@ def _guardar_cursor(session: Session, nuevo_cursor_dt: datetime, ok: bool) -> No
         state.ultimo_ok = ahora
 
 
-def _registrar_intento(session: Session, *, ok: bool) -> None:
+def _registrar_intento(session: Session, *, ok: bool, fuente: str = _FUENTE) -> None:
     """Deja constancia de la corrida en sync_state sin tocar el cursor."""
     session.rollback()
-    state = session.get(SyncState, _FUENTE)
+    state = session.get(SyncState, fuente)
     if state is None:
-        state = SyncState(fuente=_FUENTE)
+        state = SyncState(fuente=fuente)
         session.add(state)
     ahora = ahora_utc()
     state.ultima_ejecucion = ahora
@@ -371,6 +373,10 @@ def _sync_en_ventanas(
     v2_client: MercadoPublicoV2Client,
     settings: Settings,
     cursor: datetime,
+    *,
+    fuente: str = _FUENTE,
+    regiones: list[int] | None = None,
+    estados: list[str] | None = None,
 ) -> dict[str, Any]:
     """Recorre el atraso ventana a ventana y avanza el cursor al cerrar cada una.
 
@@ -391,8 +397,13 @@ def _sync_en_ventanas(
 
     `requests_usadas` cuenta las llamadas de listado de esta corrida; los
     reintentos internos del cliente (504, 429/10500) no se ven desde acá.
+
+    `fuente`, `regiones` y `estados` (F-merc-1): `mercado-ca` recorre con su
+    propio cursor, filtra por región y lista SIN `estado` (`estados=[]`): el
+    filtro `estado=proveedor_seleccionado` devuelve 0 [V, 31-oct]. Con
+    `estados=None`, los de `ca` de siempre.
     """
-    estados = _filtros_listado(cursor)
+    estados = _filtros_listado(cursor) if estados is None else estados
     ancho_max = timedelta(hours=settings.ca_ventana_horas)
     ancho = ancho_max
     max_paginas = settings.ca_max_paginas_por_ventana
@@ -408,6 +419,7 @@ def _sync_en_ventanas(
             cambio_desde=desde,
             cambio_hasta=hasta,
             estados=estados,
+            regiones=regiones,
             tamano_pagina=tamano,
             numero_pagina=pagina,
         )
@@ -542,14 +554,14 @@ def _sync_en_ventanas(
             ancho = min(ancho * 2, ancho_max)
 
         cursor = hasta
-        _guardar_cursor(session, cursor, ok=True)
+        _guardar_cursor(session, cursor, ok=True, fuente=fuente)
         session.commit()
         ventanas += 1
 
     # En un cierre parcial, ultimo_ok de sync_state queda en el cierre de la última
     # ventana (lo puso _guardar_cursor) y solo se actualiza ultima_ejecucion: la
     # diferencia entre ambos deja ver el corte en /salud.
-    _registrar_intento(session, ok=cortado_por_error is None)
+    _registrar_intento(session, ok=cortado_por_error is None, fuente=fuente)
     return {
         **totales.como_dict(),
         "ventanas_completadas": ventanas,

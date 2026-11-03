@@ -199,6 +199,17 @@ class CompraAgil(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     detalle_ultimo_fallo: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # F-merc-1: campos del detalle que la ingesta de mercado guarda (rutas de la guía
+    # v3.0; `unidad_compra` verificada en la sonda del 31-oct).
+    unidad_compra: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    direccion_entrega: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    plazo_entrega_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tipo_presupuesto: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    fecha_cierre_segundo_llamado: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    motivo_desierta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motivo_cancelacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Última vez que se guardaron sus cotizaciones (aunque vinieran vacías).
+    cotizaciones_obtenidas_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -223,6 +234,70 @@ class CaProducto(Base):
     unidad: Mapped[str] = mapped_column(String(50), nullable=False, default="")
 
     compra_agil: Mapped[CompraAgil] = relationship("CompraAgil", back_populates="productos")
+
+
+class CaCotizacion(Base):
+    """Una oferta de `proveedores_cotizando[]` de una CA (F-merc-1).
+
+    `llamado` = `estado_convocatoria` del detalle (1/2, primer o segundo llamado según
+    la guía [I]); el arreglo refleja solo el llamado vigente. `seleccionado` es
+    nullable a propósito: None = la API no lo dijo, no "perdió". Sin raw_json (regla 11).
+    """
+
+    __tablename__ = "ca_cotizaciones"
+    __table_args__ = (
+        UniqueConstraint("ca_codigo", "llamado", "rut_proveedor", name="uq_ca_cotizacion"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    ca_codigo: Mapped[str] = mapped_column(
+        ForeignKey("compras_agiles.codigo", ondelete="CASCADE"), nullable=False
+    )
+    llamado: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rut_proveedor: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    razon_social: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    es_emt: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    codigo_empresa: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    codigo_sucursal: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Para cruzar con oc-da (F-merc-2) sin inferir ganadores en el cliente.
+    id_cotizacion: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    id_oc: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    estado_glosa: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    activo: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    seleccionado: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    valor_neto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_impuesto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_despacho: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fecha_creacion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    fecha_vigencia: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    productos: Mapped[list[CaCotizacionProducto]] = relationship(
+        "CaCotizacionProducto",
+        back_populates="cotizacion",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class CaCotizacionProducto(Base):
+    """Un producto de una oferta (`productos_cotizados[]`): precio unitario neto (F-merc-1)."""
+
+    __tablename__ = "ca_cotizacion_productos"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    cotizacion_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("ca_cotizaciones.id", ondelete="CASCADE"), nullable=False
+    )
+    codigo_producto: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nombre_producto: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    descripcion: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    precio_unitario: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_total_producto: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    cotizacion: Mapped[CaCotizacion] = relationship("CaCotizacion", back_populates="productos")
 
 
 # ---------------------------------------------------------------------------
@@ -562,3 +637,8 @@ Index("ix_alertas_seguimiento_id", Alerta.seguimiento_id)
 Index("ix_oportunidades_match_fuente_codigo", OportunidadMatch.fuente, OportunidadMatch.codigo_oportunidad)
 Index("ix_compras_agiles_fecha_cierre", CompraAgil.fecha_cierre)
 Index("ix_compras_agiles_fecha_publicacion", CompraAgil.fecha_publicacion)
+
+# F-merc-1: quién cotiza dónde (por proveedor) y FK de los productos (borrado en cascada).
+# El UNIQUE (ca_codigo, llamado, rut_proveedor) ya sirve a la búsqueda por CA.
+Index("ix_ca_cotizaciones_rut_proveedor", CaCotizacion.rut_proveedor)
+Index("ix_ca_cotizacion_productos_cotizacion_id", CaCotizacionProducto.cotizacion_id)

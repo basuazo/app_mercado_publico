@@ -103,6 +103,9 @@ _PROGRAMADOS = {
     "retencion.yml",
     "catalogos.yml",
     "resumen.yml",
+    # F-merc-1: se crean en cron-job.org cuando Boris habilite el backfill.
+    "mercado.yml",
+    "mercado-nocturno.yml",
 }
 
 
@@ -122,7 +125,7 @@ def _bloque_on(texto: str) -> str:
     return m.group(1)
 
 
-def test_estan_los_ocho_workflows() -> None:
+def test_estan_los_diez_workflows() -> None:
     assert {p.name for p in _llamadores()} == _PROGRAMADOS | {"ciclo-ca.yml"}
 
 

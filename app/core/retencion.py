@@ -3,7 +3,8 @@
 Regla: raw_json se guarda SOLO cuando la oportunidad tiene al menos un match.
 purgar_terminales() limpia raw_json e items/productos de oportunidades terminales
 antiguas, pero nunca toca filas vigentes, matches con alertas pendientes ni
-oportunidades guardadas (seguidas, archivadas o no; F-guardar).
+oportunidades guardadas (seguidas, archivadas o no; F-guardar), ni las CA de las
+regiones del piloto de mercado (F-merc-1: excepción a la regla 11, ver decisiones.md).
 También purga el historial de corridas de jobs (job_runs), que crece sin techo.
 """
 
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -31,11 +32,15 @@ from app.models.tables import (
 _log = get_logger(__name__)
 
 
-def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
+def purgar_terminales(
+    session: Session, dias: int = 90, regiones_protegidas: list[int] | None = None
+) -> dict[str, int]:
     """Purga raw_json e items de oportunidades terminales con más de `dias` días sin actualizar.
 
     No toca oportunidades vigentes, ni aquellas con alertas pendientes, ni las
     que algún usuario tiene en oportunidades_seguidas (archivada o no).
+    `regiones_protegidas` (F-merc-1, `mercado_regiones`): sus CA no se purgan; sus
+    cotizaciones tampoco (la purga nunca borra filas de compras_agiles).
     Devuelve dict con conteos de filas afectadas por tipo.
     """
     corte = ahora_utc() - timedelta(days=dias)
@@ -86,15 +91,17 @@ def purgar_terminales(session: Session, dias: int = 90) -> dict[str, int]:
         lic_purgadas = 0
 
     # -- Compras Ágiles terminales antiguas --
-    codigos_ca = list(
-        session.execute(
-            select(CompraAgil.codigo).where(
-                CompraAgil.estado.in_(estados_str),
-                CompraAgil.actualizado_en < corte,
-                CompraAgil.codigo.not_in(codigos_ca_protegidos),
-            )
-        ).scalars()
-    )
+    filtro_ca = [
+        CompraAgil.estado.in_(estados_str),
+        CompraAgil.actualizado_en < corte,
+        CompraAgil.codigo.not_in(codigos_ca_protegidos),
+    ]
+    if regiones_protegidas:
+        # Una CA sin región no es del piloto: se purga como siempre.
+        filtro_ca.append(
+            or_(CompraAgil.region.is_(None), CompraAgil.region.not_in(regiones_protegidas))
+        )
+    codigos_ca = list(session.execute(select(CompraAgil.codigo).where(*filtro_ca)).scalars())
 
     if codigos_ca:
         r = session.execute(delete(CaProducto).where(CaProducto.ca_codigo.in_(codigos_ca)))

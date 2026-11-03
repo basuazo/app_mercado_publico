@@ -1,0 +1,33 @@
+# Mercado (F-merc-1): Compras Ágiles de `MERCADO_REGIONES` (hoy Ñuble, 16) con sus
+# cotizaciones —quién ofertó, precio por producto, quién ganó—, en vivo.
+#
+# Disparo: desde cron-job.org, hora de Chile, cada 15 min, con la API de GitHub
+# (workflow_dispatch). El horario vive en cron-job.org y está documentado en
+# docs/operacion-disparos.md. Sin `schedule` a propósito (doble disparo = cuota).
+#
+# Usa MP_TICKET, la cuota y el advisory lock de siempre (corrección 31-oct: una sola
+# key). De noche `mercado-nocturno` tiene el lock casi todo el rato: esta corrida espera
+# 5 min y sale `omitido`; la de la mañana se pone al día desde el cursor.
+name: mercado
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "mercado-ca"
+      # 5 de espera del lock + hasta 15 de pausa de la API (F-429-pausa-ca) no caben
+      # junto al trabajo: si la pausa es larga, el CLI sale omitido antes. Trabajo:
+      # listado de 15 min de una región (pocas páginas) + 10 min de detalles (tope).
+      timeout_min: 20
+      esperar_lock_min: 5

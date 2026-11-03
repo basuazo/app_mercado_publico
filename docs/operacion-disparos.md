@@ -73,6 +73,25 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH retencion | `retencion.yml` | 05:40 |
 | GH catalogos | `catalogos.yml` | lunes 06:35 (catalogos + plan-anual + vocabulario-rubros, en ese orden) |
 | GH resumen | `resumen.yml` | 08:30 |
+| GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — **F-merc-1, sin crear todavía** |
+| GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
+
+Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push
+(pasos en `00-estado.md`). Usan el mismo advisory lock que el resto: de noche `mercado-nocturno` lo
+tiene hasta ~06:45 y `mercado` sale `omitido` tras 5 min de espera (normal; se pone al día de mañana).
+Con la ingesta de la app en pausa (decisiones.md, 31-oct) no compiten con nada más.
+
+**Cursores del backfill** (`sync_state`, fuente `mercado_backfill:AAAA-MM`): `AAAA-MM-DD|página` (en
+curso), `listado` (quedan detalles fallidos), `completo` o `vacio` (mes terminado con 0 CA en la región).
+Un mes `completo` o `vacio` no se vuelve a pedir. Para repetir uno (p. ej. si `vacio` resultó ser un
+problema de la API), borrar su cursor en Neon (SQL Editor) y la noche siguiente se lista de cero:
+
+```sql
+DELETE FROM sync_state WHERE fuente = 'mercado_backfill:2025-03';
+```
+
+Si los 3 primeros meses con requests de una corrida dan 0 CA y ninguno tuvo datos, el backfill no los
+marca `vacio`: corta con el aviso "revisar filtros" (más probable un filtro roto que tres meses vacíos).
 
 Consejo: crea `GH ca` completo, pruébalo (sección 4) y después usa **Copy/Clone** para los
 demás. Solo cambian el título, el archivo de la URL y la hora.

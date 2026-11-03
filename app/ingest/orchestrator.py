@@ -174,9 +174,11 @@ def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
         return refresh_organismos(session, v1)
 
 
-def run_retencion(engine: Engine) -> dict[str, int]:
+def run_retencion(engine: Engine, settings: Settings | None = None) -> dict[str, int]:
+    """Purga de retención. Con `settings`, las CA de `mercado_regiones` no se purgan (F-merc-1)."""
+    regiones = list(settings.mercado_regiones) if settings is not None else None
     with Session(engine) as session:
-        resultado = purgar_terminales(session)
+        resultado = purgar_terminales(session, regiones_protegidas=regiones)
         # Sin commit, el cierre de la sesión revierte la purga entera.
         session.commit()
         return resultado
@@ -187,6 +189,26 @@ def run_plan_anual(settings: Settings, engine: Engine) -> dict[str, int]:
     ticket ni cuota (datos abiertos). Ver app.ingest.plan_compra.sync_plan_anual_completo."""
     with Session(engine) as session:
         return sync_plan_anual_completo(session, settings)
+
+
+def run_mercado_ca(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Job `mercado-ca` (F-merc-1): CA de `mercado_regiones` con sus cotizaciones, en vivo.
+
+    MP_TICKET, la cuota y la pausa de siempre, sin reserva (corrección 31-oct)."""
+    from app.ingest.mercado import sync_mercado_ca
+
+    _, v2 = _make_clients(settings, engine, reserva_ca=False)
+    return sync_mercado_ca(settings, engine, v2)
+
+
+def run_mercado_backfill(
+    settings: Settings, engine: Engine, now_fn: Callable[..., datetime] | None = None
+) -> dict[str, Any]:
+    """Job `mercado-backfill` (F-merc-1): cotizaciones hacia atrás, solo 22:00–07:00 Chile."""
+    from app.ingest.mercado import run_backfill
+
+    _, v2 = _make_clients(settings, engine, reserva_ca=False)
+    return run_backfill(settings, engine, v2, now_fn=now_fn)
 
 
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
@@ -979,7 +1001,7 @@ def build_scheduler(
 
     # Diario: purga de retención (03:00)
     sched.add_job(
-        lambda: _run_with_lock("retencion", lambda: run_retencion(engine), engine),
+        lambda: _run_with_lock("retencion", lambda: run_retencion(engine, settings), engine),
         "cron",
         hour=3,
         minute=0,

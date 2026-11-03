@@ -32,6 +32,27 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
+## F-merc-1 (3-nov, commit local sin push hasta auditar; con migración `e5b9c3a7d2f4`)
+Cotizaciones de CA de `MERCADO_REGIONES` (Ñuble, 16) a Neon: `ca_cotizaciones` (oferta, `seleccionado`
+nullable, `llamado`, `id_oc`) y `ca_cotizacion_productos` (precio unitario neto), más 8 columnas nullable en
+`compras_agiles`. Una sola key (`MP_TICKET`, cuota, pausa y lock de siempre, sin reserva). Jobs: `mercado-ca`
+(cursor `mercado_ca`, listado por región **sin `estado`**, cola de detalle con tope 120 / 10 min) y
+`mercado-backfill` (22–07 Chile, ventanas de un día, cursor por mes `mercado_backfill:AAAA-MM`, para a las 06:45,
+a los 300 min, con cuota − 300 o con la base en 350 MB). Workflows `mercado.yml` / `mercado-nocturno.yml` (solo
+dispatch; crons **sin crear**). Retención no purga las CA de la región. `productos_cotizados` solo de CA con algún
+producto en los grupos del observatorio: el estimado pasa de 120 MB (ver `decisiones.md`, 3-nov; **decisión
+pendiente de Boris**). Exportación: `scripts/mercado/exportar_cot_api.py` (no en `data/`, que está en
+.gitignore). Sonda `scripts/smoke_test.py --mercado` (3-nov [V]): marzo 2026 = 600 CA en la primera semana, oct-2024
+= 0; ahora trae además el barrido del horizonte 2025. Backfill solo de `proveedor_seleccionado` (desviación,
+`decisiones.md`); horizonte `MERCADO_BACKFILL_PRIMER_MES`; mes terminado sin CA → cursor `vacio`, no se repite.
+Migración ya aplicada en Neon dev.
+**Pasos de Boris:** (1) `python scripts/smoke_test.py --mercado` otra vez, pegar el barrido y fijar la variable de
+Actions `MERCADO_BACKFILL_PRIMER_MES` en el primer mes con total > 0; (2) —; (3) migración en Neon prod, push y crear en cron-job.org `GH mercado`
+(cada 15 min) y `GH mercado-nocturno` (22:30); (4) decidir horizonte o alcance de productos (tamaño); (5) tras la
+primera noche: `/salud` (tamaño), `python scripts/mercado/exportar_cot_api.py` y el observatorio `informe`.
+El puente `backfill_cot_nuble.py` deja de hacer falta cuando corra `mercado-nocturno` (no correr ambos a la vez:
+comparten cuota y pausa).
+
 ## Siguiente
 **Plan confirmado (3-nov):** `17-plan-pivote-plataforma-ca.md` (plataforma de intermediación de CA: líneas 1:1,
 anexos, proveedores y costos, P(ganar), mesa del día, demanda) con prompts `prompt-F-plat-1..7.md` y reglas 24–26
@@ -42,8 +63,7 @@ tarifa por provincia, canasta de 80 productos, confirmar en la guía v3.0 si hay
 
 **Pivote (31-oct):** mesa de precios de Compra Ágil, piloto Ñuble, **alimentos como giro principal** y
 otros rubros como expansión → `16-pivote-compra-agil-nuble.md` e informe en `data/mercado/informe/`.
-Siguientes fases: **F-merc-1** (`prompt-F-merc-1.md`, Opus: segunda key `MP_TICKET_MERCADO`, cotizaciones
-de CA de Ñuble con precio por producto, en vivo y backfill nocturno de los meses que faltan en `COT_`) y
+Siguientes fases: ~~F-merc-1~~ (commit local, arriba; corregida a una sola key) y
 **F-merc-2** (`prompt-F-merc-2.md`, Sonnet: órdenes de compra de CA de Ñuble desde `oc-da` a la base).
 Antes de habilitar el backfill: sonda humana `scripts/smoke_test.py --mercado`.
 **Ingesta actual en pausa desde el 31-oct** (ver `decisiones.md`): apagar en cron-job.org los disparos de

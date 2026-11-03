@@ -267,3 +267,9 @@ La información necesaria está disponible vía API oficial y los términos exig
 - Guía Órdenes de Compra (PDF): chilecompra.cl/wp-content/uploads/2026/03/Documentacion-API-Mercado-Publico-oc.pdf
 - Guía Compra Ágil v2 (PDF, v3.0 mayo 2026): chilecompra.cl/wp-content/uploads/2026/05/Documentacion_API_Compra_Agil.pdf
 - Datos Abiertos (descargas masivas históricas, alternativa a la API para backfill): https://datos-abiertos.chilecompra.cl/
+- **v2: antigüedad de `publicado_desde/hasta` en región 16** (sonda `smoke_test.py --mercado`, Boris, 3-nov-2026):
+  [V] publicado 2026-03-01→07, sin `estado`: `total_resultados=600` (en la página de 10: 9 `proveedor_seleccionado`,
+  1 `cancelada`). La API **sí** entrega marzo 2026 con Ñuble, aunque `COT_2026-03` venga sin Ñuble: marzo sigue en
+  `MESES_PRIORITARIOS` del backfill. [V] publicado 2024-10-01→07: `total_resultados=0`. [I] Desde qué mes entrega
+  la API todavía no se sabe: un 0 no prueba que no haya datos antes (regla 23). El barrido del horizonte (primera
+  semana de 2025-01, 2025-04, 2025-07 y 2025-10, misma sonda) fija `MERCADO_BACKFILL_PRIMER_MES`.

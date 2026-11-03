@@ -15,6 +15,16 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 11, 3),
+        titulo="Cotizaciones de Compra Ágil de Ñuble con precio por producto",
+        descripcion=(
+            "La plataforma empieza a guardar, para cada Compra Ágil de Ñuble, quién cotizó, a "
+            "qué precio por producto y quién ganó, en vivo y hacia atrás mes a mes. Es la base "
+            "de los precios de referencia y de la probabilidad de ganar que vienen en las "
+            "próximas fases. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 10, 9),
         titulo="El match mide qué tan bien calza, no qué tan urgente es",
         descripcion=(

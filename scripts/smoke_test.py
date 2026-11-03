@@ -11,6 +11,7 @@ Uso:
     python scripts/smoke_test.py claves-lic [código]  # F-datos-1: Comprador/Fechas en v1 (1 req)
     python scripts/smoke_test.py ca-sin-fechas        # F-datos-1: CA sin fechas + desierta (≤5 req)
     python scripts/smoke_test.py estados-ca           # F-datos-1: ¿v2 acepta desierta/cancelada? (2 req)
+    python scripts/smoke_test.py --mercado            # F-merc-1: antigüedad (mar-2026, oct-2024) y horizonte 2025 (6 req)
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from sqlalchemy import Engine, create_engine, text  # noqa: E402
 
 from app.clients.mp_v1 import MercadoPublicoV1Client  # noqa: E402
 from app.clients.mp_v2 import MercadoPublicoV2Client  # noqa: E402
-from app.clients.types import CompraAgilBasica  # noqa: E402
+from app.clients.types import CompraAgilBasica, RespuestaListadoV2  # noqa: E402
 from app.core.db import normalizar_url_driver  # noqa: E402
 from app.core.settings import Settings  # noqa: E402
 
@@ -846,6 +847,70 @@ def sonda_estados_ca(v2: MercadoPublicoV2Client, slugs: list[str]) -> None:
         print(f"  -> 200 OK; paginacion={payload.get('paginacion')}; estados={estados}")
 
 
+# F-merc-1 §1.1, punto 1 (antigüedad): ¿hasta dónde llega `publicado_desde` hacia atrás?
+# Agosto 2026 ya es [V] (sonda 31-oct); faltan marzo 2026 (mes sin Ñuble en COT_) y el
+# piso del backfill (oct 2024). Las claves del detalle (puntos 2 y 3) ya son [V].
+_VENTANAS_ANTIGUEDAD = (("2026-03-01", "2026-03-07"), ("2024-10-01", "2024-10-07"))
+# Barrido del horizonte (tras la sonda del 3-nov: mar-2026 = 600, oct-2024 = 0 [V]):
+# primera semana de cada trimestre de 2025. Con eso se fija MERCADO_BACKFILL_PRIMER_MES.
+_MESES_HORIZONTE = ("2025-01", "2025-04", "2025-07", "2025-10")
+
+
+def _listar_semana(v2: MercadoPublicoV2Client, desde: str, hasta: str) -> RespuestaListadoV2:
+    """Listado de región 16, publicado desde → hasta (días en hora de Chile), sin `estado`."""
+    from datetime import date
+
+    from app.core.tiempo import borde_del_dia_utc_naive
+
+    return v2.listar_compra_agil(
+        publicado_desde=borde_del_dia_utc_naive(date.fromisoformat(desde), fin_de_dia=False),
+        publicado_hasta=borde_del_dia_utc_naive(date.fromisoformat(hasta), fin_de_dia=True),
+        regiones=[16],
+        tamano_pagina=10,
+        ordenar_por="FechaPublicacion",
+    )
+
+
+def sonda_mercado(v2: MercadoPublicoV2Client, pausa_s: float = 5.0) -> None:
+    """6 requests: listado de región 16 por semana de publicación, SIN `estado`.
+
+    Sin `estado` porque `estado=proveedor_seleccionado` devuelve 0 [V, 31-oct]. Las dos
+    primeras imprimen total_resultados, 3 códigos y los estados de la página; el barrido
+    del horizonte, solo mes y total_resultados. Ni RUT ni montos. Entre requests, `pausa_s`
+    además del rate limit del cliente.
+    """
+    from collections import Counter
+
+    for i, (desde, hasta) in enumerate(_VENTANAS_ANTIGUEDAD):
+        if i:
+            time.sleep(pausa_s)
+        print(f"\n[LISTADO] region=16, publicado {desde} → {hasta}, sin estado, tamano_pagina=10")
+        try:
+            resp = _listar_semana(v2, desde, hasta)
+        except Exception as exc:
+            print(f"  -> {_error_seguro(exc)}")
+            continue
+        estados = Counter(ca.estado for ca in resp.items)
+        print(f"  -> total_resultados={resp.paginacion.total_resultados}")
+        print(f"  -> códigos: {[ca.codigo for ca in resp.items[:3]]}")
+        print(f"  -> estados en la página: {dict(estados)}")
+
+    print("\n[HORIZONTE] region=16, días 1–7 de cada mes, sin estado")
+    for mes in _MESES_HORIZONTE:
+        time.sleep(pausa_s)
+        try:
+            resp = _listar_semana(v2, f"{mes}-01", f"{mes}-07")
+        except Exception as exc:
+            print(f"  {mes}: {_error_seguro(exc)}")
+            continue
+        print(f"  {mes}: total_resultados={resp.paginacion.total_resultados}")
+    print(
+        "\nAnotar en docs/01-analisis-api-mercado-publico.md §10 con [V]. Fijar "
+        "MERCADO_BACKFILL_PRIMER_MES en el primer mes con total > 0 (regla 23: un 0 no prueba "
+        "que la API no tenga datos de antes; solo acota el horizonte)."
+    )
+
+
 def main() -> None:
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
@@ -858,6 +923,10 @@ def main() -> None:
     v2 = MercadoPublicoV2Client(settings, engine)
 
     args = sys.argv[1:]
+    if "--mercado" in args:
+        sonda_mercado(v2)
+        return
+
     if args[:1] == ["claves-lic"]:
         sonda_claves_lic(engine, v1, args[1] if len(args) > 1 else None)
         return

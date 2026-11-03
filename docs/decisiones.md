@@ -94,3 +94,23 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   más barato con ≥ 95 % de líneas correctas; presupuesto mensual persistido en Postgres y caché); proveedores y
   costos se cargan desde cero. Orden de fases: F-merc-1 → F-merc-2 → F-plat-3 → F-plat-1 → F-plat-2 → F-plat-4 →
   F-plat-5 (4 semanas en sombra) → F-plat-6 → F-plat-7.
+- **Retención de las CA del piloto y tamaño de las cotizaciones (3-nov-2026, F-merc-1 §1.5 y §1.7):**
+  `purgar_terminales` no toca las CA de `MERCADO_REGIONES` (hoy Ñuble, 16) ni, por lo tanto, sus
+  `ca_cotizaciones` / `ca_cotizacion_productos`: excepción explícita a la regla 11 mientras dure el piloto.
+  Sin `raw_json` para estas CA. Tamaño estimado con el volumen real de agosto 2026 (puente F-merc-0b, Ñuble:
+  2.577 CA con detalle, 6,1 ofertas y 19,3 filas oferta × producto por CA; ~335 B por oferta y ~235 B por
+  producto con índices): **todo, 24 meses ≈ 460 MB** (12 meses ≈ 230 MB), muy sobre los 120 MB del prompt. Se
+  aplica el respaldo de §1.5 (`MERCADO_PRODUCTOS_SOLO_GRUPOS=true`, default): `productos_cotizados` solo de CA
+  con algún producto en los grupos del observatorio (`app/catalogos/mercado.py`; 1.333 de 2.577 CA en agosto, el
+  "~1.300 CA/mes" del prompt); las ofertas se guardan siempre → **≈ 15 MB/mes, 24 meses ≈ 360 MB**: sigue sin
+  caber [I: estimado, falta medir en Neon]. Por eso `mercado-backfill` se detiene si la base llega a
+  `MERCADO_BACKFILL_TOPE_BD_MB` (350; Neon free = 512) y recorre primero los meses que más importan.
+  **Pendiente de Boris:** acotar el horizonte (12 meses ≈ 180 MB) o guardar productos solo de alimentos (giro
+  principal: 182 CA en agosto; ≈ 7 MB/mes, 24 meses ≈ 170 MB). Medir el tamaño real tras la primera noche.
+- **Estados que piden detalle en el backfill (3-nov-2026, F-merc-1, desviación del prompt):** `mercado-backfill`
+  pide detalle solo de las CA `proveedor_seleccionado` (`MERCADO_BACKFILL_ESTADOS_DETALLE`, mismo default que el
+  puente F-merc-0b); el prompt pedía todas las terminales (`cerrada`, `desierta`, `cancelada`). `mercado-ca` (en
+  vivo) sí pide todas. Motivo: cuota (un detalle por CA; ~3.600 CA/mes en Ñuble, de las que ~2.600 tienen
+  ganador). Costo: del histórico no quedan las ofertas de las CA desiertas o canceladas (sí su fila básica del
+  listado). Se amplía con la variable si P(ganar) las necesita. Horizonte configurable con
+  `MERCADO_BACKFILL_PRIMER_MES` (default 2024-10); un mes terminado y sin CA queda `vacio` y no se repite.

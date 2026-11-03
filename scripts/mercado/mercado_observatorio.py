@@ -55,38 +55,14 @@ csv.field_size_limit(1 << 30)
 # Propuesta: se decide en docs/16 §3. Fuera: 51 medicamentos, resto de 42 (insumos de
 # tratamiento y equipos clínicos), combustibles, vehículos, materiales pesados y servicios.
 # ---------------------------------------------------------------------------
-GRUPOS: dict[str, str] = {
-    "50": "Alimentos envasados y abarrotes",
-    "1012": "Alimento para mascotas",
-    "43": "Computación y telecom", "44": "Oficina", "14": "Papel",
-    "56": "Muebles", "52": "Electrodomésticos y menaje", "48": "Cocina comercial",
-    "53": "Vestuario y cuidado personal", "47": "Aseo", "49": "Deporte y recreación",
-    "46": "Seguridad y protección", "39": "Iluminación y eléctricos", "45": "Audiovisual",
-    "27": "Herramientas", "60": "Material educativo y de arte",
-    "31": "Ferretería y pintura", "4014": "Gasfitería", "4017": "Gasfitería",
-    "2517": "Neumáticos y repuestos", "24": "Bodega y manejo de carga",
-    "4219": "Ortopedia y ayudas técnicas", "4221": "Ortopedia y ayudas técnicas",
-    "4224": "Ortopedia y ayudas técnicas",
-}
-EXCLUIR = ("5021",)  # tabaco
-# Alimentos preparados (por nombre genérico): se reportan aparte para decidir si quedan fuera.
-_PREPARADO = re.compile(r"empanada|sandwich|canape|coctel|tarta|pies? |comida|colacion|almuerzo|plato preparad")
-G_PREP = "Alimentos preparados (revisar)"
+# Los grupos viven en app/catalogos/mercado.py desde F-merc-1 (los usa la ingesta).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from app.catalogos.mercado import EXCLUIR, G_PREP, GRUPOS, grupo_de  # noqa: E402, F401
 
 
 def norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
     return re.sub(r"\s+", " ", s.lower()).strip()
-
-
-def grupo_de(unspsc: str, nombre_generico: str = "") -> str | None:
-    u = (unspsc or "").strip()
-    if len(u) != 8 or not u.isdigit() or u.startswith(EXCLUIR):
-        return None
-    g = GRUPOS.get(u[:4]) or GRUPOS.get(u[:2])
-    if g == GRUPOS["50"] and _PREPARADO.search(norm(nombre_generico) + " "):
-        return G_PREP
-    return g
 
 
 def rut(s: str) -> str:

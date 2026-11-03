@@ -352,6 +352,10 @@ class MercadoPublicoV2Client:
             pausa_429_desconocido_s=settings.pausa_429_desconocido_min * 60,
         )
 
+    def cuota_restante(self) -> int:
+        """Requests que quedan hoy en el presupuesto de este cliente (lee Postgres)."""
+        return self._client._quota.remaining()
+
     def _get(
         self,
         url: str,

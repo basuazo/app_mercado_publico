@@ -1,0 +1,30 @@
+# Mercado nocturno (F-merc-1): backfill de cotizaciones de Compra Ágil de
+# `MERCADO_REGIONES`, mes a mes, con cursor por mes en sync_state (reanudable).
+#
+# Disparo: desde cron-job.org, hora de Chile, a las 22:30, con la API de GitHub
+# (workflow_dispatch). Sin `schedule` a propósito. `mercado-backfill` valida en código
+# la ventana 22:00–07:00 con America/Santiago (regla 5): fuera de ella sale omitido.
+# Para solo a las 06:45, a los MERCADO_BACKFILL_MINUTOS (300) o con la cuota del día
+# menos 300 requests (margen para `mercado`). Un 429 corta guardando el avance.
+name: mercado-nocturno
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "mercado-backfill"
+      # 300 de trabajo (tope en código) + 15 de una pausa al arrancar + 10 de espera
+      # del lock + un detalle en curso.
+      timeout_min: 330
+      esperar_lock_min: 10

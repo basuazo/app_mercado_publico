@@ -363,7 +363,7 @@ async def jobs_run(
             "detalles-match", lambda: run_detalles_match(settings, engine)
         ),
         "resumen": _locked("resumen", lambda: run_resumen(settings, engine)),
-        "retencion": _locked("retencion", lambda: run_retencion(engine)),
+        "retencion": _locked("retencion", lambda: run_retencion(engine, settings)),
         "catalogos": _locked("catalogos", lambda: run_catalogos(settings, engine)),
         # NO se envuelve en _locked: _ciclo_nocturno ya toma el lock en cada paso
         # interno. Tomarlo por fuera lo dejaría ocupado y cada paso encontraría el
