@@ -181,6 +181,15 @@ class Settings(BaseSettings):
         default=300,
         description="Minutos máximos por corrida de `mercado-backfill` (timeout del workflow: 330)",
     )
+    # F-merc-1c: tras un 429 de tasa, el backfill espera la pausa y sigue en otro tramo.
+    mercado_backfill_max_pausas: int = Field(
+        default=12,
+        ge=0,
+        description=(
+            "Pausas de 429 que `mercado-backfill` espera por corrida antes de cortar "
+            "(0 = cortar al primer 429, el comportamiento anterior a F-merc-1c)"
+        ),
+    )
 
     # --- Estados vencidos (F-estados-vencidos) ---
     estados_vencidos_max_requests: int = Field(

@@ -11,6 +11,8 @@ from __future__ import annotations
 import csv
 import gzip
 import importlib.util
+import itertools
+import logging
 import sys
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
@@ -32,6 +34,7 @@ from app.ingest.mercado import (
     FUENTE_MERCADO_CA,
     PREFIJO_BACKFILL,
     cola_mercado_ca,
+    contar_repetidas,
     guarda_productos,
     guardar_detalle_mercado,
     meses_backfill,
@@ -45,6 +48,7 @@ from app.models.tables import (
     CompraAgil,
     SyncState,
 )
+from tests import pg_url
 
 _TICKET = "ticket-secreto-de-test-mercado-4321"
 _LISTADO = "https://api2.mercadopublico.cl/v2/compra-agil"
@@ -99,14 +103,26 @@ def v2(settings: Settings, engine: Engine) -> MercadoPublicoV2Client:
 # ---------------------------------------------------------------------------
 
 
-def _oferta(rut: str, ganador: bool | None, precio: float, codigo: Any = 50131700) -> dict[str, Any]:
+_IDS_COTIZACION = itertools.count(570_000_000)
+
+
+def _oferta(
+    rut: str,
+    ganador: bool | None,
+    precio: float,
+    codigo: Any = 50131700,
+    id_cotizacion: Any = "nuevo",
+) -> dict[str, Any]:
+    """Una oferta; cada una con su `id_cotizacion` (como la API) salvo que se pida otro."""
+    if id_cotizacion == "nuevo":
+        id_cotizacion = next(_IDS_COTIZACION)
     o: dict[str, Any] = {
         "rut_proveedor": rut,
         "razon_social": f"Proveedor {rut}",
         "es_emt": True,
         "estado": {"id": 3, "glosa": "Enviada"},
         "activo": 1,
-        "id_cotizacion": 100,
+        "id_cotizacion": id_cotizacion,
         "id_oc": 200 if ganador else None,
         "valor_neto": precio * 10,
         "total_impuesto": precio * 1.9,
@@ -268,9 +284,81 @@ def test_otro_llamado_no_pisa_el_anterior(engine):
     assert pares == [(1, "11111111-1"), (1, "22222222-2"), (2, "33333333-3")]
 
 
-def test_oferta_repetida_del_mismo_rut_se_guarda_una_vez(engine):
+# --- F-merc-1c §3: un RUT puede mandar varias ofertas a una CA ------------------------
+
+
+def test_dos_ofertas_del_mismo_rut_con_distinto_id_son_dos_filas(engine, caplog):
     ofertas = [_oferta("11111111-1", True, 950), _oferta("11111111-1", False, 990)]
-    assert _guardar(engine, _payload("CA-1", ofertas=ofertas)) == (1, 1)
+    with caplog.at_level(logging.WARNING):
+        assert _guardar(engine, _payload("CA-1", ofertas=ofertas)) == (2, 2)
+    assert "repetid" not in caplog.text
+    with Session(engine) as s:
+        precios = sorted(s.execute(select(CaCotizacion.valor_neto)).scalars())
+    assert precios == [9500, 9900]
+
+
+def test_id_cotizacion_repetido_se_guarda_una_vez_con_un_aviso_por_ca(engine, caplog):
+    ofertas = [
+        _oferta("11111111-1", True, 950, id_cotizacion=7),
+        _oferta("11111111-1", True, 950, id_cotizacion=7),
+        _oferta("11111111-1", True, 950, id_cotizacion=7),
+        _oferta("22222222-2", False, 990),
+    ]
+    with caplog.at_level(logging.WARNING):
+        assert _guardar(engine, _payload("CA-1", ofertas=ofertas)) == (2, 2)
+    avisos = [r for r in caplog.records if "id_cotizacion repetido" in r.getMessage()]
+    assert len(avisos) == 1
+
+
+def test_id_cotizacion_nulo_usa_la_clave_sustituta(engine):
+    """Sin id, dos ofertas del mismo RUT chocan y se guarda la primera (comportamiento previo)."""
+    ofertas = [
+        _oferta("11111111-1", True, 950, id_cotizacion=None),
+        _oferta("11111111-1", False, 990, id_cotizacion=None),
+        _oferta("22222222-2", False, 1100, id_cotizacion=None),
+    ]
+    assert _guardar(engine, _payload("CA-1", ofertas=ofertas)) == (2, 2)
+    with Session(engine) as s:
+        filas = sorted(s.execute(select(CaCotizacion.id_cotizacion, CaCotizacion.valor_neto)).all())
+    assert filas == [("rut:11111111-1", 9500), ("rut:22222222-2", 11000)]
+
+
+def test_reingestar_ofertas_del_mismo_rut_no_duplica(engine):
+    ofertas = [_oferta("11111111-1", True, 950, id_cotizacion=1), _oferta("11111111-1", False, 990, id_cotizacion=2)]
+    _guardar(engine, _payload("CA-1", ofertas=ofertas))
+    _guardar(engine, _payload("CA-1", ofertas=ofertas))
+    assert _contar(engine, CaCotizacion) == 2
+    assert _contar(engine, CaCotizacionProducto) == 2
+
+
+def test_contar_ofertas_del_mismo_rut_e_identicas():
+    ofertas = [
+        _oferta("11111111-1", True, 950),
+        _oferta("11111111-1", False, 990),  # mismo RUT, otra oferta
+        _oferta("11111111-1", False, 990),  # idéntica a la anterior salvo el id
+        _oferta("22222222-2", False, 990),  # mismo precio, otro RUT: no es idéntica
+        _oferta("33333333-3", False, 800, id_cotizacion=5),
+        _oferta("33333333-3", False, 800, id_cotizacion=5),  # id repetido: no se cuenta
+    ]
+    det = _parse_ca_detalle(_payload("CA-1", ofertas=ofertas))
+    assert contar_repetidas(det.cotizaciones) == (2, 1)
+
+
+@respx.mock
+def test_mercado_ca_resume_ofertas_del_mismo_rut(settings, engine, v2):
+    ofertas = [
+        _oferta("11111111-1", True, 950),
+        _oferta("11111111-1", False, 990),
+        _oferta("11111111-1", False, 990),
+    ]
+    respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([("CA-1", "proveedor_seleccionado")])))
+    respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload("CA-1", ofertas=ofertas)))
+    )
+    r = sync_mercado_ca(settings, engine, v2)
+    assert r["cotizaciones"] == 3
+    assert r["ofertas_mismo_rut"] == 2
+    assert r["ofertas_identicas"] == 1
 
 
 def test_productos_fuera_de_los_grupos_no_se_guardan(engine):
@@ -551,7 +639,8 @@ def test_backfill_429_guarda_avance_y_reanuda(settings, engine, v2):
     respx.get(_DETALLE.format(codigo="CA-3")).mock(
         return_value=httpx.Response(200, json=_envelope(_payload("CA-3", publicada="2026-08-03 09:00")))
     )
-    s = _con_meses(settings, "2026-08")
+    # F-merc-1c: con 0 pausas, el comportamiento previo (cortar al primer 429).
+    s = _con_meses(settings, "2026-08", mercado_backfill_max_pausas=0)
 
     r = run_backfill(s, engine, v2, now_fn=_reloj_chile(_NOCHE))
     assert r["cortado_por"] == "MPTasaError"
@@ -569,6 +658,222 @@ def test_backfill_429_guarda_avance_y_reanuda(settings, engine, v2):
     assert d1.call_count == 1
     assert listado.call_count - antes == 30  # días 2 a 31
     assert _contar(engine, CaCotizacion) == 4
+
+
+# --- F-merc-1c: el backfill espera la pausa del 429 y sigue --------------------------
+
+_JITTER = 45.0
+_PAUSA_S = 20 * 60  # PAUSA_TASA_MIN por defecto
+
+
+class _Reloj:
+    """Hora de Chile, reloj monotónico y `sleep` falsos y compartidos: dormir los adelanta.
+
+    El QuotaTracker del cliente usa la misma hora, así la pausa que persiste el 429 y la
+    que lee el backfill hablan del mismo tiempo. Al dormir anota las conexiones del pool
+    que siguen prestadas (§2.7) y corre el gancho pendiente, si hay.
+    """
+
+    def __init__(self, inicio: datetime, engine: Engine, v2: MercadoPublicoV2Client) -> None:
+        self.t = inicio
+        self.mono = 0.0
+        self.engine = engine
+        self.v2 = v2
+        self.dormidas: list[float] = []
+        self.prestadas_al_dormir: list[int] = []
+        self.ganchos: list[Any] = []
+        v2._client._quota._now_fn = lambda: self.t
+
+    def now(self, tz: Any = TZ_CHILE) -> datetime:
+        return self.t.astimezone(tz)
+
+    def reloj(self) -> float:
+        return self.mono
+
+    def sleep(self, segundos: float) -> None:
+        self.prestadas_al_dormir.append(self.engine.pool.checkedout())  # type: ignore[attr-defined]
+        self.dormidas.append(segundos)
+        if self.ganchos:
+            self.ganchos.pop(0)()
+        self.t += timedelta(seconds=segundos)
+        self.mono += segundos
+
+    def correr(self, s: Settings) -> dict[str, Any]:
+        return run_backfill(
+            s,
+            self.engine,
+            self.v2,
+            now_fn=self.now,
+            reloj=self.reloj,
+            sleep_fn=self.sleep,
+            jitter_fn=lambda: _JITTER,
+        )
+
+
+def _dias_con_429(dias: dict[str, Any], veces_429: dict[str, int]) -> Any:
+    """Como `_listado_por_dia`, pero el día de `veces_429` responde 429 esas veces y luego OK."""
+    base = _listado_por_dia(dias)
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        dia = request.url.params["publicado_desde"][:10]
+        if veces_429.get(dia, 0) > 0:
+            veces_429[dia] -= 1
+            return httpx.Response(429, json=_429)
+        return base(request)  # type: ignore[no-any-return]
+
+    return responder
+
+
+def _mocks_dias_1_y_3() -> tuple[Any, Any, dict[str, int]]:
+    """Día 1: CA-1 (detalle); día 2: 429 una vez; día 3: CA-3. Devuelve (listado, d1, veces)."""
+    veces = {"2026-08-02": 1}
+    listado = respx.get(_LISTADO).mock(
+        side_effect=_dias_con_429(
+            {
+                "2026-08-01": [("CA-1", "proveedor_seleccionado")],
+                "2026-08-03": [("CA-3", "proveedor_seleccionado")],
+            },
+            veces,
+        )
+    )
+    d1 = respx.get(_DETALLE.format(codigo="CA-1")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload("CA-1")))
+    )
+    respx.get(_DETALLE.format(codigo="CA-3")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload("CA-3", publicada="2026-08-03 09:00")))
+    )
+    return listado, d1, veces
+
+
+def _llamadas_del_dia(listado: Any, dia: str) -> int:
+    return sum(c.request.url.params["publicado_desde"][:10] == dia for c in listado.calls)
+
+
+@respx.mock
+def test_backfill_espera_la_pausa_y_completa_el_mes(settings, engine, v2, caplog):
+    """§2.1, §2.7 y §2.8: 429 en el request 3 → duerme fin de pausa + jitter → completa."""
+    listado, d1, _ = _mocks_dias_1_y_3()
+    reloj = _Reloj(_NOCHE, engine, v2)
+    dia2_al_dormir: list[int] = []
+    reloj.ganchos.append(lambda: dia2_al_dormir.append(_llamadas_del_dia(listado, "2026-08-02")))
+
+    with caplog.at_level(logging.DEBUG):
+        r = reloj.correr(_con_meses(settings, "2026-08"))
+
+    assert r["pausas"] == 1
+    assert r["requests_por_tramo"] == [3]  # listado día 1, detalle CA-1, listado día 2 (429)
+    assert reloj.dormidas == [pytest.approx(_PAUSA_S + _JITTER)]
+    assert r["minutos_esperados"] == round((_PAUSA_S + _JITTER) / 60, 1)
+    # El request del 429 no se reintenta: el día 2 se vuelve a listar recién tras la pausa,
+    # en el tramo 2, y el detalle ya guardado del día 1 no se pide otra vez.
+    assert dia2_al_dormir == [1]
+    assert _llamadas_del_dia(listado, "2026-08-02") == 2
+    assert d1.call_count == 1
+    assert listado.call_count == 32
+    assert r["meses_completos"] == ["2026-08"]
+    assert r["cortado_por"] is None
+    assert r["motivo_fin"] == "sin meses pendientes"
+    assert _contar(engine, CaCotizacion) == 4
+    # §2.7: ninguna Session ni conexión del pool viva mientras duerme.
+    assert reloj.prestadas_al_dormir == [0]
+    # §2.8: el log dice cuánto espera, sin ticket (regla 1).
+    assert "429 tras 3 requests del tramo; espero 20.8 min, hasta 23:20 Chile (pausa 1/12)" in caplog.text
+    assert _TICKET not in caplog.text
+
+
+@respx.mock
+def test_backfill_no_espera_una_pausa_que_termina_despues_de_las_0645(settings, engine, v2):
+    """§2.2: a las 06:30 la pausa (20 min) termina a las 06:50: corta guardando el avance."""
+    listado, _, _ = _mocks_dias_1_y_3()
+    reloj = _Reloj(datetime(2026, 11, 1, 6, 30, tzinfo=TZ_CHILE), engine, v2)
+
+    r = reloj.correr(_con_meses(settings, "2026-08"))
+
+    assert reloj.dormidas == []
+    assert r["pausas"] == 0
+    assert r["cortado_por"] == "MPTasaError"
+    assert "la pausa termina después de las 06:45" in r["motivo_fin"]
+    assert r["requests_por_tramo"] == [3]
+    assert _cursor(engine, "2026-08") == "2026-08-02|1"
+    assert listado.call_count == 2
+
+
+@respx.mock
+def test_backfill_no_espera_una_pausa_que_no_cabe_en_el_tope(settings, engine, v2):
+    """§2.3: con 20 min de tope (15 útiles) no cabe una pausa de 20 min + jitter."""
+    _mocks_dias_1_y_3()
+    reloj = _Reloj(_NOCHE, engine, v2)
+
+    r = reloj.correr(_con_meses(settings, "2026-08", mercado_backfill_minutos=20))
+
+    assert reloj.dormidas == []
+    assert r["cortado_por"] == "MPTasaError"
+    assert "la pausa no cabe en el tope de 20 min" in r["motivo_fin"]
+
+
+@respx.mock
+def test_backfill_corta_al_llegar_a_max_pausas(settings, engine, v2):
+    """§2.4: el segundo 429 con `max_pausas=1` no se espera."""
+    _, _, veces = _mocks_dias_1_y_3()
+    veces["2026-08-02"] = 2
+    reloj = _Reloj(_NOCHE, engine, v2)
+
+    r = reloj.correr(_con_meses(settings, "2026-08", mercado_backfill_max_pausas=1))
+
+    assert len(reloj.dormidas) == 1
+    assert r["pausas"] == 1
+    assert r["requests_por_tramo"] == [3, 1]
+    assert r["cortado_por"] == "MPTasaError"
+    assert "max pausas (1) alcanzado" in r["motivo_fin"]
+    assert _cursor(engine, "2026-08") == "2026-08-02|1"
+
+
+@respx.mock
+def test_backfill_vuelve_a_esperar_si_otro_proceso_alargo_la_pausa(settings, engine, v2):
+    """§2.5: al despertar la pausa sigue vigente (otro proceso la alargó): otra espera."""
+    _mocks_dias_1_y_3()
+    reloj = _Reloj(_NOCHE, engine, v2)
+    quota = v2._client._quota
+    reloj.ganchos.append(lambda: quota.pausar(reloj.t + timedelta(minutes=40), "429/429"))
+
+    r = reloj.correr(_con_meses(settings, "2026-08"))
+
+    assert r["pausas"] == 2
+    assert len(reloj.dormidas) == 2
+    # Despierta a las 23:20:45; la pausa ahora llega a las 23:40: espera 19:15 + jitter.
+    assert reloj.dormidas[1] == pytest.approx(19 * 60 + 15 + _JITTER)
+    assert r["requests_por_tramo"] == [3]
+    assert r["meses_completos"] == ["2026-08"]
+    assert r["cortado_por"] is None
+
+
+@respx.mock
+def test_backfill_10500_agotado_termina_sin_dormir(settings, engine, v2):
+    """§2.6: el 429 de concurrencia (reintentos agotados) no es pausa: termina como antes."""
+    respx.get(_LISTADO).mock(
+        return_value=httpx.Response(429, json={"Codigo": 10500, "Mensaje": "simultáneas"})
+    )
+    reloj = _Reloj(_NOCHE, engine, v2)
+
+    r = reloj.correr(_con_meses(settings, "2026-08"))
+
+    assert reloj.dormidas == []
+    assert r["cortado_por"] == "MPConcurrencyError"
+    assert r["pausas"] == 0 and r["requests_por_tramo"] == []
+
+
+@respx.mock
+def test_backfill_corte_propio_termina_sin_dormir(settings, engine, v2):
+    """§2.6: un `_Corte` (aquí, fin de la ventana a las 06:45) termina sin dormir."""
+    listado = respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([])))
+    reloj = _Reloj(datetime(2026, 11, 1, 6, 46, tzinfo=TZ_CHILE), engine, v2)
+
+    r = reloj.correr(_con_meses(settings, "2026-08"))
+
+    assert reloj.dormidas == []
+    assert not listado.called
+    assert "fin de la ventana nocturna" in r["motivo_fin"]
+    assert r["cortado_por"] is None
 
 
 @respx.mock
@@ -842,3 +1147,216 @@ def test_tamano_estimado_por_ca_con_la_fixture(engine):
     # Índices (pkey, UNIQUE, rut, FK) ≈ 90 B por oferta y 36 B por producto.
     por_ca = sum(ofertas) + 90 * len(ofertas) + sum(productos) + 36 * len(productos)
     assert 400 < por_ca < 1200
+
+
+# ---------------------------------------------------------------------------
+# F-merc-1c §3.1: migración del UNIQUE por oferta (SQLite y Postgres)
+# ---------------------------------------------------------------------------
+
+_MIGRACION = (
+    Path(__file__).parent.parent / "alembic" / "versions" / "b8d4f1a6c2e9_ofertas_por_id_cotizacion.py"
+)
+
+
+def _migracion() -> Any:
+    spec = importlib.util.spec_from_file_location("migracion_ofertas", _MIGRACION)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _aplicar(conn: Any, paso: str) -> None:
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    with Operations.context(MigrationContext.configure(conn)):
+        getattr(_migracion(), paso)()
+
+
+def _uniques(conn: Any) -> set[str]:
+    from sqlalchemy import inspect
+
+    return {u["name"] for u in inspect(conn).get_unique_constraints("ca_cotizaciones")}
+
+
+def _ofertas_crudas(conn: Any, prefijo: str) -> list[tuple[str, str | None]]:
+    return sorted(
+        tuple(f)
+        for f in conn.execute(
+            text("SELECT rut_proveedor, id_cotizacion FROM ca_cotizaciones WHERE ca_codigo LIKE :p"),
+            {"p": prefijo + "%"},
+        )
+    )
+
+
+def _ida_y_vuelta(conn: Any, prefijo: str) -> None:
+    """Baja y sube la migración sobre `conn` (una CA con dos RUT, uno con clave sustituta)."""
+    # Insert de Core: aplica los defaults de Python de las columnas NOT NULL.
+    conn.execute(CompraAgil.__table__.insert().values(codigo=prefijo + "1", nombre="x", estado="cerrada"))
+    insertar = text(
+        "INSERT INTO ca_cotizaciones (ca_codigo, llamado, rut_proveedor, id_cotizacion) "
+        "VALUES (:c, 1, :r, :i)"
+    )
+    for rut, id_cot in (("1-9", "900"), ("2-7", "rut:2-7")):
+        conn.execute(insertar, {"c": prefijo + "1", "r": rut, "i": id_cot})
+    assert "uq_ca_cotizacion_oferta" in _uniques(conn)
+
+    _aplicar(conn, "downgrade")
+    assert "uq_ca_cotizacion" in _uniques(conn)
+    assert "uq_ca_cotizacion_oferta" not in _uniques(conn)
+    assert _ofertas_crudas(conn, prefijo) == [("1-9", "900"), ("2-7", None)]
+
+    _aplicar(conn, "upgrade")
+    assert "uq_ca_cotizacion_oferta" in _uniques(conn)
+    assert "uq_ca_cotizacion" not in _uniques(conn)
+    assert _ofertas_crudas(conn, prefijo) == [("1-9", "900"), ("2-7", "rut:2-7")]
+
+    # Dos ofertas del mismo RUT: el downgrade falla claro y no borra nada.
+    conn.execute(insertar, {"c": prefijo + "1", "r": "1-9", "i": "901"})
+    with pytest.raises(RuntimeError, match="no borra"):
+        _aplicar(conn, "downgrade")
+    assert len(_ofertas_crudas(conn, prefijo)) == 3
+    assert "uq_ca_cotizacion_oferta" in _uniques(conn)
+
+
+def test_migracion_ofertas_sube_y_baja_en_sqlite(engine):
+    with engine.begin() as conn:
+        _ida_y_vuelta(conn, "MIG-")
+
+
+@pytest.mark.skipif(not pg_url.TIENE_PG, reason=pg_url.MOTIVO)
+def test_migracion_ofertas_sube_y_baja_en_postgres():
+    """Dentro de una transacción que se deshace: el DDL de Postgres es transaccional."""
+    pg = create_engine(pg_url.DB_URL)
+    try:
+        with pg.connect() as conn:
+            trans = conn.begin()
+            try:
+                conn.execute(text("SET LOCAL lock_timeout = '10s'"))
+                # Base de tests compartida: se parte de la tabla vacía (se deshace al final).
+                conn.execute(text("DELETE FROM ca_cotizaciones"))
+                _ida_y_vuelta(conn, "ZZMIG-")
+            finally:
+                trans.rollback()
+    finally:
+        pg.dispose()
+
+
+# ---------------------------------------------------------------------------
+# F-merc-1c §3.3: reabrir las CA guardadas con ofertas de menos
+# ---------------------------------------------------------------------------
+
+
+def _cargar_reabrir() -> Any:
+    ruta = Path(__file__).parent.parent / "scripts" / "mercado" / "reabrir_ofertas_faltantes.py"
+    spec = importlib.util.spec_from_file_location("reabrir_ofertas_faltantes", ruta)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _ca_con_filas(s: Session, codigo: str, total: int, filas: int, region: int = 16) -> None:
+    _ca(s, codigo, region=region, obtenidas=datetime(2026, 11, 4, 3, 0), total_ofertas=total)
+    s.flush()
+    for i in range(filas):
+        s.add(CaCotizacion(ca_codigo=codigo, llamado=1, rut_proveedor=f"{i}-K", id_cotizacion=str(i)))
+
+
+def _obtenidas(engine: Engine, codigo: str) -> datetime | None:
+    with Session(engine) as s:
+        return s.get(CompraAgil, codigo).cotizaciones_obtenidas_en  # type: ignore[union-attr]
+
+
+def test_reabrir_dry_run_no_escribe_y_aplicar_reabre(engine):
+    with Session(engine) as s:
+        _ca_con_filas(s, "CA-FALTAN", total=5, filas=3)
+        _ca_con_filas(s, "CA-COMPLETA", total=2, filas=2)
+        _ca_con_filas(s, "CA-SIN-TOTAL", total=0, filas=1)
+        _ca_con_filas(s, "CA-RM", total=5, filas=1, region=13)
+        s.commit()
+    mod = _cargar_reabrir()
+
+    r = mod.reabrir(engine, [16], aplicar=False)
+    assert r.ca == [("CA-FALTAN", 5, 3)]
+    assert r.requests == 1 and r.ofertas_faltantes == 2
+    assert not r.aplicado
+    assert _obtenidas(engine, "CA-FALTAN") is not None  # dry-run: nada escrito
+
+    r = mod.reabrir(engine, [16], aplicar=True)
+    assert r.aplicado
+    assert _obtenidas(engine, "CA-FALTAN") is None
+    assert _obtenidas(engine, "CA-COMPLETA") is not None
+    assert _obtenidas(engine, "CA-RM") is not None
+
+
+def test_reabrir_no_aplica_si_total_ofertas_cuenta_rut(engine):
+    """Si una CA de la sonda (16 ofertas de 13 RUT) trae total_ofertas=13, el criterio no sirve."""
+    with Session(engine) as s:
+        _ca_con_filas(s, "4158-26-COT26", total=13, filas=13)
+        _ca_con_filas(s, "CA-FALTAN", total=5, filas=3)
+        s.commit()
+    mod = _cargar_reabrir()
+
+    r = mod.reabrir(engine, [16], aplicar=True)
+
+    assert r.cuenta_ofertas is False
+    assert not r.aplicado
+    assert _obtenidas(engine, "CA-FALTAN") is not None
+    assert any("cuenta RUT" in linea for linea in r.verificacion)
+
+
+def test_reabrir_con_total_que_cuenta_ofertas(engine):
+    with Session(engine) as s:
+        _ca_con_filas(s, "4158-26-COT26", total=16, filas=13)
+        s.commit()
+    r = _cargar_reabrir().reabrir(engine, [16], aplicar=False)
+    assert r.cuenta_ofertas is True
+    assert r.ca == [("4158-26-COT26", 16, 13)]
+
+
+# ---------------------------------------------------------------------------
+# F-merc-1c §3.4: consumidores con varias ofertas por RUT
+# ---------------------------------------------------------------------------
+
+
+def test_bandas_una_oferta_por_rut():
+    una = _cargar_script_mercado("bandas_precio").una_por_rut
+    # Una oferta por RUT: igual que antes, mismo orden.
+    simples = [("B", 10.0, False, 1.0), ("A", 9.0, True, 1.0)]
+    assert una(simples) == simples
+    # Competidor con dos ofertas: cuenta la más barata. Ganador: la seleccionada, aunque
+    # tenga otra suya más barata.
+    varias = [
+        ("A", 9.0, True, 1.0),
+        ("A", 8.0, False, 1.0),
+        ("B", 12.0, False, 1.0),
+        ("B", 11.0, False, 1.0),
+    ]
+    assert una(varias) == [("A", 9.0, True, 1.0), ("B", 11.0, False, 1.0)]
+
+
+def _cargar_script_mercado(nombre: str) -> Any:
+    ruta = Path(__file__).parent.parent / "scripts" / "mercado" / f"{nombre}.py"
+    spec = importlib.util.spec_from_file_location(nombre, ruta)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_exportar_cot_api_escribe_todas_las_ofertas_del_mismo_rut(engine, tmp_path):
+    ofertas = [_oferta("11111111-1", True, 950), _oferta("11111111-1", False, 990)]
+    _guardar(engine, _payload("CA-1", ofertas=ofertas))
+
+    escritas = _cargar_exportador().exportar(
+        engine, region=16, meses=None, dir_salida=tmp_path, sobrescribir=False
+    )
+
+    assert escritas == {"2026-08": 2}
+    with gzip.open(tmp_path / "cot_api_2026-08.csv.gz", "rt", encoding="utf-8") as f:
+        filas = list(csv.DictReader(f, delimiter=";"))
+    assert sorted(f["ValorNeto"] for f in filas) == ["9500", "9900"]

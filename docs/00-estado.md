@@ -32,6 +32,21 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
+## F-merc-1c (4-nov, commit local sin push hasta auditar; migración `b8d4f1a6c2e9`)
+`mercado-backfill` ya no termina al primer 429 de tasa: corta el tramo guardando el avance, lee el fin de la pausa
+de Postgres, duerme hasta ese fin + 30–90 s y sigue en otro tramo, hasta `MERCADO_BACKFILL_MAX_PAUSAS` (12; 0 =
+comportamiento anterior), las 06:45 o el tope de minutos (que cuenta el sueño). Retiene el lock mientras duerme. El
+resumen suma `pausas`, `minutos_esperados` y `requests_por_tramo` (dato para la sonda H1). `ca_cotizaciones` pasa a
+una fila por **oferta** (UNIQUE por `id_cotizacion`): un RUT puede mandar varias a una CA [V, sonda 4-nov] y antes se
+perdía ~4 %. Contadores `ofertas_mismo_rut` y `ofertas_identicas`. Observatorio y bandas de precio: competidor =
+su oferta más barata, ganador = la seleccionada, oferentes = RUT. `mercado-oc` deja de avisar por `tieneItems`.
+**Pasos de Boris:** (1) push; variable de Actions `MERCADO_BACKFILL_MAX_PAUSAS` vacía (usa 12) o `0` para volver a
+cortar al primer 429; (2) `alembic upgrade head` en Neon prod (Alembic no lee `.env`: exportar la URL) y después
+`python scripts\mercado\reabrir_ofertas_faltantes.py` (dry-run: verifica si `total_ofertas` cuenta ofertas con las
+CA de la sonda e imprime cuántas CA y requests costaría); si es razonable, repetir con `--aplicar`; (3) cron-job.org:
+confirmar el disparo de las 22:30 y crear un segundo `GH mercado-nocturno` a las 03:40 Chile; (4) a la mañana
+siguiente pegar el resumen de las dos corridas (`pausas`, `requests_por_tramo`, `meses_completos`) y `/salud`.
+
 ## F-merc-2 (4-nov, EN PRODUCCIÓN; migración `a7c3e9d1b4f2`)
 **Hecho (4-nov):** carga inicial `--desde 2024-10` en producción: 26 meses, 108.051 líneas (50,5 MB) y 54.674
 referencias (6,6 MB); juez exacto ($681.979.119, 1.516 OC, 105 compradores) y contadores defensivos en 0; disparo
@@ -59,7 +74,8 @@ nullable, `llamado`, `id_oc`) y `ca_cotizacion_productos` (precio unitario neto)
 `compras_agiles`. Una sola key (`MP_TICKET`, cuota, pausa y lock de siempre, sin reserva). Jobs: `mercado-ca`
 (cursor `mercado_ca`, listado por región **sin `estado`**, cola de detalle con tope 120 / 10 min) y
 `mercado-backfill` (22–07 Chile, ventanas de un día, cursor por mes `mercado_backfill:AAAA-MM`, para a las 06:45,
-a los 300 min, con cuota − 300 o con la base en 350 MB). Workflows `mercado.yml` / `mercado-nocturno.yml` (solo
+a los 300 min, con cuota − 300 o con la base en 350 MB; ~~un 429 corta guardando el avance~~: desde F-merc-1c espera la
+pausa y sigue). Workflows `mercado.yml` / `mercado-nocturno.yml` (solo
 dispatch; crons **sin crear**). Retención no purga las CA de la región. `productos_cotizados` solo de CA con algún
 producto en los grupos del observatorio: el estimado pasa de 120 MB (ver `decisiones.md`, 3-nov; **decisión
 pendiente de Boris**). Exportación: `scripts/mercado/exportar_cot_api.py` (no en `data/`, que está en

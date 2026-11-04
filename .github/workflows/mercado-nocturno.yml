@@ -5,7 +5,12 @@
 # (workflow_dispatch). Sin `schedule` a propósito. `mercado-backfill` valida en código
 # la ventana 22:00–07:00 con America/Santiago (regla 5): fuera de ella sale omitido.
 # Para solo a las 06:45, a los MERCADO_BACKFILL_MINUTOS (300) o con la cuota del día
-# menos 300 requests (margen para `mercado`). Un 429 corta guardando el avance.
+# menos 300 requests (margen para `mercado`). Un 429 de tasa corta el tramo guardando el
+# avance; el job espera el fin de la pausa (leído de Postgres) y empieza otro tramo, hasta
+# MERCADO_BACKFILL_MAX_PAUSAS (12; 0 = cortar al primer 429), las 06:45 o el tope de
+# minutos, que cuenta el sueño (F-merc-1c). Mientras duerme retiene el advisory lock.
+# Segundo disparo en cron-job.org a las 03:40 Chile: si el primero sigue vivo, el
+# `concurrency` lo encola, y retoma donde quedó el cursor por mes.
 name: mercado-nocturno
 
 on:

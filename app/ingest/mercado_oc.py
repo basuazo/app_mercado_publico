@@ -46,6 +46,9 @@ _LOTE = 2000
 _TANDA_UPSERT = 400
 _MIN_PRECIOS = 3  # una clave con menos precios en el mes no da percentiles útiles
 _MESES_ATRAS = 2  # mes en curso y 2 anteriores
+# Columnas con "item" en el nombre que no son clave de línea (F-merc-1c): `tieneItems` es una
+# marca sí/no. En minúsculas; una columna nueva con "item" sigue avisando.
+_COLUMNAS_ITEM_CONOCIDAS = frozenset({"tieneitems"})
 _FORMATOS_FECHA = (
     "%Y-%m-%d %H:%M:%S",
     "%d-%m-%Y %H:%M:%S",
@@ -323,7 +326,9 @@ def sync_mercado_oc(
             resultado["errores"].append(f"{etiqueta}: {type(exc).__name__}")
             continue
         resultado["meses"][etiqueta] = conteos
-        item_cols = [c for c in extra if "item" in c.lower()]
+        item_cols = [
+            c for c in extra if "item" in c.lower() and c.lower() not in _COLUMNAS_ITEM_CONOCIDAS
+        ]
         if item_cols:
             _log.warning(
                 "mercado-oc: %s trae columnas de ítem %s: evaluar como PK de línea", etiqueta, item_cols

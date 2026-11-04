@@ -88,6 +88,23 @@ def mediana_o_none(xs: Iterable[float]) -> float | None:
     return st.median(xs) if xs else None
 
 
+Oferta = tuple[str, float, bool, float]  # (RUT, precio unitario, seleccionada, cantidad)
+
+
+def una_por_rut(of: list[Oferta]) -> list[Oferta]:
+    """Una oferta por RUT en la línea (F-merc-1c): un RUT puede mandar varias a una CA.
+
+    El ganador cuenta con su oferta seleccionada; cada competidor, con la más barata.
+    Con una oferta por RUT devuelve lo mismo, en el mismo orden.
+    """
+    elegida: dict[str, Oferta] = {}
+    for o in of:
+        actual = elegida.get(o[0])
+        if actual is None or (o[2] and not actual[2]) or (o[2] == actual[2] and o[1] < actual[1]):
+            elegida[o[0]] = o
+    return list(elegida.values())
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--meses", nargs="*", help="p. ej. 2026-08 2026-09 (default: todos)")
@@ -100,8 +117,8 @@ def main() -> int:
 
     # --- 1. Verificación de consistencia del precio ----------------------------------
     ok_linea = mal_linea = 0
-    ofertas: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    valor_neto: dict[tuple[str, str], float] = {}
+    ofertas: dict[tuple[str, str, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    valor_neto: dict[tuple[str, str, str], float] = {}
     for r in filas:
         pu, cant, mt = num(r.get("PrecioUnitario")), num(r.get("CantidadCotizada")), num(r.get("MontoTotalProducto"))
         if pu is not None and cant is not None and mt is not None:
@@ -109,7 +126,9 @@ def main() -> int:
                 ok_linea += 1
             else:
                 mal_linea += 1
-        k = (r["CodigoCotizacion"], r["RUTProveedor"])
+        # Una oferta = (CA, RUT, ValorNeto): un RUT puede mandar varias a una CA (F-merc-1c) y
+        # el CSV no trae id de oferta; ValorNeto es de la oferta (igual en todas sus filas).
+        k = (r["CodigoCotizacion"], r["RUTProveedor"], r.get("ValorNeto", ""))
         if r["RUTProveedor"] and mt is not None:
             ofertas[k]["suma"] += mt
             vn = num(r.get("ValorNeto"))
@@ -119,7 +138,7 @@ def main() -> int:
     n_of_cmp = sum(1 for k in ofertas if k in valor_neto)
 
     # --- 2. Líneas: (CA, producto) con sus ofertas -----------------------------------
-    lineas: dict[tuple[str, str, str], list[tuple[str, float, bool, float]]] = defaultdict(list)
+    lineas: dict[tuple[str, str, str], list[Oferta]] = defaultdict(list)
     prods_por_ca: dict[str, set[str]] = defaultdict(set)
     for r in filas:
         if not r["RUTProveedor"]:
@@ -131,6 +150,8 @@ def main() -> int:
         clave = (r["CodigoCotizacion"], r["CodigoProducto"], r["ProductoCotizado"])
         lineas[clave].append((r["RUTProveedor"], pu, r["ProveedorSeleccionado"].strip().lower() == "si", cantidad))
         prods_por_ca[r["CodigoCotizacion"]].add(r["CodigoProducto"] + "|" + r["ProductoCotizado"])
+    # N.º de oferentes = RUT distintos; precio de cada uno según `una_por_rut`.
+    lineas = defaultdict(list, {k: una_por_rut(v) for k, v in lineas.items()})
     n_ca = len(prods_por_ca)
     n_ca_uno = sum(1 for v in prods_por_ca.values() if len(v) == 1)
 

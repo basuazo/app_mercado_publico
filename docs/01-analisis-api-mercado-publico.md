@@ -259,6 +259,20 @@ La información necesaria está disponible vía API oficial y los términos exig
   monto_total_producto, nombre_producto, precio_unitario` [V]. Detalle de primer nivel: `codigo, convocatoria,
   descripcion, documentos, entrega, estado, fechas, flags, id_orden_compra, institucion, motivos, nombre,
   presupuesto, productos_solicitados, proveedores_cotizando, resumen` (sin `orden_compra`).
+- **v2: un RUT puede enviar varias ofertas a una misma CA** [V, sonda `smoke_test.py --detalle-ca`, 4-nov-2026,
+  log `data/logs/sonda_ofertas_2026-11-04.txt`]: 44 ofertas de 38 RUT en `2728-9-COT26`, 23 de 18 en `3881-33-COT26`,
+  16 de 13 en `4158-26-COT26`. Cada una con su `id_cotizacion`, producto y precio (p. ej. $419.800 y $719.800 netos
+  del mismo RUT), creadas con minutos de diferencia, misma sucursal; no son una anulada y su reemplazo (mismo
+  `estado`, y la primera no siempre es la más barata). Un caso de duplicado exacto (mismo monto y producto, 8 min
+  de diferencia, distinto `id_cotizacion`). Consecuencia: la fila de `ca_cotizaciones` es la oferta, con UNIQUE por
+  `id_cotizacion` (F-merc-1c).
+- **v2: `monto_total` de la oferta incluye IVA** [V, misma sonda]: `monto_total = valor_neto × 1,19` (499.562 /
+  419.800 = 1,19), y `valor_neto` incluye `monto_despacho` (480.000 = 440.000 + 40.000). Para comparar precios
+  entre ofertas, `valor_neto`.
+- **v2: `estado` de la oferta llega como entero** (2 y 3 en la misma CA) [V]; su significado es [I] pendiente
+  (¿3 = inadmisible? existe la clave `justificacion_inadmisibilidad`, que la sonda no imprimió).
+- **v2: `total_ofertas_recibidas` del resumen, ¿ofertas o RUT?** [I] pendiente: lo verifica
+  `scripts/mercado/reabrir_ofertas_faltantes.py` con las tres CA de la sonda (F-merc-1c §3.3).
 
 ## 9. Referencias oficiales
 - Portal API: https://www.chilecompra.cl/api/

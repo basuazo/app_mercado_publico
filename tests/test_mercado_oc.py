@@ -440,6 +440,30 @@ def test_sync_error_de_servidor_se_informa(engine: Engine, settings: Settings) -
     assert r["errores"] == ["2026-03: HTTP 500"]
 
 
+@pytest.mark.parametrize(
+    ("columna", "avisa"),
+    [("tieneItems", False), ("TIENEITEMS", False), ("IDItemNuevo", True)],
+)
+def test_columnas_de_item_conocidas_no_avisan(
+    engine: Engine,
+    settings: Settings,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    columna: str,
+    avisa: bool,
+) -> None:
+    """F-merc-1c §4: `tieneItems` es una marca sí/no, no una clave de línea."""
+    cuerpo = _zip(tmp_path / "srv.zip", _filas_mes("2026-03"), extra={columna: "1"}).read_bytes()
+    with respx.mock:
+        respx.head(f"{_BASE}/oc-da/2026-3.zip").mock(return_value=httpx.Response(200))
+        respx.get(f"{_BASE}/oc-da/2026-3.zip").mock(return_value=httpx.Response(200, content=cuerpo))
+        with caplog.at_level("WARNING"):
+            r = sync_mercado_oc(settings, engine, desde="2026-03", hoy=date(2026, 3, 1))
+    assert r["meses"]["2026-03"]["lineas_guardadas"] == 5
+    assert ("columnas_item" in r) is avisa
+    assert ("columnas de ítem" in caplog.text) is avisa
+
+
 # ---------------------------------------------------------------------------
 # Retención, cruce con F-merc-1, CLI
 # ---------------------------------------------------------------------------

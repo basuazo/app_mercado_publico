@@ -135,3 +135,33 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   ganador). Costo: del histórico no quedan las ofertas de las CA desiertas o canceladas (sí su fila básica del
   listado). Se amplía con la variable si P(ganar) las necesita. Horizonte configurable con
   `MERCADO_BACKFILL_PRIMER_MES` (default 2024-11 desde F-merc-1-fix); un mes terminado y sin CA queda `vacio` y no se repite.
+- **Backfill nocturno espera la pausa del 429 (4-nov-2026, F-merc-1c).** Evidencia [V, log de Actions del 4-nov,
+  `mercado-nocturno` manual 00:45 Chile]: 137 requests en 16 min (0,14 req/s), todas 200; a las 01:01 un `429
+  codigo=429`; el cliente persistió la pausa hasta las 01:21 y el job terminó, con ~5 h de ventana sin usar. 137 cae en
+  el rango 110–190 de `15-diagnostico-ca-429.md`: el límite cuenta requests en una ventana de tiempo, no velocidad
+  [I fuerte]. A ~137 requests por noche los ~24 meses no se terminan. **Regla 3 por tramo:** el job es una serie de
+  tramos; un 429 de tasa corta el tramo sin reintento y guardando el avance (lo que la regla pide), el job lee el fin
+  de la pausa **de Postgres** (otro proceso pudo alargarla), duerme hasta ese fin + 30–90 s y empieza otro tramo; el
+  request del 429 no se repite antes de la pausa (la página cortada se vuelve a listar en el tramo siguiente, sus
+  detalles ya guardados no se piden). Solo si el despertar cae antes de las 06:45 Chile y antes del tope de
+  `MERCADO_BACKFILL_MINUTOS` − 5 (el reloj cuenta el sueño) y quedan pausas. 10500 agotado, cuota, cortes propios y
+  401 terminan el job como antes. **Lock retenido mientras duerme** (regla 13): soltarlo abriría la puerta a dos
+  backfills; efecto aceptado: un `mercado-ca` de noche espera el lock 10 min y sale omitido (0), y durante la pausa
+  tampoco podría llamar a la API. **`MERCADO_BACKFILL_MAX_PAUSAS`** (12; 0 = cortar al primer 429, el comportamiento
+  anterior) es el interruptor. **Segundo disparo** de `mercado-nocturno` en cron-job.org a las 03:40 Chile: el
+  primero (22:30) para a los 300 min (~03:30); si sigue vivo, el `concurrency` encola el segundo. Estimado [I]:
+  ~137 requests cada ~37 min → ~1.700–1.900 por noche; verificar con `requests_por_tramo` de la primera noche (es
+  además el N_A de la sonda H1).
+- **Ofertas repetidas del mismo RUT se guardan todas (4-nov-2026, F-merc-1c).** Un RUT manda varias ofertas
+  distintas a una CA [V, sonda del 4-nov; `01-analisis` §10]; el UNIQUE `(ca, llamado, rut)` descartaba ~4 % de las
+  ofertas (45 de ~1.090 la primera noche). Pasa a `(ca, llamado, id_cotizacion)` (migración `b8d4f1a6c2e9`); sin
+  `id_cotizacion`, clave sustituta `"rut:<rut>"` (se comporta como antes). Un `id_cotizacion` repetido en la misma
+  respuesta se guarda una vez con un WARNING por CA; un duplicado exacto con distinto id se guarda (para la API son
+  dos ofertas) y se cuenta en `ofertas_identicas`. **Regla de elección para los consumidores:** precio de un
+  competidor = su oferta de menor `valor_neto` (por producto, el menor precio unitario); precio del ganador = la
+  oferta seleccionada; n.º de oferentes = RUT distintos, no filas. Aplicada en `mercado_observatorio.py` (antes
+  quedaba la última fila de cada RUT) y `bandas_precio.py` (antes contaba cada oferta como un oferente y sumaba las
+  ofertas del mismo RUT en la verificación de `ValorNeto`). [V, leyendo el código] `exportar_cot_api.py` no
+  deduplicaba (escribe todas las filas de la base) y el puente `backfill_cot_nuble.py` escribía al CSV todas las
+  ofertas de la respuesta: los CSV del puente ya traen las ofertas repetidas. Las CA ya guardadas con ofertas de menos
+  se reabren con `scripts/mercado/reabrir_ofertas_faltantes.py` (lo corre Boris).

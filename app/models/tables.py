@@ -242,11 +242,15 @@ class CaCotizacion(Base):
     `llamado` = `estado_convocatoria` del detalle (1/2, primer o segundo llamado según
     la guía [I]); el arreglo refleja solo el llamado vigente. `seleccionado` es
     nullable a propósito: None = la API no lo dijo, no "perdió". Sin raw_json (regla 11).
+
+    Un RUT puede mandar varias ofertas distintas a la misma CA [V, sonda 4-nov-2026]: la
+    fila es la OFERTA, no el proveedor. UNIQUE por (CA, llamado, `id_cotizacion`); sin
+    `id_cotizacion`, la escritura guarda la clave sustituta "rut:<rut>" (F-merc-1c).
     """
 
     __tablename__ = "ca_cotizaciones"
     __table_args__ = (
-        UniqueConstraint("ca_codigo", "llamado", "rut_proveedor", name="uq_ca_cotizacion"),
+        UniqueConstraint("ca_codigo", "llamado", "id_cotizacion", name="uq_ca_cotizacion_oferta"),
     )
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)

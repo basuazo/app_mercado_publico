@@ -21,6 +21,7 @@ Fuente: Dirección ChileCompra.
 from __future__ import annotations
 
 import calendar
+import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,12 +33,15 @@ from sqlalchemy.orm import Session
 
 from app.catalogos.mercado import grupo_de
 from app.clients.base import (
+    ERRORES_DE_PAUSA,
     MPAuthError,
     MPParseError,
     MPRateLimitError,
     MPServerError,
+    MPTasaError,
     MPTransportError,
     QuotaExceededError,
+    leer_pausa,
 )
 from app.clients.mp_v2 import MercadoPublicoV2Client
 from app.clients.types import CompraAgilDetalle, CotizacionCA
@@ -76,6 +80,9 @@ ESTADOS_TERMINALES_CA = ("cerrada", "proveedor_seleccionado", "desierta", "cance
 # Meses que `COT_` trae sin Ñuble [V marzo; I el resto] (prompt F-merc-1 §1.6).
 MESES_PRIORITARIOS = ("2026-03", "2026-04", "2026-06", "2026-07", "2026-08")
 
+# Clave sustituta de `id_cotizacion` nulo (misma que la migración b8d4f1a6c2e9).
+PREFIJO_CLAVE_SUSTITUTA = "rut:"
+
 _LARGO_DESCRIPCION_COTIZACION = 2000
 _LARGO_DESCRIPCION_PRODUCTO = 1000
 # Hora de Chile en que el backfill deja de pedir: margen antes de las 07:00 (regla 5).
@@ -84,6 +91,10 @@ _FIN_NOCHE = (6, 45)
 _MAX_FALLOS_SEGUIDOS = 3
 # Cada cuántas requests el backfill mira el tamaño de la base (pg_database_size).
 _CADA_CUANTO_TAMANO = 50
+# F-merc-1c: margen sobre el fin de la pausa antes del tramo siguiente (como el puente).
+_JITTER_PAUSA_S = (30.0, 90.0)
+# Holgura del tope de minutos: el tramo que sigue a una pausa necesita tiempo para avanzar.
+_HOLGURA_TOPE_S = 5 * 60
 
 _ERRORES_DE_CORTE = (MPRateLimitError, QuotaExceededError)
 # Cortes del listado que no tocan el canal: la cola de detalles sigue.
@@ -99,17 +110,71 @@ def _recortar(v: str | None, largo: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _sin_repetir(cotizaciones: list[CotizacionCA], codigo: str) -> list[CotizacionCA]:
-    """Una oferta por RUT, la primera: el UNIQUE (ca, llamado, rut) no admite dos (regla 6)."""
-    vistos: set[str] = set()
+def clave_oferta(c: CotizacionCA) -> str:
+    """Clave de la oferta en el UNIQUE (ca, llamado, id_cotizacion) (F-merc-1c §3.1).
+
+    `id_cotizacion` si viene; si no, la sustituta estable "rut:<rut>": sin id, dos
+    ofertas del mismo RUT chocan y se guarda una, como antes de F-merc-1c.
+    """
+    if c.id_cotizacion:
+        return c.id_cotizacion
+    return PREFIJO_CLAVE_SUSTITUTA + c.rut_proveedor[:20]
+
+
+def _unicas_por_clave(cotizaciones: list[CotizacionCA]) -> tuple[list[CotizacionCA], int]:
+    """(ofertas con clave distinta, la primera de cada una; cuántas se descartaron)."""
+    vistas: set[str] = set()
     unicas: list[CotizacionCA] = []
     for c in cotizaciones:
-        if c.rut_proveedor in vistos:
-            _log.warning("CA %s: oferta repetida del mismo RUT; se guarda solo la primera", codigo)
+        clave = clave_oferta(c)
+        if clave in vistas:
             continue
-        vistos.add(c.rut_proveedor)
+        vistas.add(clave)
         unicas.append(c)
+    return unicas, len(cotizaciones) - len(unicas)
+
+
+def _sin_repetir(cotizaciones: list[CotizacionCA], codigo: str) -> list[CotizacionCA]:
+    """Una fila por oferta (`clave_oferta`), la primera; un WARNING por CA si hubo repetidas.
+
+    Un mismo RUT puede mandar varias ofertas distintas [V, sonda 4-nov-2026]: todas se
+    guardan. Solo se descarta un `id_cotizacion` repetido dentro de la misma respuesta.
+    """
+    unicas, descartadas = _unicas_por_clave(cotizaciones)
+    if descartadas:
+        _log.warning(
+            "CA %s: %d ofertas con id_cotizacion repetido en la respuesta; se guarda la primera",
+            codigo,
+            descartadas,
+        )
     return unicas
+
+
+def _firma(c: CotizacionCA) -> tuple[Any, ...]:
+    """Lo que hace dos ofertas idénticas salvo el `id_cotizacion`: RUT, montos y productos."""
+    productos = sorted(
+        (str(p.codigo_producto), p.cantidad or 0.0, p.precio_unitario or 0.0) for p in c.productos
+    )
+    return (c.rut_proveedor, c.valor_neto, c.monto_total, c.monto_despacho, tuple(productos))
+
+
+def contar_repetidas(cotizaciones: list[CotizacionCA]) -> tuple[int, int]:
+    """(ofertas de un RUT que ya ofertó en la CA, ofertas idénticas a una anterior).
+
+    Sobre las ofertas que se guardan (ya sin claves repetidas). Una idéntica con distinto
+    `id_cotizacion` se guarda igual: para la API son dos ofertas (F-merc-1c §3.2).
+    """
+    unicas, _ = _unicas_por_clave(cotizaciones)
+    ruts: set[str] = set()
+    firmas: set[tuple[Any, ...]] = set()
+    mismo_rut = identicas = 0
+    for c in unicas:
+        mismo_rut += c.rut_proveedor in ruts
+        ruts.add(c.rut_proveedor)
+        firma = _firma(c)
+        identicas += firma in firmas
+        firmas.add(firma)
+    return mismo_rut, identicas
 
 
 def guarda_productos(det: CompraAgilDetalle, solo_grupos: bool) -> bool:
@@ -163,7 +228,7 @@ def _reemplazar_cotizaciones(
             es_emt=c.es_emt,
             codigo_empresa=_recortar(c.codigo_empresa, 50),
             codigo_sucursal=_recortar(c.codigo_sucursal, 50),
-            id_cotizacion=_recortar(c.id_cotizacion, 50),
+            id_cotizacion=clave_oferta(c)[:50],
             id_oc=_recortar(c.id_oc, 50),
             estado_glosa=_recortar(c.estado_glosa, 100),
             activo=c.activo,
@@ -235,15 +300,18 @@ def _bajar_y_guardar(
     codigo: str,
     *,
     reintentar: bool,
-) -> tuple[int, int]:
-    """Pide el detalle y lo guarda en UN commit, en una sesión propia."""
+) -> tuple[int, int, int, int]:
+    """Pide el detalle y lo guarda en UN commit, en una sesión propia.
+
+    Devuelve (ofertas, productos, ofertas del mismo RUT, ofertas idénticas)."""
     det = v2.detalle_compra_agil(codigo, reintentar_transitorios=reintentar)
     with Session(engine) as session:
-        resultado = guardar_detalle_mercado(
+        ofertas, productos = guardar_detalle_mercado(
             session, det, solo_grupos=settings.mercado_productos_solo_grupos
         )
         session.commit()
-    return resultado
+    mismo_rut, identicas = contar_repetidas(det.cotizaciones) if ofertas else (0, 0)
+    return ofertas, productos, mismo_rut, identicas
 
 
 @dataclass
@@ -252,11 +320,16 @@ class _Conteo:
     detalles_fallidos: int = 0
     cotizaciones: int = 0
     productos: int = 0
+    # F-merc-1c: ofertas de un RUT que ya ofertó en esa CA, e idénticas salvo el id.
+    ofertas_mismo_rut: int = 0
+    ofertas_identicas: int = 0
 
-    def sumar(self, ofertas_productos: tuple[int, int]) -> None:
+    def sumar(self, guardado: tuple[int, int, int, int]) -> None:
         self.detalles_guardados += 1
-        self.cotizaciones += ofertas_productos[0]
-        self.productos += ofertas_productos[1]
+        self.cotizaciones += guardado[0]
+        self.productos += guardado[1]
+        self.ofertas_mismo_rut += guardado[2]
+        self.ofertas_identicas += guardado[3]
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +536,11 @@ class ResumenBackfill:
     avisos: list[str] = field(default_factory=list)
     motivo_fin: str = "sin meses pendientes"
     cortado_por: str | None = None
+    # F-merc-1c: pausas de 429 esperadas, minutos dormidos y requests de cada tramo que
+    # terminó en 429 (incluida la que lo recibió): el N_A de la sonda H1.
+    pausas: int = 0
+    minutos_esperados: float = 0.0
+    requests_por_tramo: list[int] = field(default_factory=list)
 
     def como_dict(self) -> dict[str, Any]:
         return {
@@ -473,6 +551,9 @@ class ResumenBackfill:
             "avisos": self.avisos,
             "motivo_fin": self.motivo_fin,
             "cortado_por": self.cortado_por,
+            "pausas": self.pausas,
+            "minutos_esperados": round(self.minutos_esperados, 1),
+            "requests_por_tramo": self.requests_por_tramo,
         }
 
 
@@ -507,8 +588,21 @@ def _parsear_cursor_dia(valor: str | None, mes: str) -> tuple[date, int]:
     return _dias_del_mes(mes)[0], 1
 
 
+def _tras_fin_noche(ahora: datetime) -> bool:
+    """¿Ya pasaron las 06:45 Chile de esta madrugada? (antes de las 22:00)."""
+    local = ahora.astimezone(TZ_CHILE)
+    return local.hour < 22 and (local.hour, local.minute) >= _FIN_NOCHE
+
+
+def _jitter_pausa() -> float:
+    return random.uniform(*_JITTER_PAUSA_S)
+
+
 class Backfill:
-    """Una corrida de `mercado-backfill`. `now_fn(tz)` y `reloj` son inyectables para tests."""
+    """Una corrida de `mercado-backfill`: uno o más tramos separados por pausas de 429.
+
+    `now_fn(tz)`, `reloj`, `sleep_fn` y `jitter_fn` son inyectables para tests.
+    """
 
     def __init__(
         self,
@@ -517,12 +611,17 @@ class Backfill:
         v2: MercadoPublicoV2Client,
         now_fn: Callable[..., datetime] | None = None,
         reloj: Callable[[], float] = time.monotonic,
+        sleep_fn: Callable[[float], None] | None = None,
+        jitter_fn: Callable[[], float] = _jitter_pausa,
     ) -> None:
         self.settings = settings
         self.engine = engine
         self.v2 = v2
         self.now_fn = now_fn or (lambda tz=TZ_CHILE: datetime.now(tz))
         self.reloj = reloj
+        # Resuelto al dormir, no al importar: los tests parchean `time.sleep`.
+        self.sleep_fn = sleep_fn or (lambda s: time.sleep(s))
+        self.jitter_fn = jitter_fn
         self.inicio = reloj()
         self.regiones = list(settings.mercado_regiones)
         self.estados_detalle = {e.strip().lower() for e in settings.mercado_backfill_estados_detalle}
@@ -534,8 +633,7 @@ class Backfill:
     def _revisar(self) -> None:
         """Antes de cada request: hora, minutos y cuota. Lanza _Corte para terminar limpio."""
         ahora = self.now_fn(TZ_CHILE)
-        madrugada_tarde = ahora.hour < 22 and (ahora.hour, ahora.minute) >= _FIN_NOCHE
-        if not en_ventana_nocturna(lambda _tz: ahora) or madrugada_tarde:
+        if not en_ventana_nocturna(lambda _tz: ahora) or _tras_fin_noche(ahora):
             raise _Corte(f"{_FIN_NOCHE[0]:02d}:{_FIN_NOCHE[1]:02d} Chile: fin de la ventana nocturna")
         if self.reloj() - self.inicio >= self.settings.mercado_backfill_minutos * 60:
             raise _Corte(f"tope de {self.settings.mercado_backfill_minutos} min por corrida")
@@ -718,13 +816,95 @@ class Backfill:
         meses.clear()
 
     def correr(self) -> ResumenBackfill:
-        """Recorre los meses. Un mes vacío no corta: se marca y se sigue con el siguiente.
+        """Tramos hasta terminar; entre tramo y tramo, la pausa de un 429 (F-merc-1c).
 
-        Pero si los `_VACIOS_SOSPECHOSOS` primeros meses con requests dan 0 y no hubo
-        ninguno con datos (ni ya completo ni listado), es más probable un filtro roto que tres meses sin CA: corta,
-        deja esos cursores en blanco (se vuelven a listar) y avisa "revisar filtros".
+        Un tramo que termina por un 429 de tasa (el cliente ya persistió la pausa) o por
+        una pausa vigente deja su avance guardado, como pide la regla 3; ningún request
+        se repite. Si la pausa cabe en la noche (ver :meth:`_esperar_pausa`), el job
+        duerme hasta su fin + jitter y empieza otro tramo: los cursores por mes dejan
+        todo en su lugar (la página cortada se vuelve a listar y sus detalles ya
+        guardados no se piden). Si no cabe, termina como antes de F-merc-1c.
         """
+        while True:
+            antes = self.resumen.requests
+            pausa = self._tramo()
+            if pausa is None:
+                return self.resumen
+            if isinstance(pausa, MPTasaError):
+                self.resumen.requests_por_tramo.append(self.resumen.requests - antes)
+            if not self._esperar_pausa(pausa, self.resumen.requests - antes):
+                return self.resumen
+
+    def _esperar_pausa(self, causa: Exception, requests_tramo: int) -> bool:
+        """Duerme hasta el fin de la pausa + jitter si cabe en la noche. True si hay que seguir.
+
+        El fin se lee de Postgres (`api_pausa`), no del error: otro proceso pudo
+        alargarla (regla 10). Se sigue solo si quedan pausas
+        (`mercado_backfill_max_pausas`), si el despertar cae antes de las 06:45 Chile
+        dentro de la ventana 22–07 (regla 5) y antes del tope de minutos menos 5 (el
+        reloj cuenta el sueño). Al despertar se relee: si otro proceso la alargó, se
+        espera de nuevo (otra pausa). Mientras duerme no queda ninguna `Session`
+        abierta: cada paso abre y cierra la suya, y `leer_pausa` devuelve su conexión.
+        El advisory lock del job (otra conexión, de `_run_with_lock`) se retiene.
+        """
+        maximo = self.settings.mercado_backfill_max_pausas
+        motivo = (
+            f"429 tras {requests_tramo} requests del tramo"
+            if isinstance(causa, MPTasaError)
+            else f"API en pausa tras {requests_tramo} requests del tramo"
+        )
+        while True:
+            if self.resumen.pausas >= maximo:
+                self.resumen.motivo_fin += f"; max pausas ({maximo}) alcanzado"
+                return False
+            ahora = self.now_fn(TZ_CHILE)
+            hasta = leer_pausa(self.engine)
+            fin = max(hasta, ahora) if hasta is not None else ahora
+            despertar = fin + timedelta(seconds=self.jitter_fn())
+            espera = (despertar - ahora).total_seconds()
+            if not en_ventana_nocturna(lambda tz, d=despertar: d.astimezone(tz)) or _tras_fin_noche(
+                despertar
+            ):
+                self.resumen.motivo_fin += (
+                    f"; la pausa termina después de las {_FIN_NOCHE[0]:02d}:{_FIN_NOCHE[1]:02d}"
+                )
+                return False
+            tope_s = self.settings.mercado_backfill_minutos * 60 - _HOLGURA_TOPE_S
+            if self.reloj() - self.inicio + espera >= tope_s:
+                self.resumen.motivo_fin += (
+                    f"; la pausa no cabe en el tope de {self.settings.mercado_backfill_minutos} min"
+                )
+                return False
+            self.resumen.pausas += 1
+            _log.info(
+                "mercado-backfill: %s; espero %.1f min, hasta %s Chile (pausa %d/%d)",
+                motivo,
+                espera / 60,
+                f"{despertar.astimezone(TZ_CHILE):%H:%M}",
+                self.resumen.pausas,
+                maximo,
+            )
+            self.resumen.minutos_esperados += espera / 60
+            self.sleep_fn(espera)
+            hasta = leer_pausa(self.engine)
+            if hasta is None or self.now_fn(TZ_CHILE) >= hasta:
+                return True
+            motivo = "la pausa sigue vigente al despertar (otro proceso la alargó)"
+
+    def _tramo(self) -> Exception | None:
+        """Un tramo: lo que antes era la corrida entera. Devuelve el error de pausa que lo
+        cortó (MPTasaError o APIPausadaError) o None si terminó por cualquier otra razón.
+
+        Un mes vacío no corta: se marca y se sigue con el siguiente. Pero si los
+        `_VACIOS_SOSPECHOSOS` primeros meses con requests dan 0 y no hubo ninguno con
+        datos (ni ya completo ni listado), es más probable un filtro roto que tres meses
+        sin CA: corta, deja esos cursores en blanco (se vuelven a listar) y avisa
+        "revisar filtros".
+        """
+        # Por tramo: tras dormir pudo cambiar el día (y el mes en curso).
         hoy = self.now_fn(TZ_CHILE).date()
+        self.resumen.cortado_por = None
+        self.resumen.motivo_fin = "sin meses pendientes"
         hubo_datos = False
         vacios: list[str] = []
         try:
@@ -752,10 +932,13 @@ class Backfill:
             raise
         except _ERRORES_DE_CORTE as exc:
             # El cliente ya persistió la pausa (429 de tasa); el cursor quedó en la
-            # última página completa (regla 3).
+            # última página completa (regla 3). 10500 agotado y cuota no son pausas:
+            # terminan el job como antes.
             self.resumen.cortado_por = type(exc).__name__
             self.resumen.motivo_fin = f"{type(exc).__name__}: {exc}"
-        return self.resumen
+            if isinstance(exc, ERRORES_DE_PAUSA):
+                return exc
+        return None
 
 
 def run_backfill(
@@ -764,6 +947,8 @@ def run_backfill(
     v2: MercadoPublicoV2Client,
     now_fn: Callable[..., datetime] | None = None,
     reloj: Callable[[], float] = time.monotonic,
+    sleep_fn: Callable[[float], None] | None = None,
+    jitter_fn: Callable[[], float] = _jitter_pausa,
 ) -> dict[str, Any]:
     """Job `mercado-backfill`. Solo entre 22:00 y 07:00 de Chile (regla 5); fuera, omitido.
 
@@ -775,11 +960,21 @@ def run_backfill(
     (quedan detalles fallidos) o `completo`. Reanudable; un mes completo no se
     vuelve a pedir. Para a las 06:45, a los `mercado_backfill_minutos` o con la
     cuota del día menos `mercado_backfill_margen_cuota`.
+
+    Un 429 de tasa corta el tramo guardando el avance y, hasta
+    `mercado_backfill_max_pausas` veces, el job duerme hasta el fin de la pausa y
+    sigue (F-merc-1c, :meth:`Backfill.correr`). Mientras duerme RETIENE el advisory
+    lock (regla 13): soltarlo y retomarlo abriría la puerta a dos backfills. Efecto
+    aceptado: un `mercado-ca` disparado de noche espera el lock 10 min y sale omitido
+    (código 0), igual que mientras el backfill pide; durante la pausa tampoco podría
+    llamar a la API.
     """
     if not en_ventana_nocturna(now_fn):
         _log.warning("mercado-backfill: fuera de la ventana 22:00–07:00 Chile — omitido")
         return {"omitido_fuera_de_ventana": True}
-    resumen = Backfill(settings, engine, v2, now_fn=now_fn, reloj=reloj).correr()
+    resumen = Backfill(
+        settings, engine, v2, now_fn=now_fn, reloj=reloj, sleep_fn=sleep_fn, jitter_fn=jitter_fn
+    ).correr()
     _log.info(
         "mercado-backfill: %s",
         ", ".join(f"{k}={v}" for k, v in resumen.como_dict().items()),

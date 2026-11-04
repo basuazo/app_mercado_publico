@@ -591,7 +591,8 @@ def analizar_cot() -> dict | None:
     if not por_mes:
         return None
     ca = defaultdict(lambda: {"g": Counter(), "fam": Counter(), "prov": {}, "sel": None, "prods": set(), "estado": "",
-                              "mes": "", "disp": None, "pu": defaultdict(dict), "pu_nombre": {}})
+                              "mes": "", "disp": None, "pu": defaultdict(dict), "pu_nombre": {},
+                              "monto_sel": None, "pu_sel": {}})
     # Monto por oferta usado en "ganador vs. segundo" y "ganador / disponible", por mes. En cot_api_* el
     # MontoTotal incluye IVA y despacho (guía) y se usa ValorNeto si viene; COT_ solo trae MontoTotal.
     monto_usado = defaultdict(Counter)
@@ -613,15 +614,30 @@ def analizar_cot() -> dict | None:
                     neto = num(r.get("ValorNeto", "")) if es_api else None
                     monto_usado[mes_archivo]["ValorNeto" if neto is not None else "MontoTotal"] += 1
                     monto = neto if neto is not None else num(r.get("MontoTotal", ""))
-                    x["prov"][rutp] = (monto, r.get("Tamano", ""))
+                    seleccionada = norm(r.get("ProveedorSeleccionado", "")) in ("si", "1", "true")
+                    # Un RUT puede mandar varias ofertas a una CA (F-merc-1c): el precio de un
+                    # competidor es su oferta MÁS BARATA y el del ganador, la seleccionada.
+                    # Con una oferta por RUT da lo mismo que antes. N.º de oferentes = RUT.
+                    previo = x["prov"].get(rutp)
+                    if previo is None or (monto is not None and (previo[0] is None or monto < previo[0])):
+                        x["prov"][rutp] = (monto, r.get("Tamano", ""))
                     NOMBRE_COT[rutp] = norm(r.get("RazonSocialProveedor", ""))
-                    if norm(r.get("ProveedorSeleccionado", "")) in ("si", "1", "true"):
+                    if seleccionada:
                         x["sel"] = rutp
+                        x["monto_sel"] = (monto, r.get("Tamano", ""))
                     # Solo cot_api_* trae PrecioUnitario (neto, por producto cotizado).
                     pu = num(r.get("PrecioUnitario", ""))
                     if pu and pu > 0 and cod:
-                        x["pu"][cod][rutp] = pu
+                        x["pu"][cod][rutp] = min(pu, x["pu"][cod].get(rutp, pu))
+                        if seleccionada:
+                            x["pu_sel"][cod] = pu
                         x["pu_nombre"].setdefault(cod, r.get("NombreProductoGenerico", ""))
+    for x in ca.values():
+        # El ganador se mide con su oferta seleccionada, no con otra suya más barata.
+        if x["sel"] and x.get("monto_sel"):
+            x["prov"][x["sel"]] = x["monto_sel"]
+        for cod, pu in x["pu_sel"].items():
+            x["pu"][cod][x["sel"]] = pu
     por_g, por_f = defaultdict(list), defaultdict(list)
     for x in ca.values():
         gr = x["g"].most_common(1)[0][0]
