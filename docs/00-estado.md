@@ -32,11 +32,14 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
-## F-merc-2 (4-nov, commit local sin push; migración `a7c3e9d1b4f2`)
+## F-merc-2 (4-nov, EN PRODUCCIÓN; migración `a7c3e9d1b4f2`)
+**Hecho (4-nov):** carga inicial `--desde 2024-10` en producción: 26 meses, 108.051 líneas (50,5 MB) y 54.674
+referencias (6,6 MB); juez exacto ($681.979.119, 1.516 OC, 105 compradores) y contadores defensivos en 0; disparo
+diario a las 07:20 Chile en cron-job.org. Detalle en `decisiones.md`. Lo que sigue de los pasos de abajo es historia.
 Órdenes de compra de CA de `MERCADO_REGIONES` desde datos abiertos (`oc-da`, sin ticket ni cuota) a las tablas
 `oc_lineas_ca` (PK `(codigo_oc, id_item)`, `IDItem` [V]) y `precio_referencia` (p25/mediana/p75 nacional por `UNSPSC|base` y mes). Job
 `mercado-oc` (lock de siempre; `--desde AAAA-MM` para la carga inicial; workflow `mercado-oc.yml`, disparo diario
-07:20 Chile desde cron-job.org, **sin crear todavía**). `resumen_mercado(region, desde, hasta)` en `app/api/query.py`
+07:20 Chile desde cron-job.org, creado). `resumen_mercado(region, desde, hasta)` en `app/api/query.py`
 (lo consume F-plat-5). `/salud` muestra filas y tamaño de las 4 tablas de mercado. Sin purga (excepción regla 11).
 **Pasos de Boris:** (1) `alembic upgrade head` (el asistente no lo aplica); (2) HEAD de `oc-da` desde Actions (si da
 403, todo desde el PC: desde este PC el HEAD de `oc-da/2026-9.zip` dio 200, 96 MB); (3) carga inicial
@@ -82,7 +85,7 @@ tarifa por provincia, canasta de 80 productos, confirmar en la guía v3.0 si hay
 **Pivote (31-oct):** mesa de precios de Compra Ágil, piloto Ñuble, **alimentos como giro principal** y
 otros rubros como expansión → `16-pivote-compra-agil-nuble.md` e informe en `data/mercado/informe/`.
 Siguientes fases: ~~F-merc-1~~ (commit local, arriba; corregida a una sola key) y
-**F-merc-2** (`prompt-F-merc-2.md`, Sonnet: órdenes de compra de CA de Ñuble desde `oc-da` a la base).
+~~F-merc-2~~ (`prompt-F-merc-2.md`: órdenes de compra de CA de Ñuble desde `oc-da` a la base; en producción, arriba).
 Antes de habilitar el backfill: sonda humana `scripts/smoke_test.py --mercado`.
 **Ingesta actual en pausa desde el 31-oct** (ver `decisiones.md`): apagar en cron-job.org los disparos de
 `ca`, `ciclo-ca`, `ciclo-match`, `ciclo-activas`, `nocturno`, `resumen`, `catalogos` y `retencion`.

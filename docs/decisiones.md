@@ -105,6 +105,13 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   `resumen_mercado` (el formato de `TipoMonedaOC` es [I] hasta la primera carga: vacío/NA = CLP). Datos públicos y
   comunes: no pertenecen a una empresa (regla 26 no aplica). Cruce con F-merc-1: `ca_cotizaciones.id_oc` =
   `oc_lineas_ca.codigo_oc` vía `codigo_oc_normalizado` [I] hasta contrastarlo con datos reales; no se infieren ganadores.
+- **F-merc-2 en producción (4-nov-2026):** cargada con `--desde 2024-10`: 26 meses, **108.051 líneas** en
+  `oc_lineas_ca` (**50,5 MB**) y **54.674 filas** en `precio_referencia` (**6,6 MB**). Total **57 MB**, sobre los
+  35–45 MB estimados arriba. Juez exacto: alimentos de Ñuble 2025-10→2026-09 = **$681.979.119**, **1.516 OC** y
+  **105 compradores** (desvío 0,000 %). Los contadores defensivos (`sin_id_item`, `repetidas_en_el_mes`,
+  `movidas_de_otro_mes`, `moneda_distinta`) dan **0 en los 26 meses**. `mercado-oc` **no tiene tope de tamaño**: los
+  57 MB se descuentan del margen de `MERCADO_BACKFILL_TOPE_BD_MB` (350), que sí frena al backfill. Disparo diario de
+  `mercado-oc` a las **07:20 Chile** en cron-job.org.
 - **Retención de las CA del piloto y tamaño de las cotizaciones (3-nov-2026, F-merc-1 §1.5 y §1.7):**
   `purgar_terminales` no toca las CA de `MERCADO_REGIONES` (hoy Ñuble, 16) ni, por lo tanto, sus
   `ca_cotizaciones` / `ca_cotizacion_productos`: excepción explícita a la regla 11 mientras dure el piloto.
