@@ -18,6 +18,13 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-ca-presente (4-nov, commit local sin push hasta auditar; sin migración)
+- [V] El listado de CA (`_sync_en_ventanas`, usado por `mercado-ca` y `ca`) perseguía al reloj: al llegar al presente
+  abría otra ventana de ~5 min cada vuelta, 100–150 requests por corrida (log del 4-nov, 14:50–15:00 Chile).
+- [I] Puede explicar parte de los 429 diurnos desde el 18-oct (ver `15-diagnostico-ca-429.md` §7).
+- Fix: `limite` se fija una vez por corrida (va en el resumen) y no se abre una ventana que avance < 1 min.
+  Esperado tras el push: 1–5 `requests_usadas` por corrida de `mercado`.
+
 ## F-429-tasa (29-oct, commit local sin push hasta auditar)
 Desde ~18-oct la API manda un 429 nuevo, `codigo: "429"` ("límite de tasa"), que la app trataba
 como tope diario: el día quedaba bloqueado y `ca` se atrasó ~2 días (`15-diagnostico-ca-429.md`).

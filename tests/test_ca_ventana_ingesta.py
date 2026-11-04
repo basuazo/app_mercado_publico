@@ -922,3 +922,48 @@ def test_arranque_en_frio_pide_lo_mismo_que_antes(monkeypatch, session, engine) 
         assert "cambio_hasta" not in kw
         assert {k: kw[k] for k in esperado} == esperado
     assert resultado == {"nuevas": 2, "actualizadas": 0, "descartadas": 0}
+
+
+# ---------------------------------------------------------------------------
+# F-ca-presente: el listado termina al alcanzar el presente
+# ---------------------------------------------------------------------------
+
+
+class TestPresente:
+    def test_reloj_que_avanza_5_s_por_request_termina_en_el_limite(
+        self, monkeypatch, session, engine
+    ) -> None:
+        settings = _settings(monkeypatch)
+        _con_cursor(session, _AHORA - timedelta(hours=1))
+        with freeze_time(_AHORA) as reloj:
+            api = _ApiFalsa(al_abrir=lambda _v: reloj.tick(timedelta(seconds=5)))
+            resultado = sync_incremental(session, api, settings)  # type: ignore[arg-type]
+
+        # Hora y 10 min de atraso en ventanas de 6 h (por defecto): una sola ventana.
+        assert resultado["requests_usadas"] <= 2
+        assert resultado["ventanas_completadas"] <= 2
+        assert resultado["cursor_final"] == _LIMITE.isoformat()
+        assert resultado["limite"] == _LIMITE.isoformat()
+        assert _cursor(engine) == _LIMITE
+
+    def test_con_el_cursor_en_el_presente_no_pide_nada(self, monkeypatch, session, engine) -> None:
+        settings = _settings(monkeypatch)
+        _con_cursor(session, _LIMITE)
+        with freeze_time(_AHORA):
+            api = _ApiFalsa()
+            resultado = sync_incremental(session, api, settings)  # type: ignore[arg-type]
+
+        assert api.llamadas == []
+        assert resultado["requests_usadas"] == 0
+        assert resultado["ventanas_completadas"] == 0
+        assert _cursor(engine) == _LIMITE
+
+    def test_avance_menor_a_un_minuto_no_abre_ventana(self, monkeypatch, session, engine) -> None:
+        settings = _settings(monkeypatch)
+        _con_cursor(session, _LIMITE - timedelta(seconds=30))
+        with freeze_time(_AHORA):
+            api = _ApiFalsa()
+            resultado = sync_incremental(session, api, settings)  # type: ignore[arg-type]
+
+        assert api.llamadas == []
+        assert resultado["requests_usadas"] == 0

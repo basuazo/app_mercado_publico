@@ -42,6 +42,8 @@ _ESTADOS_VALIDOS = {"publicada", "cerrada", "proveedor_seleccionado", "desierta"
 _SOLAPAMIENTO = timedelta(minutes=5)
 # La ventana nunca llega al presente: lo recién cambiado puede no estar indexado.
 _MARGEN_PRESENTE = timedelta(minutes=10)
+# Una ventana que avanzaría el cursor menos que esto no se pide (F-ca-presente).
+_AVANCE_MINIMO = timedelta(minutes=1)
 # [V] 22-sep-2026: la API informa total_resultados=10000 exacto (200 × 50) y no
 # deja pasar de ahí; una ventana que llega al tope no se puede recorrer entera.
 _TOPE_RESULTADOS = 10_000
@@ -502,13 +504,28 @@ def _sync_en_ventanas(
                 total_informado,
             )
 
+    # El límite se fija UNA vez: con un reloj móvil, cada vuelta dejaba `hasta` unos
+    # segundos por delante del cursor y abría otra ventana hasta agotar el tope de
+    # requests (F-ca-presente). Lo que cambie después lo toma la corrida siguiente.
+    limite = ahora_utc() - _MARGEN_PRESENTE
+
     while True:
         desde = cursor - _SOLAPAMIENTO
-        hasta = min(desde + ancho, ahora_utc() - _MARGEN_PRESENTE)
+        hasta = min(desde + ancho, limite)
         # `hasta <= cursor`, no `hasta <= desde`: por el solapamiento, al llegar al
         # presente desde queda 5 min antes que hasta y la corrida volvería a pedir
         # la misma ventana sin avanzar hasta agotar el tope de requests.
         if hasta <= cursor:
+            break
+        # Defensa: una ventana que avanza menos de _AVANCE_MINIMO no vale un request.
+        # (La partición por volumen solo achica ventanas de >= _VENTANA_MINIMA.)
+        if hasta - cursor < _AVANCE_MINIMO:
+            _log.info(
+                "sync_incremental CA: la ventana avanzaría solo %s (< %s); "
+                "el cursor ya está en el presente",
+                hasta - cursor,
+                _AVANCE_MINIMO,
+            )
             break
         if requests >= settings.ca_max_requests_por_corrida:
             _log.info(
@@ -567,6 +584,7 @@ def _sync_en_ventanas(
         "ventanas_completadas": ventanas,
         "requests_usadas": requests,
         "cursor_final": cursor.isoformat(),
+        "limite": limite.isoformat(),
         "atraso_horas": round((ahora_utc() - cursor).total_seconds() / 3600, 2),
         "ventanas_partidas": partidas,
         "ventanas_partidas_volumen": partidas_volumen,

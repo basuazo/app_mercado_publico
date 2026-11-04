@@ -89,4 +89,14 @@ Tras el `UPDATE` de `quota_log`, `ca` disparado a mano:
   limitador por IP compartida. No hay `Retry-After` ni cabeceras de cuota.
 - El día volvió a quedar marcado como agotado (13:02:53 UTC).
 
+## 7. Hallazgo del 4-nov: el listado perseguía al reloj (F-ca-presente)
+
+- [V] `_sync_en_ventanas` recalculaba `hasta = min(desde + ancho, ahora − 10 min)` en cada vuelta; al llegar al
+  presente, el reloj ya había avanzado unos segundos y se abría otra ventana de ~5 min, hasta el tope de 150
+  requests o un 429. Log de `mercado-ca` del 4-nov, 14:50–15:00 Chile: 110 ventanas, 112 requests, avance de 4–15 s por
+  ventana, atraso real 0,17 h, cierre con 429 `codigo=429` y pausa hasta las 15:20.
+- [I] Puede explicar parte de los 429 diurnos desde el 18-oct (cada corrida que alcanzaba el presente gastaba
+  100–150 requests solo en listado). La sonda H1 sigue valiendo: dice si el límite es por ticket o por IP.
+- Fix: el límite se fija una vez al inicio de la corrida y una ventana que avanzaría < 1 min no se abre.
+
 *Fuente de los datos de dominio: Dirección ChileCompra.*
