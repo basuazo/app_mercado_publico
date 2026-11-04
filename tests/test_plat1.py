@@ -289,21 +289,42 @@ def test_sembrar_crea_80_productos_con_formato_base_y_es_idempotente(session):
     assert cat.sembrar_canasta(session)["productos_creados"] == 0
 
 
-def test_sembrar_no_renombra_ni_reactiva_lo_que_el_usuario_corrigio(session):
+def test_renombrar_y_volver_a_sembrar_no_duplica_y_la_regla_sigue_al_producto(session):
     cat.sembrar_canasta(session)
-    p = _producto(session, "Marraqueta")
-    p.activo = False
     q = _producto(session, "Hallulla")
     q.nombre = "Hallulla corregida por Boris"
     session.commit()
     r = cat.sembrar_canasta(session)
     session.commit()
-    assert _producto(session, "Marraqueta").activo is False  # no se reactiva
-    assert session.execute(
-        select(ProductoCanonico).where(ProductoCanonico.nombre == "Hallulla corregida por Boris")
-    ).scalar_one()
-    # "Hallulla" vuelve a faltar (se renombró): la semilla inserta lo que falta, nada más.
-    assert r["productos_creados"] == 1
+    assert r["productos_creados"] == 0
+    assert session.scalar(select(func.count()).select_from(ProductoCanonico)) == 80
+    # La regla sugiere el producto renombrado, no un duplicado.
+    c = cat.cargar_catalogo(session)
+    s = sugerir_producto("hallulla fresca", "50181901", c)
+    assert s is not None and s.producto_id == q.id
+
+
+def test_desactivar_no_reactiva_ni_vuelve_a_crear(session):
+    cat.sembrar_canasta(session)
+    p = _producto(session, "Marraqueta")
+    p.activo = False
+    session.commit()
+    assert cat.sembrar_canasta(session)["productos_creados"] == 0
+    session.commit()
+    assert _producto(session, "Marraqueta").activo is False
+    assert session.scalar(select(func.count()).select_from(ProductoCanonico)) == 80
+
+
+def test_producto_creado_a_mano_es_adoptado_por_la_semilla(session):
+    propio = cat.crear_producto(session, nombre="hallulla", unidad_base="kg", usuario_id=1)
+    session.commit()
+    r = cat.sembrar_canasta(session)
+    session.commit()
+    assert r["productos_adoptados"] == 1 and r["productos_creados"] == 79
+    session.refresh(propio)
+    assert propio.clave_semilla == "hallulla"
+    assert session.scalar(select(func.count()).select_from(ProductoCanonico)) == 80
+    assert cat.sembrar_canasta(session)["productos_creados"] == 0
 
 
 def _catalogo(session) -> Catalogo:
@@ -380,7 +401,8 @@ def test_backfill_crea_lineas_estados_y_bandera(session):
 
     ca1 = session.get(CompraAgil, "1-1-COT26")
     session.refresh(ca1)
-    assert ca1.detalle_lineas == "sin_detalle"  # hay una pendiente
+    # Una línea de la API sin sugerencia es trabajo de curación, no «la CA no trae el detalle».
+    assert ca1.detalle_lineas == "incompleto"
     assert session.get(CompraAgil, "2-1-COT26").detalle_lineas == "sin_detalle"
 
 
@@ -951,3 +973,30 @@ def test_juez_walk_forward_error_y_coberturas(session):
     assert "(a) Cobertura con detalle propio: 100.0 %" in texto
     assert "(b) Cobertura total:              80.0 %" in texto
     assert "CUMPLE" in texto
+
+
+def test_bandera_sin_detalle_es_solo_por_anexo_o_sin_lineas(session):
+    _ca(session, "1-1-COT26", [("50181901", "Pan", "pan batido de campo", 10, "Kilogramo")])
+    _ca(session, "2-1-COT26", [("44121500", "Lápices", "lápices", 10, "Unidad")])  # sin alimentos
+    _ca(
+        session,
+        "3-1-COT26",
+        [("50192100", "Alimentos", "SEGUN ANEXO ADJUNTO", 1, "Unidad")],
+        monto=400000,
+    )
+    session.commit()
+    cat.procesar_catalogo(session, [16], inicial=True)
+    (ln,) = _lineas(session, "1-1-COT26")
+    assert (ln.origen, ln.estado, ln.producto_id) == ("api", "pendiente", None)
+    por_ca = {c.codigo: c.detalle_lineas for c in session.execute(select(CompraAgil)).scalars()}
+    assert por_ca["1-1-COT26"] == "incompleto"  # línea api sin sugerencia
+    assert por_ca["2-1-COT26"] == "sin_detalle"  # ninguna línea
+    assert por_ca["3-1-COT26"] == "sin_detalle"  # anexo sin resolver
+    # Resolver el anexo (confirmarlo) saca a la CA de «sin detalle».
+    (anexo,) = _lineas(session, "3-1-COT26")
+    cat.confirmar_linea(
+        session, anexo, producto_id=_producto(session, "Hallulla").id, formato_id=None, usuario_id=1
+    )
+    session.commit()
+    session.expire_all()
+    assert session.get(CompraAgil, "3-1-COT26").detalle_lineas == "completo"

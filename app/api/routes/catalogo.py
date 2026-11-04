@@ -38,8 +38,8 @@ POR_PAGINA = 25
 _TABS = ("pendientes", "productos", "alias")
 ETIQUETA_BANDERA = {
     "completo": ("Completo", "success"),
-    "incompleto": ("Incompleto", "warning"),
-    "sin_detalle": ("Sin detalle", "secondary"),
+    "incompleto": ("Líneas por revisar", "warning"),
+    "sin_detalle": ("Sin detalle (anexo)", "secondary"),
 }
 
 

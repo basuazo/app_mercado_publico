@@ -13,12 +13,15 @@ Fuente: Dirección ChileCompra (datos abiertos).
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.getcwd())
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from canasta_reglas import K, R
 from openpyxl import load_workbook
+
+from app.catalogos.mercado import norm
 
 XLSX = "data/mercado/canasta_borrador_candidatos.xlsx"
 SALIDA = "app/catalogos/canasta_alimentos.py"
@@ -38,10 +41,16 @@ def _entra(c: dict) -> bool:
     return str(c.get("propuesta") or "").strip().lower() == "entra"
 
 
+def clave_de(nombre: str) -> str:
+    """Clave estable de la regla: slug del nombre del borrador (no cambia con `nombre_final_boris`)."""
+    return re.sub(r"[^a-z0-9]+", "-", norm(nombre)).strip("-")[:100]
+
+
 por_nombre = {c["producto"]: c for c in cand}
 reglas = sorted(R, key=lambda x: PRI.get(x[0], 9))
 nombres_regla = [r[1] for r in reglas]
 assert len(set(nombres_regla)) == len(nombres_regla), "producto repetido en las reglas"
+assert len({clave_de(n) for n in nombres_regla}) == len(nombres_regla), "clave repetida"
 
 out: list[str] = [
     '"""Canasta de alimentos: semilla de `producto_canonico` y reglas por palabra clave (F-plat-1).',
@@ -69,6 +78,7 @@ out: list[str] = [
     "    patron: str  # regex sobre texto normalizado (minúsculas, sin tildes)",
     "    sembrar: bool",
     "    unspsc: str",
+    "    clave: str  # slug del nombre ORIGINAL de la regla: estable aunque se renombre el producto",
     "",
     "",
     "class ReglaKit(NamedTuple):",
@@ -92,7 +102,7 @@ for cat, nombre, formato, base, patron in reglas:
     unspsc = str((c or {}).get("unspsc") or "")
     out.append(
         f"    ReglaProducto({cat!r}, {nombre_sem!r}, {formato!r}, {base!r}, {patron!r}, "
-        f"{sembrar}, {unspsc!r}),"
+        f"{sembrar}, {unspsc!r}, {clave_de(nombre)!r}),"
     )
 out += [")", "", "KITS: tuple[ReglaKit, ...] = ("]
 for cat, desc, patron in K:

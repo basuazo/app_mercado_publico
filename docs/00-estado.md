@@ -53,6 +53,13 @@ alias aprendidos + palabras clave; el LLM entra en F-plat-2.
 (`texto_normalizado` único), `ca_lineas` (`UNIQUE (ca_codigo, n)`, sin FK a `ca_productos` porque la ingesta los reinserta;
 agrega `texto_norm` para re-aplicar un alias con un UPDATE), `compras_agiles.detalle_lineas` (la bandera «CA sin detalle») y FK de
 `proveedor_productos` a producto y formato (los `producto_id` sueltos de F-plat-3 se ponen en NULL al migrar). Datos comunes, sin purga.
+**F-plat-1-fix** (misma migración, aún no en Neon): `producto_canonico.clave_semilla` (único; slug del nombre ORIGINAL de la regla, estable
+aunque se renombre) decide si la semilla ya sembró; un producto creado a mano con el mismo nombre se adopta; las reglas se resuelven por
+clave. La bandera `detalle_lineas` es solo «la CA no trae el detalle»: `sin_detalle` = sin líneas o con línea `anexo` sin resolver;
+`incompleto` = alguna línea `pendiente`/`dudosa`; `completo` = todas `ok` (F-plat-2 baja anexos solo de las `sin_detalle`).
+**Observaciones:** cualquier usuario con empresa puede editar y desactivar un producto del catálogo común (fusionar es solo admin; ok con 2
+usuarios, revisar al sumar empresas); las líneas son solo de alimentos (`G_ALIM`), F-plat-5 no tendrá líneas de otros rubros; cuando entre
+F-merc-3, sumar `detalle_vigente_en` a la condición del cursor de `mercado-catalogo` (reemplazar `ca_productos` no siempre mueve `actualizado_en`).
 **Reglas puras** (`app/catalogos/canonico.py`): `normalizar_texto`, `extraer_formato`, `detectar_sin_detalle`, `sugerir_producto`
 (alias exacto 1,0 / contenido 0,8 / palabra clave de la canasta 0,5; ≥ 0,8 `ok`, 0,5–0,8 `dudosa`, resto `pendiente`).
 Canasta en `app/catalogos/canasta_alimentos.py` (80 productos, generada con `scripts/mercado/generar_canasta_alimentos.py`

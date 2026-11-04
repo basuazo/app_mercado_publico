@@ -23,6 +23,7 @@ class ReglaProducto(NamedTuple):
     patron: str  # regex sobre texto normalizado (minúsculas, sin tildes)
     sembrar: bool
     unspsc: str
+    clave: str  # slug del nombre ORIGINAL de la regla: estable aunque se renombre el producto
 
 
 class ReglaKit(NamedTuple):
@@ -40,6 +41,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "ensure|glucerna|formula (nutricional|lactea)|suplemento (nutricional|alimenticio)|nutricion (enteral|oral)|\\bnido\\b|\\bnan\\b",
         True,
         "50131701",
+        "formula-nutricional-tipo-ensure",
     ),
     ReglaProducto(
         "Preparados",
@@ -49,12 +51,27 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "empanadas? (de )?(pino|horno)",
         True,
         "50192801",
+        "empanada-de-pino-horno",
     ),
     ReglaProducto(
-        "Preparados", "Empanada de queso", "unidad", "u", "empanadas? de queso", False, "50192801"
+        "Preparados",
+        "Empanada de queso",
+        "unidad",
+        "u",
+        "empanadas? de queso",
+        False,
+        "50192801",
+        "empanada-de-queso",
     ),
     ReglaProducto(
-        "Preparados", "Empanadas (sin detalle)", "unidad", "u", "empanad", False, "50192801"
+        "Preparados",
+        "Empanadas (sin detalle)",
+        "unidad",
+        "u",
+        "empanad",
+        False,
+        "50192801",
+        "empanadas-sin-detalle",
     ),
     ReglaProducto(
         "Preparados",
@@ -64,6 +81,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "sandwich|sanwich|sandwiches",
         True,
         "50112001",
+        "sandwich-jamon-queso-ave",
     ),
     ReglaProducto(
         "Preparados",
@@ -73,6 +91,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "churrasco|chacarero|barros",
         False,
         "50192503",
+        "churrasco-chacarero-italiano",
     ),
     ReglaProducto(
         "Preparados",
@@ -82,9 +101,12 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "\\bcompletos? (italian|tradicional|con|para|de)|hot ?dog",
         True,
         "50201713",
+        "completo",
     ),
-    ReglaProducto("Preparados", "Pizza", "unidad familiar", "u", "pizza", False, "50192801"),
-    ReglaProducto("Preparados", "Humitas", "unidad", "u", "humita", False, "50101538"),
+    ReglaProducto(
+        "Preparados", "Pizza", "unidad familiar", "u", "pizza", False, "50192801", "pizza"
+    ),
+    ReglaProducto("Preparados", "Humitas", "unidad", "u", "humita", False, "50101538", "humitas"),
     ReglaProducto(
         "Preparados",
         "Pastel / lasaña / plato preparado",
@@ -93,6 +115,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "lasana|pastel de|porcion|plato (de fondo|preparado)",
         False,
         "50181905",
+        "pastel-lasana-plato-preparado",
     ),
     ReglaProducto(
         "Pastelería",
@@ -102,11 +125,19 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "\\btortas?\\b(?!.*trozo)|torta para|tortas? de \\d+ personas",
         True,
         "50181905",
+        "torta-por-porciones",
     ),
     ReglaProducto(
-        "Pastelería", "Trozo de torta", "trozo individual", "u", "trozos? de torta", False, ""
+        "Pastelería",
+        "Trozo de torta",
+        "trozo individual",
+        "u",
+        "trozos? de torta",
+        False,
+        "",
+        "trozo-de-torta",
     ),
-    ReglaProducto("Pastelería", "Kuchen", "unidad", "u", "kuchen", False, "50181905"),
+    ReglaProducto("Pastelería", "Kuchen", "unidad", "u", "kuchen", False, "50181905", "kuchen"),
     ReglaProducto(
         "Pastelería",
         "Dulces chilenos (chilenitos, calzones rotos, etc.)",
@@ -115,16 +146,30 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "dulces? (tipicos|chilenos)|chilenito|calzones rotos|alfajor(es)? chileno",
         True,
         "50181905",
+        "dulces-chilenos-chilenitos-calzones-rotos-etc",
     ),
-    ReglaProducto("Pastelería", "Alfajor", "unidad 30–60 g", "u", "alfajor", True, "50181905"),
-    ReglaProducto("Pastelería", "Queque", "unidad", "u", "queque", True, "50181905"),
-    ReglaProducto("Pastelería", "Berlín", "unidad", "u", "berlin", False, "50192801"),
-    ReglaProducto("Pastelería", "Empolvado", "unidad", "u", "empolvad", False, "50181905"),
     ReglaProducto(
-        "Pastelería", "Brownie / muffin", "unidad", "u", "brownie|muffin|cupcake", True, "50181905"
+        "Pastelería", "Alfajor", "unidad 30–60 g", "u", "alfajor", True, "50181905", "alfajor"
     ),
-    ReglaProducto("Panadería", "Marraqueta", "kg", "kg", "marraquet", True, "50181901"),
-    ReglaProducto("Panadería", "Hallulla", "kg", "kg", "hallull", True, "50181901"),
+    ReglaProducto("Pastelería", "Queque", "unidad", "u", "queque", True, "50181905", "queque"),
+    ReglaProducto("Pastelería", "Berlín", "unidad", "u", "berlin", False, "50192801", "berlin"),
+    ReglaProducto(
+        "Pastelería", "Empolvado", "unidad", "u", "empolvad", False, "50181905", "empolvado"
+    ),
+    ReglaProducto(
+        "Pastelería",
+        "Brownie / muffin",
+        "unidad",
+        "u",
+        "brownie|muffin|cupcake",
+        True,
+        "50181905",
+        "brownie-muffin",
+    ),
+    ReglaProducto(
+        "Panadería", "Marraqueta", "kg", "kg", "marraquet", True, "50181901", "marraqueta"
+    ),
+    ReglaProducto("Panadería", "Hallulla", "kg", "kg", "hallull", True, "50181901", "hallulla"),
     ReglaProducto(
         "Panadería",
         "Pan corriente (marraqueta/hallulla)",
@@ -133,8 +178,11 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "pan (fresco|corriente|blanco)\\b",
         True,
         "50181901",
+        "pan-corriente-marraqueta-hallulla",
     ),
-    ReglaProducto("Panadería", "Pan amasado", "unidad", "u", "pan amasado|amasado", False, ""),
+    ReglaProducto(
+        "Panadería", "Pan amasado", "unidad", "u", "pan amasado|amasado", False, "", "pan-amasado"
+    ),
     ReglaProducto(
         "Panadería",
         "Pan de molde blanco",
@@ -143,6 +191,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "pan de molde(?!.*integral)|pan molde",
         True,
         "50181906",
+        "pan-de-molde-blanco",
     ),
     ReglaProducto(
         "Panadería",
@@ -152,6 +201,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "molde integral|pan integral",
         False,
         "50181901",
+        "pan-de-molde-integral",
     ),
     ReglaProducto(
         "Panadería",
@@ -161,6 +211,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "pan (de |para )?hamburguesa",
         False,
         "50181906",
+        "pan-de-hamburguesa",
     ),
     ReglaProducto(
         "Panadería",
@@ -170,10 +221,20 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "pan (de |para )?(completo|hot ?dog)",
         False,
         "50181901",
+        "pan-de-completo",
     ),
-    ReglaProducto("Panadería", "Sopaipilla", "unidad", "u", "sopaipill", True, "50181901"),
     ReglaProducto(
-        "Panadería", "Pan de pascua", "unidad 500 g–1 kg", "u", "pan de pascua", True, "50181901"
+        "Panadería", "Sopaipilla", "unidad", "u", "sopaipill", True, "50181901", "sopaipilla"
+    ),
+    ReglaProducto(
+        "Panadería",
+        "Pan de pascua",
+        "unidad 500 g–1 kg",
+        "u",
+        "pan de pascua",
+        True,
+        "50181901",
+        "pan-de-pascua",
     ),
     ReglaProducto(
         "Snacks",
@@ -183,6 +244,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "galleta.*(individual|\\b[2-9]\\d ?(gr|g)\\b)|galletas? (dulce|surtid|de vino|triton|oblea|mantequilla)|galleton",
         True,
         "50181905",
+        "galleta-dulce-individual",
     ),
     ReglaProducto(
         "Snacks",
@@ -192,8 +254,18 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "galletas? (de agua|soda|saladas?|crackers?)|cracker",
         True,
         "50181909",
+        "galleta-de-agua-soda",
     ),
-    ReglaProducto("Snacks", "Galletas (sin detalle)", "paquete", "u", "galleta", False, "50181905"),
+    ReglaProducto(
+        "Snacks",
+        "Galletas (sin detalle)",
+        "paquete",
+        "u",
+        "galleta",
+        False,
+        "50181905",
+        "galletas-sin-detalle",
+    ),
     ReglaProducto(
         "Snacks",
         "Barra de cereal",
@@ -202,6 +274,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "barr(a|ita)s? de cereal|cereal (en )?barra|cereal bar",
         True,
         "50221202",
+        "barra-de-cereal",
     ),
     ReglaProducto(
         "Snacks",
@@ -211,6 +284,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "cereal(es)? (de )?desayuno|corn ?flakes|chocapic|zucaritas|cereal(es)?\\b(?!.*barra)",
         True,
         "50192303",
+        "cereal-de-desayuno",
     ),
     ReglaProducto(
         "Snacks",
@@ -220,6 +294,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "papas? fritas|papitas|ramitas|snack salado",
         True,
         "50192109",
+        "papas-fritas-snack",
     ),
     ReglaProducto(
         "Snacks",
@@ -229,6 +304,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "\\bmani\\b|almendra|nuez|nueces|frutos secos|mix de frutos",
         True,
         "50192110",
+        "mani-frutos-secos",
     ),
     ReglaProducto(
         "Snacks",
@@ -238,6 +314,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "huesillo|deshidratad|\\bpasas\\b|ciruela seca",
         True,
         "50101717",
+        "fruta-deshidratada-huesillo-damasco-pasas",
     ),
     ReglaProducto(
         "Snacks",
@@ -247,6 +324,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "cabrita|palomita|pop ?corn",
         True,
         "50192112",
+        "cabritas-palomitas",
     ),
     ReglaProducto(
         "Golosinas",
@@ -256,6 +334,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "chocolate(?! en polvo)|bombon",
         True,
         "50131701",
+        "chocolate-barra-o-individual",
     ),
     ReglaProducto(
         "Golosinas",
@@ -265,6 +344,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "huevit|huevos? de chocolate",
         False,
         "",
+        "huevitos-de-chocolate",
     ),
     ReglaProducto(
         "Golosinas",
@@ -274,6 +354,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "caramelo|golosina|confite|gomit|dulces? (para|navid)|\\bdulces\\b|chupete|calugas?|masticable",
         True,
         "50161814",
+        "caramelos-golosinas-surtidas",
     ),
     ReglaProducto(
         "Golosinas",
@@ -283,6 +364,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bolsas? (de|con) dulces|bolsitas? de dulces",
         False,
         "",
+        "bolsa-de-dulces-armada",
     ),
     ReglaProducto(
         "Golosinas",
@@ -292,6 +374,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "algodon de azucar|confitad",
         True,
         "50192401",
+        "algodon-de-azucar-manzana-confitada",
     ),
     ReglaProducto(
         "Bebidas",
@@ -301,6 +384,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bebidas?.*lata|lata.*bebida|\\blatas?\\b.*(coca|fanta|sprite)",
         True,
         "50202311",
+        "bebida-lata-350-ml",
     ),
     ReglaProducto(
         "Bebidas",
@@ -310,6 +394,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bebidas?.*\\b3 ?(l|lt|lts|litros)\\b",
         True,
         "50202311",
+        "bebida-3-l",
     ),
     ReglaProducto(
         "Bebidas",
@@ -319,6 +404,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bebidas?.*\\b(1[.,]5|2|2[.,]5) ?(l|lt|lts|litros)\\b",
         False,
         "50202311",
+        "bebida-1-52-l",
     ),
     ReglaProducto(
         "Bebidas",
@@ -328,6 +414,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bebidas?.*\\b(500|591|600) ?(ml|cc)\\b",
         True,
         "50202311",
+        "bebida-individual-500600-ml",
     ),
     ReglaProducto(
         "Bebidas",
@@ -337,6 +424,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bebida|gaseosa|coca ?cola|fanta|sprite|pepsi",
         False,
         "50202309",
+        "bebida-gaseosa-sin-formato",
     ),
     ReglaProducto(
         "Bebidas",
@@ -346,6 +434,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "(jugo|nectar)s?.*\\b(1\\d\\d|200|250) ?(ml|cc)\\b|\\b(200|250) ?(ml|cc)\\b.*(jugo|nectar)",
         True,
         "50202304",
+        "jugo-en-caja-200-ml",
     ),
     ReglaProducto(
         "Bebidas",
@@ -355,6 +444,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "(jugo|nectar)s?.*\\b(1|1[.,]5|1500|1000) ?(l|lt|lts|litro|litros|ml|cc)\\b",
         True,
         "50202304",
+        "jugo-nectar-11-5-l",
     ),
     ReglaProducto(
         "Bebidas",
@@ -364,9 +454,17 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "jugos? en polvo|jugo.*sobre|sobres? de jugo",
         False,
         "50202305",
+        "jugo-en-polvo",
     ),
     ReglaProducto(
-        "Bebidas", "Jugo / néctar (sin formato)", "caja", "L", "jugo|nectar", False, "50202304"
+        "Bebidas",
+        "Jugo / néctar (sin formato)",
+        "caja",
+        "L",
+        "jugo|nectar",
+        False,
+        "50202304",
+        "jugo-nectar-sin-formato",
     ),
     ReglaProducto(
         "Bebidas",
@@ -376,6 +474,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "agua (mineral|purificada|sin gas|con gas)?.*\\b(500|600|330) ?(ml|cc)\\b",
         True,
         "50202310",
+        "agua-mineral-500600-ml",
     ),
     ReglaProducto(
         "Bebidas",
@@ -385,6 +484,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "agua saborizada|saborizad",
         True,
         "50202301",
+        "agua-saborizada",
     ),
     ReglaProducto(
         "Bebidas",
@@ -394,6 +494,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "bidon|recarga de agua|agua purificada",
         True,
         "50202301",
+        "agua-en-bidon-20-l-con-o-sin-recarga",
     ),
     ReglaProducto(
         "Bebidas",
@@ -403,6 +504,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "agua mineral|\\bagua (sin|con) gas\\b",
         False,
         "50202310",
+        "agua-mineral-sin-formato",
     ),
     ReglaProducto(
         "Bebidas",
@@ -412,6 +514,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "isotonic|gatorade|powerade|energetic|red ?bull|monster",
         True,
         "50202309",
+        "bebida-isotonica-energetica",
     ),
     ReglaProducto(
         "Infusiones",
@@ -421,6 +524,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "nescafe|cafe (instantaneo|soluble|en tarro)|cafe.*\\b(170|100|50) ?(g|gr|grs)\\b",
         True,
         "50201706",
+        "cafe-instantaneo",
     ),
     ReglaProducto(
         "Infusiones",
@@ -430,6 +534,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "cafe.*(sobre|stick|individual)",
         False,
         "50201706",
+        "cafe-individual-sobre-stick",
     ),
     ReglaProducto(
         "Infusiones",
@@ -439,9 +544,17 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "cafe (de grano|molido|en grano)",
         False,
         "",
+        "cafe-de-grano-molido",
     ),
     ReglaProducto(
-        "Infusiones", "Café (sin detalle)", "tarro", "kg", "\\bcafe\\b", False, "50201706"
+        "Infusiones",
+        "Café (sin detalle)",
+        "tarro",
+        "kg",
+        "\\bcafe\\b",
+        False,
+        "50201706",
+        "cafe-sin-detalle",
     ),
     ReglaProducto(
         "Infusiones",
@@ -451,6 +564,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "\\bte\\b.*bolsit|bolsitas? de te|\\bte (supremo|club|lipton|negro|ceylan)|^te\\b",
         True,
         "50201713",
+        "te-en-bolsitas",
     ),
     ReglaProducto(
         "Infusiones",
@@ -460,6 +574,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "hierbas|infusion|manzanilla|agua de hierba",
         False,
         "50201710",
+        "te-de-hierbas-infusion",
     ),
     ReglaProducto(
         "Infusiones",
@@ -469,6 +584,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "cacao|chocolate en polvo|milo|nesquik|cola cao",
         False,
         "50161511",
+        "chocolate-cacao-en-polvo",
     ),
     ReglaProducto(
         "Lácteos",
@@ -478,6 +594,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "leche.*(chocolate|frutilla|vainilla|sabor).*|leche.*\\b(1\\d\\d|200) ?(ml|cc)\\b",
         True,
         "50131701",
+        "leche-sabor-caja-200-ml",
     ),
     ReglaProducto(
         "Lácteos",
@@ -487,9 +604,17 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "leche (en )?polvo",
         True,
         "50131701",
+        "leche-en-polvo",
     ),
     ReglaProducto(
-        "Lácteos", "Leche sin lactosa 1 L", "caja 1 L", "L", "leche.*sin lactosa", False, "50131701"
+        "Lácteos",
+        "Leche sin lactosa 1 L",
+        "caja 1 L",
+        "L",
+        "leche.*sin lactosa",
+        False,
+        "50131701",
+        "leche-sin-lactosa-1-l",
     ),
     ReglaProducto(
         "Lácteos",
@@ -499,6 +624,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "leche.*(semi|descremad)",
         True,
         "50131701",
+        "leche-semidescremada-descremada-1-l",
     ),
     ReglaProducto(
         "Lácteos",
@@ -508,6 +634,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "leche (entera|liquida|natural)|leche.*\\b1 ?(l|lt|litro)\\b|\\bleche\\b(?!.*(condensad|asad|nan))",
         True,
         "50131701",
+        "leche-entera-1-l",
     ),
     ReglaProducto(
         "Lácteos",
@@ -517,9 +644,17 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "condensad|manjar|dulce de leche",
         True,
         "50131701",
+        "leche-condensada-manjar",
     ),
     ReglaProducto(
-        "Lácteos", "Yogurt", "unidad 125–165 g", "u", "yogurt|yoghurt|yogur", True, "50192303"
+        "Lácteos",
+        "Yogurt",
+        "unidad 125–165 g",
+        "u",
+        "yogurt|yoghurt|yogur",
+        True,
+        "50192303",
+        "yogurt",
     ),
     ReglaProducto(
         "Lácteos",
@@ -529,6 +664,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "postre|flan|leche asada|semola|arroz con leche",
         True,
         "50192301",
+        "postre-lacteo-leche-asada-flan",
     ),
     ReglaProducto(
         "Lácteos",
@@ -538,6 +674,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "queso.*(lamin|gauda|mantecoso|chanco)|laminas? de queso",
         True,
         "50131801",
+        "queso-laminado-gauda-mantecoso",
     ),
     ReglaProducto(
         "Lácteos",
@@ -547,10 +684,24 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "quesillo|queso fresco|queso de cabra",
         False,
         "50131801",
+        "queso-fresco-quesillo",
     ),
-    ReglaProducto("Lácteos", "Queso (sin detalle)", "kg", "kg", "queso", False, "50131801"),
-    ReglaProducto("Lácteos", "Mantequilla", "pan 250 g", "kg", "mantequill", True, "50131701"),
-    ReglaProducto("Lácteos", "Margarina", "pote 250–500 g", "kg", "margarin", False, "50131701"),
+    ReglaProducto(
+        "Lácteos",
+        "Queso (sin detalle)",
+        "kg",
+        "kg",
+        "queso",
+        False,
+        "50131801",
+        "queso-sin-detalle",
+    ),
+    ReglaProducto(
+        "Lácteos", "Mantequilla", "pan 250 g", "kg", "mantequill", True, "50131701", "mantequilla"
+    ),
+    ReglaProducto(
+        "Lácteos", "Margarina", "pote 250–500 g", "kg", "margarin", False, "50131701", "margarina"
+    ),
     ReglaProducto(
         "Lácteos",
         "Crema de leche",
@@ -559,10 +710,24 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "crema (de )?(leche|batir)|crema chantilly",
         False,
         "50131701",
+        "crema-de-leche",
     ),
-    ReglaProducto("Lácteos", "Helado", "litro / individual", "u", "helado", False, "50192304"),
-    ReglaProducto("Huevos", "Huevos", "bandeja 30 / caja 180", "u", "huevo", True, "50131606"),
-    ReglaProducto("Carnes", "Posta rosada", "envase vacío 1 kg", "kg", "posta", True, "50112001"),
+    ReglaProducto(
+        "Lácteos", "Helado", "litro / individual", "u", "helado", False, "50192304", "helado"
+    ),
+    ReglaProducto(
+        "Huevos", "Huevos", "bandeja 30 / caja 180", "u", "huevo", True, "50131606", "huevos"
+    ),
+    ReglaProducto(
+        "Carnes",
+        "Posta rosada",
+        "envase vacío 1 kg",
+        "kg",
+        "posta",
+        True,
+        "50112001",
+        "posta-rosada",
+    ),
     ReglaProducto(
         "Carnes",
         "Carne de vacuno para asado (lomo, asado tira, punta)",
@@ -571,6 +736,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "lomo|asado|punta de|tapapecho|plateada|sobrecostilla|abastero",
         True,
         "50111510",
+        "carne-de-vacuno-para-asado-lomo-asado-tira-punta",
     ),
     ReglaProducto(
         "Carnes",
@@ -580,6 +746,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "carne molida|molida",
         True,
         "50112002",
+        "carne-molida",
     ),
     ReglaProducto(
         "Carnes",
@@ -589,14 +756,33 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "vacuno|carne de res|\\bcarnes?\\b(?!.*(cerdo|pollo|ave))|vaquill",
         True,
         "50112001",
+        "carne-de-vacuno-sin-corte",
     ),
     ReglaProducto(
-        "Carnes", "Pollo entero", "unidad ~2,5 kg", "kg", "pollos? enteros?", False, "50112002"
+        "Carnes",
+        "Pollo entero",
+        "unidad ~2,5 kg",
+        "kg",
+        "pollos? enteros?",
+        False,
+        "50112002",
+        "pollo-entero",
     ),
-    ReglaProducto("Carnes", "Pechuga de pollo", "kg", "kg", "pechuga", True, "50112001"),
-    ReglaProducto("Carnes", "Trutro de pollo", "kg", "kg", "trutro", True, "50111510"),
     ReglaProducto(
-        "Carnes", "Pollo (sin detalle)", "kg", "kg", "pollo|\\bave\\b", False, "50112001"
+        "Carnes", "Pechuga de pollo", "kg", "kg", "pechuga", True, "50112001", "pechuga-de-pollo"
+    ),
+    ReglaProducto(
+        "Carnes", "Trutro de pollo", "kg", "kg", "trutro", True, "50111510", "trutro-de-pollo"
+    ),
+    ReglaProducto(
+        "Carnes",
+        "Pollo (sin detalle)",
+        "kg",
+        "kg",
+        "pollo|\\bave\\b",
+        False,
+        "50112001",
+        "pollo-sin-detalle",
     ),
     ReglaProducto(
         "Carnes",
@@ -606,16 +792,34 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "cerdo|chuleta|costillar|pulpa",
         True,
         "50111510",
+        "carne-de-cerdo-chuleta-pulpa-costillar",
     ),
-    ReglaProducto("Carnes", "Cordero", "kg / animal", "kg", "cordero", True, "50111510"),
+    ReglaProducto("Carnes", "Cordero", "kg / animal", "kg", "cordero", True, "50111510", "cordero"),
     ReglaProducto(
-        "Cecinas", "Longaniza / chorizo", "kg", "kg", "longaniza|chorizo", True, "50112001"
+        "Cecinas",
+        "Longaniza / chorizo",
+        "kg",
+        "kg",
+        "longaniza|chorizo",
+        True,
+        "50112001",
+        "longaniza-chorizo",
     ),
-    ReglaProducto("Cecinas", "Vienesas", "paquete 20 u", "u", "viene?sa", False, "50111512"),
-    ReglaProducto("Cecinas", "Jamón / jamonada", "kg", "kg", "jamon", True, "50112001"),
-    ReglaProducto("Cecinas", "Hamburguesa", "caja / unidad", "u", "hamburguesa", False, ""),
-    ReglaProducto("Pescados", "Atún en lata", "lata 160–170 g", "u", "atun", False, "50171901"),
-    ReglaProducto("Pescados", "Jurel en lata", "lata 425 g", "u", "jurel", True, "50121538"),
+    ReglaProducto(
+        "Cecinas", "Vienesas", "paquete 20 u", "u", "viene?sa", False, "50111512", "vienesas"
+    ),
+    ReglaProducto(
+        "Cecinas", "Jamón / jamonada", "kg", "kg", "jamon", True, "50112001", "jamon-jamonada"
+    ),
+    ReglaProducto(
+        "Cecinas", "Hamburguesa", "caja / unidad", "u", "hamburguesa", False, "", "hamburguesa"
+    ),
+    ReglaProducto(
+        "Pescados", "Atún en lata", "lata 160–170 g", "u", "atun", False, "50171901", "atun-en-lata"
+    ),
+    ReglaProducto(
+        "Pescados", "Jurel en lata", "lata 425 g", "u", "jurel", True, "50121538", "jurel-en-lata"
+    ),
     ReglaProducto(
         "Pescados",
         "Pescado fresco/congelado (merluza, salmón, reineta)",
@@ -624,6 +828,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "merluza|salmon|reineta|pescado|mariscos",
         True,
         "50111510",
+        "pescado-fresco-congelado-merluza-salmon-reineta",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -633,6 +838,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "\\barroz\\b",
         True,
         "50192601",
+        "arroz-grado-1",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -642,6 +848,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "fideo|tallarin|spaghetti|espagueti|pasta(s)? (corta|larga|seca)|corbata|espiral|quifaro|cabello de angel",
         True,
         "50192601",
+        "fideos-tallarines",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -651,11 +858,21 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "harina(?! tostada)",
         True,
         "50221102",
+        "harina",
     ),
     ReglaProducto(
-        "Abarrotes", "Harina tostada", "bolsa 1 kg", "kg", "harina tostada", False, "50221102"
+        "Abarrotes",
+        "Harina tostada",
+        "bolsa 1 kg",
+        "kg",
+        "harina tostada",
+        False,
+        "50221102",
+        "harina-tostada",
     ),
-    ReglaProducto("Abarrotes", "Azúcar", "bolsa 1 kg", "kg", "azucar(?! flor)", True, "50161509"),
+    ReglaProducto(
+        "Abarrotes", "Azúcar", "bolsa 1 kg", "kg", "azucar(?! flor)", True, "50161509", "azucar"
+    ),
     ReglaProducto(
         "Abarrotes",
         "Endulzante (sucralosa/stevia)",
@@ -664,6 +881,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "endulzante|sucralosa|stevia|sacarina",
         True,
         "50161509",
+        "endulzante-sucralosa-stevia",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -673,6 +891,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "\\bsal\\b(?!.*industrial)",
         False,
         "50171551",
+        "sal-de-mesa",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -682,9 +901,17 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "sal industrial|ablandador",
         True,
         "50171551",
+        "sal-industrial-ablandador",
     ),
     ReglaProducto(
-        "Abarrotes", "Aceite vegetal", "botella 1 L", "L", "aceite(?! de oliva)", True, "50151513"
+        "Abarrotes",
+        "Aceite vegetal",
+        "botella 1 L",
+        "L",
+        "aceite(?! de oliva)",
+        True,
+        "50151513",
+        "aceite-vegetal",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -694,6 +921,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "aceite de oliva",
         False,
         "50151513",
+        "aceite-de-oliva",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -703,12 +931,22 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "poroto|lenteja|garbanzo|arveja seca|legumbre",
         True,
         "50221001",
+        "legumbres-porotos-lentejas-garbanzos",
     ),
-    ReglaProducto("Abarrotes", "Avena", "bolsa 1 kg", "kg", "avena", False, "50101538"),
+    ReglaProducto("Abarrotes", "Avena", "bolsa 1 kg", "kg", "avena", False, "50101538", "avena"),
     ReglaProducto(
-        "Abarrotes", "Mermelada", "pote / bolsa 1 kg", "kg", "mermelad", True, "50192401"
+        "Abarrotes",
+        "Mermelada",
+        "pote / bolsa 1 kg",
+        "kg",
+        "mermelad",
+        True,
+        "50192401",
+        "mermelada",
     ),
-    ReglaProducto("Abarrotes", "Mayonesa", "bolsa / frasco", "kg", "mayonesa", False, "50131609"),
+    ReglaProducto(
+        "Abarrotes", "Mayonesa", "bolsa / frasco", "kg", "mayonesa", False, "50131609", "mayonesa"
+    ),
     ReglaProducto(
         "Abarrotes",
         "Ketchup / mostaza / salsas",
@@ -717,6 +955,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "ketchup|catsup|mostaza|aji|pebre|salsa",
         True,
         "50171902",
+        "ketchup-mostaza-salsas",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -726,6 +965,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "salsa de tomate|pomarola|tomate en conserva|tomates? pelados?",
         False,
         "",
+        "salsa-de-tomate-tomate-en-conserva",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -735,8 +975,11 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "durazno.*(conserva|almibar|tarro|lata)|conserva",
         True,
         "50192401",
+        "conservas-de-fruta-duraznos",
     ),
-    ReglaProducto("Abarrotes", "Aceitunas", "kg / frasco", "kg", "aceituna", False, "50171903"),
+    ReglaProducto(
+        "Abarrotes", "Aceitunas", "kg / frasco", "kg", "aceituna", False, "50171903", "aceitunas"
+    ),
     ReglaProducto(
         "Abarrotes",
         "Choclo / arvejas / verduras congeladas",
@@ -745,6 +988,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "(arveja|choclo|poroto verde|verdura|hortaliza|espinaca|brocoli|mix).*congelad|choclo (en grano|desgranado)|arvejas",
         False,
         "50221001",
+        "choclo-arvejas-verduras-congeladas",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -754,6 +998,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "gelatina|jalea|postre en polvo|preparado para postre",
         True,
         "50192301",
+        "gelatina-postre-en-polvo",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -763,6 +1008,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "oregano|comino|merken|pimienta|condimento|aliño|alino|ajo en polvo|caldo",
         False,
         "50171552",
+        "condimentos-oregano-comino-merken",
     ),
     ReglaProducto(
         "Abarrotes",
@@ -772,12 +1018,19 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "levadura|polvos? de hornear",
         False,
         "50221102",
+        "levadura-polvos-de-hornear",
     ),
-    ReglaProducto("Abarrotes", "Vinagre", "botella 1 L", "L", "vinagre", False, "50171707"),
-    ReglaProducto("Abarrotes", "Miel", "frasco 500 g–1 kg", "kg", "\\bmiel\\b", True, "50192403"),
-    ReglaProducto("Abarrotes", "Puré en polvo", "caja", "u", "pure", False, "50192602"),
-    ReglaProducto("Frutas", "Plátano", "kg", "kg", "platano|banana", True, "50101634"),
-    ReglaProducto("Frutas", "Manzana", "kg", "kg", "manzana", True, "50101634"),
+    ReglaProducto(
+        "Abarrotes", "Vinagre", "botella 1 L", "L", "vinagre", False, "50171707", "vinagre"
+    ),
+    ReglaProducto(
+        "Abarrotes", "Miel", "frasco 500 g–1 kg", "kg", "\\bmiel\\b", True, "50192403", "miel"
+    ),
+    ReglaProducto(
+        "Abarrotes", "Puré en polvo", "caja", "u", "pure", False, "50192602", "pure-en-polvo"
+    ),
+    ReglaProducto("Frutas", "Plátano", "kg", "kg", "platano|banana", True, "50101634", "platano"),
+    ReglaProducto("Frutas", "Manzana", "kg", "kg", "manzana", True, "50101634", "manzana"),
     ReglaProducto(
         "Frutas",
         "Naranja / mandarina",
@@ -786,13 +1039,18 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "naranja|mandarina|clementina",
         True,
         "50101634",
+        "naranja-mandarina",
     ),
-    ReglaProducto("Frutas", "Pera", "kg", "kg", "\\bperas?\\b", False, "50192602"),
-    ReglaProducto("Frutas", "Uva", "kg", "kg", "\\buvas?\\b", False, "50101634"),
-    ReglaProducto("Frutas", "Frutilla", "kg", "kg", "frutilla", False, "50101634"),
-    ReglaProducto("Frutas", "Sandía / melón", "unidad", "u", "sandia|melon", False, "50101634"),
-    ReglaProducto("Frutas", "Palta", "kg", "kg", "palta", True, "50101538"),
-    ReglaProducto("Frutas", "Limón", "kg", "kg", "\\blimon(es)?\\b(?!.*pie)", True, "50101538"),
+    ReglaProducto("Frutas", "Pera", "kg", "kg", "\\bperas?\\b", False, "50192602", "pera"),
+    ReglaProducto("Frutas", "Uva", "kg", "kg", "\\buvas?\\b", False, "50101634", "uva"),
+    ReglaProducto("Frutas", "Frutilla", "kg", "kg", "frutilla", False, "50101634", "frutilla"),
+    ReglaProducto(
+        "Frutas", "Sandía / melón", "unidad", "u", "sandia|melon", False, "50101634", "sandia-melon"
+    ),
+    ReglaProducto("Frutas", "Palta", "kg", "kg", "palta", True, "50101538", "palta"),
+    ReglaProducto(
+        "Frutas", "Limón", "kg", "kg", "\\blimon(es)?\\b(?!.*pie)", True, "50101538", "limon"
+    ),
     ReglaProducto(
         "Frutas",
         "Fruta de temporada / picada (sin detalle)",
@@ -801,18 +1059,34 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "fruta",
         False,
         "50101634",
+        "fruta-de-temporada-picada-sin-detalle",
     ),
     ReglaProducto(
-        "Verduras", "Papa", "saco 25 kg", "kg", "\\bpapas?\\b(?!.*frit)", True, "50101538"
+        "Verduras", "Papa", "saco 25 kg", "kg", "\\bpapas?\\b(?!.*frit)", True, "50101538", "papa"
     ),
-    ReglaProducto("Verduras", "Cebolla", "kg / malla", "kg", "cebolla", False, "50101538"),
-    ReglaProducto("Verduras", "Tomate", "kg", "kg", "tomate", True, "50101538"),
-    ReglaProducto("Verduras", "Lechuga", "unidad", "u", "lechuga", False, "50101538"),
-    ReglaProducto("Verduras", "Zanahoria", "kg", "kg", "zanahoria", False, "50101538"),
-    ReglaProducto("Verduras", "Zapallo", "kg", "kg", "zapallo", True, "50101538"),
-    ReglaProducto("Verduras", "Choclo fresco", "unidad", "u", "choclo", False, "50101538"),
-    ReglaProducto("Verduras", "Ajo", "malla / cabeza", "u", "\\bajos?\\b", False, "50101538"),
-    ReglaProducto("Verduras", "Pimentón / ají verde", "unidad", "u", "pimenton", False, "50101538"),
+    ReglaProducto(
+        "Verduras", "Cebolla", "kg / malla", "kg", "cebolla", False, "50101538", "cebolla"
+    ),
+    ReglaProducto("Verduras", "Tomate", "kg", "kg", "tomate", True, "50101538", "tomate"),
+    ReglaProducto("Verduras", "Lechuga", "unidad", "u", "lechuga", False, "50101538", "lechuga"),
+    ReglaProducto("Verduras", "Zanahoria", "kg", "kg", "zanahoria", False, "50101538", "zanahoria"),
+    ReglaProducto("Verduras", "Zapallo", "kg", "kg", "zapallo", True, "50101538", "zapallo"),
+    ReglaProducto(
+        "Verduras", "Choclo fresco", "unidad", "u", "choclo", False, "50101538", "choclo-fresco"
+    ),
+    ReglaProducto(
+        "Verduras", "Ajo", "malla / cabeza", "u", "\\bajos?\\b", False, "50101538", "ajo"
+    ),
+    ReglaProducto(
+        "Verduras",
+        "Pimentón / ají verde",
+        "unidad",
+        "u",
+        "pimenton",
+        False,
+        "50101538",
+        "pimenton-aji-verde",
+    ),
     ReglaProducto(
         "Verduras",
         "Verduras surtidas (sin detalle)",
@@ -821,6 +1095,7 @@ REGLAS: tuple[ReglaProducto, ...] = (
         "verdura|hortaliza",
         False,
         "50192602",
+        "verduras-surtidas-sin-detalle",
     ),
 )
 

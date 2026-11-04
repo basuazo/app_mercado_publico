@@ -80,6 +80,7 @@ def cargar_catalogo(session: Session) -> Catalogo:
             id=p.id,
             nombre=p.nombre,
             unidad_base=p.unidad_base,
+            clave_semilla=p.clave_semilla,
             formato_base_id=base.get(p.id),
             formatos=tuple(formatos.get(p.id, ())),
         )
@@ -108,16 +109,35 @@ def sembrar_canasta(session: Session) -> dict[str, int]:
     """Crea los productos de la canasta que faltan (con su formato base y el sugerido).
 
     Solo inserta: nunca renombra, fusiona, reactiva ni desactiva un producto existente (lo
-    que se corrija en `/catalogo` manda). Existe = hay un producto con ese nombre, activo o no.
+    que se corrija en `/catalogo` manda). Existe = hay una fila con la `clave_semilla` de la
+    regla, esté activa o no y se llame como se llame. Un producto SIN clave con el mismo nombre
+    (ignorando mayúsculas; lo creó una persona) se adopta: recibe la clave y no se duplica.
     """
-    existentes = set(session.execute(select(ProductoCanonico.nombre)).scalars())
-    creados = formatos = 0
+    claves = set(
+        session.execute(
+            select(ProductoCanonico.clave_semilla).where(ProductoCanonico.clave_semilla.isnot(None))
+        ).scalars()
+    )
+    sin_clave: dict[str, ProductoCanonico] = {
+        p.nombre.lower(): p
+        for p in session.execute(
+            select(ProductoCanonico).where(ProductoCanonico.clave_semilla.is_(None))
+        ).scalars()
+    }
+    creados = formatos = adoptados = 0
     for regla in REGLAS:
-        if not regla.sembrar or regla.nombre in existentes:
+        if not regla.sembrar or regla.clave in claves:
+            continue
+        propio = sin_clave.pop(regla.nombre.lower(), None)
+        if propio is not None:
+            propio.clave_semilla = regla.clave
+            claves.add(regla.clave)
+            adoptados += 1
             continue
         familia = FAMILIAS_ALIMENTOS.get(regla.unspsc[:4]) or regla.categoria
         producto = ProductoCanonico(
             nombre=regla.nombre[:_LARGO_NOMBRE],
+            clave_semilla=regla.clave,
             familia=familia,
             unspsc_sugerido=regla.unspsc or None,
             unidad_base=regla.unidad_base,
@@ -139,10 +159,14 @@ def sembrar_canasta(session: Session) -> dict[str, int]:
                 )
             )
             formatos += 1
-        existentes.add(regla.nombre)
+        claves.add(regla.clave)
         creados += 1
     session.flush()
-    return {"productos_creados": creados, "formatos_creados": formatos}
+    return {
+        "productos_creados": creados,
+        "formatos_creados": formatos,
+        "productos_adoptados": adoptados,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -180,20 +204,31 @@ def _formato_por_unidad(producto: ProductoInfo, unidad_ca: str | None) -> int | 
 
 
 def recalcular_detalle_lineas(session: Session, ca_codigos: Iterable[str]) -> None:
-    """Bandera de la CA: `sin_detalle` (alguna línea pendiente o ninguna), `incompleto` (alguna
-    dudosa) o `completo` (todas ok). Una CA sin líneas queda `sin_detalle`."""
+    """Bandera de la CA («la CA no trae el detalle»):
+
+    - `sin_detalle`: sin líneas, o con alguna línea `origen = 'anexo'` sin resolver (no `ok`);
+    - `incompleto`: alguna línea `pendiente` o `dudosa` (sin anexo pendiente);
+    - `completo`: todas las líneas `ok`.
+
+    Una línea `pendiente` normal (las reglas no la reconocieron) NO es «sin detalle»: la CA sí
+    trae sus líneas. F-plat-2 descarga anexos solo de las CA `sin_detalle`."""
     codigos = sorted(set(ca_codigos))
     if not codigos:
         return
     estados: dict[str, set[str]] = {c: set() for c in codigos}
-    for ca_codigo, estado in session.execute(
-        select(CaLinea.ca_codigo, CaLinea.estado).where(CaLinea.ca_codigo.in_(codigos)).distinct()
+    anexo_sin_resolver: set[str] = set()
+    for ca_codigo, estado, origen in session.execute(
+        select(CaLinea.ca_codigo, CaLinea.estado, CaLinea.origen)
+        .where(CaLinea.ca_codigo.in_(codigos))
+        .distinct()
     ):
         estados[ca_codigo].add(estado)
+        if origen == "anexo" and estado != "ok":
+            anexo_sin_resolver.add(ca_codigo)
     for ca_codigo, es in estados.items():
-        if not es or "pendiente" in es:
+        if not es or ca_codigo in anexo_sin_resolver:
             valor = "sin_detalle"
-        elif "dudosa" in es:
+        elif "pendiente" in es or "dudosa" in es:
             valor = "incompleto"
         else:
             valor = "completo"

@@ -23,8 +23,9 @@ CHANGELOG: list[ChangelogEntry] = [
             "entre compras. El sistema propone el producto por palabras clave y por lo que ya "
             "aprendió; tú confirmas en «Mesa → Catálogo de productos»: cada confirmación enseña "
             "un alias y se aplica sola a las líneas con el mismo texto. Las compras que solo dicen "
-            "«según anexo adjunto» quedan marcadas «sin detalle», y puedes agregar sus líneas a "
-            "mano. En la ficha de la compra aparece la pestaña «Líneas» con su estado. "
+            "«según anexo adjunto» se marcan como «sin detalle (anexo)», y puedes agregar sus "
+            "líneas a mano; las que solo esperan tu revisión figuran «por revisar». Si renombras o "
+            "desactivas un producto, el sistema lo respeta y no lo vuelve a crear. En la ficha de la compra aparece la pestaña «Líneas» con su estado. "
             "Fuente: Dirección ChileCompra."
         ),
     ),

@@ -34,6 +34,7 @@ def upgrade() -> None:
         "producto_canonico",
         sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
         sa.Column("nombre", sa.String(200), nullable=False, unique=True),
+        sa.Column("clave_semilla", sa.String(100), nullable=True, unique=True),
         sa.Column("familia", sa.String(100), nullable=True),
         sa.Column("unspsc_sugerido", sa.String(20), nullable=True),
         sa.Column("unidad_base", sa.String(3), nullable=False),

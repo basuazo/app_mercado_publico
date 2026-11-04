@@ -172,6 +172,7 @@ class ProductoInfo:
     id: int
     nombre: str
     unidad_base: str
+    clave_semilla: str | None = None  # la regla de la canasta se resuelve por esta clave
     formato_base_id: int | None = None  # el formato "unidad base" (factor 1)
     formatos: tuple[tuple[int, float], ...] = ()  # (formato_id, factor_base)
 
@@ -184,11 +185,11 @@ class Catalogo:
     alias: dict[str, AliasInfo] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        self._por_nombre = {p.nombre: p for p in self.productos.values()}
+        self._por_clave = {p.clave_semilla: p for p in self.productos.values() if p.clave_semilla}
         self._max_tokens = max((len(k.split()) for k in self.alias), default=0)
 
-    def por_nombre(self, nombre: str) -> ProductoInfo | None:
-        return self._por_nombre.get(nombre)
+    def por_clave(self, clave: str) -> ProductoInfo | None:
+        return self._por_clave.get(clave)
 
 
 class Sugerencia(NamedTuple):
@@ -267,7 +268,7 @@ def sugerir_producto(
         return None  # varios productos en un texto
     for regla, patron in _REGLAS_C:
         if patron.search(crudo):
-            producto = catalogo.por_nombre(regla.nombre)
+            producto = catalogo.por_clave(regla.clave)
             if producto is None or not regla.sembrar:
                 return None
             return Sugerencia(producto.id, formato_de_texto(producto, texto), CONF_REGLA, "regla")

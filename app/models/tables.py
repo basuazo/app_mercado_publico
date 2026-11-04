@@ -874,6 +874,9 @@ class ProductoCanonico(Base):
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
     nombre: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    # Clave estable de la regla de la canasta que lo sembró (`canasta_alimentos`): sobrevive a
+    # renombrar o desactivar el producto. NULL = creado a mano y sin regla.
+    clave_semilla: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
     familia: Mapped[str | None] = mapped_column(String(100), nullable=True)
     unspsc_sugerido: Mapped[str | None] = mapped_column(String(20), nullable=True)
     unidad_base: Mapped[str] = mapped_column(String(3), nullable=False)  # kg | L | u
