@@ -104,7 +104,7 @@
   recalculados (endpoint HTMX `POST /mesa/ca/{codigo}/simular`, sin persistir). "Guardar borrador",
   "Marcar enviada" (fecha), "Exportar" → XLSX (openpyxl) con líneas, cantidades, precio unitario, total y
   plazo, lista para transcribir al portal.
-- Enlace a la ficha pública de la CA (`_url_ficha("ca", codigo)`) para subir la oferta y bajar anexos.
+- Enlace a la ficha pública de la CA (`_url_ficha("compras_agiles", codigo)`; la ficha interna es `/oportunidad/compras_agiles/{codigo}` [V, F-plat-nav]) para subir la oferta y bajar anexos.
 
 ### 1.4 Modo sombra y cierre automático
 - En `mercado-ca`, para cada CA vigente en alcance con `cobertura ≥ 0,5`: si no hay `prediccion` de la

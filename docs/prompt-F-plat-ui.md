@@ -102,6 +102,10 @@ pestañas, ficha de producto, `/catalogo/ca/{codigo}`), `/proveedores` (lista, f
 Las pantallas de **Archivo** (app antigua) solo tienen que **verse bien con el layout nuevo** (que no se rompan), sin
 rediseño: se van a retirar.
 
+**Modal de onboarding** (`_onboarding_modals.html`, incluido para todos en `base.html` [V, F-plat-nav]): explica el feed
+antiguo. Para quien no es admin, quitarlo; un tutorial de la plataforma vendrá cuando exista la mesa. Para el admin
+queda solo en `/archivo`.
+
 Fuera de alcance: modo oscuro, animaciones y cambiar textos (salvo los títulos y descripciones de encabezado).
 
 ## 5. Tests y verificación
