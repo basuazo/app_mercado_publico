@@ -239,7 +239,7 @@ recomienda para fases completas (tiende a dejar tests y mypy a medias); sirve pa
 | 7 | F-plat-6 | `prompt-F-plat-6.md` | **Opus** | Series de demanda, pronóstico, recomendaciones de abastecimiento | Backtest 6 meses: recurrencia ≥ 70 % de precisión; MAPE de cantidad reportado |
 | 8 | F-plat-7 | `prompt-F-plat-7.md` | Sonnet | `/salud` del pivote, informe mensual, cierre automático de predicciones, retención | Primer informe mensual con margen realizado real |
 
-Dependencias: F-plat-3 (empresa) solo necesita F-merc-1 (usa su `mercado_regiones`) y puede ir en paralelo
+Dependencias (ver §4-bis para lo que corre en paralelo): F-plat-3 (empresa) solo necesita F-merc-1 (usa su `mercado_regiones`) y puede ir en paralelo
 con F-merc-2. F-plat-1 necesita F-merc-1, F-merc-2 y la `empresa` (para quién corrige). F-plat-2 necesita
 F-plat-1. F-plat-4 necesita F-merc-1, F-merc-2, F-plat-1. F-plat-5 necesita todo lo anterior. F-plat-6
 necesita F-merc-2 y F-plat-1. F-plat-7 necesita F-plat-5.
@@ -251,6 +251,43 @@ día por job.
 
 Estimación de calendario [I]: una fase por 2–4 días de trabajo con auditoría; las ocho en 6–8 semanas, con
 el modo sombra de F-plat-5 corriendo 4 semanas en paralelo a 7 y 8.
+
+## 4-bis. Paralelismo: qué puede correr a la vez y cómo (agregado 4-nov)
+
+El grafo de §4 permite tres ventanas de trabajo en paralelo. Fuera de ellas, el orden es secuencial porque
+cada fase siguiente lee tablas de la anterior.
+
+| Ventana | Fases en paralelo | Por qué no chocan |
+|---|---|---|
+| A (tras F-merc-1) | **F-merc-2** (Sonnet) ∥ **F-plat-3** (Sonnet) | Tablas distintas (`oc_lineas_ca`/`precio_referencia` vs. `empresas`/`proveedores`); ninguna usa ticket |
+| B (tras F-plat-1) | **F-plat-2** (Opus) ∥ **F-plat-4** (Opus) | Anexos vs. índice/modelo; comparten solo lecturas de `ca_lineas` |
+| C (tras F-plat-4) | **F-plat-5** (Sonnet) ∥ **F-plat-6** (Opus) | Mesa vs. demanda; F-plat-6 solo necesita F-merc-2 y F-plat-1 |
+
+**Reglas para una ventana paralela (obligatorias):**
+1. **Un worktree y una rama por fase** (`git worktree add ../mp-F-plat-3 -b F-plat-3`), cada uno con su sesión de
+   Claude Code. Nunca dos sesiones en el mismo directorio (el 09-oct casi se pisan).
+2. **Una rama de Neon por worktree** (`DATABASE_URL` propio en el `.env` del worktree, creada desde `dev`): dos
+   fases con migraciones distintas contra la misma base dev dejan `alembic_version` inconsistente y los tests
+   `_pg` se contaminan. Al cerrar la ventana se borran las ramas de Neon.
+3. **Migraciones**: cada fase crea su revisión con `down_revision` = head de `main` al abrir la rama. La primera
+   fase que se audita se mergea a `main` tal cual; la segunda, antes de auditarse, hace `git rebase main` y
+   re-apunta su `down_revision` al nuevo head (o `alembic merge` si hay dos heads). Nunca se mergea con dos heads.
+4. **Archivos compartidos** (`app/changelog.py`, `app/models/tables.py`, `docs/00-estado.md`, `base.html`): cada
+   fase agrega bloques nuevos, no edita los existentes; el conflicto de rebase se resuelve conservando ambos.
+5. **Ticket**: solo una fase por ventana puede usar `MP_TICKET` (regla 24 y cuota única). En A, B y C ninguna lo
+   usa (F-plat-2 §1.6 queda detrás de `documentos_api_habilitado=False` hasta la sonda), así que no compiten con
+   `mercado-ca` ni con el backfill nocturno.
+6. **Auditoría**: se audita una fase a la vez, siempre contra `main` ya con la anterior mergeada. El paralelismo
+   ahorra tiempo de implementación, no de auditoría: el cuello de botella pasa a ser Boris (auditar, migrar Neon,
+   push) y sus insumos (anexos, proveedores, OpenRouter).
+
+**Paralelismo dentro de una fase** (sin reglas extra): Claude Code puede delegar a subagentes partes con contrato
+cerrado (fixtures y tests, plantillas HTMX, importador de planillas) mientras el agente principal hace esquema y
+lógica. Conviene en F-plat-3, F-plat-5 y F-plat-7; en las fases Opus con juez (F-plat-1, 2, 4, 6) el esquema y la
+evaluación los hace un solo agente para no perder coherencia.
+
+**Estimación revisada [I]:** con las tres ventanas, las ocho fases pasan de 6–8 a 4–6 semanas de calendario; el
+modo sombra de F-plat-5 (4 semanas) sigue siendo el plazo largo y no se acorta con más agentes.
 
 ## 5. Riesgos y cómo se miden
 

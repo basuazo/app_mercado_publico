@@ -99,3 +99,14 @@ Render solo sirve la web; correo por API REST de Brevo.
     verificado no se escribe como hecho ni se propaga a docs/prompts. Cualquier
     afirmación que cambie una decisión de arquitectura se verifica en la fuente
     antes de quedar escrita.
+
+## Pivote plataforma de Compra Ágil (3-nov-2026) — reglas duras
+24. La cuota de la API es SOLO para Compra Ágil. Ningún job del pivote pide licitaciones
+    ni Plan Anual con ticket; esos jobs quedan apagados mientras dure el pivote.
+25. El territorio que se ingesta es la unión de las regiones priorizadas de las empresas
+    activas (hoy Ñuble, 16). Las comunas priorizadas ordenan la mesa y la logística, no
+    la ingesta (la API no filtra por comuna; regla 7).
+26. Todo dato comercial (proveedores, costos, ofertas, predicciones, pronósticos)
+    pertenece a una empresa; un usuario ve solo lo de su empresa. El admin crea
+    empresas y asigna usuarios. OPENROUTER_API_KEY es secreto como MP_TICKET (regla 1).
+    Plan y fases: docs/17-plan-pivote-plataforma-ca.md y docs/prompt-F-plat-*.md.
