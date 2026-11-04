@@ -113,10 +113,10 @@ def guardar_producto(
     fuente: str = "manual",
     usuario_id: int | None = None,
 ) -> tuple[ProveedorProducto, str]:
-    """Crea el producto o actualiza su precio. Devuelve (producto, 'nuevo'|'cambiado'|'igual').
+    """Crea el producto o actualiza su precio. Devuelve (producto, 'nuevo'|'cambiado'|'historico'|'igual').
 
     Nuevo → primera fila de historial. Precio distinto → otra fila (misma transacción).
-    Precio igual → sin fila nueva (idempotente). Los demás datos se actualizan siempre.
+    Precio igual → sin fila nueva (idempotente). Fecha anterior a la vigente → solo historial. Los demás datos se actualizan siempre.
     """
     if fuente not in FUENTES:
         raise ValueError(f"fuente inválida: {fuente!r}")
@@ -159,6 +159,19 @@ def guardar_producto(
         pp.codigo_unspsc = _texto(codigo_unspsc, 20)
     if disponible is not None:
         pp.disponible = disponible
+    if vigente < pp.vigente_desde:
+        # Lista vieja: queda en el historial pero no retrocede el precio actual.
+        existe = session.execute(
+            select(CostoHistorial.id).where(
+                CostoHistorial.proveedor_producto_id == pp.id,
+                CostoHistorial.vigente_desde == vigente,
+                CostoHistorial.precio_neto == float(precio_neto),
+            )
+        ).first()
+        if existe is not None:
+            return pp, "igual"
+        _registrar_costo(session, pp, float(precio_neto), vigente, fuente, usuario_id)
+        return pp, "historico"
     if abs(pp.precio_neto_actual - float(precio_neto)) <= _TOL:
         return pp, "igual"
     pp.precio_neto_actual = float(precio_neto)

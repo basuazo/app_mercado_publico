@@ -29,7 +29,9 @@ from app.mercado.proveedores import (
 )
 from app.models.tables import Proveedor, TarifaLogistica
 
-MAX_BYTES = 5 * 1024 * 1024
+# La confirmación reenvía el archivo en base64 en un campo de formulario y Starlette corta cada
+# campo en 1 MB (`max_part_size`, defensa de memoria: no se sube). 700 KB * 4/3 < 1 MB.
+MAX_BYTES = 700 * 1024
 MAX_FILAS = 5000  # tope por hoja: evita planillas desproporcionadas
 
 COLUMNAS_PRECIOS = [
@@ -102,6 +104,7 @@ class Resumen:
     proveedores_actualizados: int = 0
     productos_nuevos: int = 0
     precios_cambiados: int = 0
+    precios_historicos: int = 0
     sin_cambios: int = 0
     condiciones_actualizadas: int = 0
     tarifas_nuevas: int = 0
@@ -114,7 +117,7 @@ class Resumen:
         return any(
             (
                 self.proveedores_nuevos, self.proveedores_actualizados, self.productos_nuevos,
-                self.precios_cambiados, self.condiciones_actualizadas, self.tarifas_nuevas,
+                self.precios_cambiados, self.precios_historicos, self.condiciones_actualizadas, self.tarifas_nuevas,
                 self.tarifas_actualizadas,
             )
         )  # fmt: skip
@@ -236,7 +239,10 @@ def _filas_csv(data: bytes) -> list[tuple[Any, ...]]:
         raise PlanillaInvalida("No pude leer el CSV (codificación)")
     primera = texto.splitlines()[0] if texto.strip() else ""
     delimitador = ";" if primera.count(";") > primera.count(",") else ","
-    filas = [tuple(f) for f in csv.reader(io.StringIO(texto), delimiter=delimitador)]
+    try:
+        filas = [tuple(f) for f in csv.reader(io.StringIO(texto), delimiter=delimitador)]
+    except csv.Error as exc:  # p. ej. un campo de más de 128 KB
+        raise PlanillaInvalida(f"No pude leer el CSV: {exc}") from exc
     if len(filas) > MAX_FILAS + 1:
         raise PlanillaInvalida(f"El CSV supera {MAX_FILAS} filas")
     return filas
@@ -258,7 +264,9 @@ def _como_dicts(filas: list[tuple[Any, ...]]) -> list[tuple[int, dict[str, Any]]
 def parsear(data: bytes, nombre_archivo: str) -> Planilla:
     """Lee el archivo y valida fila a fila. Los errores se acumulan; no abortan el resto."""
     if len(data) > MAX_BYTES:
-        raise PlanillaInvalida(f"El archivo supera {MAX_BYTES // (1024 * 1024)} MB")
+        raise PlanillaInvalida(
+            f"El archivo supera {MAX_BYTES // 1024} KB; quita imágenes o formato, o divídelo"
+        )
     es_csv = nombre_archivo.lower().endswith(".csv")
     if es_csv:
         hojas = {"precios": _filas_csv(data)}
@@ -487,6 +495,8 @@ def aplicar(
             r.productos_nuevos += 1
         elif estado == "cambiado":
             r.precios_cambiados += 1
+        elif estado == "historico":
+            r.precios_historicos += 1
         else:
             r.sin_cambios += 1
 

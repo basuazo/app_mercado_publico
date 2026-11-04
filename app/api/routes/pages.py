@@ -26,6 +26,7 @@ from app.api.deps import (
     get_db,
     html_require_admin,
     html_require_user,
+    tiene_empresa_activa,
 )
 from app.api.presentacion import (
     banda_relevancia,
@@ -168,11 +169,20 @@ def _match_perfil_background(engine: Engine, perfil_id: int) -> None:
         _log.error("automatch: error en perfil_id=%d", perfil_id, exc_info=True)
 
 
+def _empresa_activa(request: Request, user: Usuario) -> bool:
+    """Para el menú «Mesa»: empresa asignada Y activa (una sesión corta solo si hay empresa)."""
+    if user.empresa_id is None:
+        return False
+    with Session(request.app.state.engine) as s:
+        return tiene_empresa_activa(s, user)
+
+
 def _ctx(request: Request, user: Usuario, **extra: Any) -> dict[str, Any]:
     settings = request.app.state.settings
     ultima_novedad = fecha_ultima_novedad()
     return {
         "current_user": user,
+        "tiene_empresa_activa": _empresa_activa(request, user),
         "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
         "changelog_entries": entradas_changelog(),
         "ultima_novedad_fecha": ultima_novedad,

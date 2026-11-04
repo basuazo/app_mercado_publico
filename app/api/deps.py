@@ -83,6 +83,10 @@ def empresa_activa_id(session: Session, user: Usuario) -> int | None:
     return empresa.id if empresa is not None and empresa.activa else None
 
 
+def tiene_empresa_activa(session: Session, user: Usuario) -> bool:
+    return empresa_activa_id(session, user) is not None
+
+
 def html_require_empresa(
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),

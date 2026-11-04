@@ -178,7 +178,13 @@ def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
 def run_retencion(engine: Engine, settings: Settings | None = None) -> dict[str, int]:
     """Purga de retención. Con `settings`, las CA del territorio activo (regiones de las
     empresas activas, F-plat-3; fallback `MERCADO_REGIONES`) no se purgan (F-merc-1)."""
-    regiones = regiones_activas_engine(engine, settings) if settings is not None else None
+    # Se protege también el setting: si las empresas dejan de incluir Ñuble (error de formulario
+    # o cambio de foco), sus CA no se purgan y no se pierden sin cuota para recuperarlas.
+    regiones = (
+        sorted(set(regiones_activas_engine(engine, settings)) | set(settings.mercado_regiones))
+        if settings is not None
+        else None
+    )
     with Session(engine) as session:
         resultado = purgar_terminales(session, regiones_protegidas=regiones)
         # Sin commit, el cierre de la sesión revierte la purga entera.

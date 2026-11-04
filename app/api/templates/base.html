@@ -47,7 +47,7 @@
            href="/registro"{% if ruta_actual == '/registro' %} aria-current="page"{% endif %}>Mi registro</a>
         <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/plan-anual' %} active{% endif %}"
            href="/plan-anual"{% if ruta_actual == '/plan-anual' %} aria-current="page"{% endif %}>Plan Anual</a>
-        {% if current_user.empresa_id %}
+        {% if tiene_empresa_activa %}
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-light dropdown-toggle{% if ruta_actual.startswith('/proveedores') %} active{% endif %}"
                   type="button" data-bs-toggle="dropdown" aria-expanded="false">Mesa</button>

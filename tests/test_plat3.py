@@ -728,3 +728,95 @@ def test_menu_mesa_solo_con_empresa(client, settings, dos_empresas):
     assert 'href="/proveedores"' not in client.get("/perfiles", cookies=ck).text
     ck, _ = _sesion(settings, d["admin_sin"])
     assert 'href="/admin/empresas"' in client.get("/perfiles", cookies=ck).text
+
+
+# ---------------------------------------------------------------------------
+# F-plat-3-fix
+# ---------------------------------------------------------------------------
+
+
+def _csv_de(n_bytes: int) -> bytes:
+    """CSV válido de exactamente `n_bytes`: filas con una columna de relleno que se ignora."""
+    cab = b"proveedor;producto;formato;precio_neto;relleno\n"
+    fila = b"Dist Relleno;Arroz;saco;1000;" + b"x" * 100_000 + b"\n"
+    cuerpo = fila * ((n_bytes - len(cab)) // len(fila))
+    resto = n_bytes - len(cab) - len(cuerpo)
+    ultima = b"Dist Relleno;Arroz;saco;1000;"
+    return cab + cuerpo + ultima + b"x" * (resto - len(ultima) - 1) + b"\n"
+
+
+def test_importar_tope_700kb_en_vista_previa_y_confirmacion(client, settings, engine, dos_empresas):
+    ck, h = _sesion(settings, dos_empresas["ua"])
+    tok = {"csrf_token": h["X-CSRF-Token"]}
+
+    grande = _csv_de(701 * 1024)
+    r = client.post("/proveedores/importar", cookies=ck, headers=h, data=tok,
+                    files={"archivo": ("p.csv", grande, "text/csv")})  # fmt: skip
+    assert r.status_code == 422 and "700 KB" in r.text
+
+    ok = _csv_de(690 * 1024)
+    r = client.post("/proveedores/importar", cookies=ck, headers=h, data=tok,
+                    files={"archivo": ("p.csv", ok, "text/csv")})  # fmt: skip
+    assert r.status_code == 200 and "Vista previa" in r.text
+    datos = {**tok, "nombre_archivo": "p.csv", "archivo_b64": base64.b64encode(ok).decode()}
+    r = client.post("/proveedores/importar/confirmar", cookies=ck, headers=h, data=datos)
+    assert r.status_code == 200 and "Importación aplicada" in r.text
+    with Session(engine) as s:
+        assert s.scalars(select(Proveedor).where(Proveedor.nombre == "Dist Relleno")).one()
+
+
+def test_retencion_protege_el_setting_aunque_las_empresas_no_incluyan_la_region(engine, settings):
+    from app.ingest.orchestrator import run_retencion
+
+    vieja = ahora_utc() - timedelta(days=200)
+    with Session(engine) as s:
+        _empresa(s, "Solo Biobío", [8])
+        for codigo, region in (("R16", 16), ("R8", 8), ("R13", 13)):
+            s.add(CompraAgil(codigo=codigo, nombre=codigo, estado="desierta", region=region,
+                             raw_json={"x": 1}, actualizado_en=vieja))  # fmt: skip
+        s.commit()
+    run_retencion(engine, settings)
+    with Session(engine) as s:
+        assert s.get(CompraAgil, "R16").raw_json == {"x": 1}  # type: ignore[union-attr]
+        assert s.get(CompraAgil, "R8").raw_json == {"x": 1}  # type: ignore[union-attr]
+        assert s.get(CompraAgil, "R13").raw_json is None  # type: ignore[union-attr]
+
+
+def test_precio_con_fecha_anterior_no_pisa_el_actual(engine):
+    with Session(engine) as s:
+        p = _proveedor(s, _empresa(s, "A").id)
+        kw = dict(producto_texto="Sal", formato_texto="saco")
+        pp, _ = guardar_producto(s, p, precio_neto=1000, vigente_desde=date(2026, 11, 1), **kw)
+        pp, est = guardar_producto(s, p, precio_neto=900, vigente_desde=date(2026, 9, 1), **kw)
+        assert est == "historico"
+        _, est = guardar_producto(s, p, precio_neto=900, vigente_desde=date(2026, 9, 1), **kw)
+        assert est == "igual"  # repetir la lista vieja no duplica
+        s.commit()
+        assert pp.precio_neto_actual == 1000 and pp.vigente_desde == date(2026, 11, 1)
+        filas = list(s.scalars(select(CostoHistorial).where(CostoHistorial.proveedor_producto_id == pp.id)))
+        assert len(filas) == 2
+        v = variacion(filas, pp.precio_neto_actual, hoy=date(2026, 11, 15))
+        assert v.anterior == 900 and v.pct_vs_anterior == 11.1
+
+        # Por importación: se cuenta aparte.
+        pl = importar.parsear(
+            _xlsx([["Prov", "", "", "", "", "Sal", "saco", None, None, 800, "2026-08-01"]]), "p.xlsx"
+        )
+        r = importar.aplicar(s, pp.proveedor.empresa_id, pl)
+        assert r.precios_historicos == 0 and r.productos_nuevos == 1  # otro proveedor: es nuevo
+        pl = importar.parsear(
+            _xlsx([[p.nombre, "", "", "", "", "Sal", "saco", None, None, 800, "2026-08-01"]]), "p.xlsx"
+        )
+        r = importar.aplicar(s, p.empresa_id, pl)
+        assert (r.precios_historicos, r.precios_cambiados, r.productos_nuevos) == (1, 0, 0)
+        assert r.hay_cambios
+
+
+def test_menu_mesa_oculto_con_empresa_inactiva(client, settings, engine, dos_empresas):
+    d = dos_empresas
+    ck, _ = _sesion(settings, d["ua"])
+    assert 'href="/proveedores"' in client.get("/perfiles", cookies=ck).text
+    with Session(engine) as s:
+        s.get(Empresa, d["a"]).activa = False
+        s.commit()
+    assert 'href="/proveedores"' not in client.get("/perfiles", cookies=ck).text
