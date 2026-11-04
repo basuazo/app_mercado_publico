@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Importar proveedores — MP Oportunidades{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/proveedores">← Proveedores</a></p>
+<h2 class="mb-3">Importar proveedores y precios</h2>
+
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+
+{% if confirmado and resumen %}
+<div class="alert alert-success" role="status">Importación aplicada.</div>
+{% endif %}
+
+{% if resumen %}
+<div class="card mb-4">
+  <div class="card-header">{% if confirmado %}Resultado{% else %}Vista previa (todavía no se guardó nada){% endif %}</div>
+  <div class="card-body">
+    <ul class="mb-3">
+      <li>Proveedores nuevos: <strong>{{ resumen.proveedores_nuevos }}</strong>{% if resumen.proveedores_actualizados %} · con datos actualizados: {{ resumen.proveedores_actualizados }}{% endif %}</li>
+      <li>Productos nuevos: <strong>{{ resumen.productos_nuevos }}</strong></li>
+      <li>Precios cambiados: <strong>{{ resumen.precios_cambiados }}</strong></li>
+      <li>Filas sin cambios: {{ resumen.sin_cambios }}</li>
+      <li>Condiciones de proveedor actualizadas: {{ resumen.condiciones_actualizadas }}</li>
+      <li>Tarifas de logística: {{ resumen.tarifas_nuevas }} nuevas, {{ resumen.tarifas_actualizadas }} actualizadas</li>
+    </ul>
+    {% if resumen.ejemplos %}
+    <p class="small text-muted">Filas de ejemplo ignoradas ({{ resumen.ejemplos|length }} proveedor(es)): {{ resumen.ejemplos|join(", ") }}.</p>
+    {% endif %}
+    {% if resumen.errores %}
+    <div class="alert alert-warning">
+      <div class="fw-semibold">{{ resumen.errores|length }} fila(s) con error{% if not confirmado %} (se omitirán al confirmar){% else %} (omitidas){% endif %}:</div>
+      <ul class="mb-0">
+        {% for e in resumen.errores[:50] %}<li>{{ e }}</li>{% endfor %}
+        {% if resumen.errores|length > 50 %}<li>…y {{ resumen.errores|length - 50 }} más</li>{% endif %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if not confirmado %}
+      {% if resumen.hay_cambios %}
+      <form method="post" action="/proveedores/importar/confirmar">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="nombre_archivo" value="{{ nombre_archivo }}">
+        <input type="hidden" name="archivo_b64" value="{{ archivo_b64 }}">
+        <button class="btn btn-primary">Confirmar importación</button>
+        <a class="btn btn-outline-secondary" href="/proveedores/importar">Cancelar</a>
+      </form>
+      {% else %}
+      <p class="mb-0">No hay nada que cambiar con este archivo.</p>
+      {% endif %}
+    {% else %}
+    <a class="btn btn-primary" href="/proveedores">Ver proveedores</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if not confirmado %}
+<div class="card">
+  <div class="card-body">
+    <p>Sube la planilla (.xlsx con las hojas <code>precios</code>, <code>condiciones</code> y <code>logistica</code>) o un
+       .csv solo con la hoja <code>precios</code>. Primero verás una vista previa. Repetir una importación no duplica nada.</p>
+    <p><a href="/proveedores/plantilla.xlsx">Descargar la plantilla</a></p>
+    <form method="post" action="/proveedores/importar" enctype="multipart/form-data" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-md-6">
+        <label class="form-label" for="archivo">Archivo</label>
+        <input type="file" class="form-control" name="archivo" id="archivo" accept=".xlsx,.csv" required>
+      </div>
+      <div class="col-auto"><button class="btn btn-outline-primary">Ver vista previa</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

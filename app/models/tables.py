@@ -58,6 +58,10 @@ class Usuario(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     novedades_visto_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # F-plat-3: un usuario pertenece a una sola empresa (nullable: los anteriores quedan sin).
+    empresa_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="SET NULL"), nullable=True
+    )
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
@@ -307,7 +311,7 @@ class CaCotizacionProducto(Base):
 class OcLineaCa(Base):
     """Línea de una orden de compra de Compra Ágil (oc-da) de las regiones del piloto (F-merc-2).
 
-    Solo `EsCompraAgil = Si`, en `GRUPOS` y con comprador en `mercado_regiones`. PK
+    Solo `EsCompraAgil = Si`, en `GRUPOS` y con comprador en las regiones activas (F-plat-3). PK
     `(codigo_oc, id_item)`: `IDItem` de oc-da [V]. Una OC puede venir en más de un ZIP mensual:
     queda la fila del mes más reciente. Datos
     públicos y comunes (no pertenecen a una empresa). No se purga (excepción de retención).
@@ -707,3 +711,140 @@ Index("ix_compras_agiles_fecha_publicacion", CompraAgil.fecha_publicacion)
 # El UNIQUE (ca_codigo, llamado, rut_proveedor) ya sirve a la búsqueda por CA.
 Index("ix_ca_cotizaciones_rut_proveedor", CaCotizacion.rut_proveedor)
 Index("ix_ca_cotizacion_productos_cotizacion_id", CaCotizacionProducto.cotizacion_id)
+
+
+# ---------------------------------------------------------------------------
+# Pivote plataforma de Compra Ágil (F-plat-3): empresa, proveedores y costos.
+# Todo dato comercial pertenece a una empresa (regla 26). Ninguna se purga (regla 11).
+# ---------------------------------------------------------------------------
+
+
+class Empresa(Base):
+    __tablename__ = "empresas"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    rut: Mapped[str | None] = mapped_column(String(20), nullable=True, unique=True)
+    comuna_base: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Unión de las activas = territorio que se ingesta (app.mercado.territorio).
+    regiones_prioritarias: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, default=lambda: [16]
+    )
+    # Ordenan la mesa y la logística; NO filtran la ingesta (regla 7).
+    comunas_prioritarias: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+
+class Proveedor(Base):
+    __tablename__ = "proveedores"
+    __table_args__ = (Index("ix_proveedores_empresa_nombre", "empresa_id", "nombre"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    nombre: Mapped[str] = mapped_column(String(300), nullable=False)
+    rut: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    comuna: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    direccion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    contacto_nombre: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    telefono: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Familias de app.catalogos.mercado sugeridas, pero texto libre ("lácteos, abarrotes").
+    rubros: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    plazo_pago_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    minimo_compra_clp: Mapped[int | None] = mapped_column(BigInt, nullable=True)
+    despacha: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+    productos: Mapped[list[ProveedorProducto]] = relationship(
+        "ProveedorProducto", back_populates="proveedor", cascade="all, delete-orphan"
+    )
+
+
+class ProveedorProducto(Base):
+    __tablename__ = "proveedor_productos"
+    __table_args__ = (
+        UniqueConstraint(
+            "proveedor_id", "producto_texto", "formato_texto", name="uq_proveedor_producto_formato"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    proveedor_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("proveedores.id", ondelete="CASCADE"), nullable=False
+    )
+    # Sin FK: F-plat-1 la agrega cuando exista `producto_canonico`.
+    producto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    producto_texto: Mapped[str] = mapped_column(String(300), nullable=False)
+    codigo_unspsc: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    formato_texto: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
+    factor_base: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unidad_base: Mapped[str | None] = mapped_column(String(10), nullable=True)  # kg | L | u
+    # Neto (sin IVA) por FORMATO, no por kg.
+    precio_neto_actual: Mapped[float] = mapped_column(Float, nullable=False)
+    vigente_desde: Mapped[date] = mapped_column(Date, nullable=False)
+    fuente: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    disponible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+    proveedor: Mapped[Proveedor] = relationship("Proveedor", back_populates="productos")
+
+
+class CostoHistorial(Base):
+    """Append-only: nunca se edita ni se borra una fila (el precio actual vive en
+    `proveedor_productos`; cada cambio inserta una fila acá, en la misma transacción)."""
+
+    __tablename__ = "costo_historial"
+    __table_args__ = (
+        Index("ix_costo_historial_pp_vigente", "proveedor_producto_id", "vigente_desde"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    proveedor_producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("proveedor_productos.id", ondelete="CASCADE"), nullable=False
+    )
+    precio_neto: Mapped[float] = mapped_column(Float, nullable=False)
+    vigente_desde: Mapped[date] = mapped_column(Date, nullable=False)
+    fuente: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Nullable: importaciones por script.
+    usuario_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    registrado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+class TarifaLogistica(Base):
+    __tablename__ = "tarifas_logistica"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "ambito", "nombre", name="uq_tarifa_empresa_ambito_nombre"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    ambito: Mapped[str] = mapped_column(String(20), nullable=False)  # comuna | provincia
+    nombre: Mapped[str] = mapped_column(String(100), nullable=False)
+    costo_fijo_clp: Mapped[int] = mapped_column(BigInt, nullable=False, default=0)
+    costo_por_kg_clp: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)

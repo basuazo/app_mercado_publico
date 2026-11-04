@@ -1,0 +1,58 @@
+{#
+  Campos de empresa (crear y editar). Contexto: `v` (valores), `errores`, `regiones_disponibles`,
+  `accion` (URL; si falta, crear), `editando` (muestra "Activa").
+#}
+{% set accion = accion if accion is defined else "/admin/empresas/nueva" %}
+<form method="post" action="{{ accion }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-3">
+    <div class="col-md-5">
+      <label class="form-label" for="emp_nombre">Nombre</label>
+      <input type="text" name="nombre" id="emp_nombre" required maxlength="200"
+             class="form-control{% if errores.get('nombre') %} is-invalid{% endif %}" value="{{ v.get('nombre', '') }}">
+      {% if errores.get('nombre') %}<div class="invalid-feedback d-block">{{ errores['nombre'] }}</div>{% endif %}
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="emp_rut">RUT (opcional)</label>
+      <input type="text" name="rut" id="emp_rut" maxlength="20" placeholder="76123456-7"
+             class="form-control{% if errores.get('rut') %} is-invalid{% endif %}" value="{{ v.get('rut', '') }}">
+      {% if errores.get('rut') %}<div class="invalid-feedback d-block">{{ errores['rut'] }}</div>{% endif %}
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="emp_comuna_base">Comuna base</label>
+      <input type="text" name="comuna_base" id="emp_comuna_base" maxlength="100" class="form-control"
+             value="{{ v.get('comuna_base', '') }}" placeholder="Chillán">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="emp_regiones">Regiones priorizadas</label>
+      <select name="regiones" id="emp_regiones" multiple size="8" class="form-select{% if errores.get('regiones') %} is-invalid{% endif %}">
+        {% set elegidas = v.get('regiones_prioritarias', [16]) %}
+        {% for codigo, nombre in regiones_disponibles %}
+        <option value="{{ codigo }}" {% if codigo in elegidas %}selected{% endif %}>{{ codigo }} · {{ nombre }}</option>
+        {% endfor %}
+      </select>
+      {% if errores.get('regiones') %}<div class="invalid-feedback d-block">{{ errores['regiones'] }}</div>{% endif %}
+      <div class="form-text">
+        Son las regiones que la plataforma ingesta (unión de las empresas activas). Agregar una región
+        aumenta el consumo de la cuota de la API y no rellena hacia atrás los meses ya cerrados.
+        Ctrl/Cmd + clic para elegir varias.
+      </div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="emp_comunas">Comunas priorizadas (separadas por coma)</label>
+      <input type="text" name="comunas" id="emp_comunas" class="form-control"
+             value="{{ v.get('comunas', '') }}" placeholder="Chillán, Chillán Viejo, San Carlos">
+      <div class="form-text">Ordenan la mesa y la logística; no filtran la ingesta (la API no filtra por comuna).</div>
+      {% if editando %}
+      <div class="form-check mt-3">
+        <input class="form-check-input" type="checkbox" name="activa" value="1" id="emp_activa" {% if v.get('activa') %}checked{% endif %}>
+        <label class="form-check-label" for="emp_activa">Activa</label>
+        <div class="form-text">Desactivarla no borra nada: sus usuarios quedan "sin empresa" y su territorio deja de contar.</div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary">{% if editando %}Guardar{% else %}Crear{% endif %}</button>
+    </div>
+  </div>
+</form>

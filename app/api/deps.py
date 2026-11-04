@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth.csrf import validate_csrf_token
 from app.auth.session import COOKIE_NAME, decode_session_token
 from app.models.enums import RolUsuario
-from app.models.tables import Usuario
+from app.models.tables import Empresa, Usuario
 
 
 class LoginRequired(Exception):
@@ -73,6 +73,29 @@ def html_require_admin(
     if user.rol != RolUsuario.ADMIN:
         raise HTTPException(status_code=403, detail="Acceso restringido a administradores")
     return user
+
+
+def empresa_activa_id(session: Session, user: Usuario) -> int | None:
+    """Empresa del usuario si existe y está activa; si no, None ("sin empresa", regla 26)."""
+    if user.empresa_id is None:
+        return None
+    empresa = session.get(Empresa, user.empresa_id)
+    return empresa.id if empresa is not None and empresa.activa else None
+
+
+def html_require_empresa(
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> tuple[Usuario, int]:
+    """(usuario, empresa_id). Todo dato comercial se filtra por ese `empresa_id`.
+
+    Un usuario sin empresa activa recibe 403; el admin NO es excepción: sin empresa
+    solo administra empresas, no ve ni edita datos comerciales de otras.
+    """
+    empresa_id = empresa_activa_id(session, user)
+    if empresa_id is None:
+        raise HTTPException(status_code=403, detail="Tu cuenta no tiene una empresa activa")
+    return user, empresa_id
 
 
 # ---------------------------------------------------------------------------

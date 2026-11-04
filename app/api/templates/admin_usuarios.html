@@ -20,11 +20,11 @@
     <form method="post" action="/admin/usuarios/nuevo">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="row g-3">
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label">Email</label>
           <input type="email" name="email" class="form-control" required>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label">Contraseña</label>
           <input type="password" name="password" class="form-control" required minlength="8">
         </div>
@@ -33,6 +33,13 @@
           <select name="rol" class="form-select">
             <option value="usuario">Usuario</option>
             <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="nuevo_empresa">Empresa</label>
+          <select name="empresa_id" id="nuevo_empresa" class="form-select">
+            <option value="">Sin empresa</option>
+            {% for e in empresas %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
           </select>
         </div>
         <div class="col-md-2 d-flex align-items-end">
@@ -47,7 +54,7 @@
 <table class="table table-bordered">
   <thead class="table-dark">
     <tr>
-      <th scope="col">ID</th><th scope="col">Email</th><th scope="col">Rol</th><th scope="col">Activo</th><th scope="col">Acciones</th>
+      <th scope="col">ID</th><th scope="col">Email</th><th scope="col">Rol</th><th scope="col">Empresa</th><th scope="col">Activo</th><th scope="col">Acciones</th>
     </tr>
   </thead>
   <tbody>
@@ -56,6 +63,7 @@
       <td>{{ u.id }}</td>
       <td>{{ u.email }}</td>
       <td><span class="badge {% if u.rol == 'admin' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ u.rol }}</span></td>
+      <td>{{ nombres_empresa.get(u.empresa_id, "—") if u.empresa_id else "—" }}</td>
       <td>{% if u.activo %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}</td>
       <td>
         {% if u.activo %}

@@ -16,6 +16,18 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="Empresas, proveedores y costos con historial",
+        descripcion=(
+            "Ahora hay empresas con su territorio priorizado (las regiones que la plataforma "
+            "ingesta) y usuarios asignados a cada una. Dentro de la empresa puedes cargar tus "
+            "proveedores con sus productos y precios netos, importarlos desde la planilla "
+            "(Excel o CSV, con vista previa), ver cuánto ha variado cada precio y anotar las "
+            "tarifas de logística por provincia. Cada cambio de precio queda en el historial. "
+            "Es el menú nuevo «Mesa → Proveedores»."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="Órdenes de compra de Compra Ágil de Ñuble en la plataforma",
         descripcion=(
             "La plataforma guarda ahora las órdenes de compra de Compra Ágil de Ñuble de los "

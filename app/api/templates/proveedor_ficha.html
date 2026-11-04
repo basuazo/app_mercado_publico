@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ p.nombre }} — Proveedores — MP Oportunidades{% endblock %}
+{% macro variacion(pct) -%}
+  {%- if pct is none %}<span class="text-muted">—</span>
+  {%- elif pct > 0 %}<span class="text-danger">▲ {{ "%.1f"|format(pct) }}%</span>
+  {%- elif pct < 0 %}<span class="text-success">▼ {{ "%.1f"|format(-pct) }}%</span>
+  {%- else %}<span class="text-muted">0%</span>{% endif -%}
+{%- endmacro %}
+{% block content %}
+<p class="mb-2"><a href="/proveedores">← Proveedores</a></p>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="mb-0">{{ p.nombre }}{% if not p.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}</h2>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-primary btn-sm" type="button"
+            hx-get="/proveedores/{{ p.id }}/form" hx-target="#form-proveedor" hx-swap="innerHTML">Editar</button>
+    <form method="post" action="/proveedores/{{ p.id }}/activo" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-secondary btn-sm">{% if p.activo %}Desactivar{% else %}Activar{% endif %}</button>
+    </form>
+  </div>
+</div>
+
+<div id="form-proveedor"></div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <dl class="row mb-0 small">
+      <dt class="col-sm-2">RUT</dt><dd class="col-sm-4">{{ p.rut or "—" }}</dd>
+      <dt class="col-sm-2">Comuna</dt><dd class="col-sm-4">{{ p.comuna or "—" }}</dd>
+      <dt class="col-sm-2">Contacto</dt><dd class="col-sm-4">{{ p.contacto_nombre or "—" }}</dd>
+      <dt class="col-sm-2">Teléfono</dt><dd class="col-sm-4">{{ p.telefono or "—" }}</dd>
+      <dt class="col-sm-2">Email</dt><dd class="col-sm-4">{{ p.email or "—" }}</dd>
+      <dt class="col-sm-2">Dirección</dt><dd class="col-sm-4">{{ p.direccion or "—" }}</dd>
+      <dt class="col-sm-2">Rubros</dt><dd class="col-sm-4">{{ rubros_texto or "—" }}</dd>
+      <dt class="col-sm-2">Plazo de pago</dt><dd class="col-sm-4">{% if p.plazo_pago_dias is not none %}{{ p.plazo_pago_dias }} días{% else %}—{% endif %}</dd>
+      <dt class="col-sm-2">Mínimo de compra</dt><dd class="col-sm-4">{% if p.minimo_compra_clp is not none %}{{ p.minimo_compra_clp|clp }} neto{% else %}—{% endif %}</dd>
+      <dt class="col-sm-2">Despacha</dt><dd class="col-sm-4">{{ "Sí" if p.despacha else "No" }}</dd>
+      {% if p.notas %}<dt class="col-sm-2">Notas</dt><dd class="col-sm-10">{{ p.notas }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h3 class="h5 mb-0">Productos y precios</h3>
+  <button class="btn btn-primary btn-sm" type="button"
+          hx-get="/proveedores/{{ p.id }}/productos/form" hx-target="#form-producto" hx-swap="innerHTML">Agregar producto</button>
+</div>
+<div id="form-producto"></div>
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th scope="col">Producto</th><th scope="col">Formato</th>
+      <th scope="col" class="text-end">Precio neto</th><th scope="col" class="text-end">Por kg/L/u</th>
+      <th scope="col">vs anterior</th><th scope="col">vs 90 días</th><th scope="col">Desde</th><th scope="col"><span class="visually-hidden">Acciones</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for fila in filas %}
+    {% set pp = fila.pp %}
+    <tr{% if not pp.disponible %} class="text-muted"{% endif %}>
+      <td>{{ pp.producto_texto }}{% if not pp.disponible %} <span class="badge bg-secondary">no disponible</span>{% endif %}</td>
+      <td>{{ pp.formato_texto or "—" }}</td>
+      <td class="text-end">{{ pp.precio_neto_actual|clp }}</td>
+      <td class="text-end">{% if fila.por_unidad is not none %}{{ fila.por_unidad|clp }}/{{ pp.unidad_base }}{% else %}<span class="text-muted" title="Sin factor y unidad base: no compite">—</span>{% endif %}</td>
+      <td>{{ variacion(fila.v.pct_vs_anterior) }}</td>
+      <td>{{ variacion(fila.v.pct_vs_90) }}</td>
+      <td>{{ pp.vigente_desde.strftime("%d-%m-%Y") }}</td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-outline-primary" type="button"
+                hx-get="/proveedores/{{ p.id }}/productos/{{ pp.id }}/form" hx-target="#form-producto" hx-swap="innerHTML">Cambiar precio</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button"
+                hx-get="/proveedores/{{ p.id }}/productos/{{ pp.id }}/historial" hx-target="#hist-{{ pp.id }}" hx-swap="innerHTML">Historial</button>
+      </td>
+    </tr>
+    <tr><td colspan="8" class="p-0 border-0"><div id="hist-{{ pp.id }}"></div></td></tr>
+    {% else %}
+    <tr><td colspan="8" class="text-muted">Sin productos todavía.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="text-muted small">Precios netos (sin IVA) por formato. Cada cambio de precio queda en el historial.</p>
+{% endblock %}

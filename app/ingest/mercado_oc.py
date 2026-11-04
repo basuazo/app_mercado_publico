@@ -2,7 +2,7 @@
 
 Fuente: `oc-da/{año}-{mes}.zip` (Azure Blob público): sin ticket, sin cuota, sin 429. Por
 cada mes guarda en `oc_lineas_ca` las líneas `EsCompraAgil = Si`, en `GRUPOS` y con comprador
-en `mercado_regiones`, y en `precio_referencia` los percentiles nacionales por producto.
+en las regiones activas (F-plat-3), y en `precio_referencia` los percentiles nacionales por producto.
 
 - Patrón de `datos_abiertos`: HEAD + `Last-Modified` como cursor por mes en `sync_state`
   (`mercado_oc:AAAA-MM`); una descarga fallida no aborta el resto de los meses (R6).
@@ -37,6 +37,7 @@ from app.clients.datos_abiertos import descargar_zip, head_last_modified, iterar
 from app.core.logging import get_logger
 from app.core.settings import Settings
 from app.ingest.datos_abiertos import _guardar_estado, _leer_cursor, _mes_actual_chile
+from app.mercado.territorio import regiones_activas_engine
 from app.models.tables import OcLineaCa, PrecioReferencia
 
 _log = get_logger(__name__)
@@ -59,11 +60,6 @@ _FORMATOS_FECHA = (
 )
 
 _region = functools.lru_cache(maxsize=512)(region_codigo)
-
-
-def regiones_activas(settings: Settings) -> list[int]:
-    """Regiones cuyo comprador se guarda. F-plat-3 la reemplaza por las de las empresas activas."""
-    return list(settings.mercado_regiones)
 
 
 def _fuente(anio: int, mes: int) -> str:
@@ -287,7 +283,7 @@ def sync_mercado_oc(
     if hoy is None:
         anio_h, mes_h = _mes_actual_chile()
         hoy = date(anio_h, mes_h, 1)
-    regiones = regiones_activas(settings)
+    regiones = regiones_activas_engine(engine, settings)
     resultado: dict[str, Any] = {"regiones": regiones, "meses": {}, "errores": []}
     for anio, mes in meses_a_cargar(desde, hoy):
         etiqueta = f"{anio:04d}-{mes:02d}"

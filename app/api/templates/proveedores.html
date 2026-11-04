@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Proveedores — MP Oportunidades{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h2 class="mb-0">Proveedores</h2>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="/proveedores/logistica">Logística</a>
+    <a class="btn btn-outline-secondary btn-sm" href="/proveedores/importar">Importar planilla</a>
+    <button class="btn btn-primary btn-sm" type="button"
+            hx-get="/proveedores/nuevo/form" hx-target="#form-proveedor" hx-swap="innerHTML">Nuevo proveedor</button>
+  </div>
+</div>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+
+<div id="form-proveedor"></div>
+
+<form method="get" action="/proveedores" class="row g-2 mb-3" role="search">
+  <div class="col-md-6">
+    <label class="visually-hidden" for="q">Buscar por nombre, rubro o comuna</label>
+    <input type="search" name="q" id="q" class="form-control" value="{{ q }}" placeholder="Buscar por nombre, rubro o comuna">
+  </div>
+  <div class="col-auto"><button class="btn btn-outline-primary">Buscar</button></div>
+</form>
+
+<table class="table table-hover align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th scope="col">Proveedor</th><th scope="col">Comuna</th><th scope="col">Rubros</th>
+      <th scope="col" class="text-end">Productos</th><th scope="col">Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in proveedores %}
+    <tr>
+      <td><a href="/proveedores/{{ p.id }}">{{ p.nombre }}</a></td>
+      <td>{{ p.comuna or "—" }}</td>
+      <td>{{ (p.rubros or [])|join(", ") or "—" }}</td>
+      <td class="text-end">{{ n_productos.get(p.id, 0) }}</td>
+      <td>{% if p.activo %}<span class="badge bg-success">activo</span>{% else %}<span class="badge bg-secondary">inactivo</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-muted">
+      {% if q %}Ningún proveedor coincide con la búsqueda.{% else %}Todavía no hay proveedores: crea uno o importa la planilla.{% endif %}
+    </td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

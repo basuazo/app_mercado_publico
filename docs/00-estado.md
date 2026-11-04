@@ -32,6 +32,20 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
+## F-plat-3 (4-nov, commit local sin push hasta auditar; migración `d3b7a9e1c5f8`)
+Empresas con territorio priorizado, proveedores y costos con historial (pivote, `17-plan-pivote-plataforma-ca.md` §2 C4).
+**Esquema:** `empresas`, `usuarios.empresa_id`, `proveedores`, `proveedor_productos` (precio neto por formato; `producto_id`
+sin FK hasta F-plat-1), `costo_historial` (append-only), `tarifas_logistica` (3 provincias de Ñuble en 0 al crear la empresa).
+**Territorio:** `app/mercado/territorio.regiones_activas` = unión de las regiones de las empresas activas (fallback
+`MERCADO_REGIONES`); la usan `mercado-ca`, el backfill, `mercado-oc`, la purga y `reabrir_ofertas_faltantes.py`.
+**Rutas:** `/admin/empresas` (admin: crear, editar, activar, asignar usuarios; el selector de empresa también está al crear
+usuario) y `/proveedores` (lista, ficha con variación vs anterior y vs 90 días, formularios HTMX, importar XLSX/CSV con
+vista previa, plantilla descargable, `/proveedores/logistica`). `mejor_costo` (backend, lo usa F-plat-4). Menú «Mesa».
+**Permisos:** todo filtra por `empresa_id` de la sesión; un id de otra empresa responde 404; un usuario sin empresa activa
+ve un aviso (403 en las demás rutas), también el admin. **Dependencia nueva:** `openpyxl` (lectura/escritura de planillas).
+**Pasos de Boris:** ver el prompt §4 (migración fuera de 22:00–07:00 con `GH mercado` pausado; crear la empresa con región 16,
+asignarse y asignar a Mario; cargar 3 proveedores y ~40 productos; medir el tiempo).
+
 ## F-merc-1c (4-nov, commit local sin push hasta auditar; migración `b8d4f1a6c2e9`)
 `mercado-backfill` ya no termina al primer 429 de tasa: corta el tramo guardando el avance, lee el fin de la pausa
 de Postgres, duerme hasta ese fin + 30–90 s y sigue en otro tramo, hasta `MERCADO_BACKFILL_MAX_PAUSAS` (12; 0 =

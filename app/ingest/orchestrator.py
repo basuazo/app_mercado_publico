@@ -65,6 +65,7 @@ from app.ingest.licitaciones import (
 )
 from app.ingest.lifecycle import refresh_estados, refresh_estados_vencidos
 from app.ingest.plan_compra import sync_plan_anual_completo
+from app.mercado.territorio import regiones_activas_engine
 from app.models.tables import CompraAgil, JobRun, Licitacion, OportunidadMatch, OportunidadSeguida
 
 _log = get_logger(__name__)
@@ -175,8 +176,9 @@ def run_catalogos(settings: Settings, engine: Engine) -> dict[str, int]:
 
 
 def run_retencion(engine: Engine, settings: Settings | None = None) -> dict[str, int]:
-    """Purga de retención. Con `settings`, las CA de `mercado_regiones` no se purgan (F-merc-1)."""
-    regiones = list(settings.mercado_regiones) if settings is not None else None
+    """Purga de retención. Con `settings`, las CA del territorio activo (regiones de las
+    empresas activas, F-plat-3; fallback `MERCADO_REGIONES`) no se purgan (F-merc-1)."""
+    regiones = regiones_activas_engine(engine, settings) if settings is not None else None
     with Session(engine) as session:
         resultado = purgar_terminales(session, regiones_protegidas=regiones)
         # Sin commit, el cierre de la sesión revierte la purga entera.
@@ -192,7 +194,7 @@ def run_plan_anual(settings: Settings, engine: Engine) -> dict[str, int]:
 
 
 def run_mercado_ca(settings: Settings, engine: Engine) -> dict[str, Any]:
-    """Job `mercado-ca` (F-merc-1): CA de `mercado_regiones` con sus cotizaciones, en vivo.
+    """Job `mercado-ca` (F-merc-1): CA de las regiones activas (F-plat-3) con sus cotizaciones, en vivo.
 
     MP_TICKET, la cuota y la pausa de siempre, sin reserva (corrección 31-oct)."""
     from app.ingest.mercado import sync_mercado_ca
@@ -214,7 +216,7 @@ def run_mercado_backfill(
 def run_mercado_oc(
     settings: Settings, engine: Engine, desde: str | None = None
 ) -> dict[str, Any]:
-    """Job `mercado-oc` (F-merc-2): OC de CA de `mercado_regiones` desde datos abiertos.
+    """Job `mercado-oc` (F-merc-2): OC de CA de las regiones activas (F-plat-3) desde datos abiertos.
 
     Sin ticket ni cuota ni API: no pasa por `_make_clients`."""
     from app.ingest.mercado_oc import sync_mercado_oc

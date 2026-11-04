@@ -50,7 +50,7 @@
   document.addEventListener("htmx:beforeSwap", function (e) {
     const xhr = e.detail && e.detail.xhr;
     const destino = e.detail && e.detail.target;
-    if (xhr && xhr.status === 422 && destino && destino.hasAttribute("data-perfil-form")) {
+    if (xhr && xhr.status === 422 && destino && (destino.hasAttribute("data-perfil-form") || destino.hasAttribute("data-form-422"))) {
       e.detail.shouldSwap = true;
       e.detail.isError = false;
     }

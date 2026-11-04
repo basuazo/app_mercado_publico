@@ -1,0 +1,16 @@
+<div class="border rounded p-2 mb-2 bg-body-tertiary small">
+  <strong>Historial de {{ pp.producto_texto }}{% if pp.formato_texto %} ({{ pp.formato_texto }}){% endif %}</strong>
+  <table class="table table-sm mb-0">
+    <thead><tr><th scope="col">Vigente desde</th><th scope="col" class="text-end">Precio neto</th><th scope="col">Fuente</th><th scope="col">Registrado</th></tr></thead>
+    <tbody>
+      {% for h in filas %}
+      <tr>
+        <td>{{ h.vigente_desde.strftime("%d-%m-%Y") }}</td>
+        <td class="text-end">{{ h.precio_neto|clp }}</td>
+        <td>{{ h.fuente }}</td>
+        <td>{{ h.registrado_en.strftime("%d-%m-%Y %H:%M") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

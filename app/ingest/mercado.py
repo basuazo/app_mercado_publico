@@ -1,6 +1,6 @@
 """Ingesta de mercado: cotizaciones de Compra Ágil por región, en vivo y hacia atrás (F-merc-1).
 
-Por cada CA de `mercado_regiones` guarda quién cotizó, a qué precio por producto y quién
+Por cada CA de las regiones activas (F-plat-3) guarda quién cotizó, a qué precio por producto y quién
 ganó (`ca_cotizaciones`, `ca_cotizacion_productos`). Dos jobs, ambos con `MP_TICKET`, el
 `QuotaTracker` y la pausa `api_pausa` de siempre, sin reserva, y el advisory lock de
 siempre (corrección 31-oct: una sola key):
@@ -59,6 +59,7 @@ from app.ingest.compra_agil import (
     upsert_ca_detalle,
 )
 from app.ingest.orchestrator import _FUENTE_CA, _espera_detalle, _registrar_fallo_detalle
+from app.mercado.territorio import regiones_activas_engine
 from app.models.tables import CaCotizacion, CaCotizacionProducto, CompraAgil, SyncState
 
 _log = get_logger(__name__)
@@ -392,7 +393,7 @@ def sync_mercado_ca(
 
     1. Listado por `cambio_desde` con el cursor `mercado_ca` en ventanas de hasta
        `ca_ventana_horas` (misma función que `ca`, :func:`_sync_en_ventanas`), región
-       en `mercado_regiones` y sin `estado`. Sin cursor arranca en "ahora − ventana":
+       en las regiones activas (F-plat-3) y sin `estado`. Sin cursor arranca en "ahora − ventana":
        lo anterior lo cubre `mercado-backfill`.
     2. Cola (:func:`cola_mercado_ca`) con tope de `mercado_detalles_max` detalles y
        `mercado_detalles_minutos`. Sin reintento de 5xx: lo que falla suma un fallo y
@@ -401,7 +402,7 @@ def sync_mercado_ca(
     Un 429, la API en pausa o la cuota cortan la corrida guardando el avance (regla 3)
     y dejan `cortado_por`; un 401 se re-lanza.
     """
-    regiones = list(settings.mercado_regiones)
+    regiones = regiones_activas_engine(engine, settings)
     resultado: dict[str, Any] = {"regiones": regiones}
     with Session(engine) as session:
         cursor = _leer_cursor(session, FUENTE_MERCADO_CA)
@@ -613,6 +614,7 @@ class Backfill:
         reloj: Callable[[], float] = time.monotonic,
         sleep_fn: Callable[[float], None] | None = None,
         jitter_fn: Callable[[], float] = _jitter_pausa,
+        regiones: list[int] | None = None,
     ) -> None:
         self.settings = settings
         self.engine = engine
@@ -623,7 +625,10 @@ class Backfill:
         self.sleep_fn = sleep_fn or (lambda s: time.sleep(s))
         self.jitter_fn = jitter_fn
         self.inicio = reloj()
-        self.regiones = list(settings.mercado_regiones)
+        # F-plat-3: las de las empresas activas (R-p2); `run_backfill` las resuelve y las pasa.
+        self.regiones = (
+            list(regiones) if regiones is not None else regiones_activas_engine(engine, settings)
+        )
         self.estados_detalle = {e.strip().lower() for e in settings.mercado_backfill_estados_detalle}
         self.resumen = ResumenBackfill()
         self._fallos_seguidos = 0
@@ -953,7 +958,7 @@ def run_backfill(
     """Job `mercado-backfill`. Solo entre 22:00 y 07:00 de Chile (regla 5); fuera, omitido.
 
     Por mes (ver :func:`meses_backfill`): ventanas de UN día de publicación,
-    `ordenar_por=FechaPublicacion`, región en `mercado_regiones`, sin `estado`;
+    `ordenar_por=FechaPublicacion`, región en las regiones activas (F-plat-3), sin `estado`;
     upsert básico de todo lo listado y detalle de las CA en
     `mercado_backfill_estados_detalle` que aún no tienen cotizaciones. Cursor en
     `sync_state` `mercado_backfill:AAAA-MM`: 'día|página' siguiente, `listado`
@@ -973,7 +978,14 @@ def run_backfill(
         _log.warning("mercado-backfill: fuera de la ventana 22:00–07:00 Chile — omitido")
         return {"omitido_fuera_de_ventana": True}
     resumen = Backfill(
-        settings, engine, v2, now_fn=now_fn, reloj=reloj, sleep_fn=sleep_fn, jitter_fn=jitter_fn
+        settings,
+        engine,
+        v2,
+        now_fn=now_fn,
+        reloj=reloj,
+        sleep_fn=sleep_fn,
+        jitter_fn=jitter_fn,
+        regiones=regiones_activas_engine(engine, settings),
     ).correr()
     _log.info(
         "mercado-backfill: %s",

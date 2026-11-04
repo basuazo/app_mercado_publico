@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Empresas — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Empresas</h2>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<div class="card mb-4">
+  <div class="card-header">Crear empresa</div>
+  <div class="card-body">
+    {% set v = f or {} %}
+    {% include "_empresa_campos.html" %}
+  </div>
+</div>
+
+<table class="table table-bordered align-middle">
+  <thead class="table-dark">
+    <tr>
+      <th scope="col">Empresa</th><th scope="col">RUT</th><th scope="col">Regiones</th>
+      <th scope="col">Usuarios</th><th scope="col">Activa</th><th scope="col"><span class="visually-hidden">Acciones</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for fila in empresas %}
+    <tr>
+      <td>{{ fila.e.nombre }}</td>
+      <td>{{ fila.e.rut or "—" }}</td>
+      <td>{{ fila.regiones }}</td>
+      <td>{{ fila.usuarios }}</td>
+      <td>{% if fila.e.activa %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}</td>
+      <td><a class="btn btn-sm btn-outline-primary" href="/admin/empresas/{{ fila.e.id }}">Editar y asignar usuarios</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted">Todavía no hay empresas.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

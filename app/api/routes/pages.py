@@ -131,6 +131,7 @@ from app.models.seeds import REGIONES
 from app.models.tables import (
     CaProducto,
     CompraAgil,
+    Empresa,
     InstitucionPAC,
     Licitacion,
     LicitacionItem,
@@ -2355,10 +2356,19 @@ async def admin_usuarios_get(
     error: str = "",
 ) -> HTMLResponse:
     usuarios = list(session.execute(select(Usuario).order_by(Usuario.id)).scalars())
+    empresas = list(session.execute(select(Empresa).order_by(Empresa.nombre)).scalars())
     return _TEMPLATES.TemplateResponse(
         request,
         "admin_usuarios.html",
-        _ctx(request, user, usuarios=usuarios, mensaje=mensaje, error=error),
+        _ctx(
+            request,
+            user,
+            usuarios=usuarios,
+            empresas=empresas,
+            nombres_empresa={e.id: e.nombre for e in empresas},
+            mensaje=mensaje,
+            error=error,
+        ),
     )
 
 
@@ -2368,11 +2378,14 @@ async def admin_usuario_crear(
     email: str = Form(...),
     password: str = Form(...),
     rol: str = Form("usuario"),
+    empresa_id: int | None = Form(None),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_admin),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     check_csrf(request, csrf_token)
+    if empresa_id is not None and session.get(Empresa, empresa_id) is None:
+        return RedirectResponse(url="/admin/usuarios?error=Empresa+no+encontrada", status_code=303)
     existente = session.execute(
         select(Usuario).where(Usuario.email == email)
     ).scalar_one_or_none()
@@ -2385,6 +2398,7 @@ async def admin_usuario_crear(
         password_hash=hash_password(password),
         rol=RolUsuario(rol),
         activo=True,
+        empresa_id=empresa_id,
     )
     session.add(nuevo)
     session.commit()
@@ -2413,6 +2427,7 @@ async def admin_usuario_password_reset(
     target.password_hash = hash_password(password_nueva)
     session.commit()
     usuarios = list(session.execute(select(Usuario).order_by(Usuario.id)).scalars())
+    empresas = list(session.execute(select(Empresa).order_by(Empresa.nombre)).scalars())
     return _TEMPLATES.TemplateResponse(
         request,
         "admin_usuarios.html",
@@ -2420,6 +2435,8 @@ async def admin_usuario_password_reset(
             request,
             user,
             usuarios=usuarios,
+            empresas=empresas,
+            nombres_empresa={e.id: e.nombre for e in empresas},
             mensaje="Contraseña reseteada",
             error="",
             password_reseteada={"email": target.email, "password": password_nueva},

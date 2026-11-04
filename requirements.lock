@@ -42,6 +42,8 @@ coverage[toml]==7.14.2
     # via pytest-cov
 distlib==0.4.3
     # via virtualenv
+et-xmlfile==2.0.0
+    # via openpyxl
 fastapi==0.138.0
     # via mp-oportunidades (pyproject.toml)
 filelock==3.29.4
@@ -91,6 +93,8 @@ mypy-extensions==1.1.0
     # via mypy
 nodeenv==1.10.0
     # via pre-commit
+openpyxl==3.1.5
+    # via mp-oportunidades (pyproject.toml)
 packaging==26.2
     # via pytest
 passlib[bcrypt]==1.7.4

@@ -39,7 +39,7 @@ def purgar_terminales(
 
     No toca oportunidades vigentes, ni aquellas con alertas pendientes, ni las
     que algún usuario tiene en oportunidades_seguidas (archivada o no).
-    `regiones_protegidas` (F-merc-1, `mercado_regiones`): sus CA no se purgan; sus
+    `regiones_protegidas` (territorio activo, F-plat-3): sus CA no se purgan; sus
     cotizaciones tampoco (la purga nunca borra filas de compras_agiles).
     Devuelve dict con conteos de filas afectadas por tipo.
     """

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ empresa.nombre }} — Empresas — MP Oportunidades{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/admin/empresas">← Empresas</a></p>
+<h2 class="mb-4">{{ empresa.nombre }}{% if not empresa.activa %} <span class="badge bg-secondary">inactiva</span>{% endif %}</h2>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<div class="card mb-4">
+  <div class="card-header">Datos de la empresa</div>
+  <div class="card-body">
+    {% set v = f %}
+    {% set accion = "/admin/empresas/" ~ empresa.id %}
+    {% set editando = true %}
+    {% include "_empresa_campos.html" %}
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Usuarios de la empresa</div>
+  <div class="card-body">
+    <table class="table table-sm align-middle">
+      <tbody>
+        {% for m in miembros %}
+        <tr>
+          <td>{{ m.email }}{% if not m.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}</td>
+          <td class="text-end">
+            <form method="post" action="/admin/empresas/{{ empresa.id }}/usuarios/{{ m.id }}/quitar" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-danger">Quitar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="text-muted">Sin usuarios asignados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if sin_empresa %}
+    <form method="post" action="/admin/empresas/{{ empresa.id }}/usuarios/asignar" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-md-6">
+        <label class="form-label" for="asignar_usuario">Asignar usuario sin empresa</label>
+        <select name="usuario_id" id="asignar_usuario" class="form-select" required>
+          {% for u in sin_empresa %}<option value="{{ u.id }}">{{ u.email }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3"><button class="btn btn-outline-primary">Asignar</button></div>
+    </form>
+    {% else %}
+    <p class="text-muted small mb-0">No hay usuarios activos sin empresa. Un usuario pertenece a una sola empresa.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

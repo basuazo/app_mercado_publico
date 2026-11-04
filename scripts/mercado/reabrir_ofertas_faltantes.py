@@ -36,6 +36,7 @@ sys.path.insert(0, str(RAIZ))
 from sqlalchemy import Engine, create_engine, func, select, text, update  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
+from app.mercado.territorio import regiones_activas_engine  # noqa: E402
 from app.models.tables import CaCotizacion, CompraAgil  # noqa: E402
 
 # (código, ofertas, RUT distintos) de la sonda del 4-nov-2026 [V].
@@ -171,8 +172,8 @@ def main(argv: list[str] | None = None) -> int:
 
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
-    regiones = a.region or list(settings.mercado_regiones)
     engine = create_engine(normalizar_url_driver(settings.database_url), pool_pre_ping=True)
+    regiones = a.region or regiones_activas_engine(engine, settings)
     try:
         r = reabrir(engine, regiones, aplicar=a.aplicar)
     finally:

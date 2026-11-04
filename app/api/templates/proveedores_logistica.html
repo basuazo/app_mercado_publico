@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Logística — MP Oportunidades{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/proveedores">← Proveedores</a></p>
+<h2 class="mb-3">Tarifas de logística</h2>
+
+{% if mensaje %}<div class="alert alert-success" role="status">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+
+<p class="text-muted">Costo de llevar UN pedido desde tu bodega a cada provincia o comuna (CLP). Una tarifa por comuna
+   pisa a la de su provincia.</p>
+
+<form method="post" action="/proveedores/logistica">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="table-responsive">
+  <table class="table align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th scope="col">Ámbito</th><th scope="col">Nombre</th><th scope="col">Costo fijo (CLP)</th>
+        <th scope="col">Costo por kg (CLP)</th><th scope="col">Días</th><th scope="col">Notas</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tarifas %}
+      <tr>
+        <td>{{ t.ambito }}</td>
+        <td>{{ t.nombre }}</td>
+        <td><input class="form-control form-control-sm" name="fijo_{{ t.id }}" value="{{ t.costo_fijo_clp }}" inputmode="numeric" aria-label="Costo fijo {{ t.nombre }}"></td>
+        <td><input class="form-control form-control-sm" name="kg_{{ t.id }}" value="{{ '%g'|format(t.costo_por_kg_clp) }}" inputmode="decimal" aria-label="Costo por kg {{ t.nombre }}"></td>
+        <td><input class="form-control form-control-sm" name="dias_{{ t.id }}" value="{{ t.dias if t.dias is not none else '' }}" inputmode="numeric" aria-label="Días {{ t.nombre }}"></td>
+        <td><input class="form-control form-control-sm" name="notas_{{ t.id }}" value="{{ t.notas or '' }}" aria-label="Notas {{ t.nombre }}"></td>
+      </tr>
+      {% endfor %}
+      <tr class="table-light">
+        <td>
+          <select class="form-select form-select-sm" name="nueva_ambito" aria-label="Ámbito de la tarifa nueva">
+            <option value="comuna">comuna</option><option value="provincia">provincia</option>
+          </select>
+        </td>
+        <td><input class="form-control form-control-sm" name="nueva_nombre" placeholder="Nueva (ej. Cobquecura)" aria-label="Nombre de la tarifa nueva"></td>
+        <td><input class="form-control form-control-sm" name="nueva_fijo" inputmode="numeric" aria-label="Costo fijo nueva"></td>
+        <td><input class="form-control form-control-sm" name="nueva_kg" inputmode="decimal" aria-label="Costo por kg nueva"></td>
+        <td><input class="form-control form-control-sm" name="nueva_dias" inputmode="numeric" aria-label="Días nueva"></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <button class="btn btn-primary">Guardar tarifas</button>
+</form>
+{% endblock %}

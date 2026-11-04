@@ -32,6 +32,8 @@
         {% if current_user.rol == 'admin' %}
           <a class="btn btn-sm btn-outline-warning{% if ruta_actual == '/admin/usuarios' %} active{% endif %}"
              href="/admin/usuarios"{% if ruta_actual == '/admin/usuarios' %} aria-current="page"{% endif %}>Admin</a>
+          <a class="btn btn-sm btn-outline-warning{% if ruta_actual.startswith('/admin/empresas') %} active{% endif %}"
+             href="/admin/empresas"{% if ruta_actual.startswith('/admin/empresas') %} aria-current="page"{% endif %}>Empresas</a>
           <a class="btn btn-sm btn-outline-info{% if ruta_actual == '/salud' %} active{% endif %}"
              href="/salud"{% if ruta_actual == '/salud' %} aria-current="page"{% endif %}>Salud</a>
         {% endif %}
@@ -45,6 +47,16 @@
            href="/registro"{% if ruta_actual == '/registro' %} aria-current="page"{% endif %}>Mi registro</a>
         <a class="btn btn-sm btn-outline-light{% if ruta_actual == '/plan-anual' %} active{% endif %}"
            href="/plan-anual"{% if ruta_actual == '/plan-anual' %} aria-current="page"{% endif %}>Plan Anual</a>
+        {% if current_user.empresa_id %}
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-light dropdown-toggle{% if ruta_actual.startswith('/proveedores') %} active{% endif %}"
+                  type="button" data-bs-toggle="dropdown" aria-expanded="false">Mesa</button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/proveedores">Proveedores</a></li>
+            <li><a class="dropdown-item" href="/proveedores/logistica">Logística</a></li>
+          </ul>
+        </div>
+        {% endif %}
         <button type="button" class="btn btn-sm btn-outline-light" data-open-novedades>Novedades</button>
         <form method="post" action="/logout" class="m-0">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

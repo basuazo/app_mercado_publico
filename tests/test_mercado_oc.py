@@ -37,7 +37,8 @@ from app.catalogos.regiones import region_codigo
 from app.clients.datos_abiertos import COLS_OC, iterar_oc_da
 from app.core.settings import Settings
 from app.core.tiempo import ahora_utc
-from app.ingest.mercado_oc import cargar_mes, meses_a_cargar, regiones_activas, sync_mercado_oc
+from app.ingest.mercado_oc import cargar_mes, meses_a_cargar, sync_mercado_oc
+from app.mercado.territorio import regiones_activas_engine
 from app.models.tables import (
     CaCotizacion,
     CompraAgil,
@@ -299,7 +300,7 @@ def test_moneda_no_clp_se_guarda_sin_precio_base(engine: Engine, tmp_path: Path)
 
 
 def test_region_configurable(engine: Engine, tmp_path: Path, settings: Settings) -> None:
-    assert regiones_activas(settings) == [16]
+    assert regiones_activas_engine(engine, settings) == [16]
     _cargar(engine, _zip(tmp_path / "m.zip", _filas_mes("2026-03")), "2026-03", regiones=[13])
     with Session(engine) as s:
         regs = set(s.execute(select(OcLineaCa.region_compra)).scalars())
