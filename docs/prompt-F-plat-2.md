@@ -101,6 +101,19 @@ se acepta: `openpyxl` no lo lee y `xlrd` sería otra dependencia; se pide guarda
 - Sin presupuesto o sin `llm_modelo_extraccion`: la misma tabla vacía con "Agregar fila" y un aviso; el
   anexo queda guardado con `sin_presupuesto`. **El flujo manual nunca depende del modelo.**
 
+- **Ajuste tras F-plat-1-fix (`1ac56f8`, 4-nov) [V].** Hoy `recalcular_detalle_lineas` marca `sin_detalle` si hay
+  una línea `origen = 'anexo'` con `estado != 'ok'`. Las líneas que extrae esta fase también son `origen=anexo` y
+  `dudosa`, así que con esa regla una CA ya extraída seguiría en `sin_detalle`. Eso tiene dos efectos: la bandera
+  dejaría de decir la verdad, y §1.6 volvería a bajar el mismo anexo. Cambios:
+  - el placeholder es la línea `origen=anexo` + `estado=pendiente`, y es lo único que deja la CA en `sin_detalle`;
+    las líneas extraídas que esperan confirmación la dejan en `incompleto` ("líneas por revisar");
+  - §1.6 descarga solo si la CA **no tiene filas en `ca_anexos`**, además de las condiciones ya escritas;
+  - botón **"Anexo resuelto"** en `/catalogo/ca/{codigo}`: borra el o los placeholders cuando el usuario ya tipeó las
+    líneas a mano. Agregar una línea manual **no** resuelve el anexo por sí sola, porque pueden faltar filas; lo
+    decide la persona.
+
+  Tests de los tres puntos.
+
 ### 1.4 Lista de precios de proveedor por foto/PDF (reutiliza 1.1–1.3)
 `POST /proveedores/{id}/lista-precios` → mismas dependencias → vista previa de `proveedor_productos`
 (producto, formato, precio) → confirmar = importación de F-plat-3 (con historial). Reutilizar la vista
