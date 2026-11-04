@@ -32,6 +32,19 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
+## F-merc-2 (4-nov, commit local sin push; migración `a7c3e9d1b4f2`)
+Órdenes de compra de CA de `MERCADO_REGIONES` desde datos abiertos (`oc-da`, sin ticket ni cuota) a las tablas
+`oc_lineas_ca` (PK `(codigo_oc, id_item)`, `IDItem` [V]) y `precio_referencia` (p25/mediana/p75 nacional por `UNSPSC|base` y mes). Job
+`mercado-oc` (lock de siempre; `--desde AAAA-MM` para la carga inicial; workflow `mercado-oc.yml`, disparo diario
+07:20 Chile desde cron-job.org, **sin crear todavía**). `resumen_mercado(region, desde, hasta)` en `app/api/query.py`
+(lo consume F-plat-5). `/salud` muestra filas y tamaño de las 4 tablas de mercado. Sin purga (excepción regla 11).
+**Pasos de Boris:** (1) `alembic upgrade head` (el asistente no lo aplica); (2) HEAD de `oc-da` desde Actions (si da
+403, todo desde el PC: desde este PC el HEAD de `oc-da/2026-9.zip` dio 200, 96 MB); (3) carga inicial
+`python -m app.ingest run-once --job mercado-oc --desde 2024-10`; (4) juez: `resumen_mercado(16, '2025-10',
+'2026-09')` debe dar `total12` = $681.979.119 ±0,5 %, 1.516 OC y 105 compradores (`resumen.json` → `alimentos`);
+(5) medir `pg_total_relation_size('oc_lineas_ca')` (/salud) y anotarlo en `decisiones.md`; (6) revisar en las notas del
+mes (`sync_state` `mercado_oc:AAAA-MM`): `sin_id_item`, `movidas_de_otro_mes`, `moneda_distinta`.
+
 ## F-merc-1 + F-merc-1-fix (3-nov, commits locales sin push; F-merc-1 auditada; migración `e5b9c3a7d2f4`)
 **F-merc-1-fix:** horizonte del backfill desde 2024-11 (barrido de la sonda [V]: 2025-01 = 362, 2024-10 = 0); un mes
 `completo` cuenta como "con datos" para la protección "revisar filtros" (si no, desde la segunda noche tres meses

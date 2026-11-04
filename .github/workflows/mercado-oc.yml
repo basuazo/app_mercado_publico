@@ -1,0 +1,31 @@
+# Mercado OC (F-merc-2): órdenes de compra de Compra Ágil de `MERCADO_REGIONES` desde datos
+# abiertos (oc-da), a `oc_lineas_ca` y `precio_referencia`. Sin ticket, sin cuota, sin API.
+#
+# Disparo: desde cron-job.org, una vez al día a las 07:20 hora de Chile (workflow_dispatch),
+# después de que `mercado-nocturno` suelta el advisory lock (~06:45). Documentado en
+# docs/operacion-disparos.md. Sin `schedule` a propósito.
+#
+# La carga inicial de 24 meses (`--desde 2024-10`) se corre desde el PC de Boris con el CLI;
+# si el ZIP de oc-da da 403 desde Actions (como el del PAC), este workflow sale
+# "no disponible" sin fallar y la carga diaria también va desde el PC.
+name: mercado-oc
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "mercado-oc"
+      # 3 meses de ZIP (descarga + streaming) y hasta 10 min de espera del lock.
+      timeout_min: 45
+      esperar_lock_min: 10

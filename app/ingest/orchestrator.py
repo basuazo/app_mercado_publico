@@ -211,6 +211,17 @@ def run_mercado_backfill(
     return run_backfill(settings, engine, v2, now_fn=now_fn)
 
 
+def run_mercado_oc(
+    settings: Settings, engine: Engine, desde: str | None = None
+) -> dict[str, Any]:
+    """Job `mercado-oc` (F-merc-2): OC de CA de `mercado_regiones` desde datos abiertos.
+
+    Sin ticket ni cuota ni API: no pasa por `_make_clients`."""
+    from app.ingest.mercado_oc import sync_mercado_oc
+
+    return sync_mercado_oc(settings, engine, desde=desde)
+
+
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
     """Job `vocabulario-rubros` (F-ca-explorar): regenera `rubro_vocabulario` desde
     `licitacion_items`. Solo base de datos: sin ticket, sin cuota, sin red."""

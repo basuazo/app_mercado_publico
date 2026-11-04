@@ -300,6 +300,67 @@ class CaCotizacionProducto(Base):
     cotizacion: Mapped[CaCotizacion] = relationship("CaCotizacion", back_populates="productos")
 
 
+class OcLineaCa(Base):
+    """Línea de una orden de compra de Compra Ágil (oc-da) de las regiones del piloto (F-merc-2).
+
+    Solo `EsCompraAgil = Si`, en `GRUPOS` y con comprador en `mercado_regiones`. PK
+    `(codigo_oc, id_item)`: `IDItem` de oc-da [V]. Una OC puede venir en más de un ZIP mensual:
+    queda la fila del mes más reciente. Datos
+    públicos y comunes (no pertenecen a una empresa). No se purga (excepción de retención).
+    """
+
+    __tablename__ = "oc_lineas_ca"
+
+    codigo_oc: Mapped[str] = mapped_column(String(50), primary_key=True)
+    id_item: Mapped[str] = mapped_column(String(30), primary_key=True)
+    mes: Mapped[str] = mapped_column(String(7), nullable=False)  # AAAA-MM del archivo
+    fecha_creacion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    codigo_estado: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    moneda: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    rut_unidad: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    unidad_compra: Mapped[str | None] = mapped_column(Text, nullable=True)
+    organismo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    comuna_compra: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    region_compra: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rut_proveedor: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    proveedor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comuna_proveedor: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    region_proveedor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proveedor_local: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    codigo_producto: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    producto_generico: Mapped[str | None] = mapped_column(Text, nullable=True)
+    grupo: Mapped[str] = mapped_column(String(100), nullable=False)
+    especificacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unidad_medida: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    precio_neto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_linea_neto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    precio_base: Mapped[float | None] = mapped_column(Float, nullable=True)
+    base: Mapped[str | None] = mapped_column(String(3), nullable=True)  # kg | L | u
+
+    __table_args__ = (
+        Index("ix_oc_lineas_ca_mes", "mes"),
+        Index("ix_oc_lineas_ca_region_mes", "region_compra", "mes"),
+    )
+
+
+class PrecioReferencia(Base):
+    """Percentiles nacionales de precio base por producto y mes, de oc-da (F-merc-2).
+
+    `clave` = "UNSPSC|base" (kg, L o u). Solo líneas de Compra Ágil en `GRUPOS` y en CLP.
+    """
+
+    __tablename__ = "precio_referencia"
+
+    clave: Mapped[str] = mapped_column(String(30), primary_key=True)
+    mes: Mapped[str] = mapped_column(String(7), primary_key=True)
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    p25: Mapped[float] = mapped_column(Float, nullable=False)
+    mediana: Mapped[float] = mapped_column(Float, nullable=False)
+    p75: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Ã“rdenes de Compra
 # ---------------------------------------------------------------------------

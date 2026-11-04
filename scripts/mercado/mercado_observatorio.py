@@ -37,7 +37,6 @@ import re
 import statistics as st
 import sys
 import time
-import unicodedata
 import urllib.request
 import zipfile
 from collections import Counter, defaultdict
@@ -57,76 +56,20 @@ csv.field_size_limit(1 << 30)
 # ---------------------------------------------------------------------------
 # Los grupos viven en app/catalogos/mercado.py desde F-merc-1 (los usa la ingesta).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from app.catalogos.mercado import EXCLUIR, G_PREP, GRUPOS, grupo_de  # noqa: E402, F401
-
-
-def norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
-    return re.sub(r"\s+", " ", s.lower()).strip()
-
-
-def rut(s: str) -> str:
-    """RUT normalizado sin puntos: 76942549-7. En oc-da el RUT del proveedor es RutSucursal [V 31-oct]."""
-    s = (s or "").replace(".", "").replace(" ", "").upper()
-    return s if "-" in s and s.split("-")[0].isdigit() else ""
-
-
-def es_nuble(region: str) -> bool:
-    return "uble" in norm(region)
-
-
-def num(s: str) -> float | None:
-    s = (s or "").strip()
-    if not s or s.upper() == "NA":
-        return None
-    # 1.234,5 → 1234.5
-    s = s.replace(".", "").replace(",", ".") if "," in s and "." in s else s.replace(",", ".")
-    try:
-        return float(s)  # acepta notación científica (7e+05), vista en COT_
-    except ValueError:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Normalización de precio a unidad física (kg / L) o unidad, v0 con reglas.
-# ---------------------------------------------------------------------------
-_FMT = re.compile(r"(\d+(?:[.,]\d+)?)\s*(kg|kgs|kilo|kilos|gr|grs|g|gramos|ml|cc|lt|lts|l|litro|litros)\b")
-_PACK = re.compile(r"\b(\d{1,3})\s*(?:x|un\b|u\b|unid|unidades)")
-_A_KG = {"kg": 1, "kgs": 1, "kilo": 1, "kilos": 1, "gr": .001, "grs": .001, "g": .001, "gramos": .001}
-_A_L = {"ml": .001, "cc": .001, "lt": 1, "lts": 1, "l": 1, "litro": 1, "litros": 1}
-_U_FIS = {"kilogramo": ("kg", 1.0), "litro": ("L", 1.0), "gramo": ("kg", .001)}
-_U_ENVASE = {"unidad", "paquete", "botella", "bolsa", "tarro", "pack", "frasco", "caja", "envase", "sobre", "lata"}
-
-
-def normalizar(linea: dict) -> tuple[str, float] | None:
-    """(clave, precio por unidad base) o None si no se puede comparar."""
-    precio = num(linea.get("precioNeto", ""))
-    if not precio or precio <= 0:
-        return None
-    um = norm(linea.get("UnidadMedida", ""))
-    unspsc = linea.get("codigoProductoONU", "")
-    if um in _U_FIS:
-        base, f = _U_FIS[um]
-        return f"{unspsc}|{base}", precio / f
-    crudo = " ".join([linea.get("EspecificacionComprador", ""), linea.get("EspecificacionProveedor", "")])
-    if crudo.count("\n") >= 3 or (um in ("global", "unidad no definida") and len(crudo) > 300):
-        return None  # canasta entera en una línea: no comparable
-    txt = norm(crudo)
-    if unspsc.startswith("50") and um in _U_ENVASE:
-        m = _FMT.search(txt)
-        if m:
-            q, u = num(m.group(1)) or 0, m.group(2)
-            base, cant = ("kg", q * _A_KG[u]) if u in _A_KG else ("L", q * _A_L[u])
-            p = _PACK.search(txt)
-            if um in ("caja", "pack") and p:
-                cant *= int(p.group(1))
-            if 0.005 <= cant <= 50:
-                return f"{unspsc}|{base}", precio / cant
-        return None
-    if not unspsc.startswith("50") and um in ("unidad", "unidad no definida"):
-        return f"{unspsc}|u", precio
-    return None
-
+from app.catalogos.mercado import (  # noqa: E402, F401
+    EXCLUIR,
+    FAMILIAS_ALIMENTOS,
+    G_ALIM,
+    G_PREP,
+    GRUPOS,
+    es_nuble,
+    familia_alimento,
+    grupo_de,
+    norm,
+    normalizar,
+    num,
+    rut,
+)
 
 # ---------------------------------------------------------------------------
 # bajar
@@ -537,21 +480,6 @@ def analizar_oc() -> dict:
 
 
 NOMBRE_COT: dict[str, str] = {}
-
-
-FAMILIAS_ALIMENTOS = {
-    "5010": "Frutas, verduras y frutos secos", "5011": "Carnes y aves", "5012": "Pescados y mariscos",
-    "5013": "Lácteos y huevos", "5015": "Aceites y grasas", "5016": "Chocolates, azúcar y confites",
-    "5017": "Condimentos y salsas", "5018": "Panadería y galletas", "5019": "Alimentos preparados y conservas",
-    "5020": "Bebidas, jugos y agua", "5022": "Cereales, legumbres y harinas", "5030": "Frutas frescas",
-    "5040": "Verduras frescas", "1012": "Alimento para mascotas",
-}
-G_ALIM = {"Alimentos envasados y abarrotes", G_PREP}
-
-
-def familia_alimento(unspsc: str) -> str:
-    f = (unspsc or "")[:4]
-    return FAMILIAS_ALIMENTOS.get(f, f"Otros alimentos ({f})")
 
 
 def _origen(r_: str) -> str:

@@ -32,6 +32,11 @@ def url_lic_da(anio: int, mes: int, base_url: str = _BASE_URL_DEFAULT) -> str:
     return f"{base_url.rstrip('/')}/lic-da/{anio}-{mes}.zip"
 
 
+def url_oc_da(anio: int, mes: int, base_url: str = _BASE_URL_DEFAULT) -> str:
+    """URL del ZIP mensual de órdenes de compra (datos abiertos). `mes` SIN cero a la izquierda."""
+    return f"{base_url.rstrip('/')}/oc-da/{anio}-{mes}.zip"
+
+
 def head_last_modified(url: str, *, timeout: float = 30.0) -> datetime | None:
     """HEAD al blob; devuelve Last-Modified (UTC, sin tzinfo) o None si no está disponible.
 
@@ -224,3 +229,47 @@ def stream_items(zip_path: str) -> Iterator[ItemDA]:
                     unidad=(fila.get("UnidadMedida") or "").strip(),
                     cantidad=_parse_cantidad(fila.get("Cantidad")),
                 )
+
+
+# Columnas de oc-da que usa la plataforma (mismas que `COLS_OC` del observatorio). El RUT del
+# proveedor es `RutSucursal` [V 31-oct]; los nombres tienen erratas oficiales ("NombreroductoGenerico").
+COLS_OC = (
+    "Codigo", "CodigoAbreviadoTipoOC", "EsCompraAgil", "FechaCreacion", "codigoEstado",
+    "CodigoOrganismoPublico", "OrganismoPublico", "sector", "RutUnidadCompra", "UnidadCompra",
+    "CiudadUnidadCompra", "RegionUnidadCompra", "RutSucursal", "CodigoProveedor", "NombreProveedor",
+    "ComunaProveedor", "RegionProveedor", "codigoProductoONU", "NombreroductoGenerico",
+    "EspecificacionComprador", "EspecificacionProveedor", "cantidad", "UnidadMedida",
+    "precioNeto", "totalLineaNeto", "TipoMonedaOC", "IDItem", "monedaItem",
+)  # fmt: skip
+
+
+def iterar_oc_da(zip_path: str, columnas_extra: list[str] | None = None) -> Iterator[dict[str, str]]:
+    """Stream de líneas de oc-da como dict {columna: texto} con solo `COLS_OC` (RAM-safe).
+
+    Nunca carga el mes en memoria: el csv lee del ZIP fila a fila (campos multilínea incluidos).
+    Una columna que falta queda en "" (parseo defensivo, regla 6) y se avisa una vez.
+    `columnas_extra` (lista que se llena) recibe los nombres de columna del archivo que NO están
+    en `COLS_OC`: sirve para detectar un id de ítem (F-merc-2 §4).
+    """
+    csv.field_size_limit(1 << 30)
+    with zipfile.ZipFile(zip_path) as zf:
+        nombres_csv = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        if not nombres_csv:
+            _log.warning("iterar_oc_da: %s no contiene ningún CSV", zip_path)
+            return
+        with zf.open(nombres_csv[0]) as raw:
+            texto = io.TextIOWrapper(raw, encoding=_ENCODING, newline="")
+            reader = csv.reader(texto, delimiter=_DELIMITER)
+            header = next(reader, None)
+            if header is None:
+                return
+            pos = {h.strip(): i for i, h in enumerate(header)}
+            faltan = [c for c in COLS_OC if c not in pos]
+            if faltan:
+                _log.warning("iterar_oc_da: columnas faltantes (quedan vacías): %s", faltan)
+            if columnas_extra is not None:
+                columnas_extra.extend(h.strip() for h in header if h.strip() not in COLS_OC)
+            indices = [(c, pos.get(c)) for c in COLS_OC]
+            for fila in reader:
+                n = len(fila)
+                yield {c: (fila[i] if i is not None and i < n else "") for c, i in indices}

@@ -74,6 +74,7 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH catalogos | `catalogos.yml` | lunes 06:35 (catalogos + plan-anual + vocabulario-rubros, en ese orden) |
 | GH resumen | `resumen.yml` | 08:30 |
 | GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — **F-merc-1, sin crear todavía** |
+| GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — **F-merc-2, sin crear todavía** (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
 | GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
 
 Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push

@@ -14,7 +14,15 @@ from sqlalchemy.orm import Session
 from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE
-from app.models.tables import PlanCompraLinea, RubroVocabulario, SyncState
+from app.models.tables import (
+    CaCotizacion,
+    CaCotizacionProducto,
+    OcLineaCa,
+    PlanCompraLinea,
+    PrecioReferencia,
+    RubroVocabulario,
+    SyncState,
+)
 
 # Clave del advisory lock (igual que orchestrator._LOCK_KEY)
 _LOCK_KEY = 7_891_011
@@ -85,6 +93,7 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
         "errores_recientes": errores,
         "plan_anual": _plan_anual_salud(session),
         "vocabulario_rubros": _vocabulario_salud(session),
+        "tablas_mercado": _tablas_mercado_salud(session),
     }
 
 
@@ -120,3 +129,22 @@ def _vocabulario_salud(session: Session) -> dict[str, Any]:
         "familias": int(familias),
         "actualizado_en": actualizado.isoformat() if actualizado else None,
     }
+
+
+def _tablas_mercado_salud(session: Session) -> list[dict[str, Any]]:
+    """F-merc-2: filas y tamaño de las tablas del piloto de mercado (excepción a la regla 11:
+    no se purgan, así que hay que vigilar que Neon, 0,5 GB, no se llene)."""
+    modelos = (
+        ("oc_lineas_ca", OcLineaCa),
+        ("precio_referencia", PrecioReferencia),
+        ("ca_cotizaciones", CaCotizacion),
+        ("ca_cotizacion_productos", CaCotizacionProducto),
+    )
+    return [
+        {
+            "tabla": nombre,
+            "filas": int(session.execute(select(func.count()).select_from(modelo)).scalar_one()),
+            "tamano_bytes": tamano_tabla(session, nombre),
+        }
+        for nombre, modelo in modelos
+    ]

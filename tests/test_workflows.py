@@ -106,6 +106,8 @@ _PROGRAMADOS = {
     # F-merc-1: se crean en cron-job.org cuando Boris habilite el backfill.
     "mercado.yml",
     "mercado-nocturno.yml",
+    # F-merc-2: datos abiertos, 07:20 Chile.
+    "mercado-oc.yml",
 }
 
 

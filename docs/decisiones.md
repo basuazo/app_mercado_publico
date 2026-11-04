@@ -94,6 +94,17 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   más barato con ≥ 95 % de líneas correctas; presupuesto mensual persistido en Postgres y caché); proveedores y
   costos se cargan desde cero. Orden de fases: F-merc-1 → F-merc-2 → F-plat-3 → F-plat-1 → F-plat-2 → F-plat-4 →
   F-plat-5 (4 semanas en sombra) → F-plat-6 → F-plat-7.
+- **OC de Compra Ágil en la base (4-nov-2026, F-merc-2):** `oc_lineas_ca` y `precio_referencia` no se purgan
+  (excepción del piloto a la regla 11, igual que las cotizaciones). Estimado 35–45 MB con índices para 24 meses de
+  Ñuble (102.825 líneas, ~90 caracteres de especificación [V en `oc_ca2_*`]); **medir tras la carga y anotar acá**.
+  PK `(codigo_oc, id_item)` con `IDItem` del `oc-da` [V, 2026-9.zip: 79 columnas, incluye `tieneItems`, `IDItem`,
+  `monedaItem`]; sin IDItem la fila se descarta y se cuenta. Una OC puede venir en dos ZIP mensuales: el mes se borra
+  y reinserta como upsert en una transacción y la fila queda en el mes más reciente. Moneda = `monedaItem` si viene,
+  si no `TipoMonedaOC`. Textos largos (especificación, unidad, organismo, proveedor, producto) son Text. Región del comprador y del proveedor = texto en `oc-da`, convertido a código con
+  `region_codigo` (`app/catalogos/regiones.py`). Solo CLP suma en `precio_base`, `precio_referencia` y
+  `resumen_mercado` (el formato de `TipoMonedaOC` es [I] hasta la primera carga: vacío/NA = CLP). Datos públicos y
+  comunes: no pertenecen a una empresa (regla 26 no aplica). Cruce con F-merc-1: `ca_cotizaciones.id_oc` =
+  `oc_lineas_ca.codigo_oc` vía `codigo_oc_normalizado` [I] hasta contrastarlo con datos reales; no se infieren ganadores.
 - **Retención de las CA del piloto y tamaño de las cotizaciones (3-nov-2026, F-merc-1 §1.5 y §1.7):**
   `purgar_terminales` no toca las CA de `MERCADO_REGIONES` (hoy Ñuble, 16) ni, por lo tanto, sus
   `ca_cotizaciones` / `ca_cotizacion_productos`: excepción explícita a la regla 11 mientras dure el piloto.

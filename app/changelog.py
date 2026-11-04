@@ -15,6 +15,16 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 11, 4),
+        titulo="Órdenes de compra de Compra Ágil de Ñuble en la plataforma",
+        descripcion=(
+            "La plataforma guarda ahora las órdenes de compra de Compra Ágil de Ñuble de los "
+            "últimos dos años (líneas con producto, cantidad, precio y proveedor) y un precio de "
+            "referencia nacional por producto y mes. Es la base de la mesa del día y de los "
+            "precios de referencia que vienen en las próximas fases. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 11, 3),
         titulo="Cotizaciones de Compra Ágil de Ñuble con precio por producto",
         descripcion=(

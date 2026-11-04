@@ -56,6 +56,23 @@
   {% endif %}
 </p>
 
+<!-- Tablas del piloto de mercado (F-merc-2): no se purgan -->
+<h5>Tablas de mercado</h5>
+<table class="table table-sm table-bordered w-auto mb-4">
+  <thead class="table-dark">
+    <tr><th scope="col">Tabla</th><th scope="col">Filas</th><th scope="col">Tamaño</th></tr>
+  </thead>
+  <tbody>
+    {% for t in salud.tablas_mercado %}
+    <tr>
+      <td>{{ t.tabla }}</td>
+      <td>{{ t.filas | numero }}</td>
+      <td>{% if t.tamano_bytes is not none %}{{ (t.tamano_bytes / 1024 / 1024) | round(1) }} MB{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
 <!-- Vocabulario por rubro (F-ca-explorar) -->
 <h5>Vocabulario por rubro</h5>
 <p class="small text-muted mb-4">

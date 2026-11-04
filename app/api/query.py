@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
+import statistics
 import unicodedata
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -14,6 +16,7 @@ from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session, defer
 
 from app.api.presentacion import nombre_region, razones_legibles, texto_cierre
+from app.catalogos.mercado import G_ALIM, G_PREP, familia_alimento
 from app.catalogos.unspsc import nombre_rubro
 from app.core.tiempo import TZ_CHILE, a_utc_naive, ahora_utc, borde_del_dia_utc_naive
 from app.core.vigencia import (
@@ -33,9 +36,11 @@ from app.models.tables import (
     InstitucionPAC,
     Licitacion,
     MatchFeedback,
+    OcLineaCa,
     OfertaCompetencia,
     OportunidadMatch,
     OportunidadSeguida,
+    PrecioReferencia,
 )
 
 FUENTES_VALIDAS = ("licitaciones", "compras_agiles")
@@ -1385,3 +1390,209 @@ def contar_descartadas(session: Session, user_id: int) -> int:
             )
         ).scalar_one()
     )
+
+
+# ---------------------------------------------------------------------------
+# Mercado de alimentos desde oc-da (F-merc-2). Datos públicos y comunes: no pertenecen a una
+# empresa (regla 26 no aplica). Lo consume F-plat-5 (Mesa).
+# ---------------------------------------------------------------------------
+_BANDAS_TICKET = (
+    (0, 125e3, "< $125 mil"),
+    (125e3, 500e3, "$125–500 mil"),
+    (500e3, 1e6, "$500 mil–1 M"),
+    (1e6, 3e6, "$1–3 M"),
+    (3e6, 1e12, "> $3 M"),
+)
+
+
+def resumen_mercado(session: Session, region: int, desde: str, hasta: str) -> dict[str, Any]:
+    """Alimentos (envasados + preparados) comprados en `region` entre los meses `desde` y `hasta`.
+
+    `desde`/`hasta` son 'AAAA-MM' inclusivos. Devuelve lo mismo que `analizar_alimentos()` del
+    observatorio (monto, familias, compradores, proveedores, tickets), calculado desde
+    `oc_lineas_ca`. Solo líneas en CLP (las de UTM/CLF no se suman). El precio nacional sale de
+    `precio_referencia`: mediana de las medianas mensuales del rango, con n total >= 10.
+    Lee en lotes (`yield_per`): nunca el rango entero en memoria (regla 12).
+    """
+    serie: dict[str, Any] = defaultdict(Counter)  # montos float en un Counter
+    serie_oc: dict[str, set[str]] = defaultdict(set)
+    fam: dict[str, dict[str, Any]] = {}
+    prod: dict[str, dict[str, Any]] = {}
+    comp: dict[str, dict[str, Any]] = {}
+    prov: dict[str, dict[str, Any]] = {}
+    sector: Any = Counter()
+    comuna: Any = Counter()
+    oc_monto: dict[str, float] = defaultdict(float)
+    total: float = 0.0
+    local_total: float = 0.0
+
+    stmt = (
+        select(OcLineaCa)
+        .where(
+            OcLineaCa.region_compra == region,
+            OcLineaCa.mes >= desde,
+            OcLineaCa.mes <= hasta,
+            OcLineaCa.grupo.in_(sorted(G_ALIM)),
+            or_(OcLineaCa.moneda.is_(None), OcLineaCa.moneda == "CLP"),
+        )
+        .execution_options(yield_per=2000)
+    )
+    for r in session.execute(stmt).scalars():
+        monto = r.total_linea_neto or 0.0
+        prep = r.grupo == G_PREP
+        local = bool(r.proveedor_local)
+        mes = r.mes
+        serie[mes]["preparados" if prep else "envasados"] += monto
+        serie_oc[mes].add(r.codigo_oc)
+        total += monto
+        local_total += monto if local else 0.0
+        cod = r.codigo_producto or ""
+        f = fam.setdefault(
+            familia_alimento(cod) if not prep else "Preparados (cócteles, empanadas, sándwiches)",
+            {"monto": 0.0, "local": 0.0, "oc": set(), "prov": set(), "comp": set()},
+        )
+        f["monto"] += monto
+        f["local"] += monto if local else 0.0
+        f["oc"].add(r.codigo_oc)
+        f["prov"].add(r.proveedor)
+        f["comp"].add(r.rut_unidad)
+        pk = r.producto_generico or cod
+        pr = prod.setdefault(
+            pk,
+            {"monto": 0.0, "local": 0.0, "oc": set(), "comp": set(), "precios": [], "base": Counter(),
+             "claves": Counter(), "fam": "", "prep": False},
+        )  # fmt: skip
+        pr["monto"] += monto
+        pr["local"] += monto if local else 0.0
+        pr["oc"].add(r.codigo_oc)
+        pr["comp"].add(r.rut_unidad)
+        pr["fam"] = familia_alimento(cod)
+        pr["prep"] = prep
+        if r.precio_base is not None and r.base:
+            pr["precios"].append((r.base, r.precio_base))
+            pr["base"][r.base] += 1
+            pr["claves"][f"{cod}|{r.base}"] += 1
+        ck = f"{r.rut_unidad or ''}|{r.unidad_compra or ''}"
+        c = comp.setdefault(
+            ck,
+            {"monto": 0.0, "oc": set(), "meses": set(), "comuna": "", "sector": "", "local": 0.0,
+             "organismo": ""},
+        )  # fmt: skip
+        c["monto"] += monto
+        c["oc"].add(r.codigo_oc)
+        c["meses"].add(mes)
+        c["comuna"] = r.comuna_compra or ""
+        c["sector"] = r.sector or ""
+        c["organismo"] = r.organismo or ""
+        c["local"] += monto if local else 0.0
+        sector[r.sector or "Sin dato"] += monto
+        comuna[r.comuna_compra or "?"] += monto
+        pv = prov.setdefault(
+            r.proveedor or "",
+            {"monto": 0.0, "oc": set(), "comp": set(), "comunas": set(), "local": False, "comuna": "",
+             "region": None},
+        )  # fmt: skip
+        pv["monto"] += monto
+        pv["oc"].add(r.codigo_oc)
+        pv["comp"].add(ck)
+        pv["comunas"].add(r.comuna_compra or "")
+        pv["local"] = local
+        pv["comuna"] = r.comuna_proveedor or ""
+        pv["region"] = r.region_proveedor
+        oc_monto[r.codigo_oc] += monto
+
+    # Referencia nacional (mediana de las medianas mensuales) solo de las claves que se usan.
+    claves = {k for v in prod.values() for k in v["claves"]}
+    nacional: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
+    if claves:
+        filas = session.execute(
+            select(
+                PrecioReferencia.clave,
+                PrecioReferencia.n,
+                PrecioReferencia.p25,
+                PrecioReferencia.mediana,
+            ).where(
+                PrecioReferencia.clave.in_(sorted(claves)),
+                PrecioReferencia.mes >= desde,
+                PrecioReferencia.mes <= hasta,
+            )
+        )
+        for clave, n, p25, mediana in filas:
+            nacional[clave].append((n, p25, mediana))
+
+    resultado: dict[str, Any] = {
+        "region": region,
+        "desde": desde,
+        "hasta": hasta,
+        "total12": total,
+        "local12": local_total / max(1, total),
+        "oc12": len(oc_monto),
+    }
+    resultado["serie"] = [
+        [m, serie[m]["envasados"], serie[m]["preparados"], len(serie_oc[m])] for m in sorted(serie)
+    ]
+    resultado["familias"] = sorted(
+        (
+            {"familia": k, "monto": v["monto"], "local": v["local"] / max(1, v["monto"]),
+             "oc": len(v["oc"]), "proveedores": len(v["prov"]), "compradores": len(v["comp"])}
+            for k, v in fam.items()
+        ),
+        key=lambda x: -x["monto"],
+    )  # fmt: skip
+    canasta = []
+    for k, v in prod.items():
+        ref_p = None
+        if v["precios"]:
+            base = v["base"].most_common(1)[0][0]
+            ps = [p for b, p in v["precios"] if b == base]
+            clave = v["claves"].most_common(1)[0][0] if v["claves"] else ""
+            nac = nacional.get(clave, [])
+            hay_nac = sum(n for n, _, _ in nac) >= 10
+            ref_p = {
+                "base": base,
+                "mediana_nuble": statistics.median(ps),
+                "n": len(ps),
+                "p25_nacional": statistics.median([p for _, p, _ in nac]) if hay_nac else None,
+                "mediana_nacional": statistics.median([m for _, _, m in nac]) if hay_nac else None,
+            }
+        canasta.append(
+            {"producto": k, "familia": v["fam"], "preparado": v["prep"], "monto": v["monto"],
+             "local": v["local"] / max(1, v["monto"]), "oc": len(v["oc"]),
+             "compradores": len(v["comp"]), "normalizable": sum(v["base"].values()),
+             "precio": ref_p}
+        )  # fmt: skip
+    canasta.sort(key=lambda x: -x["monto"])
+    resultado["canasta"] = canasta[:40]
+    resultado["compradores"] = sorted(
+        (
+            {"comprador": v["organismo"], "unidad": k.split("|", 1)[1], "comuna": v["comuna"],
+             "sector": v["sector"], "monto": v["monto"], "oc": len(v["oc"]),
+             "meses": len(v["meses"]), "local": v["local"] / max(1, v["monto"])}
+            for k, v in comp.items()
+        ),
+        key=lambda x: -x["monto"],
+    )[:25]  # fmt: skip
+    resultado["n_compradores"] = len(comp)
+    resultado["compradores_recurrentes"] = sum(1 for v in comp.values() if len(v["meses"]) >= 6)
+    resultado["sector"] = [[k, v] for k, v in sector.most_common()]
+    resultado["comunas"] = [[k, v] for k, v in comuna.most_common()]
+    proveedores = sorted(
+        (
+            {"proveedor": k, "comuna": v["comuna"], "region": v["region"], "local": v["local"],
+             "monto": v["monto"], "oc": len(v["oc"]), "compradores": len(v["comp"]),
+             "comunas": len(v["comunas"])}
+            for k, v in prov.items()
+        ),
+        key=lambda x: -x["monto"],
+    )  # fmt: skip
+    resultado["n_proveedores"] = len(proveedores)
+    resultado["n_proveedores_locales"] = sum(1 for p in proveedores if p["local"])
+    tot = sum(p["monto"] for p in proveedores) or 1
+    resultado["hhi"] = sum((p["monto"] / tot * 100) ** 2 for p in proveedores)
+    resultado["top5_cuota"] = sum(p["monto"] for p in proveedores[:5]) / tot
+    resultado["proveedores"] = proveedores[:20]
+    resultado["tickets"] = []
+    for lo, hi, etiqueta in _BANDAS_TICKET:
+        xs = [v for v in oc_monto.values() if lo <= v < hi]
+        resultado["tickets"].append({"banda": etiqueta, "oc": len(xs), "monto": sum(xs)})
+    return resultado
