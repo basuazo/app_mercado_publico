@@ -12,10 +12,12 @@ Uso:
     python scripts/smoke_test.py ca-sin-fechas        # F-datos-1: CA sin fechas + desierta (≤5 req)
     python scripts/smoke_test.py estados-ca           # F-datos-1: ¿v2 acepta desierta/cancelada? (2 req)
     python scripts/smoke_test.py --mercado            # F-merc-1: antigüedad (mar-2026, oct-2024) y horizonte 2025 (6 req)
+    python scripts/smoke_test.py --detalle-ca COD [COD ...]  # sonda: ofertas repetidas del mismo RUT (1 req/código)
 """
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import time
 from collections.abc import Callable
@@ -177,7 +179,9 @@ def verificar_formato_fechas(
     print("  · Si viene con un offset (+hh:mm) -> el código lo respeta. Una Z en la v2 NO es UTC:")
     print("    es hora de Chile mal etiquetada (F-ca-ventana); parse_fecha_v2 la ignora.")
     print("  · Si NO hay hora -> la mitad de F-fecha-cierre no aplicaba; hay que replantearla.")
-    print("  · Anotar el resultado en docs/01-analisis-api-mercado-publico.md §10 marcando [V] lo observado.")
+    print(
+        "  · Anotar el resultado en docs/01-analisis-api-mercado-publico.md §10 marcando [V] lo observado."
+    )
     print()
     print("=== Paso 0 completado ===")
 
@@ -911,6 +915,122 @@ def sonda_mercado(v2: MercadoPublicoV2Client, pausa_s: float = 5.0) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Sonda --detalle-ca — ¿qué distingue a las ofertas repetidas del mismo RUT?
+# ---------------------------------------------------------------------------
+#
+# Pide el JSON CRUDO del detalle (sin `_parse_cotizacion`, que es lo que se evalúa).
+# El cliente no expone el crudo: se usa `_get` (devuelve el envelope) y
+# `_validar_envelope` (devuelve el payload), los mismos pasos que `detalle_compra_agil`.
+# Sin reintentos transitorios, sin escritura en Neon, 1 req por código (el rate
+# limit de 1 req/s lo pone el cliente). Ante un 429 se imprime y se sale (regla 3).
+
+
+def _estado_txt(v: object) -> str:
+    if isinstance(v, dict):
+        return f"{v.get('id')}/{v.get('glosa') or v.get('codigo')}"
+    return str(v)
+
+
+def _suma_productos(prods: object) -> tuple[int, float]:
+    if not isinstance(prods, list):
+        return 0, 0.0
+    total = 0.0
+    for p in prods:
+        if isinstance(p, dict):
+            with contextlib.suppress(TypeError, ValueError):
+                total += float(p.get("monto_total_producto") or 0)
+    return len(prods), total
+
+
+def _sin_id(oferta: dict[str, object]) -> dict[str, object]:
+    return {k: v for k, v in oferta.items() if k != "id_cotizacion"}
+
+
+def analizar_detalle_ca(codigo: str, payload: dict[str, object]) -> list[str]:
+    """Líneas de salida para un detalle crudo. Pura: no toca red ni disco."""
+    out = [f"\n=== {codigo} ==="]
+    raw = payload.get("proveedores_cotizando")
+    ofertas = [o for o in raw if isinstance(o, dict)] if isinstance(raw, list) else []
+    por_rut: dict[str, list[dict[str, object]]] = {}
+    for o in ofertas:
+        por_rut.setdefault(str(o.get("rut_proveedor")), []).append(o)
+    out.append(f"ofertas={len(ofertas)}  RUT distintos={len(por_rut)}")
+    if ofertas:
+        out.append(f"claves de la 1.ª oferta: {sorted(ofertas[0].keys())}")
+    repetidos = {r: os_ for r, os_ in por_rut.items() if len(os_) > 1}
+    if not repetidos:
+        out.append("(sin RUT repetidos)")
+        return out
+    for rut, os_ in repetidos.items():
+        out.append(f"\nRUT {rut}: {len(os_)} ofertas")
+        for o in os_:
+            n, suma = _suma_productos(o.get("productos_cotizados"))
+            fechas = {k: v for k, v in o.items() if "fecha" in k.lower()}
+            out.append(
+                f"  - {str(o.get('razon_social'))[:30]!r} id_cot={o.get('id_cotizacion')} "
+                f"estado={_estado_txt(o.get('estado', o.get('estado_cotizacion')))} "
+                f"sel={o.get('proveedor_seleccionado')} suc={o.get('codigo_sucursal_empresa')} "
+                f"monto_total={o.get('monto_total')} prods={n} suma_prod={suma:g}"
+            )
+            extra = {
+                k: o.get(k)
+                for k in ("activo", "estado_por_comprador", "id_oc", "valor_neto", "monto_despacho")
+                if k in o
+            }
+            out.append(f"      fechas={fechas} otros={extra}")
+        for i in range(len(os_)):
+            for j in range(i + 1, len(os_)):
+                if _sin_id(os_[i]) == _sin_id(os_[j]):
+                    out.append(f"  >> IDÉNTICAS (salvo id_cotizacion): #{i + 1} y #{j + 1}")
+    return out
+
+
+def sonda_detalle_ca(
+    engine: Engine, v2: MercadoPublicoV2Client, codigos: list[str], ticket: str
+) -> None:
+    from app.clients.base import MPRateLimitError, leer_pausa
+    from app.clients.mp_v2 import _DETALLE, _validar_envelope
+    from app.core.tiempo import ahora_utc
+
+    pausa = leer_pausa(engine)
+    # leer_pausa devuelve UTC con zona; ahora_utc() es UTC naive (como la base).
+    if pausa is not None and pausa.replace(tzinfo=None) > ahora_utc():
+        print(f"Pausa vigente hasta {pausa.isoformat()} UTC. No se pide nada.")
+        return
+
+    lineas: list[str] = []
+    for i, codigo in enumerate(codigos):
+        if i:
+            time.sleep(1.0)
+        try:
+            data = v2._get(_DETALLE.format(codigo=codigo), reintentar_transitorios=False)
+            payload = _validar_envelope(data)
+        except MPRateLimitError as exc:
+            lineas.append(f"\n{codigo}: 429 -> {_error_seguro(exc)}. Se corta (regla 3).")
+            break
+        except Exception as exc:
+            lineas.append(f"\n{codigo}: {_error_seguro(exc)}")
+            continue
+        lineas.extend(analizar_detalle_ca(codigo, payload))
+
+    texto = "\n".join(lineas)
+    if ticket and ticket in texto:
+        print("ERROR: el valor del ticket aparece en la salida; no se escribe ni se imprime.")
+        sys.exit(1)
+    print(texto)
+    from zoneinfo import ZoneInfo
+
+    destino = Path(__file__).parent.parent / "data" / "logs"
+    destino.mkdir(parents=True, exist_ok=True)
+    archivo = (
+        destino
+        / f"sonda_ofertas_{ahora_utc().astimezone(ZoneInfo('America/Santiago')).date().isoformat()}.txt"
+    )
+    archivo.write_text(texto + "\n", encoding="utf-8")
+    print(f"\nSalida guardada en {archivo}")
+
+
 def main() -> None:
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
@@ -923,6 +1043,13 @@ def main() -> None:
     v2 = MercadoPublicoV2Client(settings, engine)
 
     args = sys.argv[1:]
+    if args[:1] == ["--detalle-ca"]:
+        if len(args) < 2:
+            print("Uso: --detalle-ca CODIGO [CODIGO ...]")
+            return
+        sonda_detalle_ca(engine, v2, args[1:], settings.mp_ticket)
+        return
+
     if "--mercado" in args:
         sonda_mercado(v2)
         return
