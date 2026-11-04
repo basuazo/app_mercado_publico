@@ -31,7 +31,9 @@ Render solo sirve la web; correo por API REST de Brevo.
    concurrencia: máx. 3 reintentos con backoff (30/60/120 s) y luego cortar el job.
    429 con codigo 429 ("límite de tasa", verificado 29-oct-2026) = transitorio: sin
    reintento, pausa persistida en Postgres de 20 min, cortar la corrida guardando el
-   avance. 429 con cualquier otro código = igual que el de tasa con pausa de 60 min y
+   avance. Un job largo (backfill) puede esperar el fin de la pausa leída de Postgres y
+   empezar otro tramo, sin repetir el request del 429 antes de que termine la pausa
+   (F-merc-1c, 4-nov-2026). 429 con cualquier otro código = igual que el de tasa con pausa de 60 min y
    log ERROR. Ningún 429 marca el día como agotado: no hay código de tope diario
    verificado. Tras un 504 o un timeout, enfriar 60 s antes de cualquier request (el
    backend puede seguir procesando).
@@ -77,7 +79,8 @@ Render solo sirve la web; correo por API REST de Brevo.
 ## Flujo de trabajo
 - Una fase por commit, a partir de un prompt `docs/prompt-F-*.md`; sin push hasta
   auditarla. Antes de cerrar: `ruff check .`, `python -m mypy app`, `python -m pytest -rs`
-  (0 fallos, 0 errores, 0 saltados, contra Neon dev con `postgresql+psycopg://`).
+  (0 fallos, 0 errores, 0 saltados, contra Postgres local con `TEST_DATABASE_URL` o Neon dev;
+  ver `docs/operacion.md` §15).
 - Toda fase con cambios visibles agrega una entrada a `app/changelog.py` en el mismo commit.
 - `git add` solo de los archivos de la fase; nunca `git add -A`.
 - Tests de red SIEMPRE mockeados (respx). Llamadas reales solo en
