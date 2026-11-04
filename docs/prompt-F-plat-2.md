@@ -126,8 +126,8 @@ del usuario (404 si no).
   están bajados [V]: `data/mercado/anexos_eval/archivos/` (32 archivos) y `muestra_30_ca_alimentos.xlsx`
   (columnas `codigo`, `archivo`, `n_lineas`, entre otras; `archivo` aún vacía). La verdad va en
   `lineas_esperadas.csv` (separador `;`, BOM UTF-8; columnas `anexo;n;producto_texto;cantidad;unidad;revisado;nota`,
-  donde `anexo` = nombre del archivo). **Prellenada por Claude el 4-nov (602 filas, 32 archivos) y pendiente de
-  revisión de Boris**: el script **solo usa los anexos con todas sus filas `revisado = si`** e informa cuántos
+  donde `anexo` = nombre del archivo). **Prellenada por Claude y revisada por Boris el 4-nov (602 filas, 32 archivos, todas `revisado = si`
+  [V]; sin filas EJEMPLO)**. Aun así, el script **solo usa los anexos con todas sus filas `revisado = si`** e informa cuántos
   quedan fuera, para que una verdad escrita por un LLM no evalúe a otros LLM sin control humano.
   Convenciones de la verdad: toda línea del anexo cuenta, también las que no son alimento (nota "no alimento";
   el script reporta el acierto con y sin ellas); cantidad = total pedido (si el anexo dice "15 canastas, cada una
@@ -167,8 +167,9 @@ edición de reglas duras) y a `_ENV_VARS` del logger. Commit:
 ## 4. Pasos de Boris
 1. Tras el commit: `python scripts/smoke_test.py --documentos` (de día, ~3–5 requests) → pegar salida
    (decide §1.6). Migración según `docs/despliegue.md` (nunca `alembic upgrade` manual contra prod).
-2. Cuenta en OpenRouter, `OPENROUTER_API_KEY` en `.env` (y en GitHub Secrets solo si §1.6 aplica).
-3. Los anexos ya están bajados [V]. Falta llenar la columna `archivo` de la muestra y `lineas_esperadas.csv`
-   (borrar las filas EJEMPLO). Con 2 duplicados exactos, quedan 30 únicos.
+2. Cuenta en OpenRouter, `OPENROUTER_API_KEY` en `.env` **y en Render** (la subida de anexos corre en la web), y en
+   GitHub Secrets solo si §1.6 aplica. Lo mismo con `LLM_MODELO_EXTRACCION` cuando se elija (paso 4).
+3. Los anexos ya están bajados y la verdad revisada [V, 4-nov]. Con 2 duplicados exactos, quedan 30 únicos;
+   `abarrotes emergencia.docx` (0 bytes) se queda a propósito: es el caso "extracción vacía".
 4. `python scripts/mercado/evaluar_extraccion.py --modelos <3–4 candidatos>` → elegir y fijar el modelo.
 5. Subir 5 anexos reales en la ficha y medir minutos por CA (meta ≤ 5 min con revisión).
