@@ -615,7 +615,8 @@ def test_navegacion_y_pestanas_accesibles(engine, settings):
     i = html.index('href="/registro"')
     enlace = html[html.rindex("<a", 0, i) : html.index("</a>", i)]
     assert 'aria-current="page"' in enlace
-    assert html.count('aria-current="page"') == 2  # nav principal + pestaña activa
+    # barra lateral + offcanvas móvil (F-plat-ui: el mismo menú dos veces) + pestaña activa
+    assert html.count('aria-current="page"') == 3
     assert "Cerradas (0)" in html and "Vencidas recientes (0)" in html
     # Una pestaña desconocida cae en guardadas.
     assert "Guardadas (0)" in _tab(client, "inventada")

@@ -170,3 +170,11 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 - **La plataforma de Compra Ágil es la interfaz principal; la app antigua queda en «Archivo», solo admin** (Boris, 4-nov).
   Control en el servidor (`requiere_admin_archivo`), no solo menú (regla 17). No se borra ruta, plantilla, job ni tabla; el retiro
   (F-retiro, con export previo de tablas) lo decide Boris aparte y no antes de que la sombra de F-plat-5 esté andando.
+- **Diseño de la plataforma: estilo de dashboard sobrio, «referencia de estilo, no de marca»** (Boris, 4-nov; F-plat-ui).
+  Se toma el lenguaje visual (fondo claro, superficies blancas con borde fino, un solo acento, tablas densas, badges suaves);
+  no se copia logo, textos, degradado ni el color exacto de ninguna marca. Tokens `--c-*` en `app/api/static/app.css`
+  (fondo `#F6F8FA`, borde `#E3E8EE`, texto `#1A2333`/`#5E6B7A`, acento `#4F46E5`, ok/aviso/error con su `-suave`);
+  los contrastes AA los verifica `tests/test_ui_accesibilidad.py`. Sigue Bootstrap 5.3 (variables pisadas, sin framework
+  nuevo). Tipografía Inter autoalojada (`static/fonts/`, OFL; sin CDN de fuentes). Barra lateral de 232 px (offcanvas < 992 px);
+  el admin ve «Administración» (Empresas, Usuarios, Salud, Archivo con sus subpáginas). El modal de onboarding del feed
+  antiguo solo lo ve el admin en las pantallas de Archivo. Sin modo oscuro. Colores y densidad: a ajustar tras la revisión de Boris.

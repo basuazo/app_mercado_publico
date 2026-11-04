@@ -16,6 +16,16 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="Nuevo diseño de la plataforma",
+        descripcion=(
+            "La plataforma estrena un diseño más sobrio: menú lateral con íconos (en el celular se "
+            "abre con el botón de arriba), fondo claro, tablas más legibles, un solo color de acento "
+            "y tipografía Inter. Cambia solo la presentación: tus datos y pantallas siguen donde "
+            "estaban. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="La plataforma de Compra Ágil pasa a ser la portada",
         descripcion=(
             "La portada ahora es «Hoy», con las Compras Ágiles abiertas de tus regiones, las líneas "

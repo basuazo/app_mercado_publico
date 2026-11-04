@@ -111,15 +111,85 @@ def test_enlaces_de_orden_y_agrupacion_conservan_el_texto_codificado(
 # ---------------------------------------------------------------------------
 
 
-def test_navbar_colapsa_en_movil(client, settings, usuario) -> None:
+def test_menu_movil_es_offcanvas_con_etiqueta(client, settings, usuario) -> None:
+    """F-plat-ui: la barra de arriba se volvió barra lateral; en móvil es un offcanvas."""
     html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
-    assert 'class="navbar-toggler"' in html
-    assert 'data-bs-toggle="collapse"' in html
-    assert 'data-bs-target="#nav-principal"' in html
-    assert 'aria-controls="nav-principal"' in html
-    assert 'aria-expanded="false"' in html
+    assert 'class="app-lateral"' in html
+    assert 'data-bs-toggle="offcanvas"' in html
+    assert 'data-bs-target="#menu-movil"' in html
+    assert 'aria-controls="menu-movil"' in html
     assert 'aria-label="Abrir navegación"' in html
-    assert 'class="collapse navbar-collapse" id="nav-principal"' in html
+    assert 'id="menu-movil" aria-label="Menú principal"' in html
+    assert "navbar" not in html
+
+
+def test_item_activo_de_la_barra_lateral_tiene_aria_current(client, settings, usuario) -> None:
+    html = client.get("/salud", cookies=_cookie(settings, usuario)).text
+    activos = re.findall(r'<a class="nav-lateral__item active" href="([^"]+)" aria-current="page"', html)
+    # Una vez en la barra fija y otra en el offcanvas: siempre la misma entrada.
+    assert activos == ["/salud", "/salud"]
+
+
+def test_base_no_referencia_fuentes_externas_y_los_woff2_existen(client, settings, usuario) -> None:
+    from pathlib import Path
+
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
+    for dominio in ("fonts.googleapis.com", "fonts.gstatic.com", "use.typekit.net", "fonts.bunny.net"):
+        assert dominio not in html
+    css = client.get("/static/app.css").text
+    assert "fonts.googleapis.com" not in css and "fonts.gstatic.com" not in css
+    carpeta = Path(__file__).resolve().parents[1] / "app" / "api" / "static" / "fonts"
+    for peso in (400, 500, 600):
+        woff2 = carpeta / f"inter-latin-{peso}.woff2"
+        assert woff2.is_file() and woff2.read_bytes()[:4] == b"wOF2"
+        assert f"/static/fonts/inter-latin-{peso}.woff2" in css
+
+
+def test_tutorial_del_feed_antiguo_solo_para_admin_en_archivo(client, settings, engine, usuario) -> None:
+    # Admin en Archivo: el modal está.
+    assert 'id="tutorialModal"' in client.get("/archivo", cookies=_cookie(settings, usuario)).text
+    # Admin fuera de Archivo: no.
+    assert 'id="tutorialModal"' not in client.get("/cuenta", cookies=_cookie(settings, usuario)).text
+    # Usuario común: tampoco, y Novedades sigue.
+    with Session(engine) as s:
+        u = Usuario(email="comun@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        s.add(u)
+        s.commit()
+        s.refresh(u)
+        uid = u.id
+    html = client.get("/cuenta", cookies=_cookie(settings, uid)).text
+    assert 'id="tutorialModal"' not in html
+    assert 'id="novedadesModal"' in html
+
+
+def _luminancia(hex_color: str) -> float:
+    canales = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in canales]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _ratio(a: str, b: str) -> float:
+    la, lb = sorted((_luminancia(a), _luminancia(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_contraste_aa_de_los_tokens(client) -> None:
+    """Todos los pares texto/fondo de F-plat-ui >= 4,5:1 (WCAG AA, texto normal)."""
+    css = client.get("/static/app.css").text
+    tokens = dict(re.findall(r"--(c-[a-z0-9-]+):\s*(#[0-9A-Fa-f]{6})", css))
+    pares = [
+        ("c-texto", "c-superficie"), ("c-texto", "c-fondo"),
+        ("c-texto-2", "c-superficie"), ("c-texto-2", "c-fondo"),
+        ("c-acento", "c-superficie"), ("c-acento", "c-fondo"), ("c-acento", "c-acento-suave"),
+        ("c-ok", "c-ok-suave"), ("c-aviso", "c-aviso-suave"), ("c-error", "c-error-suave"),
+        ("c-error", "c-superficie"),
+    ]
+    for texto, fondo in pares:
+        r = _ratio(tokens[texto], tokens[fondo])
+        assert r >= 4.5, f"{texto} sobre {fondo}: {r:.2f}:1"
+    # Texto blanco sobre el botón primario (y sus estados hover/activo).
+    for boton in ("c-acento", "c-acento-hover", "c-acento-activo"):
+        assert _ratio("#FFFFFF", tokens[boton]) >= 4.5, boton
 
 
 def test_landmark_main_y_enlace_de_salto(client, settings, usuario) -> None:

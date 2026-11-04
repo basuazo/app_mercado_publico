@@ -18,6 +18,12 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-ui (4-nov, commit local sin push hasta auditar; sin migración)
+- Diseño nuevo de la plataforma (estilo dashboard sobrio, tokens `--c-*` en `app.css`, Inter autoalojada, barra lateral con
+  íconos y offcanvas en móvil, tablas/botones/badges/formularios restilizados sobre Bootstrap 5.3). Decisión en `decisiones.md`.
+- Las pantallas de Archivo solo heredan el layout. El tutorial del feed antiguo queda solo para el admin en Archivo.
+- Pendiente de Boris: revisar a 1366 px y en el celular (portada, catálogo, proveedores, login) y ajustar colores/densidad.
+
 ## F-ca-presente (4-nov, commit local sin push hasta auditar; sin migración)
 - [V] El listado de CA (`_sync_en_ventanas`, usado por `mercado-ca` y `ca`) perseguía al reloj: al llegar al presente
   abría otra ventana de ~5 min cada vuelta, 100–150 requests por corrida (log del 4-nov, 14:50–15:00 Chile).

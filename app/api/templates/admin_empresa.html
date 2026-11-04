@@ -46,7 +46,7 @@
           {% for u in sin_empresa %}<option value="{{ u.id }}">{{ u.email }}</option>{% endfor %}
         </select>
       </div>
-      <div class="col-md-3"><button class="btn btn-outline-primary">Asignar</button></div>
+      <div class="col-md-3"><button class="btn btn-primary">Asignar</button></div>
     </form>
     {% else %}
     <p class="text-muted small mb-0">No hay usuarios activos sin empresa. Un usuario pertenece a una sola empresa.</p>

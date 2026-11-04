@@ -240,7 +240,7 @@ def test_post_de_cuenta_sigue_abierto(client, engine, settings):
 
 
 def _hrefs(html: str) -> set[str]:
-    return set(re.findall(r'href="([^"]+)"', html.split("</nav>")[0]))
+    return set(re.findall(r'href="([^"]+)"', html.split("</aside>")[0]))
 
 
 def test_menu_usuario_con_empresa(client, engine, settings):

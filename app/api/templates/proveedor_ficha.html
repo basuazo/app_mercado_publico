@@ -11,7 +11,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h2 class="mb-0">{{ p.nombre }}{% if not p.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}</h2>
   <div class="d-flex gap-2">
-    <button class="btn btn-outline-primary btn-sm" type="button"
+    <button class="btn btn-primary btn-sm" type="button"
             hx-get="/proveedores/{{ p.id }}/form" hx-target="#form-proveedor" hx-swap="innerHTML">Editar</button>
     <form method="post" action="/proveedores/{{ p.id }}/activo" class="m-0">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

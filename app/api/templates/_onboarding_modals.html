@@ -3,6 +3,7 @@
      data-mostrar-novedades="{{ 'true' if mostrar_novedades|default(false) else 'false' }}">
 </div>
 
+{% if mostrar_modal_tutorial|default(false) %}
 <div class="modal fade" id="tutorialModal" tabindex="-1" aria-labelledby="tutorialModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -70,6 +71,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <div class="modal fade" id="novedadesModal" tabindex="-1" aria-labelledby="novedadesModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -107,14 +109,14 @@ document.addEventListener("DOMContentLoaded", function () {
   const state = document.getElementById("onboarding-state");
   const tutorialEl = document.getElementById("tutorialModal");
   const novedadesEl = document.getElementById("novedadesModal");
-  if (!state || !tutorialEl || !novedadesEl) return;
+  if (!state || !novedadesEl) return;
 
   const csrfToken = document.body.getAttribute("hx-headers")
     ? JSON.parse(document.body.getAttribute("hx-headers"))["X-CSRF-Token"]
     : "";
-  const tutorialModal = window.bootstrap.Modal.getOrCreateInstance(tutorialEl);
+  const tutorialModal = tutorialEl ? window.bootstrap.Modal.getOrCreateInstance(tutorialEl) : null;
   const novedadesModal = window.bootstrap.Modal.getOrCreateInstance(novedadesEl);
-  const mostrarTutorial = state.dataset.mostrarTutorial === "true";
+  const mostrarTutorial = !!tutorialModal && state.dataset.mostrarTutorial === "true";
   const mostrarNovedades = state.dataset.mostrarNovedades === "true";
   let novedadesPendientesDespuesTutorial = false;
 
@@ -131,7 +133,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.querySelectorAll("[data-open-tutorial]").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      tutorialModal.show();
+      if (tutorialModal) tutorialModal.show();
     });
   });
 
@@ -141,7 +143,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  const btnTutorial = tutorialEl.querySelector(".js-marcar-tutorial-visto");
+  const btnTutorial = tutorialEl ? tutorialEl.querySelector(".js-marcar-tutorial-visto") : null;
   if (btnTutorial) {
     btnTutorial.addEventListener("click", function () {
       postVisto("/cuenta/tutorial-visto").finally(function () {
@@ -159,12 +161,14 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  tutorialEl.addEventListener("hidden.bs.modal", function () {
-    if (novedadesPendientesDespuesTutorial) {
-      novedadesPendientesDespuesTutorial = false;
-      novedadesModal.show();
-    }
-  });
+  if (tutorialEl) {
+    tutorialEl.addEventListener("hidden.bs.modal", function () {
+      if (novedadesPendientesDespuesTutorial) {
+        novedadesPendientesDespuesTutorial = false;
+        novedadesModal.show();
+      }
+    });
+  }
 
   if (mostrarTutorial) {
     novedadesPendientesDespuesTutorial = mostrarNovedades;

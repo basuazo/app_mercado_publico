@@ -1,18 +1,44 @@
-/* Tema de mp-oportunidades sobre Bootstrap 5.3 (F-feed-ui-1).
+/* Tema de mp-oportunidades sobre Bootstrap 5.3 (F-feed-ui-1; rediseño en F-plat-ui).
  *
- * Criterio: pisar las variables de Bootstrap en :root en vez de pelear con
- * sus clases. Tipografía: el stack del sistema, que es el que Bootstrap ya
- * trae — sin fuentes por CDN. Espaciado en múltiplos de 4. Sombra solo en
- * hover y en elementos flotantes. Sin gradientes.
+ * Criterio: pisar las variables de Bootstrap en :root y sobreescribir sus
+ * componentes aquí, sin framework nuevo. Estilo de dashboard sobrio (referencia
+ * de ESTILO, no de marca): superficies blancas con bordes finos, un solo color de
+ * acento, Inter autoalojada, números tabulares. Sin degradados salvo la franja de
+ * 4 px del login. Sombra solo en tarjetas.
  *
- * El anillo de foco de Bootstrap NO se toca en ninguna regla de este archivo.
+ * Los tokens --c-* son la fuente de verdad (tests/test_ui_accesibilidad.py calcula
+ * sus contrastes leyendo este archivo). Los --bg-*, --texto-* y --marca* de más
+ * abajo son alias heredados de la app anterior (Archivo), que ahora apuntan a ellos.
  */
 
+/* Inter, autoalojada (licencia OFL: static/fonts/inter-LICENSE.txt). Solo latin. */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/static/fonts/inter-latin-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/inter-latin-500.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/static/fonts/inter-latin-600.woff2") format("woff2"); }
+
 :root {
-  --bg-app: #F8FAFC;   --bg-surface: #FFFFFF;   --bg-subtle: #F1F5F9;
-  --border: #E2E8F0;   --border-strong: #CBD5E1;
-  --texto: #0F172A;    --texto-2: #475569;      --texto-3: #64748B;
-  --marca: #1D4ED8;    --marca-hover: #1E40AF;  --marca-suave: #EFF6FF;  --marca-texto: #1E40AF;
+  /* --- Tokens de F-plat-ui --- */
+  --c-fondo: #F6F8FA;       --c-superficie: #FFFFFF;   --c-borde: #E3E8EE;
+  --c-texto: #1A2333;       --c-texto-2: #5E6B7A;
+  --c-acento: #4F46E5;      --c-acento-suave: #EEF0FF;
+  --c-ok: #0E7C4A;          --c-ok-suave: #E6F6EE;
+  --c-aviso: #9A5B00;       --c-aviso-suave: #FFF4E0;
+  --c-error: #C0262D;       --c-error-suave: #FDECEC;
+  --radio: 8px;             --radio-control: 6px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .05);
+  --c-acento-hover: #4338CA;   --c-acento-activo: #3730A3;
+  --c-neutro-suave: #EEF1F5;   --c-fila-hover: #FAFBFC;
+  --fuente: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* --- Alias de la app anterior (Archivo) --- */
+  --bg-app: var(--c-fondo);   --bg-surface: var(--c-superficie);   --bg-subtle: var(--c-neutro-suave);
+  --border: var(--c-borde);   --border-strong: #CBD2DB;
+  --texto: var(--c-texto);    --texto-2: var(--c-texto-2);         --texto-3: var(--c-texto-2);
+  --marca: var(--c-acento);   --marca-hover: var(--c-acento-hover);
+  --marca-suave: var(--c-acento-suave);   --marca-texto: var(--c-acento-activo);
 
   /* Familias de estado: fondo / texto / borde */
   --est-abierta-bg: #ECFDF5;   --est-abierta-fg: #065F46;   --est-abierta-bd: #6EE7B7;
@@ -28,32 +54,269 @@
   /* Bandas de match */
   --match-alta: #059669;  --match-media: #D97706;  --match-baja: #64748B;
 
-  /* Topbar */
-  --topbar: #0F172A;
-
-  /* Pisa Bootstrap */
-  --bs-body-bg: var(--bg-app);
-  --bs-body-color: var(--texto);
-  --bs-primary: var(--marca);
-  --bs-border-color: var(--border);
-  --bs-link-color: var(--marca);
-  --bs-link-hover-color: var(--marca-hover);
+  /* --- Pisa Bootstrap --- */
+  --bs-font-sans-serif: var(--fuente);
+  --bs-body-font-family: var(--fuente);
+  --bs-body-font-size: 0.875rem;          /* 14 px */
+  --bs-body-bg: var(--c-fondo);
+  --bs-body-color: var(--c-texto);
+  --bs-body-color-rgb: 26, 35, 51;
+  --bs-secondary-color: var(--c-texto-2);
+  --bs-primary: var(--c-acento);
+  --bs-primary-rgb: 79, 70, 229;
+  --bs-primary-bg-subtle: var(--c-acento-suave);
+  --bs-primary-text-emphasis: var(--c-acento-activo);
+  --bs-success-bg-subtle: var(--c-ok-suave);      --bs-success-text-emphasis: var(--c-ok);
+  --bs-warning-bg-subtle: var(--c-aviso-suave);   --bs-warning-text-emphasis: var(--c-aviso);
+  --bs-danger-bg-subtle: var(--c-error-suave);    --bs-danger-text-emphasis: var(--c-error);
+  --bs-border-color: var(--c-borde);
+  --bs-border-radius: var(--radio-control);
+  --bs-border-radius-lg: var(--radio);
+  --bs-link-color: var(--c-acento);
+  --bs-link-color-rgb: 79, 70, 229;
+  --bs-link-hover-color: var(--c-acento-hover);
+  --bs-link-hover-color-rgb: 67, 56, 202;
+  --bs-focus-ring-color: rgba(79, 70, 229, .35);
 }
 
 body {
-  background-color: var(--bg-app);
-  color: var(--texto);
+  background-color: var(--c-fondo);
+  color: var(--c-texto);
+  font-family: var(--fuente);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Dígitos de igual ancho: las columnas de montos y cantidades quedan
    alineadas. Venía de F-ui-fixes, en un <style> inline de base.html. */
 .num { font-variant-numeric: tabular-nums; }
 
-/* --- Topbar ------------------------------------------------------------ */
+/* --- Layout: barra lateral + contenido --------------------------------------- */
 
-.navbar.bg-dark {
-  background-color: var(--topbar) !important;
+.app-lateral {
+  position: fixed; top: 0; bottom: 0; left: 0; width: 232px;
+  display: none; flex-direction: column;
+  background: var(--c-superficie); border-right: 1px solid var(--c-borde);
+  padding: 16px 12px; overflow-y: auto; z-index: 100;
 }
+@media (min-width: 992px) {
+  .app-lateral { display: flex; }
+  .app-contenido { margin-left: 232px; }
+}
+.app-contenido { min-height: 100vh; display: flex; flex-direction: column; }
+.app-contenido--ancho { margin-left: 0 !important; }
+.app-main { width: 100%; max-width: 1200px; margin: 0 auto; padding: 28px 32px; flex: 1 0 auto; }
+@media (max-width: 575.98px) { .app-main { padding: 20px 16px; } }
+.app-main.container-xxl { max-width: 1400px; }
+.app-pie { text-align: center; color: var(--c-texto-2); font-size: 12px; padding: 16px; border-top: 1px solid var(--c-borde); }
+
+.app-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--c-superficie); border-bottom: 1px solid var(--c-borde); padding: 10px 16px;
+}
+.app-topbar__marca, .nav-lateral__marca a {
+  color: var(--c-texto); font-weight: 600; font-size: 15px; text-decoration: none; letter-spacing: -.01em;
+}
+.btn-icono { padding: 4px 8px; color: var(--c-texto); background: transparent; border: 1px solid var(--c-borde); }
+.app-offcanvas { width: 260px; }
+.app-offcanvas .offcanvas-header { padding: 8px 12px 0; }
+.app-offcanvas .offcanvas-body { display: flex; flex-direction: column; padding: 0 12px 16px; }
+
+.nav-lateral__marca { padding: 4px 10px 16px; }
+.nav-lateral__lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-lateral__seccion {
+  margin: 20px 10px 6px; font-size: 11px; font-weight: 500; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--c-texto-2);
+}
+.nav-lateral__item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 34px; padding: 6px 10px; border: 0; border-radius: var(--radio-control);
+  background: transparent; color: var(--c-texto); font: inherit; font-weight: 500;
+  text-align: left; text-decoration: none; cursor: pointer;
+}
+.nav-lateral__item:hover { background: var(--c-fondo); color: var(--c-texto); }
+.nav-lateral__item.active { background: var(--c-acento-suave); color: var(--c-acento); }
+.nav-lateral__item .icono { flex: 0 0 auto; color: var(--c-texto-2); }
+.nav-lateral__item.active .icono { color: var(--c-acento); }
+.nav-lateral__item:focus-visible, .btn-icono:focus-visible {
+  outline: 0; box-shadow: 0 0 0 2px var(--bs-focus-ring-color);
+}
+.nav-lateral { flex: 1 1 auto; }
+.nav-lateral__sub { margin: 2px 0 0 18px; padding-left: 8px; border-left: 1px solid var(--c-borde); }
+.nav-lateral__sub .nav-lateral__item { min-height: 28px; padding: 3px 10px; font-size: 13px; font-weight: 400; color: var(--c-texto-2); }
+.nav-lateral__sub .nav-lateral__item.active { font-weight: 500; color: var(--c-acento); }
+.nav-lateral__pie { border-top: 1px solid var(--c-borde); padding-top: 10px; margin-top: 16px; }
+.nav-lateral__email {
+  margin: 0 10px 6px; font-size: 12px; color: var(--c-texto-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* --- Encabezado de página ---------------------------------------------------- */
+
+.encabezado-pagina { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.encabezado-pagina__titulo, .app-main h1.titulo-pagina { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+.encabezado-pagina__desc { margin: 4px 0 0; color: var(--c-texto-2); }
+.encabezado-pagina__acciones { display: flex; gap: 8px; align-items: center; }
+
+/* Las pantallas que aún usan <h2> como título de página heredan la misma escala. */
+.app-main h2 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.app-main h2.fs-4, .app-main h2.fs-5, .app-main h2.fs-6 { font-size: 22px !important; }
+.app-main h2 .fs-6 { font-size: 14px !important; font-weight: 400; }
+.app-main h3, .app-main .h5, .app-main h5 { font-size: 15px; font-weight: 600; }
+
+/* --- Tarjetas ---------------------------------------------------------------- */
+
+.card {
+  --bs-card-bg: var(--c-superficie); --bs-card-border-color: var(--c-borde);
+  --bs-card-border-radius: var(--radio); --bs-card-inner-border-radius: calc(var(--radio) - 1px);
+  --bs-card-cap-bg: var(--c-superficie); --bs-card-spacer-x: 20px; --bs-card-spacer-y: 20px;
+  box-shadow: var(--sombra);
+}
+.card-header { font-size: 15px; font-weight: 600; }
+.tarjeta-numero__etiqueta { margin: 0 0 4px; font-size: 12px; color: var(--c-texto-2); }
+.tarjeta-numero__valor { margin: 0; font-size: 28px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tarjeta-numero__valor small { font-size: 13px; font-weight: 400; color: var(--c-texto-2); }
+.tarjeta-numero__nota { margin: 4px 0 0; font-size: 13px; color: var(--c-texto-2); }
+.tarjeta-numero__ver { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 500; text-decoration: none; }
+
+.estado-vacio { text-align: center; padding: 32px 16px; color: var(--c-texto-2); background: var(--c-superficie); border: 1px dashed var(--c-borde); border-radius: var(--radio); }
+.estado-vacio__texto { margin: 0; }
+
+/* --- Tablas ------------------------------------------------------------------ */
+
+.table {
+  --bs-table-bg: var(--c-superficie);
+  --bs-table-color: var(--c-texto-2);
+  --bs-table-border-color: var(--c-borde);
+  --bs-table-hover-bg: var(--c-fila-hover);
+  --bs-table-hover-color: var(--c-texto-2);
+  --bs-table-striped-bg: var(--c-superficie);
+  border-top: 1px solid var(--c-borde);
+  margin-bottom: 1rem;
+}
+.table > :not(caption) > * > * { padding: .6rem .75rem; border-bottom-width: 1px; }
+.table-sm > :not(caption) > * > * { padding: .5rem .75rem; }
+.table > tbody > tr > * { height: 44px; }
+.table > tbody > tr > :first-child { color: var(--c-texto); }
+.table-bordered > :not(caption) > * { border-width: 0; }
+.table-bordered > :not(caption) > * > * { border-width: 0 0 1px; }
+.table > thead, .table > thead.table-dark {
+  --bs-table-bg: var(--c-superficie);
+  --bs-table-color: var(--c-texto-2);
+  --bs-table-border-color: var(--c-borde);
+  border-color: var(--c-borde);
+}
+.table > thead th {
+  font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--c-texto-2); white-space: nowrap; background: var(--c-superficie);
+}
+.table td.num, .table th.num, .table .text-end { font-variant-numeric: tabular-nums; }
+.table a:not(.btn) { font-weight: 500; text-decoration: none; }
+.table a:not(.btn):hover { text-decoration: underline; }
+@media (max-width: 767.98px) {
+  .app-main .table { display: block; max-width: 100%; overflow-x: auto; }
+}
+
+/* --- Botones ----------------------------------------------------------------- */
+
+.btn {
+  --bs-btn-font-weight: 500; --bs-btn-border-radius: var(--radio-control);
+  --bs-btn-padding-y: .35rem; --bs-btn-padding-x: .85rem; --bs-btn-font-size: .875rem;
+  min-height: 34px; font-weight: 500;
+}
+.btn-sm { --bs-btn-padding-y: .2rem; --bs-btn-padding-x: .6rem; --bs-btn-font-size: .8125rem; min-height: 28px; }
+.btn:focus-visible { box-shadow: 0 0 0 2px var(--bs-focus-ring-color); outline: 0; }
+
+.btn-primary {
+  --bs-btn-bg: var(--c-acento); --bs-btn-border-color: var(--c-acento); --bs-btn-color: #fff;
+  --bs-btn-hover-bg: var(--c-acento-hover); --bs-btn-hover-border-color: var(--c-acento-hover); --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: var(--c-acento-activo); --bs-btn-active-border-color: var(--c-acento-activo); --bs-btn-active-color: #fff;
+  --bs-btn-focus-shadow-rgb: 79, 70, 229;
+  --bs-btn-disabled-bg: var(--c-acento); --bs-btn-disabled-border-color: var(--c-acento);
+}
+
+/* Secundario: blanco, borde fino y texto principal (lo usan todos los outline). */
+.btn-outline-primary, .btn-outline-secondary, .btn-outline-dark, .btn-outline-light,
+.btn-outline-info, .btn-outline-warning, .btn-outline-success, .btn-light {
+  --bs-btn-bg: var(--c-superficie); --bs-btn-color: var(--c-texto); --bs-btn-border-color: var(--c-borde);
+  --bs-btn-hover-bg: var(--c-fondo); --bs-btn-hover-color: var(--c-texto); --bs-btn-hover-border-color: #CBD2DB;
+  --bs-btn-active-bg: var(--c-neutro-suave); --bs-btn-active-color: var(--c-texto); --bs-btn-active-border-color: #CBD2DB;
+  --bs-btn-disabled-color: var(--c-texto-2); --bs-btn-disabled-border-color: var(--c-borde);
+  --bs-btn-focus-shadow-rgb: 79, 70, 229;
+}
+.btn-outline-primary { --bs-btn-color: var(--c-acento); --bs-btn-hover-color: var(--c-acento-hover); }
+
+/* Peligro: solo texto rojo (el modal de confirmación usa .btn-danger sólido). */
+.btn-outline-danger {
+  --bs-btn-bg: transparent; --bs-btn-color: var(--c-error); --bs-btn-border-color: transparent;
+  --bs-btn-hover-bg: var(--c-error-suave); --bs-btn-hover-color: var(--c-error); --bs-btn-hover-border-color: transparent;
+  --bs-btn-active-bg: var(--c-error-suave); --bs-btn-active-color: var(--c-error); --bs-btn-active-border-color: transparent;
+  --bs-btn-focus-shadow-rgb: 192, 38, 45;
+}
+.btn-danger { --bs-btn-bg: var(--c-error); --bs-btn-border-color: var(--c-error); }
+.btn-link { color: var(--c-acento); text-decoration: none; }
+
+/* --- Formularios ------------------------------------------------------------- */
+
+.form-label { font-size: 13px; font-weight: 500; margin-bottom: 4px; color: var(--c-texto); }
+.form-control, .form-select {
+  min-height: 36px; border-color: var(--c-borde); border-radius: var(--radio-control);
+  font-size: .875rem; color: var(--c-texto); background-color: var(--c-superficie);
+}
+.form-control-sm, .form-select-sm { min-height: 30px; }
+textarea.form-control { min-height: 0; }
+.form-control:focus, .form-select:focus, .form-check-input:focus {
+  border-color: var(--c-acento); box-shadow: 0 0 0 2px var(--bs-focus-ring-color);
+}
+.form-check-input:checked { background-color: var(--c-acento); border-color: var(--c-acento); }
+.form-text { font-size: 12px; color: var(--c-texto-2); }
+.invalid-feedback, .text-danger { color: var(--c-error) !important; }
+.text-muted { color: var(--c-texto-2) !important; }
+
+/* --- Badges: pastilla suave --------------------------------------------------- */
+
+.badge {
+  border-radius: 999px; font-size: 12px; font-weight: 500; padding: .25em .65em; line-height: 1.4;
+}
+.badge.bg-success, .badge.text-bg-success { background: var(--c-ok-suave) !important; color: var(--c-ok) !important; }
+.badge.bg-warning, .badge.text-bg-warning { background: var(--c-aviso-suave) !important; color: var(--c-aviso) !important; }
+.badge.bg-danger,  .badge.text-bg-danger  { background: var(--c-error-suave) !important; color: var(--c-error) !important; }
+.badge.bg-primary, .badge.bg-info, .badge.text-bg-primary, .badge.text-bg-info {
+  background: var(--c-acento-suave) !important; color: var(--c-acento) !important;
+}
+.badge.bg-secondary, .badge.bg-light, .badge.bg-dark, .badge.text-bg-secondary, .badge.text-bg-light {
+  background: var(--c-neutro-suave) !important; color: #4A5565 !important;
+}
+
+/* --- Alertas ------------------------------------------------------------------ */
+
+.alert { --bs-alert-border-radius: var(--radio); border-width: 1px; }
+.alert-success { --bs-alert-bg: var(--c-ok-suave); --bs-alert-color: var(--c-ok); --bs-alert-border-color: #BFE6D2; }
+.alert-warning { --bs-alert-bg: var(--c-aviso-suave); --bs-alert-color: var(--c-aviso); --bs-alert-border-color: #F4D9A6; }
+.alert-danger  { --bs-alert-bg: var(--c-error-suave); --bs-alert-color: var(--c-error); --bs-alert-border-color: #F4C2C5; }
+.alert-info    { --bs-alert-bg: var(--c-acento-suave); --bs-alert-color: var(--c-acento-activo); --bs-alert-border-color: #D3D7FA; }
+
+/* --- Pestañas y modales -------------------------------------------------------- */
+
+.nav-tabs { --bs-nav-tabs-border-color: var(--c-borde); --bs-nav-tabs-link-active-color: var(--c-acento);
+  --bs-nav-tabs-link-active-border-color: var(--c-borde) var(--c-borde) var(--c-fondo); --bs-nav-tabs-link-active-bg: var(--c-fondo); }
+.nav-tabs .nav-link { color: var(--c-texto-2); font-weight: 500; }
+.nav-tabs .nav-link.active { color: var(--c-acento); }
+.modal-content { border-radius: var(--radio); border-color: var(--c-borde); }
+.modal-title { font-weight: 600; }
+
+/* --- Login --------------------------------------------------------------------- */
+
+.login-pagina { background: var(--c-fondo); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.login-tarjeta {
+  width: 100%; max-width: 380px; background: var(--c-superficie); border: 1px solid var(--c-borde);
+  border-radius: var(--radio); box-shadow: var(--sombra); padding: 28px 24px 24px; position: relative; overflow: hidden;
+}
+.login-tarjeta::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 4px;
+  background: linear-gradient(90deg, var(--c-acento), #A78BFA);
+}
+.login-marca { font-size: 18px; font-weight: 600; letter-spacing: -.01em; text-align: center; margin: 0 0 20px; }
+.login-pie { text-align: center; color: var(--c-texto-2); font-size: 12px; margin: 20px 0 0; }
 
 /* --- Tarjeta de oportunidad -------------------------------------------- */
 

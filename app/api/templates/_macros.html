@@ -1,0 +1,23 @@
+{#- Macros de página (F-plat-ui).
+    {% from "_macros.html" import encabezado, vacio %} -#}
+
+{#- Encabezado de página: título, una línea de descripción y acciones a la derecha.
+    `acciones` es HTML ya escapado (usar {% call %} o pasar un bloque con |safe). -#}
+{% macro encabezado(titulo, descripcion="", acciones="") -%}
+<header class="encabezado-pagina">
+  <div class="encabezado-pagina__texto">
+    <h1 class="encabezado-pagina__titulo">{{ titulo }}</h1>
+    {% if descripcion %}<p class="encabezado-pagina__desc">{{ descripcion }}</p>{% endif %}
+  </div>
+  {% if acciones or caller is defined %}
+  <div class="encabezado-pagina__acciones">{{ acciones|safe if acciones }}{% if caller is defined %}{{ caller() }}{% endif %}</div>
+  {% endif %}
+</header>
+{%- endmacro %}
+
+{#- Estado vacío: texto corto y la acción siguiente. -#}
+{% macro vacio(texto, href="", enlace="") -%}
+<div class="estado-vacio" role="status">
+  <p class="estado-vacio__texto">{{ texto }}{% if href %} <a href="{{ href }}">{{ enlace }} →</a>{% endif %}</p>
+</div>
+{%- endmacro %}

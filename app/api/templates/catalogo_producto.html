@@ -31,7 +31,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="col-md-4"><label class="form-label" for="f-nombre">Nuevo formato</label><input class="form-control" id="f-nombre" name="nombre" placeholder="caja 1 L" required maxlength="100"></div>
   <div class="col-md-3"><label class="form-label" for="f-factor">Equivale a ({{ p.unidad_base }})</label><input class="form-control" id="f-factor" name="factor_base" inputmode="decimal" placeholder="1" required></div>
-  <div class="col-md-2"><button class="btn btn-outline-primary">Agregar formato</button></div>
+  <div class="col-md-2"><button class="btn btn-primary">Agregar formato</button></div>
 </form>
 
 {% if es_admin %}
