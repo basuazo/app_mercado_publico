@@ -1,0 +1,50 @@
+{#
+  Fila de una línea de Compra Ágil en curación (F-plat-1). Contexto: `v` (ln, ca, producto_nombre,
+  productos, formatos), `vista` ("pendientes" | "ca"), `csrf_token`. Confirmar o marcar «sin detalle»
+  por HTMX: en Pendientes la fila desaparece (200 vacío + aviso fuera de banda), en la ficha se repinta.
+#}
+{% set ln = v.ln %}
+<tr id="linea-{{ ln.id }}">
+  <td class="small">
+    <a href="/catalogo/ca/{{ ln.ca_codigo }}" class="num">{{ ln.ca_codigo }}</a>
+    {% if v.ca.monto_disponible_clp %}<div class="text-muted">{{ v.ca.monto_disponible_clp | clp }}</div>{% endif %}
+    <span class="badge bg-{{ {'ok': 'success', 'dudosa': 'warning', 'pendiente': 'secondary'}[ln.estado] }}">{{ ln.estado }}</span>
+    {% if ln.origen != 'api' %}<span class="badge bg-info text-dark">{{ ln.origen }}</span>{% endif %}
+  </td>
+  <td>
+    <div title="{{ ln.texto_origen }}">{{ ln.texto_origen | truncate(220) }}</div>
+    <div class="small text-muted">Cantidad: <span class="num">{{ ln.cantidad | numero }}</span>
+      {% if ln.cantidad_base is not none %} · base: <span class="num">{{ ln.cantidad_base | numero }}</span>{% endif %}
+      {% if v.producto_nombre %} · {{ 'Producto' if ln.estado == 'ok' else 'Sugerido' }}: <strong>{{ v.producto_nombre }}</strong>{% endif %}</div>
+  </td>
+  <td style="min-width: 22rem">
+    <label class="visually-hidden" for="q-{{ ln.id }}">Buscar producto</label>
+    <input type="search" id="q-{{ ln.id }}" name="q" class="form-control form-control-sm mb-1" placeholder="Buscar producto del catálogo…"
+           hx-get="/catalogo/buscar-producto?linea_id={{ ln.id }}" hx-trigger="input changed delay:300ms" hx-target="#sel-{{ ln.id }}" hx-swap="innerHTML">
+    <form method="post" action="/catalogo/lineas/{{ ln.id }}/confirmar" hx-post="/catalogo/lineas/{{ ln.id }}/confirmar"
+          hx-target="#linea-{{ ln.id }}" hx-swap="outerHTML" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="vista" value="{{ vista }}">
+      <div id="sel-{{ ln.id }}">
+        {% with linea_id=ln.id, productos=v.productos, producto_sel=ln.producto_id, formatos=v.formatos, formato_sel=ln.formato_id %}
+        {% include "_catalogo_selector.html" %}
+        {% endwith %}
+      </div>
+      <button class="btn btn-sm btn-primary mt-1">Confirmar</button>
+    </form>
+    <div class="d-flex gap-1 mt-1">
+      <form method="post" action="/catalogo/lineas/{{ ln.id }}/anexo" hx-post="/catalogo/lineas/{{ ln.id }}/anexo"
+            hx-target="#linea-{{ ln.id }}" hx-swap="outerHTML" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="vista" value="{{ vista }}">
+        <button class="btn btn-sm btn-outline-secondary">Sin detalle (anexo)</button>
+      </form>
+      {% if ln.origen == 'manual' and vista == 'ca' %}
+      <form method="post" action="/catalogo/lineas/{{ ln.id }}/quitar" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-sm btn-outline-danger">Quitar</button>
+      </form>
+      {% endif %}
+    </div>
+  </td>
+</tr>

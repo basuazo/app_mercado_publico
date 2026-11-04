@@ -49,11 +49,12 @@
            href="/plan-anual"{% if ruta_actual == '/plan-anual' %} aria-current="page"{% endif %}>Plan Anual</a>
         {% if tiene_empresa_activa %}
         <div class="dropdown">
-          <button class="btn btn-sm btn-outline-light dropdown-toggle{% if ruta_actual.startswith('/proveedores') %} active{% endif %}"
+          <button class="btn btn-sm btn-outline-light dropdown-toggle{% if ruta_actual.startswith('/proveedores') or ruta_actual.startswith('/catalogo') %} active{% endif %}"
                   type="button" data-bs-toggle="dropdown" aria-expanded="false">Mesa</button>
           <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item" href="/proveedores">Proveedores</a></li>
             <li><a class="dropdown-item" href="/proveedores/logistica">Logística</a></li>
+            <li><a class="dropdown-item" href="/catalogo">Catálogo de productos</a></li>
           </ul>
         </div>
         {% endif %}

@@ -25,9 +25,10 @@ jobs:
     uses: ./.github/workflows/_job.yml
     secrets: inherit
     with:
-      jobs: "mercado-ca"
+      jobs: "mercado-ca mercado-catalogo"
       # 5 de espera del lock + hasta 15 de pausa de la API (F-429-pausa-ca) no caben
       # junto al trabajo: si la pausa es larga, el CLI sale omitido antes. Trabajo:
       # listado de 15 min de una región (pocas páginas) + 10 min de detalles (tope).
-      timeout_min: 20
+      # + `mercado-catalogo` (F-plat-1, solo base de datos; espera el lock hasta 5 min).
+      timeout_min: 30
       esperar_lock_min: 5

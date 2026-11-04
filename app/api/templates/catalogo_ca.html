@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Líneas de {{ ca.codigo }} — MP Oportunidades{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/catalogo">← Catálogo</a> · <a href="/oportunidad/compras_agiles/{{ ca.codigo }}">Ver la Compra Ágil</a></p>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="mb-0 fs-4">{{ ca.nombre }} <span class="text-muted num fs-6">{{ ca.codigo }}</span></h2>
+  <span class="badge bg-{{ bandera[1] }} fs-6">{{ bandera[0] }}</span>
+</div>
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<div id="catalogo-aviso" aria-live="polite"></div>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead class="table-dark"><tr><th scope="col">Línea</th><th scope="col">Texto solicitado</th><th scope="col">Producto y formato</th></tr></thead>
+    <tbody>
+      {% set vista = 'ca' %}
+      {% for v in lineas %}{% include "_catalogo_linea.html" %}
+      {% else %}<tr><td colspan="3" class="text-muted">Esta Compra Ágil no tiene líneas de alimentos en el catálogo. Puedes agregarlas a mano.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3 class="h5 mt-4">Agregar línea a mano</h3>
+<p class="small text-muted">Para anexos que todavía no se leen automáticamente: producto, formato y cantidad.</p>
+<form method="post" action="/catalogo/ca/{{ ca.codigo }}/lineas" class="row g-2 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="col-md-5"><label class="form-label" for="man-prod">Producto</label>
+    <select class="form-select" id="man-prod" name="producto_id" required
+            hx-get="/catalogo/formatos?linea_id=0" hx-trigger="change" hx-target="#fmt-0" hx-swap="innerHTML">
+      <option value="">Elige un producto…</option>
+      {% for p in productos_todos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-3"><label class="form-label" for="man-fmt">Formato</label>
+    <span id="fmt-0"><select class="form-select" id="man-fmt" name="formato_id"><option value="">Sin formato</option></select></span></div>
+  <div class="col-md-2"><label class="form-label" for="man-cant">Cantidad</label>
+    <input class="form-control" id="man-cant" name="cantidad" inputmode="decimal" placeholder="12"></div>
+  <div class="col-md-2"><button class="btn btn-primary w-100">Agregar</button></div>
+</form>
+{% endblock %}

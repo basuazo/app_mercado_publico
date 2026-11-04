@@ -16,6 +16,20 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="Catálogo de productos y líneas por Compra Ágil",
+        descripcion=(
+            "Cada producto que pide una Compra Ágil de alimentos se asocia ahora a un producto "
+            "del catálogo (con su formato: «caja 1 L», «saco 25 kg»), para poder comparar precios "
+            "entre compras. El sistema propone el producto por palabras clave y por lo que ya "
+            "aprendió; tú confirmas en «Mesa → Catálogo de productos»: cada confirmación enseña "
+            "un alias y se aplica sola a las líneas con el mismo texto. Las compras que solo dicen "
+            "«según anexo adjunto» quedan marcadas «sin detalle», y puedes agregar sus líneas a "
+            "mano. En la ficha de la compra aparece la pestaña «Líneas» con su estado. "
+            "Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="Empresas, proveedores y costos con historial",
         descripcion=(
             "Ahora hay empresas con su territorio priorizado (las regiones que la plataforma "

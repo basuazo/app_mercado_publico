@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Catálogo de productos — MP Oportunidades{% endblock %}
+{% macro paginacion() %}
+{% set paginas = ((total + por_pagina - 1) // por_pagina) %}
+{% if paginas > 1 %}
+<nav aria-label="Páginas" class="d-flex gap-2 align-items-center mb-3">
+  {% if pagina > 1 %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo?tab={{ tab }}&q={{ q | urlencode }}&pagina={{ pagina - 1 }}">← Anterior</a>{% endif %}
+  <span class="small text-muted">Página {{ pagina }} de {{ paginas }}</span>
+  {% if pagina < paginas %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo?tab={{ tab }}&q={{ q | urlencode }}&pagina={{ pagina + 1 }}">Siguiente →</a>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="mb-0">Catálogo de productos</h2>
+  <p class="small text-muted mb-0">
+    Líneas: <strong>{{ resumen.get('ok', 0) }}</strong> ok ·
+    <strong>{{ resumen.get('dudosa', 0) }}</strong> dudosas ·
+    <strong>{{ resumen.get('pendiente', 0) }}</strong> pendientes
+  </p>
+</div>
+<p class="small text-muted">El catálogo es común a todas las empresas: lo que corrijas lo ven todos. Cada confirmación enseña un alias y se aplica a las líneas con el mismo texto.</p>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<div id="catalogo-aviso" aria-live="polite"></div>
+
+<ul class="nav nav-tabs mb-3">
+  {% for clave, etiqueta in [('pendientes', 'Pendientes'), ('productos', 'Productos'), ('alias', 'Alias')] %}
+  <li class="nav-item"><a class="nav-link{% if tab == clave %} active{% endif %}" href="/catalogo?tab={{ clave }}"{% if tab == clave %} aria-current="page"{% endif %}>{{ etiqueta }}</a></li>
+  {% endfor %}
+</ul>
+
+{% if tab == 'pendientes' %}
+  <p class="small text-muted">{{ total }} línea(s) por revisar, de mayor a menor monto de la Compra Ágil.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-dark"><tr><th scope="col">Compra Ágil</th><th scope="col">Texto solicitado</th><th scope="col">Producto y formato</th></tr></thead>
+      <tbody>
+        {% set vista = 'pendientes' %}
+        {% for v in lineas %}{% include "_catalogo_linea.html" %}
+        {% else %}<tr><td colspan="3" class="text-muted">No hay líneas pendientes.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ paginacion() }}
+
+{% elif tab == 'productos' %}
+  <form method="get" action="/catalogo" class="row g-2 mb-3" role="search">
+    <input type="hidden" name="tab" value="productos">
+    <div class="col-md-6"><label class="visually-hidden" for="q">Buscar producto</label>
+      <input type="search" id="q" name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nombre o familia"></div>
+    <div class="col-auto"><button class="btn btn-outline-primary">Buscar</button></div>
+  </form>
+  <details class="mb-3">
+    <summary class="btn btn-primary btn-sm">Nuevo producto</summary>
+    <form method="post" action="/catalogo/productos" class="border rounded p-3 mt-2 bg-body-tertiary">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row g-2">
+        <div class="col-md-4"><label class="form-label" for="np-nombre">Nombre</label><input class="form-control" id="np-nombre" name="nombre" required maxlength="200"></div>
+        <div class="col-md-2"><label class="form-label" for="np-base">Unidad base</label>
+          <select class="form-select" id="np-base" name="unidad_base" required><option value="kg">kg</option><option value="L">L</option><option value="u">u</option></select></div>
+        <div class="col-md-3"><label class="form-label" for="np-fam">Familia</label>
+          <input class="form-control" id="np-fam" name="familia" list="familias-cat" maxlength="100">
+          <datalist id="familias-cat">{% for f in familias %}<option value="{{ f }}">{% endfor %}</datalist></div>
+        <div class="col-md-2"><label class="form-label" for="np-unspsc">UNSPSC</label><input class="form-control" id="np-unspsc" name="unspsc" maxlength="20"></div>
+        <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary">Crear</button></div>
+      </div>
+    </form>
+  </details>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle">
+      <thead class="table-dark"><tr><th scope="col">Producto</th><th scope="col">Familia</th><th scope="col">Base</th><th scope="col" class="text-end">Líneas ok</th><th scope="col">Estado</th></tr></thead>
+      <tbody>
+        {% for p in productos %}
+        <tr>
+          <td><a href="/catalogo/productos/{{ p.id }}">{{ p.nombre }}</a></td>
+          <td>{{ p.familia or '—' }}</td><td>{{ p.unidad_base }}</td>
+          <td class="text-end num">{{ n_lineas.get(p.id, 0) }}</td>
+          <td>{% if p.activo %}<span class="badge bg-success">activo</span>{% else %}<span class="badge bg-secondary">inactivo</span>{% endif %}</td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="text-muted">Ningún producto coincide.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ paginacion() }}
+
+{% else %}
+  <form method="get" action="/catalogo" class="row g-2 mb-3" role="search">
+    <input type="hidden" name="tab" value="alias">
+    <div class="col-md-6"><label class="visually-hidden" for="q">Buscar alias</label>
+      <input type="search" id="q" name="q" value="{{ q }}" class="form-control" placeholder="Buscar en el texto del alias"></div>
+    <div class="col-auto"><button class="btn btn-outline-primary">Buscar</button></div>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-dark"><tr><th scope="col">Texto (normalizado)</th><th scope="col">Producto</th><th scope="col">Fuente</th><th scope="col">Revisó</th><th scope="col" class="text-end">Veces</th></tr></thead>
+      <tbody>
+        {% for a, producto, revisor in alias %}
+        <tr><td>{{ a.texto_normalizado | truncate(120) }}</td><td>{{ producto }}</td><td>{{ a.fuente }}</td>
+            <td>{{ revisor or '—' }}</td><td class="text-end num">{{ a.veces_visto }}</td></tr>
+        {% else %}<tr><td colspan="5" class="text-muted">Todavía no hay alias: se crean al confirmar líneas.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ paginacion() }}
+{% endif %}
+{% endblock %}

@@ -31,6 +31,7 @@ from app.ingest.orchestrator import (
     run_match,
     run_mercado_backfill,
     run_mercado_ca,
+    run_mercado_catalogo,
     run_mercado_oc,
     run_plan_anual,
     run_resumen,
@@ -61,6 +62,7 @@ _JOBS = (
     "mercado-ca",
     "mercado-backfill",
     "mercado-oc",
+    "mercado-catalogo",
 )
 
 _log = get_logger(__name__)
@@ -139,6 +141,7 @@ def cmd_run_once(
     mes: int | None = None,
     esperar_lock_min: int = 0,
     desde: str | None = None,
+    inicial: bool = False,
 ) -> None:
     setup_logging()
     settings = get_settings()
@@ -196,6 +199,11 @@ def cmd_run_once(
         # F-merc-2: datos abiertos, sin ticket ni cuota; lock de siempre. `--desde AAAA-MM`
         # es la carga inicial (desde el PC; el disparo diario va a las 07:20 Chile).
         "mercado-oc": _locked("mercado-oc", lambda: run_mercado_oc(settings, engine, desde=desde)),
+        # F-plat-1: solo base de datos (sin ticket ni cuota). `--inicial` recorre todas las CA
+        # (desde el PC con DATABASE_URL de producción); sin él, solo las que cambiaron.
+        "mercado-catalogo": _locked(
+            "mercado-catalogo", lambda: run_mercado_catalogo(settings, engine, inicial=inicial)
+        ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.
@@ -322,6 +330,11 @@ def main() -> None:
         help="Mes inicial AAAA-MM (solo job=mercado-oc; default: mes actual y 2 anteriores)",
     )
     once.add_argument(
+        "--inicial",
+        action="store_true",
+        help="Recorre todas las CA, no solo las cambiadas (solo job=mercado-catalogo)",
+    )
+    once.add_argument(
         "--esperar-lock-min",
         type=_minutos_no_negativos,
         default=0,
@@ -343,6 +356,7 @@ def main() -> None:
             mes=args.mes,
             esperar_lock_min=args.esperar_lock_min,
             desde=args.desde,
+            inicial=args.inicial,
         )
     elif args.cmd == "run-scheduler":
         cmd_run_scheduler()

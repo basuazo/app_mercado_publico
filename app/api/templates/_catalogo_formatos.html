@@ -1,0 +1,7 @@
+{# Selector de formato de un producto (F-plat-1). Contexto: `linea_id`, `formatos`, `formato_sel`. Por omisión, el formato base (factor 1). #}
+<select name="formato_id" class="form-select form-select-sm" aria-label="Formato">
+  <option value="">Sin formato</option>
+  {% for f in formatos %}
+  <option value="{{ f.id }}" {% if f.id == formato_sel or (formato_sel is none and f.factor_base == 1) %}selected{% endif %}>{{ f.nombre }} (= {{ f.factor_base | numero }})</option>
+  {% endfor %}
+</select>

@@ -230,6 +230,20 @@ def run_mercado_oc(
     return sync_mercado_oc(settings, engine, desde=desde)
 
 
+def run_mercado_catalogo(
+    settings: Settings, engine: Engine, inicial: bool = False
+) -> dict[str, Any]:
+    """Job `mercado-catalogo` (F-plat-1): siembra la canasta y normaliza a líneas canónicas las
+    CA de las regiones activas. Solo base de datos: sin ticket, sin cuota, sin red.
+
+    `inicial=True` recorre todas las CA; si no, solo las que cambiaron desde el cursor."""
+    from app.mercado.catalogo import procesar_catalogo
+
+    regiones = regiones_activas_engine(engine, settings)
+    with Session(engine) as session:
+        return procesar_catalogo(session, regiones, inicial=inicial)
+
+
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
     """Job `vocabulario-rubros` (F-ca-explorar): regenera `rubro_vocabulario` desde
     `licitacion_items`. Solo base de datos: sin ticket, sin cuota, sin red."""

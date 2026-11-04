@@ -9,6 +9,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -214,6 +215,11 @@ class CompraAgil(Base):
     motivo_cancelacion: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Última vez que se guardaron sus cotizaciones (aunque vinieran vacías).
     cotizaciones_obtenidas_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # F-plat-1: bandera "CA sin detalle" (completo | incompleto | sin_detalle). La calcula
+    # `app.mercado.catalogo.recalcular_detalle_lineas` a partir de `ca_lineas`.
+    detalle_lineas: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="sin_detalle", server_default="sin_detalle"
+    )
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -706,6 +712,7 @@ Index("ix_alertas_seguimiento_id", Alerta.seguimiento_id)
 Index("ix_oportunidades_match_fuente_codigo", OportunidadMatch.fuente, OportunidadMatch.codigo_oportunidad)
 Index("ix_compras_agiles_fecha_cierre", CompraAgil.fecha_cierre)
 Index("ix_compras_agiles_fecha_publicacion", CompraAgil.fecha_publicacion)
+Index("ix_compras_agiles_detalle_lineas", CompraAgil.detalle_lineas)
 
 # F-merc-1: quién cotiza dónde (por proveedor) y FK de los productos (borrado en cascada).
 # El UNIQUE (ca_codigo, llamado, rut_proveedor) ya sirve a la búsqueda por CA.
@@ -785,8 +792,13 @@ class ProveedorProducto(Base):
     proveedor_id: Mapped[int] = mapped_column(
         BigInt, ForeignKey("proveedores.id", ondelete="CASCADE"), nullable=False
     )
-    # Sin FK: F-plat-1 la agrega cuando exista `producto_canonico`.
-    producto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # F-plat-1: FK al catálogo canónico (SET NULL: borrar un producto no borra el costo).
+    producto_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id", ondelete="SET NULL"), nullable=True
+    )
+    formato_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_formato.id", ondelete="SET NULL"), nullable=True
+    )
     producto_texto: Mapped[str] = mapped_column(String(300), nullable=False)
     codigo_unspsc: Mapped[str | None] = mapped_column(String(20), nullable=True)
     formato_texto: Mapped[str] = mapped_column(
@@ -848,3 +860,120 @@ class TarifaLogistica(Base):
     costo_por_kg_clp: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Catálogo canónico y líneas 1:1 por Compra Ágil (F-plat-1). Datos comunes a todas las
+# empresas (como `oc_lineas_ca`): el catálogo es compartido y `revisado_por` deja la huella.
+# Ninguna se purga (retención: no aplica).
+# ---------------------------------------------------------------------------
+
+
+class ProductoCanonico(Base):
+    __tablename__ = "producto_canonico"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    familia: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    unspsc_sugerido: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    unidad_base: Mapped[str] = mapped_column(String(3), nullable=False)  # kg | L | u
+    activo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    creado_por: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+    formatos: Mapped[list[ProductoFormato]] = relationship(
+        "ProductoFormato", back_populates="producto", cascade="all, delete-orphan"
+    )
+
+
+class ProductoFormato(Base):
+    __tablename__ = "producto_formato"
+    __table_args__ = (
+        UniqueConstraint("producto_id", "nombre", name="uq_producto_formato"),
+        CheckConstraint("factor_base > 0", name="factor"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id", ondelete="CASCADE"), nullable=False
+    )
+    nombre: Mapped[str] = mapped_column(String(100), nullable=False)
+    factor_base: Mapped[float] = mapped_column(Float, nullable=False)  # > 0
+    ean: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    producto: Mapped[ProductoCanonico] = relationship("ProductoCanonico", back_populates="formatos")
+
+
+class ProductoAlias(Base):
+    __tablename__ = "producto_alias"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    texto_normalizado: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
+    producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id", ondelete="CASCADE"), nullable=False
+    )
+    formato_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_formato.id", ondelete="SET NULL"), nullable=True
+    )
+    fuente: Mapped[str] = mapped_column(String(10), nullable=False, default="humano")
+    confianza: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    revisado_por: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    veces_visto: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class CaLinea(Base):
+    """Línea de lo SOLICITADO en una Compra Ágil (`ca_productos`), normalizada a un producto.
+
+    Sin FK a `ca_productos`: la ingesta los borra y reinserta en cada detalle; la clave es
+    `(ca_codigo, n)` con `n` = posición del producto dentro de la CA.
+    """
+
+    __tablename__ = "ca_lineas"
+    __table_args__ = (UniqueConstraint("ca_codigo", "n", name="uq_ca_linea"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo", ondelete="CASCADE"), nullable=False
+    )
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    producto_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id", ondelete="SET NULL"), nullable=True
+    )
+    formato_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_formato.id", ondelete="SET NULL"), nullable=True
+    )
+    cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cantidad_base: Mapped[float | None] = mapped_column(Float, nullable=True)
+    texto_origen: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Clave de alias de `texto_origen` (`canonico.normalizar_texto`): permite re-aplicar un alias
+    # confirmado a todas las líneas iguales con un UPDATE, sin escanear los textos.
+    texto_norm: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    codigo_unspsc: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    origen: Mapped[str] = mapped_column(String(10), nullable=False, default="api")
+    estado: Mapped[str] = mapped_column(String(10), nullable=False, default="pendiente")
+    revisado_por: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+
+Index("ix_producto_alias_producto_id", ProductoAlias.producto_id)
+Index("ix_ca_lineas_producto_id", CaLinea.producto_id)
+Index("ix_ca_lineas_estado", CaLinea.estado)
+Index("ix_ca_lineas_texto_norm", CaLinea.texto_norm)

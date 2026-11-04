@@ -46,6 +46,27 @@ ve un aviso (403 en las demás rutas), también el admin. **Dependencia nueva:**
 **Pasos de Boris:** ver el prompt §4 (migración fuera de 22:00–07:00 con `GH mercado` pausado; crear la empresa con región 16,
 asignarse y asignar a Mario; cargar 3 proveedores y ~40 productos; medir el tiempo).
 
+## F-plat-1 (4-nov, commit local sin push hasta auditar; migración `a9d4c7e1f2b6`)
+Catálogo canónico y líneas 1:1 por Compra Ágil (pivote, `17-plan-pivote-plataforma-ca.md` §2 C2). **Sin modelo de lenguaje:**
+alias aprendidos + palabras clave; el LLM entra en F-plat-2.
+**Esquema:** `producto_canonico`, `producto_formato` (todo producto nace con su formato base, factor 1), `producto_alias`
+(`texto_normalizado` único), `ca_lineas` (`UNIQUE (ca_codigo, n)`, sin FK a `ca_productos` porque la ingesta los reinserta;
+agrega `texto_norm` para re-aplicar un alias con un UPDATE), `compras_agiles.detalle_lineas` (la bandera «CA sin detalle») y FK de
+`proveedor_productos` a producto y formato (los `producto_id` sueltos de F-plat-3 se ponen en NULL al migrar). Datos comunes, sin purga.
+**Reglas puras** (`app/catalogos/canonico.py`): `normalizar_texto`, `extraer_formato`, `detectar_sin_detalle`, `sugerir_producto`
+(alias exacto 1,0 / contenido 0,8 / palabra clave de la canasta 0,5; ≥ 0,8 `ok`, 0,5–0,8 `dudosa`, resto `pendiente`).
+Canasta en `app/catalogos/canasta_alimentos.py` (80 productos, generada con `scripts/mercado/generar_canasta_alimentos.py`
+desde el Excel: si Boris llena `decision_boris`/`nombre_final_boris`, se regenera). **Con solo reglas todo sale `dudosa`:**
+las ≥ 0,8 son alias que enseña la curación humana.
+**Job `mercado-catalogo`** (sin API; `python -m app.ingest run-once --job mercado-catalogo [--inicial]`; corre tras `mercado-ca` en
+`mercado.yml`): siembra lo que falta (nunca renombra ni desactiva) y crea/actualiza líneas de las CA de las regiones activas, por lotes
+de 500 CA, incremental con el cursor `sync_state` `mercado_catalogo`. Solo líneas de alimentos (`G_ALIM`); el texto de las ofertas con el
+mismo `codigo_producto` es segunda fuente. Una línea revisada por una persona nunca se pisa: si cambia su texto queda `dudosa`.
+**`/catalogo`** (usuarios con empresa activa): Pendientes (por monto de la CA), Productos (crear, editar, formatos, fusionar solo admin),
+Alias; `/catalogo/ca/{codigo}` (corregir y agregar líneas a mano); pestaña «Líneas» en la ficha de la CA (solo regiones activas).
+**Juez:** `python scripts/mercado/walk_forward_canonico.py` (solo lectura; cobertura (a) y (b), error mediano, 10 peores productos).
+**Pasos de Boris:** ver el prompt §4 (migración con `GH mercado` pausado; `--inicial` desde el PC; una hora en Pendientes; pegar el juez).
+
 ## F-merc-1c (4-nov, commit local sin push hasta auditar; migración `b8d4f1a6c2e9`)
 `mercado-backfill` ya no termina al primer 429 de tasa: corta el tramo guardando el avance, lee el fin de la pausa
 de Postgres, duerme hasta ese fin + 30–90 s y sigue en otro tramo, hasta `MERCADO_BACKFILL_MAX_PAUSAS` (12; 0 =

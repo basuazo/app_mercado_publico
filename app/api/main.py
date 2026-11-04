@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import LoginRequired
 from app.api.routes import api as api_router
 from app.api.routes import auth as auth_router
+from app.api.routes import catalogo as catalogo_router
 from app.api.routes import mesa as mesa_router
 from app.api.routes import pages as pages_router
 from app.core.db import normalizar_url_driver as _normalizar_url_driver
@@ -122,6 +123,7 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(pages_router.router)
     app.include_router(mesa_router.router)
+    app.include_router(catalogo_router.router)
     app.include_router(api_router.router)
 
     # Manejar LoginRequired → redirect a /login

@@ -132,7 +132,7 @@
       </aside>
 
       <div class="col-12 col-md order-2 order-md-1 min-w-0">
-        {% if tiene_desc or items or competencia_resumen %}
+        {% if tiene_desc or items or competencia_resumen or lineas_ca %}
         <ul class="nav nav-tabs mb-3" role="tablist">
           {% if tiene_desc %}
           <li class="nav-item" role="presentation">
@@ -147,6 +147,13 @@
                     data-bs-toggle="tab" data-bs-target="#ficha-panel-items" aria-controls="ficha-panel-items"
                     aria-selected="{{ 'true' if tab_inicial == 'items' else 'false' }}">
               {% if es_lic %}Ítems{% else %}Productos{% endif %} ({{ items | length }})</button>
+          </li>
+          {% endif %}
+          {% if lineas_ca %}
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ficha-tab-lineas" type="button" role="tab"
+                    data-bs-toggle="tab" data-bs-target="#ficha-panel-lineas" aria-controls="ficha-panel-lineas"
+                    aria-selected="false">Líneas ({{ lineas_ca.filas | length }})</button>
           </li>
           {% endif %}
           {% if competencia_resumen %}
@@ -186,6 +193,38 @@
                     <td>{{ it.rubro or '—' }}</td>
                     <td class="text-end num">{{ it.cantidad | numero }}</td>
                     <td>{{ it.unidad or '—' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if lineas_ca %}
+          <div class="tab-pane fade" id="ficha-panel-lineas" role="tabpanel" aria-labelledby="ficha-tab-lineas" tabindex="0">
+            <p class="small mb-2">
+              Detalle del catálogo:
+              <span class="badge bg-{{ lineas_ca.bandera[1] }}">{{ lineas_ca.bandera[0] }}</span>
+              <a class="ms-2" href="/catalogo/ca/{{ codigo }}">Corregir líneas</a>
+            </p>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle">
+                <thead>
+                  <tr>
+                    <th scope="col">Texto solicitado</th>
+                    <th scope="col">Producto</th>
+                    <th scope="col" class="text-end">Cantidad</th>
+                    <th scope="col">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for f in lineas_ca.filas %}
+                  <tr>
+                    <td>{{ f.ln.texto_origen | truncate(110) }}</td>
+                    <td>{{ f.producto or '—' }}</td>
+                    <td class="text-end num">{{ f.ln.cantidad | numero }}</td>
+                    <td>{{ f.ln.estado }}{% if f.ln.origen != 'api' %} · {{ f.ln.origen }}{% endif %}</td>
                   </tr>
                   {% endfor %}
                 </tbody>

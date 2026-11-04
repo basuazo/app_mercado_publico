@@ -914,10 +914,18 @@ def _contexto_ficha(
         matches_de_oportunidad(session, user.id, fuente, codigo), nombres_perfil
     )
     volver = _url_volver_feed(request)
+    lineas_ca = None
+    if isinstance(op, CompraAgil):
+        # F-plat-1: «Líneas» del catálogo, solo CA de regiones activas y usuarios con empresa.
+        from app.api.routes.catalogo import lineas_para_ficha
+        from app.mercado.territorio import regiones_activas
+
+        lineas_ca = lineas_para_ficha(session, op, user, regiones_activas(session, settings))
     return _ctx(
         request,
         user,
         match=match,
+        lineas_ca=lineas_ca,
         # Misma definición de "alta"/"media" que los presets del feed:
         # el badge de la ficha ya no puede contradecir al filtro (2.2).
         banda=(

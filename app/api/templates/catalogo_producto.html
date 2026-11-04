@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ p.nombre }} — Catálogo — MP Oportunidades{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/catalogo?tab=productos">← Productos</a></p>
+<h2 class="mb-3">{{ p.nombre }}{% if not p.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}</h2>
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<div class="card mb-4"><div class="card-body">
+  <form method="post" action="/catalogo/productos/{{ p.id }}" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-md-4"><label class="form-label" for="p-nombre">Nombre</label><input class="form-control" id="p-nombre" name="nombre" value="{{ p.nombre }}" required maxlength="200"></div>
+    <div class="col-md-3"><label class="form-label" for="p-fam">Familia</label>
+      <input class="form-control" id="p-fam" name="familia" value="{{ p.familia or '' }}" list="familias-prod" maxlength="100">
+      <datalist id="familias-prod">{% for f in familias %}<option value="{{ f }}">{% endfor %}</datalist></div>
+    <div class="col-md-2"><label class="form-label" for="p-unspsc">UNSPSC</label><input class="form-control" id="p-unspsc" name="unspsc" value="{{ p.unspsc_sugerido or '' }}" maxlength="20"></div>
+    <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" id="p-activo" name="activo" value="1" {% if p.activo %}checked{% endif %}><label class="form-check-label" for="p-activo">Activo</label></div></div>
+    <div class="col-md-1"><button class="btn btn-primary">Guardar</button></div>
+  </form>
+  <p class="small text-muted mt-2 mb-0">Unidad base: <strong>{{ p.unidad_base }}</strong> (no se cambia) · {{ n_lineas }} línea(s) · {{ n_alias }} alias.</p>
+</div></div>
+
+<h3 class="h5">Formatos</h3>
+<div class="table-responsive">
+  <table class="table table-sm align-middle w-auto">
+    <thead class="table-dark"><tr><th scope="col">Formato</th><th scope="col" class="text-end">Equivale a ({{ p.unidad_base }})</th></tr></thead>
+    <tbody>{% for f in formatos %}<tr><td>{{ f.nombre }}</td><td class="text-end num">{{ f.factor_base | numero }}</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+<form method="post" action="/catalogo/productos/{{ p.id }}/formatos" class="row g-2 align-items-end mb-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="col-md-4"><label class="form-label" for="f-nombre">Nuevo formato</label><input class="form-control" id="f-nombre" name="nombre" placeholder="caja 1 L" required maxlength="100"></div>
+  <div class="col-md-3"><label class="form-label" for="f-factor">Equivale a ({{ p.unidad_base }})</label><input class="form-control" id="f-factor" name="factor_base" inputmode="decimal" placeholder="1" required></div>
+  <div class="col-md-2"><button class="btn btn-outline-primary">Agregar formato</button></div>
+</form>
+
+{% if es_admin %}
+<h3 class="h5">Fusionar</h3>
+<p class="small text-muted">Mueve las líneas, los alias y los costos de proveedores de «{{ p.nombre }}» a otro producto con la misma unidad base. «{{ p.nombre }}» queda inactivo.</p>
+<form method="post" action="/catalogo/productos/{{ p.id }}/fusionar" class="row g-2 align-items-end"
+      onsubmit="return confirm('¿Fusionar este producto en el elegido? No se puede deshacer.');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="col-md-5"><label class="form-label" for="fus-dest">Fusionar en</label>
+    <select class="form-select" id="fus-dest" name="destino_id" required>
+      <option value="">Elige el producto de destino…</option>
+      {% for o in fusionables %}<option value="{{ o.id }}">{{ o.nombre }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-2"><button class="btn btn-outline-danger">Fusionar</button></div>
+</form>
+{% endif %}
+{% endblock %}
