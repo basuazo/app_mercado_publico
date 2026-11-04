@@ -190,7 +190,9 @@ def guarda_productos(det: CompraAgilDetalle, solo_grupos: bool) -> bool:
     if any(grupo_de(p.codigo_producto, p.nombre) for p in det.productos):
         return True
     return any(
-        grupo_de(p.codigo_producto, p.nombre_producto) for c in det.cotizaciones for p in c.productos
+        grupo_de(p.codigo_producto, p.nombre_producto)
+        for c in det.cotizaciones
+        for p in c.productos
     )
 
 
@@ -279,6 +281,7 @@ def guardar_detalle_mercado(
         "motivo_desierta": det.motivo_desierta,
         "motivo_cancelacion": det.motivo_cancelacion,
         "moneda": _recortar(det.moneda, 10),
+        "n_documentos": det.n_documentos,
     }
     for campo, valor in nuevos.items():
         if valor is not None:
@@ -292,6 +295,31 @@ def guardar_detalle_mercado(
     ca.detalle_fallos = 0
     ca.detalle_ultimo_fallo = None
     return resultado
+
+
+def guardar_detalle_vigente(session: Session, det: CompraAgilDetalle, ahora: datetime) -> None:
+    """Guarda el detalle de una CA abierta (F-merc-3). No commitea.
+
+    Solo `upsert_ca_detalle` (campos y `ca_productos`), `n_documentos` y `detalle_vigente_en`.
+    NO toca `ca_cotizaciones` ni `cotizaciones_obtenidas_en`: la cola de cerradas depende de
+    `cotizaciones_obtenidas_en < fecha_ultimo_cambio` y, si una abierta la dejara al día, no
+    se volvería a pedir tras el cierre y se perdería el ganador. Sin raw_json (regla 11).
+    """
+    upsert_ca_detalle(session, det)
+    ca = session.get(CompraAgil, det.codigo)
+    assert ca is not None  # upsert_ca_detalle la crea si no existía
+    if det.n_documentos is not None:
+        ca.n_documentos = det.n_documentos
+    ca.detalle_vigente_en = ahora
+    ca.detalle_fallos = 0
+    ca.detalle_ultimo_fallo = None
+
+
+def _bajar_y_guardar_vigente(engine: Engine, v2: MercadoPublicoV2Client, codigo: str) -> None:
+    det = v2.detalle_compra_agil(codigo, reintentar_transitorios=False)
+    with Session(engine) as session:
+        guardar_detalle_vigente(session, det, ahora_utc())
+        session.commit()
 
 
 def _bajar_y_guardar(
@@ -383,6 +411,93 @@ def cola_mercado_ca(
     return cola
 
 
+def cola_vigentes(
+    session: Session,
+    regiones: list[int],
+    ahora: datetime,
+    limite: int,
+    fallos_max: int,
+    espera_horas: int,
+) -> list[str]:
+    """CA abiertas de `regiones` sin detalle, o cuyo detalle quedó viejo (F-merc-3).
+
+    `publicada` con `fecha_cierre > ahora` y `detalle_vigente_en` nulo o anterior a
+    `fecha_ultimo_cambio`. Primero las que nunca tuvieron detalle, después por cierre
+    ascendente (lo que corre contra el reloj). Las que llegaron a `fallos_max` esperan como
+    en :func:`cola_mercado_ca` y van al final.
+    """
+    stmt = (
+        select(CompraAgil.codigo, CompraAgil.detalle_fallos, CompraAgil.detalle_ultimo_fallo)
+        .where(
+            CompraAgil.region.in_(regiones),
+            CompraAgil.estado == "publicada",
+            CompraAgil.fecha_cierre > ahora,
+            or_(
+                CompraAgil.detalle_vigente_en.is_(None),
+                CompraAgil.detalle_vigente_en < CompraAgil.fecha_ultimo_cambio,
+            ),
+        )
+        .order_by(
+            case((CompraAgil.detalle_fallos > 0, 1), else_=0),
+            case((CompraAgil.detalle_vigente_en.is_(None), 0), else_=1),
+            CompraAgil.fecha_cierre.asc(),
+            CompraAgil.codigo,
+        )
+        .limit(limite * 3)
+    )
+    cola: list[str] = []
+    for codigo, fallos, ultimo in session.execute(stmt):
+        espera = _espera_detalle(fallos, fallos_max, espera_horas)
+        if espera is not None and ultimo is not None and ahora < ultimo + espera:
+            continue
+        cola.append(codigo)
+        if len(cola) >= limite:
+            break
+    return cola
+
+
+def _recorrer_cola(
+    engine: Engine,
+    cola: list[str],
+    hacer: Callable[[str], None],
+    *,
+    tope_s: float,
+    inicio: float,
+    reloj: Callable[[], float],
+    resultado: dict[str, Any],
+    clave_tiempo: str,
+    etiqueta: str,
+) -> tuple[int, int]:
+    """Pide y guarda cada código de la cola. Devuelve (intentados, fallidos).
+
+    Un 429 o la cuota cortan y dejan `cortado_por` en `resultado`; un 401 se re-lanza; el
+    tope de tiempo deja `clave_tiempo`. Un fallo suma uno a la CA, salvo los de transporte.
+    """
+    intentados = fallidos = 0
+    for codigo in cola:
+        if reloj() - inicio >= tope_s:
+            resultado[clave_tiempo] = True
+            break
+        intentados += 1
+        try:
+            hacer(codigo)
+        except MPAuthError:
+            raise
+        except _ERRORES_DE_CORTE as exc:
+            fallidos += 1
+            _log.warning("mercado-ca: %s cortados por %s — %s", etiqueta, type(exc).__name__, exc)
+            resultado["cortado_por"] = type(exc).__name__
+            break
+        except MPTransportError as exc:
+            fallidos += 1
+            _log.warning("mercado-ca: error de transporte en %s — %s; sin sumar fallo", codigo, exc)
+        except Exception:
+            fallidos += 1
+            _log.error("mercado-ca: error con el detalle de %s", codigo, exc_info=True)
+            _registrar_fallo_detalle(engine, _FUENTE_CA, codigo)
+    return intentados, fallidos
+
+
 def sync_mercado_ca(
     settings: Settings,
     engine: Engine,
@@ -395,7 +510,9 @@ def sync_mercado_ca(
        `ca_ventana_horas` (misma función que `ca`, :func:`_sync_en_ventanas`), región
        en las regiones activas (F-plat-3) y sin `estado`. Sin cursor arranca en "ahora − ventana":
        lo anterior lo cubre `mercado-backfill`.
-    2. Cola (:func:`cola_mercado_ca`) con tope de `mercado_detalles_max` detalles y
+    2. Cola de vigentes (:func:`cola_vigentes`, F-merc-3), antes que la de cerradas, con tope
+       de `mercado_vigentes_max` y `mercado_vigentes_minutos`; no toca las cotizaciones.
+    3. Cola (:func:`cola_mercado_ca`) con tope de `mercado_detalles_max` detalles y
        `mercado_detalles_minutos`. Sin reintento de 5xx: lo que falla suma un fallo y
        vuelve a la cola de la corrida siguiente.
 
@@ -440,6 +557,51 @@ def sync_mercado_ca(
         if listado["cortado_por_error"] not in _CORTES_DE_SERVIDOR:
             return resultado
 
+    conteo = _Conteo()
+    inicio = reloj()
+    presupuesto_s = settings.mercado_detalles_minutos * 60
+    corte_del_listado = resultado.get("cortado_por")
+
+    # Vigentes primero: corren contra el reloj del cierre. Tope propio de cantidad y minutos;
+    # las cerradas usan el tiempo que quede (F-merc-3).
+    with Session(engine) as session:
+        vigentes = cola_vigentes(
+            session,
+            regiones,
+            ahora_utc(),
+            settings.mercado_vigentes_max,
+            settings.detalles_fallos_max,
+            settings.detalles_espera_horas,
+        )
+    vigentes_ok = 0
+
+    def _vigente(codigo: str) -> None:
+        nonlocal vigentes_ok
+        _bajar_y_guardar_vigente(engine, v2, codigo)
+        vigentes_ok += 1
+
+    v_intentados, _ = _recorrer_cola(
+        engine,
+        vigentes,
+        _vigente,
+        tope_s=min(settings.mercado_vigentes_minutos * 60, presupuesto_s),
+        inicio=inicio,
+        reloj=reloj,
+        resultado=resultado,
+        clave_tiempo="vigentes_cortado_por_tiempo",
+        etiqueta="vigentes",
+    )
+    resultado.update(
+        {
+            "vigentes_cola": len(vigentes),
+            "vigentes_detalles": vigentes_ok,
+            "vigentes_pendientes": len(vigentes) - v_intentados,
+        }
+    )
+    if resultado.get("cortado_por") != corte_del_listado:
+        # 429 o cuota: se corta la corrida guardando el avance, sin pedir las cerradas.
+        return resultado
+
     with Session(engine) as session:
         cola = cola_mercado_ca(
             session,
@@ -450,31 +612,21 @@ def sync_mercado_ca(
             settings.detalles_espera_horas,
         )
 
-    conteo = _Conteo()
-    presupuesto_s = settings.mercado_detalles_minutos * 60
-    inicio = reloj()
-    intentados = 0
-    for codigo in cola:
-        if reloj() - inicio >= presupuesto_s:
-            resultado["cortado_por_tiempo"] = True
-            break
-        intentados += 1
-        try:
-            conteo.sumar(_bajar_y_guardar(settings, engine, v2, codigo, reintentar=False))
-        except MPAuthError:
-            raise
-        except _ERRORES_DE_CORTE as exc:
-            conteo.detalles_fallidos += 1
-            _log.warning("mercado-ca: detalles cortados por %s — %s", type(exc).__name__, exc)
-            resultado["cortado_por"] = type(exc).__name__
-            break
-        except MPTransportError as exc:
-            conteo.detalles_fallidos += 1
-            _log.warning("mercado-ca: error de transporte en %s — %s; sin sumar fallo", codigo, exc)
-        except Exception:
-            conteo.detalles_fallidos += 1
-            _log.error("mercado-ca: error con el detalle de %s", codigo, exc_info=True)
-            _registrar_fallo_detalle(engine, _FUENTE_CA, codigo)
+    def _cerrada(codigo: str) -> None:
+        conteo.sumar(_bajar_y_guardar(settings, engine, v2, codigo, reintentar=False))
+
+    intentados, fallidos = _recorrer_cola(
+        engine,
+        cola,
+        _cerrada,
+        tope_s=presupuesto_s,
+        inicio=inicio,
+        reloj=reloj,
+        resultado=resultado,
+        clave_tiempo="cortado_por_tiempo",
+        etiqueta="detalles",
+    )
+    conteo.detalles_fallidos += fallidos
 
     resultado.update(
         {
@@ -629,7 +781,9 @@ class Backfill:
         self.regiones = (
             list(regiones) if regiones is not None else regiones_activas_engine(engine, settings)
         )
-        self.estados_detalle = {e.strip().lower() for e in settings.mercado_backfill_estados_detalle}
+        self.estados_detalle = {
+            e.strip().lower() for e in settings.mercado_backfill_estados_detalle
+        }
         self.resumen = ResumenBackfill()
         self._fallos_seguidos = 0
 
@@ -639,7 +793,9 @@ class Backfill:
         """Antes de cada request: hora, minutos y cuota. Lanza _Corte para terminar limpio."""
         ahora = self.now_fn(TZ_CHILE)
         if not en_ventana_nocturna(lambda _tz: ahora) or _tras_fin_noche(ahora):
-            raise _Corte(f"{_FIN_NOCHE[0]:02d}:{_FIN_NOCHE[1]:02d} Chile: fin de la ventana nocturna")
+            raise _Corte(
+                f"{_FIN_NOCHE[0]:02d}:{_FIN_NOCHE[1]:02d} Chile: fin de la ventana nocturna"
+            )
         if self.reloj() - self.inicio >= self.settings.mercado_backfill_minutos * 60:
             raise _Corte(f"tope de {self.settings.mercado_backfill_minutos} min por corrida")
         if self.v2.cuota_restante() <= self.settings.mercado_backfill_margen_cuota:
@@ -737,8 +893,10 @@ class Backfill:
                         CompraAgil.region.in_(self.regiones),
                         CompraAgil.estado.in_(sorted(self.estados_detalle)),
                         CompraAgil.cotizaciones_obtenidas_en.is_(None),
-                        CompraAgil.fecha_publicacion >= borde_del_dia_utc_naive(dias[0], fin_de_dia=False),
-                        CompraAgil.fecha_publicacion <= borde_del_dia_utc_naive(dias[-1], fin_de_dia=True),
+                        CompraAgil.fecha_publicacion
+                        >= borde_del_dia_utc_naive(dias[0], fin_de_dia=False),
+                        CompraAgil.fecha_publicacion
+                        <= borde_del_dia_utc_naive(dias[-1], fin_de_dia=True),
                     )
                     .order_by(CompraAgil.codigo)
                 ).scalars()
@@ -753,8 +911,10 @@ class Backfill:
                     .select_from(CompraAgil)
                     .where(
                         CompraAgil.region.in_(self.regiones),
-                        CompraAgil.fecha_publicacion >= borde_del_dia_utc_naive(dias[0], fin_de_dia=False),
-                        CompraAgil.fecha_publicacion <= borde_del_dia_utc_naive(dias[-1], fin_de_dia=True),
+                        CompraAgil.fecha_publicacion
+                        >= borde_del_dia_utc_naive(dias[0], fin_de_dia=False),
+                        CompraAgil.fecha_publicacion
+                        <= borde_del_dia_utc_naive(dias[-1], fin_de_dia=True),
                     )
                 ).scalar_one()
             )

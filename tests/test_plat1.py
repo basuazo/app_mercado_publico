@@ -493,6 +493,19 @@ def test_incremental_usa_el_cursor(session):
     assert cat.procesar_catalogo(session, [16])["cas"] == 1
 
 
+def test_incremental_reprocesa_una_vigente_cuyo_detalle_cambio(session):
+    # F-merc-3: el cursor también mira `detalle_vigente_en` (reemplazar `ca_productos` no
+    # siempre mueve `actualizado_en`).
+    _ca(session, "1-1-COT26", [("50181901", "Marraqueta", "marraqueta", 40, "Kilogramo")])
+    session.commit()
+    assert cat.procesar_catalogo(session, [16])["cas"] == 1
+    assert cat.procesar_catalogo(session, [16])["cas"] == 0
+    ca = session.get(CompraAgil, "1-1-COT26")
+    ca.detalle_vigente_en = datetime(2099, 1, 1)
+    session.commit()
+    assert cat.procesar_catalogo(session, [16])["cas"] == 1
+
+
 def test_confirmar_crea_alias_y_reaplica_a_las_iguales(session):
     for i in range(3):
         _ca(

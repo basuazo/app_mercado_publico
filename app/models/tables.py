@@ -215,6 +215,11 @@ class CompraAgil(Base):
     motivo_cancelacion: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Última vez que se guardaron sus cotizaciones (aunque vinieran vacías).
     cotizaciones_obtenidas_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # F-merc-3: último detalle de una CA vigente (publicada, aún abierta) y cuántos anexos
+    # trae. Aparte de `cotizaciones_obtenidas_en`: pedir el detalle de una abierta no debe
+    # dar por buenas las ofertas, que se leen tras el cierre.
+    detalle_vigente_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    n_documentos: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # F-plat-1: bandera "CA sin detalle" (completo | incompleto | sin_detalle). La calcula
     # `app.mercado.catalogo.recalcular_detalle_lineas` a partir de `ca_lineas`.
     detalle_lineas: Mapped[str] = mapped_column(

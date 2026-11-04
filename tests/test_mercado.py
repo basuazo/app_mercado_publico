@@ -34,9 +34,11 @@ from app.ingest.mercado import (
     FUENTE_MERCADO_CA,
     PREFIJO_BACKFILL,
     cola_mercado_ca,
+    cola_vigentes,
     contar_repetidas,
     guarda_productos,
     guardar_detalle_mercado,
+    guardar_detalle_vigente,
     meses_backfill,
     run_backfill,
     sync_mercado_ca,
@@ -252,7 +254,9 @@ def test_guarda_ofertas_productos_y_campos_nuevos(engine):
         assert cots["22222222-2"].seleccionado is False
         assert cots["11111111-1"].llamado == 1
         assert cots["11111111-1"].id_oc == "200"
-        precios = sorted(p.precio_unitario for p in s.execute(select(CaCotizacionProducto)).scalars())
+        precios = sorted(
+            p.precio_unitario for p in s.execute(select(CaCotizacionProducto)).scalars()
+        )
         assert precios == [950, 1100]
 
 
@@ -324,7 +328,10 @@ def test_id_cotizacion_nulo_usa_la_clave_sustituta(engine):
 
 
 def test_reingestar_ofertas_del_mismo_rut_no_duplica(engine):
-    ofertas = [_oferta("11111111-1", True, 950, id_cotizacion=1), _oferta("11111111-1", False, 990, id_cotizacion=2)]
+    ofertas = [
+        _oferta("11111111-1", True, 950, id_cotizacion=1),
+        _oferta("11111111-1", False, 990, id_cotizacion=2),
+    ]
     _guardar(engine, _payload("CA-1", ofertas=ofertas))
     _guardar(engine, _payload("CA-1", ofertas=ofertas))
     assert _contar(engine, CaCotizacion) == 2
@@ -351,7 +358,9 @@ def test_mercado_ca_resume_ofertas_del_mismo_rut(settings, engine, v2):
         _oferta("11111111-1", False, 990),
         _oferta("11111111-1", False, 990),
     ]
-    respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([("CA-1", "proveedor_seleccionado")])))
+    respx.get(_LISTADO).mock(
+        return_value=httpx.Response(200, json=_listado([("CA-1", "proveedor_seleccionado")]))
+    )
     respx.get(_DETALLE.format(codigo="CA-1")).mock(
         return_value=httpx.Response(200, json=_envelope(_payload("CA-1", ofertas=ofertas)))
     )
@@ -469,8 +478,20 @@ def test_cola_respeta_tope_orden_region_y_frescura(engine):
         _ca(s, "MEDIA", cierre=datetime(2026, 9, 1), estado="desierta")
         _ca(s, "NUEVA", cierre=datetime(2026, 10, 1), estado="proveedor_seleccionado")
         _ca(s, "OTRA-REGION", cierre=datetime(2026, 10, 2), region=13)
-        _ca(s, "FRESCA", cierre=datetime(2026, 10, 3), obtenidas=ahora, cambio=ahora - timedelta(days=1))
-        _ca(s, "CAMBIO", cierre=datetime(2026, 7, 1), obtenidas=ahora - timedelta(days=2), cambio=ahora)
+        _ca(
+            s,
+            "FRESCA",
+            cierre=datetime(2026, 10, 3),
+            obtenidas=ahora,
+            cambio=ahora - timedelta(days=1),
+        )
+        _ca(
+            s,
+            "CAMBIO",
+            cierre=datetime(2026, 7, 1),
+            obtenidas=ahora - timedelta(days=2),
+            cambio=ahora,
+        )
         _ca(s, "ABIERTA", estado="publicada", cierre=ahora + timedelta(days=1))
         _ca(s, "CERRO-SIN-AVISO", estado="publicada", cierre=ahora - timedelta(hours=1))
         s.commit()
@@ -510,6 +531,217 @@ def test_mercado_ca_detalle_que_falla_suma_fallo_y_sigue(settings, engine, v2):
     with Session(engine) as s:
         mala = s.get(CompraAgil, "CA-MALA")
         assert mala is not None and mala.detalle_fallos == 1
+
+
+# ---------------------------------------------------------------------------
+# F-merc-3: detalle de las CA vigentes
+# ---------------------------------------------------------------------------
+
+_CAMBIO_VIEJO = datetime(2026, 8, 6, 10, 0)
+
+
+def _vigente(s: Session, codigo: str, dias: float = 2, **extra: Any) -> None:
+    _ca(
+        s,
+        codigo,
+        estado="publicada",
+        cierre=ahora_utc() + timedelta(days=dias),
+        cambio=extra.pop("cambio", _CAMBIO_VIEJO),
+        **extra,
+    )
+
+
+def _payload_vigente(codigo: str, dias: float = 2) -> dict[str, Any]:
+    p = _payload(codigo, ofertas=[], estado="publicada")
+    p["fechas"]["fecha_cierre"] = (ahora_utc() + timedelta(days=dias)).strftime("%Y-%m-%d %H:%M")
+    return p
+
+
+def test_cola_vigentes_entran_sin_detalle_y_cambiadas_en_orden(engine):
+    ahora = datetime(2026, 11, 3, 12, 0)
+    with Session(engine) as s:
+        _ca(s, "LEJOS", estado="publicada", cierre=ahora + timedelta(days=5), cambio=_CAMBIO_VIEJO)
+        _ca(s, "CERCA", estado="publicada", cierre=ahora + timedelta(days=1), cambio=_CAMBIO_VIEJO)
+        _ca(
+            s,
+            "CAMBIADA",
+            estado="publicada",
+            cierre=ahora + timedelta(hours=1),
+            cambio=ahora,
+            detalle_vigente_en=ahora - timedelta(days=1),
+        )
+        _ca(
+            s,
+            "AL-DIA",
+            estado="publicada",
+            cierre=ahora + timedelta(days=1),
+            cambio=_CAMBIO_VIEJO,
+            detalle_vigente_en=ahora,
+        )
+        _ca(s, "CERRADA", estado="cerrada", cierre=ahora + timedelta(days=1))
+        _ca(
+            s,
+            "YA-PASO",
+            estado="publicada",
+            cierre=ahora - timedelta(hours=1),
+            cambio=_CAMBIO_VIEJO,
+        )
+        _ca(s, "OTRA-REGION", estado="publicada", region=13, cierre=ahora + timedelta(days=1))
+        s.commit()
+        # Primero las que nunca tuvieron detalle (por cierre), después las cambiadas.
+        assert cola_vigentes(s, [16], ahora, 10, 3, 6) == ["CERCA", "LEJOS", "CAMBIADA"]
+        assert cola_vigentes(s, [16], ahora, 1, 3, 6) == ["CERCA"]
+
+
+def test_cola_vigentes_deja_en_espera_a_la_que_falla_seguido(engine):
+    ahora = datetime(2026, 11, 3, 12, 0)
+    with Session(engine) as s:
+        _ca(
+            s,
+            "FALLA",
+            estado="publicada",
+            cierre=ahora + timedelta(days=1),
+            detalle_fallos=3,
+            detalle_ultimo_fallo=ahora,
+        )
+        _ca(s, "OK", estado="publicada", cierre=ahora + timedelta(days=2))
+        s.commit()
+        assert cola_vigentes(s, [16], ahora, 10, 3, 6) == ["OK"]
+        assert cola_vigentes(s, [16], ahora + timedelta(hours=7), 10, 3, 6) == ["OK", "FALLA"]
+
+
+def test_detalle_vigente_no_toca_cotizaciones_ni_su_marca(engine):
+    # Una abierta con ofertas ya guardadas y su marca vieja: el detalle de vigente no las
+    # borra ni mueve `cotizaciones_obtenidas_en`, así la cola de cerradas la sigue pidiendo.
+    obtenidas = datetime(2026, 8, 1, 10, 0)
+    _guardar(engine, _payload("CA-V", estado="publicada"))
+    with Session(engine) as s:
+        ca = s.get(CompraAgil, "CA-V")
+        assert ca is not None
+        ca.cotizaciones_obtenidas_en = obtenidas
+        s.commit()
+    n_cot = _contar(engine, CaCotizacion)
+    assert n_cot == 2
+    ahora = datetime(2026, 11, 3, 12, 0)
+    det = _parse_ca_detalle(_payload("CA-V", ofertas=[], estado="publicada"))
+    with Session(engine) as s:
+        guardar_detalle_vigente(s, det, ahora)
+        s.commit()
+    assert _contar(engine, CaCotizacion) == n_cot
+    with Session(engine) as s:
+        ca = s.get(CompraAgil, "CA-V")
+        assert ca is not None
+        assert ca.cotizaciones_obtenidas_en == obtenidas
+        assert ca.detalle_vigente_en == ahora
+        assert ca.n_documentos == 1
+        assert len(ca.productos) == 1
+
+
+def test_n_documentos_se_guarda_en_las_dos_rutas(engine):
+    _guardar(engine, _payload("CA-CERRADA"))
+    det = _parse_ca_detalle(_payload("CA-ABIERTA", ofertas=[], estado="publicada"))
+    with Session(engine) as s:
+        guardar_detalle_vigente(s, det, ahora_utc())
+        s.commit()
+        cerrada = s.get(CompraAgil, "CA-CERRADA")
+        abierta = s.get(CompraAgil, "CA-ABIERTA")
+        assert cerrada is not None and cerrada.n_documentos == 1
+        assert abierta is not None and abierta.n_documentos == 1
+
+
+@respx.mock
+def test_mercado_ca_baja_vigentes_antes_que_cerradas_y_es_idempotente(settings, engine, v2):
+    respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([])))
+    abierta = respx.get(_DETALLE.format(codigo="CA-ABIERTA")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload_vigente("CA-ABIERTA")))
+    )
+    cerrada = respx.get(_DETALLE.format(codigo="CA-CERRADA")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload("CA-CERRADA")))
+    )
+    with Session(engine) as s:
+        _vigente(s, "CA-ABIERTA")
+        _ca(s, "CA-CERRADA", cierre=datetime(2026, 8, 1))
+        s.commit()
+
+    r = sync_mercado_ca(settings, engine, v2)
+    assert (r["vigentes_cola"], r["vigentes_detalles"], r["vigentes_pendientes"]) == (1, 1, 0)
+    assert r["detalles_guardados"] == 1
+    assert abierta.call_count == 1 and cerrada.call_count == 1
+    with Session(engine) as s:
+        ca = s.get(CompraAgil, "CA-ABIERTA")
+        assert ca is not None
+        assert ca.detalle_vigente_en is not None and ca.cotizaciones_obtenidas_en is None
+        assert len(ca.productos) == 1
+
+    r2 = sync_mercado_ca(settings, engine, v2)
+    assert (r2["vigentes_cola"], r2["cola"]) == (0, 0)
+    assert abierta.call_count == 1 and cerrada.call_count == 1
+
+
+@respx.mock
+def test_mercado_ca_tope_de_cantidad_de_vigentes(monkeypatch, engine):
+    cfg = _settings(monkeypatch, mercado_vigentes_max=2)
+    cliente = MercadoPublicoV2Client(cfg, engine, reserva=0)
+    respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([])))
+    for c in ("CA-1", "CA-2", "CA-3"):
+        respx.get(_DETALLE.format(codigo=c)).mock(
+            return_value=httpx.Response(200, json=_envelope(_payload_vigente(c)))
+        )
+    with Session(engine) as s:
+        for i, c in enumerate(("CA-1", "CA-2", "CA-3")):
+            _vigente(s, c, dias=1 + i)
+        s.commit()
+    r = sync_mercado_ca(cfg, engine, cliente)
+    assert (r["vigentes_cola"], r["vigentes_detalles"]) == (2, 2)
+    r2 = sync_mercado_ca(cfg, engine, cliente)
+    assert (r2["vigentes_cola"], r2["vigentes_detalles"]) == (1, 1)
+
+
+@respx.mock
+def test_mercado_ca_tope_de_minutos_de_vigentes_deja_tiempo_a_las_cerradas(monkeypatch, engine):
+    cfg = _settings(monkeypatch, mercado_vigentes_minutos=1, mercado_detalles_minutos=10)
+    cliente = MercadoPublicoV2Client(cfg, engine, reserva=0)
+    respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([])))
+    respx.get(url__regex=_LISTADO + r"/CA-V\d").mock(
+        side_effect=lambda req: httpx.Response(
+            200, json=_envelope(_payload_vigente(req.url.path.rsplit("/", 1)[1]))
+        )
+    )
+    cerrada = respx.get(_DETALLE.format(codigo="CA-CERRADA")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload("CA-CERRADA")))
+    )
+    with Session(engine) as s:
+        for i in (1, 2, 3):
+            _vigente(s, f"CA-V{i}", dias=i)
+        _ca(s, "CA-CERRADA", cierre=datetime(2026, 8, 1))
+        s.commit()
+    # Cada lectura del reloj avanza 25 s: el tope de 60 s de vigentes alcanza para dos.
+    tics = itertools.count(0, 25)
+    r = sync_mercado_ca(cfg, engine, cliente, reloj=lambda: float(next(tics)))
+    assert r["vigentes_cortado_por_tiempo"] is True
+    assert r["vigentes_detalles"] == 2 and r["vigentes_pendientes"] == 1
+    assert cerrada.called  # sigue con las cerradas: les queda tiempo del total
+
+
+@respx.mock
+def test_mercado_ca_429_en_vigentes_corta_sin_pedir_cerradas(settings, engine, v2):
+    respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([])))
+    respx.get(_DETALLE.format(codigo="CA-ABIERTA")).mock(
+        return_value=httpx.Response(429, json=_429)
+    )
+    cerrada = respx.get(_DETALLE.format(codigo="CA-CERRADA")).mock(
+        return_value=httpx.Response(200, json=_envelope(_payload("CA-CERRADA")))
+    )
+    with Session(engine) as s:
+        _vigente(s, "CA-ABIERTA")
+        _ca(s, "CA-CERRADA", cierre=datetime(2026, 8, 1))
+        s.commit()
+    r = sync_mercado_ca(settings, engine, v2)
+    assert r["cortado_por"] == "MPTasaError"
+    assert r["vigentes_detalles"] == 0
+    assert not cerrada.called
+    with Session(engine) as s:
+        assert s.get(SyncState, "api_pausa") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -637,7 +869,9 @@ def test_backfill_429_guarda_avance_y_reanuda(settings, engine, v2):
         return_value=httpx.Response(200, json=_envelope(_payload("CA-1")))
     )
     respx.get(_DETALLE.format(codigo="CA-3")).mock(
-        return_value=httpx.Response(200, json=_envelope(_payload("CA-3", publicada="2026-08-03 09:00")))
+        return_value=httpx.Response(
+            200, json=_envelope(_payload("CA-3", publicada="2026-08-03 09:00"))
+        )
     )
     # F-merc-1c: con 0 pausas, el comportamiento previo (cortar al primer 429).
     s = _con_meses(settings, "2026-08", mercado_backfill_max_pausas=0)
@@ -740,7 +974,9 @@ def _mocks_dias_1_y_3() -> tuple[Any, Any, dict[str, int]]:
         return_value=httpx.Response(200, json=_envelope(_payload("CA-1")))
     )
     respx.get(_DETALLE.format(codigo="CA-3")).mock(
-        return_value=httpx.Response(200, json=_envelope(_payload("CA-3", publicada="2026-08-03 09:00")))
+        return_value=httpx.Response(
+            200, json=_envelope(_payload("CA-3", publicada="2026-08-03 09:00"))
+        )
     )
     return listado, d1, veces
 
@@ -777,7 +1013,10 @@ def test_backfill_espera_la_pausa_y_completa_el_mes(settings, engine, v2, caplog
     # §2.7: ninguna Session ni conexión del pool viva mientras duerme.
     assert reloj.prestadas_al_dormir == [0]
     # §2.8: el log dice cuánto espera, sin ticket (regla 1).
-    assert "429 tras 3 requests del tramo; espero 20.8 min, hasta 23:20 Chile (pausa 1/12)" in caplog.text
+    assert (
+        "429 tras 3 requests del tramo; espero 20.8 min, hasta 23:20 Chile (pausa 1/12)"
+        in caplog.text
+    )
     assert _TICKET not in caplog.text
 
 
@@ -1132,16 +1371,45 @@ def test_tamano_estimado_por_ca_con_la_fixture(engine):
     _guardar(engine, _payload("CA-1"))
     with Session(engine) as s:
         ofertas = [
-            _bytes_postgres([c.id, c.ca_codigo, c.llamado, c.rut_proveedor, c.razon_social, c.es_emt,
-                             c.codigo_empresa, c.codigo_sucursal, c.id_cotizacion, c.id_oc,
-                             c.estado_glosa, c.activo, c.seleccionado, c.valor_neto, c.total_impuesto,
-                             c.monto_despacho, c.monto_total, c.fecha_creacion, c.fecha_vigencia,
-                             c.descripcion])
+            _bytes_postgres(
+                [
+                    c.id,
+                    c.ca_codigo,
+                    c.llamado,
+                    c.rut_proveedor,
+                    c.razon_social,
+                    c.es_emt,
+                    c.codigo_empresa,
+                    c.codigo_sucursal,
+                    c.id_cotizacion,
+                    c.id_oc,
+                    c.estado_glosa,
+                    c.activo,
+                    c.seleccionado,
+                    c.valor_neto,
+                    c.total_impuesto,
+                    c.monto_despacho,
+                    c.monto_total,
+                    c.fecha_creacion,
+                    c.fecha_vigencia,
+                    c.descripcion,
+                ]
+            )
             for c in s.execute(select(CaCotizacion)).scalars()
         ]
         productos = [
-            _bytes_postgres([p.id, p.cotizacion_id, p.codigo_producto, p.nombre_producto,
-                             p.descripcion, p.cantidad, p.precio_unitario, p.monto_total_producto])
+            _bytes_postgres(
+                [
+                    p.id,
+                    p.cotizacion_id,
+                    p.codigo_producto,
+                    p.nombre_producto,
+                    p.descripcion,
+                    p.cantidad,
+                    p.precio_unitario,
+                    p.monto_total_producto,
+                ]
+            )
             for p in s.execute(select(CaCotizacionProducto)).scalars()
         ]
     # Índices (pkey, UNIQUE, rut, FK) ≈ 90 B por oferta y 36 B por producto.
@@ -1154,7 +1422,10 @@ def test_tamano_estimado_por_ca_con_la_fixture(engine):
 # ---------------------------------------------------------------------------
 
 _MIGRACION = (
-    Path(__file__).parent.parent / "alembic" / "versions" / "b8d4f1a6c2e9_ofertas_por_id_cotizacion.py"
+    Path(__file__).parent.parent
+    / "alembic"
+    / "versions"
+    / "b8d4f1a6c2e9_ofertas_por_id_cotizacion.py"
 )
 
 
@@ -1184,7 +1455,9 @@ def _ofertas_crudas(conn: Any, prefijo: str) -> list[tuple[str, str | None]]:
     return sorted(
         tuple(f)
         for f in conn.execute(
-            text("SELECT rut_proveedor, id_cotizacion FROM ca_cotizaciones WHERE ca_codigo LIKE :p"),
+            text(
+                "SELECT rut_proveedor, id_cotizacion FROM ca_cotizaciones WHERE ca_codigo LIKE :p"
+            ),
             {"p": prefijo + "%"},
         )
     )
@@ -1193,7 +1466,9 @@ def _ofertas_crudas(conn: Any, prefijo: str) -> list[tuple[str, str | None]]:
 def _ida_y_vuelta(conn: Any, prefijo: str) -> None:
     """Baja y sube la migración sobre `conn` (una CA con dos RUT, uno con clave sustituta)."""
     # Insert de Core: aplica los defaults de Python de las columnas NOT NULL.
-    conn.execute(CompraAgil.__table__.insert().values(codigo=prefijo + "1", nombre="x", estado="cerrada"))
+    conn.execute(
+        CompraAgil.__table__.insert().values(codigo=prefijo + "1", nombre="x", estado="cerrada")
+    )
     insertar = text(
         "INSERT INTO ca_cotizaciones (ca_codigo, llamado, rut_proveedor, id_cotizacion) "
         "VALUES (:c, 1, :r, :i)"
@@ -1262,7 +1537,9 @@ def _ca_con_filas(s: Session, codigo: str, total: int, filas: int, region: int =
     _ca(s, codigo, region=region, obtenidas=datetime(2026, 11, 4, 3, 0), total_ofertas=total)
     s.flush()
     for i in range(filas):
-        s.add(CaCotizacion(ca_codigo=codigo, llamado=1, rut_proveedor=f"{i}-K", id_cotizacion=str(i)))
+        s.add(
+            CaCotizacion(ca_codigo=codigo, llamado=1, rut_proveedor=f"{i}-K", id_cotizacion=str(i))
+        )
 
 
 def _obtenidas(engine: Engine, codigo: str) -> datetime | None:

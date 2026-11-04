@@ -135,6 +135,13 @@ class Settings(BaseSettings):
     mercado_detalles_minutos: int = Field(
         default=10, description="Minutos máximos de detalles por corrida de `mercado-ca`"
     )
+    mercado_vigentes_max: int = Field(
+        default=60, description="Tope de detalles de CA vigentes por corrida de `mercado-ca`"
+    )
+    mercado_vigentes_minutos: int = Field(
+        default=4,
+        description="Minutos máximos de la cola de vigentes (dentro de MERCADO_DETALLES_MINUTOS)",
+    )
     mercado_backfill_meses: str = Field(
         default="",
         description=(

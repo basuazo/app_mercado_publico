@@ -69,6 +69,18 @@ ve un aviso (403 en las demás rutas), también el admin. **Dependencia nueva:**
 **Pasos de Boris:** ver el prompt §4 (migración fuera de 22:00–07:00 con `GH mercado` pausado; crear la empresa con región 16,
 asignarse y asignar a Mario; cargar 3 proveedores y ~40 productos; medir el tiempo).
 
+## F-merc-3 (4-nov, commit local sin push hasta auditar; migración `b6e2d8a4f1c7`)
+Detalle de las CA **vigentes** en `mercado-ca` (antes solo se pedía el de las cerradas; sin él una abierta no tenía `ca_productos`
+ni `ca_lineas`). Columnas `compras_agiles.detalle_vigente_en` y `n_documentos` (esta última también la guarda la ruta de cerradas).
+`cola_vigentes` (publicada, cierre futuro, sin detalle o con `detalle_vigente_en < fecha_ultimo_cambio`; primero las sin detalle,
+luego cierre asc; espera por fallos) corre **antes** que la de cerradas, con tope propio `MERCADO_VIGENTES_MAX` (60) y
+`MERCADO_VIGENTES_MINUTOS` (4) dentro de los 10 min totales. Solo `upsert_ca_detalle` + `n_documentos` + `detalle_vigente_en`: **no**
+toca `ca_cotizaciones` ni `cotizaciones_obtenidas_en` (si lo hiciera, la cola de cerradas podría no volver a pedir la CA tras el
+cierre y se perdería el ganador). Un 429 en vigentes corta la corrida sin pedir cerradas. Resumen: `vigentes_cola`,
+`vigentes_detalles`, `vigentes_pendientes`. El cursor de `mercado-catalogo` suma `detalle_vigente_en`.
+**Pendiente:** medir el volumen (CA de región 16 por día, mediana y p90) en la base de producción para confirmar los defaults;
+la base del `.env` del asistente (rama dev, sin migrar) no tiene CA de Ñuble.
+
 ## F-plat-1 (4-nov, commit local sin push hasta auditar; migración `a9d4c7e1f2b6`)
 Catálogo canónico y líneas 1:1 por Compra Ágil (pivote, `17-plan-pivote-plataforma-ca.md` §2 C2). **Sin modelo de lenguaje:**
 alias aprendidos + palabras clave; el LLM entra en F-plat-2.

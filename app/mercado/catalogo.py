@@ -426,6 +426,11 @@ def procesar_catalogo(
                         CompraAgil.cotizaciones_obtenidas_en.isnot(None),
                         CompraAgil.cotizaciones_obtenidas_en > cursor,
                     ),
+                    # F-merc-3: el detalle de una vigente reemplaza `ca_productos`.
+                    and_(
+                        CompraAgil.detalle_vigente_en.isnot(None),
+                        CompraAgil.detalle_vigente_en > cursor,
+                    ),
                 )
             )
         cas = list(
