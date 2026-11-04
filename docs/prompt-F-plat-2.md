@@ -124,7 +124,7 @@ del usuario (404 si no).
 - El script corre cada modelo de `--modelos a,b,c` sobre los 30, usa el caché, y reporta por modelo:
   % de líneas correctas (producto normalizado + cantidad + unidad), % de anexos con 100 %, costo total,
   latencia mediana, **separado por tipo** (texto / escaneado / docx-xlsx). **Criterio: el más barato con
-  ≥ 95 % de líneas correctas en total y ≥ 90 % en escaneados.** Boris fija
+  ≥ 95 % de líneas correctas en total y ≥ 90 % en escaneados.** (OK de Boris, 4-nov-2026.) Boris fija
   `LLM_MODELO_EXTRACCION` en `.env` con el ganador y anota el resultado en `docs/decisiones.md`.
 - En tests (respx) se usan anexos sintéticos: un XLSX generado con openpyxl en el propio test, un DOCX
   generado con python-docx, y **dos PDF de fixture de 1 página commiteados, sin datos reales** (uno con texto
@@ -133,7 +133,7 @@ del usuario (404 si no).
 
 ### 1.6 Descarga desde la API (solo si la sonda la confirma; `documentos_api_habilitado`)
 `mp_v2.py: descargar_documento(codigo, id) -> bytes | None` con el mismo rate limit y cuota (consume
-`MP_TICKET`: **cuenta como request de CA**, R-p1). `mercado-ca` descarga los anexos de CA vigentes en alcance
+`MP_TICKET`: **cuenta como request de CA**, R-p1). `mercado-ca` descarga los anexos de CA vigentes en alcance (requiere F-merc-3: hoy no se baja el detalle de las vigentes ni se guarda `n_documentos` [V, 4-nov])
 con `detalle_lineas = sin_detalle` y `n_documentos > 0`, tope `MERCADO_ANEXOS_MAX` (20) por corrida, y los pasa por 1.2–1.3 con
 `subido_por = NULL`. Si está deshabilitado, nada de esto corre y los tests lo cubren igual.
 

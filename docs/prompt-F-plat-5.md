@@ -4,6 +4,59 @@
 > commit, **sin push**. **Con migración.** Va después de F-merc-1, F-merc-2, F-plat-1, F-plat-2, F-plat-3,
 > F-plat-4. Origen: `docs/17-plan-pivote-plataforma-ca.md` §2 C6; `16-pivote` §2 peldaño 2.
 
+> **Revisado contra el código el 4-nov-2026 (HEAD `a9c0cfe`).** Lo marcado [V] está verificado en el código. La
+> sección "Revisión 4-nov" manda sobre el resto del prompt donde choquen. Si algo no calza con lo que dejen F-plat-1, 2
+> o 4, gana el código: anotarlo en el commit y no inventar.
+
+## Revisión 4-nov (Cowork) — leer primero
+1. **Prerrequisito nuevo: F-merc-3 (detalle de CA vigentes).** Hoy nadie baja el detalle de las CA abiertas [V]:
+   `cola_mercado_ca` (`app/ingest/mercado.py`) solo toma terminales o `publicada` con el cierre ya pasado, y el job
+   `ca` está apagado desde el 31-oct (`decisiones.md`). Sin F-merc-3, las vigentes no tienen `ca_productos`, ni
+   `ca_lineas`, ni `n_documentos`, y la mesa queda vacía. Ver `docs/prompt-F-merc-3.md`.
+2. **Router:** `app/api/routes/mesa.py` ya existe y es de F-plat-3 (empresas y proveedores, ~1.000 líneas [V]). Las
+   rutas `/mesa*` van en un archivo nuevo (`app/api/routes/mesa_dia.py`), reutilizando `_sin_empresa` y el patrón de
+   ownership de `mesa.py`.
+3. **Caché de evaluaciones, decidido:** tabla `evaluaciones_cache` (PK `(ca_codigo, empresa_id)`, `evaluada_en`,
+   `modelo_id`, `datos` JSONB). Va **separada** de `predicciones`, porque las predicciones son inmutables y solo se
+   crean con `cobertura ≥ 0,5`; mezclarlas rompería el modo sombra. La mesa lee la caché y muestra "evaluada hace X
+   min"; la ficha (`/mesa/ca/{codigo}`) recalcula en vivo.
+4. **Dónde se calcula: no dentro de `mercado-ca`.** Ese job usa API, tiene `timeout_min: 20` en `mercado.yml` y 10
+   min de detalles [V]. Va en un job nuevo, `mercado-mesa`, sin API, con `_locked("mercado-mesa", ...)`, en el mismo
+   workflow después de `mercado-catalogo` (F-plat-1). Ese job (a) recalcula `evaluaciones_cache` de las vigentes en
+   alcance de cada empresa activa, (b) crea las predicciones que falten y (c) cierra las que ya tienen ganador.
+   Medir cuánto tarda y ajustar `timeout_min` del workflow en el mismo commit.
+5. **`modelo_id`:** es FK a `modelo_adjudicacion.id` (F-plat-4). Si F-plat-4 no guardó la línea base como fila de esa
+   tabla, usar `modelo_id` nullable + `metodo` (`logistico|linea_base`), con `UNIQUE (ca_codigo, empresa_id,
+   metodo)`.
+6. **`predicciones.estado`** (`abierta|cerrada|sin_adjudicacion`) entra **en esta migración**, para que F-plat-7
+   (§1.3) no necesite una.
+7. **Ganador [V]:** en la base no hay un campo `proveedor_seleccionado` en el detalle. Ese nombre es un valor de
+   `compras_agiles.estado`; el ganador es la oferta con `ca_cotizaciones.seleccionado = true`. El cierre (§1.4) lo
+   hace `mercado-mesa` mirando la base, sin API:
+   - precio ganador = `valor_neto` de la oferta seleccionada;
+   - precio ganador por línea = `ca_cotizacion_productos`, unidos por `(ca_codigo, codigo_producto)` como en F-plat-4;
+   - si hay más de una oferta seleccionada [I: adjudicación parcial], se suman y se marca `detalle.multi_ganador`.
+8. **RUT de la empresa:** `empresas.rut` es nullable [V].
+   - "Marcar enviada" exige que la empresa tenga RUT; si no lo tiene, mostrar un aviso con enlace a `/admin/empresas`.
+   - Comparar con `normalizar_rut` (`app/matching/engine.py`) en los dos lados. Existe otra función, `rut()`, en
+     `app/catalogos/mercado.py`: usar una sola.
+   - Si la oferta marcada `enviada` no aparece entre las `ca_cotizaciones` de la CA ya cerrada → estado visible
+     `no_registrada` (RUT mal escrito u oferta no subida), no `perdida`.
+9. **Margen realizado** = total − costo − logística − costo financiero: el mismo cálculo que `evaluar_ca` de F-plat-4,
+   que incluye el costo financiero. No definirlo dos veces.
+10. **Competidores probables por unidad compradora:** `compras_agiles` no tiene `rut_unidad` [V]; tiene
+    `organismo_rut` y `unidad_compra` (texto). Definir una vez `clave_comprador(ca)` en `app/mercado/`, como
+    `(organismo_rut, norm(unidad_compra))`. F-plat-6 la reutiliza.
+11. **Banderas:** "sin detalle" = `compras_agiles.detalle_lineas` (F-plat-1). "Anexo pendiente" =
+    `ca_anexos.extraccion_estado` (F-plat-2).
+12. **Retención:** una CA con `ofertas_propias` o `predicciones` no se purga, aunque su región deje de estar activa.
+    Hacerlo con exclusión explícita en `purgar_terminales` (`app/core/retencion.py`) más un test, o con FK
+    `ON DELETE RESTRICT`. Elegir una de las dos y justificarla.
+13. **Horario:** `mercado-indices` corre a las **07:45** (F-plat-4), no "de noche". El paso 1 de Boris (§4) queda
+    corregido abajo.
+14. La API de envío de ofertas sigue [I]. Boris pide el adjunto de la guía v3.0; no se escribe que no existe sin
+    haberlo visto (regla 20).
+
 ## 0. Antes de escribir código
 - Leer `CLAUDE.md` (8, 17, 18), `17-plan` §2 C6 y R-p2/R-p3, `app/api/routes/pages.py` (feed `/`, ficha
   modal, `/compras-agiles` explorador, `_card_oportunidad.html`, `_modal_ficha.html`), `app/api/query.py`
@@ -79,6 +132,6 @@ Changelog ("Mesa del día: qué cotizar, a qué precio y con qué margen"). `00-
 sombra de 4 semanas con fecha. Commit: `F-plat-5: mesa del día, ofertas propias y modo sombra`.
 
 ## 4. Pasos de Boris
-1. Migración; activar en cron-job.org `mercado` cada 15 min (si no estaba) y `mercado-indices` nocturno.
+1. Migración (de día, con `GH mercado` en pausa, como en F-plat-3). `mercado` cada 15 min ya está activo; `mercado-indices` va a las 07:45 (F-plat-4).
 2. Usar `/mesa` 4 semanas: cotizar de verdad al menos 10 CA de alimentos; registrar enviadas y resultados.
 3. Al cierre de las 4 semanas: pegar `/mesa/resultados` → decide el paso al peldaño 3 (`16-pivote` §2).
