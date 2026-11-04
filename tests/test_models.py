@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -24,8 +23,9 @@ from app.models.seeds import seed_admin
 # ---------------------------------------------------------------------------
 # Helpers para detectar si hay Postgres disponible
 # ---------------------------------------------------------------------------
+from tests import pg_url  # noqa: E402
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 
 needs_postgres = pytest.mark.skipif(

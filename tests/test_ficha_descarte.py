@@ -7,7 +7,6 @@ necesitan Postgres de dev (`DATABASE_URL`) y se saltan sin él.
 
 from __future__ import annotations
 
-import os
 from datetime import timedelta
 
 import pytest
@@ -254,7 +253,9 @@ def test_ficha_responde_vary_hx_request_y_el_parcial_no_se_cachea(engine, settin
 # Postgres: validación de exclusiones y aviso dentro del modal
 # ---------------------------------------------------------------------------
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+from tests import pg_url  # noqa: E402
+
+_DB_URL = pg_url.DB_URL
 _TIENE_PG = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 _EMAILS_PG = ("ficha-pg-a@test.cl",)
 

@@ -15,7 +15,6 @@ con un organismo propio.
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime, timedelta
 
@@ -46,8 +45,9 @@ from app.models.tables import (
     RubroVocabulario,
     Usuario,
 )
+from tests import pg_url  # noqa: E402
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 _DB_URL_ENGINE = normalizar_url_driver(_DB_URL)
 needs_postgres = pytest.mark.skipif(

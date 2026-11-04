@@ -10,8 +10,6 @@ Prerequisito: DATABASE_URL apunta a un Postgres con `alembic upgrade head` ejecu
 
 from __future__ import annotations
 
-import os
-
 import pytest
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
@@ -26,8 +24,9 @@ from app.plan_busqueda import (
     contar_plan,
     lineas_para_exportar,
 )
+from tests import pg_url  # noqa: E402
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 # La app siempre normaliza el driver a psycopg v3 (app/core/db.py); un
 # create_engine con la URL cruda busca psycopg2, que no está en el stack

@@ -8,7 +8,6 @@ pausa vive en sync_state. El reloj del QuotaTracker se inyecta.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -289,7 +288,9 @@ def test_cli_sin_corte_no_avisa(capsys) -> None:
 # Postgres (Neon dev): el upsert de la pausa es SQL crudo, se prueba en el motor real
 # ---------------------------------------------------------------------------
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+from tests import pg_url  # noqa: E402
+
+_DB_URL = pg_url.DB_URL
 
 
 @pytest.mark.skipif(not _DB_URL.startswith("postgres"), reason="requiere DATABASE_URL de Postgres")

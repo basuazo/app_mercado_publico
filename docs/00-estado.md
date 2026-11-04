@@ -147,7 +147,7 @@ retomar la ingesta** (en pausa; no se tocó en F-merc-0b-fix2).
 
 F-429-tasa: mostrar "API en pausa hasta …" (hora Chile) en `/salud` (hoy se ve la fila `api_pausa`
 con el cursor en UTC); en `nocturno` un paso que falla queda como `None` sin aviso;
-`alembic/env.py` que lea `.env`; tests PG leen `os.environ` y no normalizan `postgresql://` (con el `.env` tal cual se saltan 109: exportar `DATABASE_URL=postgresql+psycopg://…`); `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin
+`alembic/env.py` que lea `.env`; ~~tests PG leen `os.environ` y no normalizan `postgresql://`~~ (resuelto en F-tests-rapidos: `tests/pg_url.py`, `TEST_DATABASE_URL`); `_job.yml` exige `DIGEST_HOUR`/`TASA_*`; `_run_with_lock` sin
 fila `cancelado` y CLI sin SIGTERM; retención escribe JSON `null` en `raw_json`; campos del detalle
 de CA sin usar (`presupuesto.moneda`, `fecha_cierre_segundo_llamado`, `proveedores_cotizando`);
 `ruff format` marca 48 archivos heredados (no formatear en masa); tasas UF/UTM/USD/EUR fijas;

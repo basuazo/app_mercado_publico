@@ -3,7 +3,6 @@ candidatos aplicado después de región y monto."""
 
 from __future__ import annotations
 
-import os
 from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
@@ -34,8 +33,9 @@ from app.models.tables import (
     PerfilBusqueda,
     Usuario,
 )
+from tests import pg_url  # noqa: E402
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 pytestmark = pytest.mark.skipif(
     not _TIENE_POSTGRES,

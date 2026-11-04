@@ -7,7 +7,6 @@ Tests de FTS: requieren Postgres con migración aplicada (@needs_postgres).
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -36,13 +35,14 @@ from app.matching.perfiles import (
 )
 from app.matching.text import build_exclude_tsquery, build_tsquery, keywords_validas
 from app.models.tables import OportunidadMatch, Usuario
-from tests.fixtures.dataset_matching import AHORA, crear_dataset
 
 # ---------------------------------------------------------------------------
 # Helpers de detección de Postgres
 # ---------------------------------------------------------------------------
+from tests import pg_url  # noqa: E402
+from tests.fixtures.dataset_matching import AHORA, crear_dataset
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 
 needs_postgres = pytest.mark.skipif(

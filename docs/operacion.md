@@ -269,3 +269,35 @@ en `operacion-disparos.md`. Todo job toma el mismo `pg_advisory_lock`; el CLI **
 (`--esperar-lock-min`) en vez de omitir. `nocturno` es el único camino al backfill y valida por sí
 mismo la ventana 22:00–07:00 de Chile. El scheduler en proceso y `POST /api/jobs/run` existen pero
 no se usan (limpieza pendiente).
+
+---
+
+## 15. Correr la suite de tests (rápido)
+
+Los tests de Postgres necesitan una base **con migraciones aplicadas** (no crean esquema). La URL se
+resuelve en un solo lugar (`tests/pg_url.py`), con esta prioridad: `TEST_DATABASE_URL` > `DATABASE_URL`
+del entorno > `DATABASE_URL` del `.env`. Se normaliza sola a `postgresql+psycopg://`.
+
+**Medido el 4-nov-2026 (1625 tests):** contra Neon dev **29 min 15 s** (round-trip ~183 ms, la latencia
+de red domina setup/teardown); contra Postgres local **~6,5 min**. Una rama de Neon "tests" aísla pero no
+acelera (misma latencia). Para velocidad usar Postgres local.
+
+### a) Postgres local con Docker (recomendado)
+```powershell
+docker run -d --name mp-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=mp_test -p 55432:5432 postgres:16-alpine
+$env:DATABASE_URL = "postgresql+psycopg://postgres:test@localhost:55432/mp_test"
+python -m alembic upgrade head      # Alembic no lee .env; crea unaccent vía migración
+$env:TEST_DATABASE_URL = $env:DATABASE_URL
+python -m pytest -rs
+```
+Para rehacer la base: `docker rm -f mp-test-pg` y repetir. Tras cada migración nueva, repetir `alembic upgrade head`.
+
+### b) Rama de Neon "tests" (solo aísla)
+Crear la rama `tests` desde dev en la consola de Neon, exportar su URL como `TEST_DATABASE_URL` y aplicar
+`alembic upgrade head` desde PowerShell con esa URL en `DATABASE_URL`.
+
+### Marcador y guardias
+- `python -m pytest -m "not postgres"` (ciclo rápido, no toca la base) y `-m postgres` (~54 s en local).
+- Si la base de tests no está en la cabeza de Alembic, la sesión aborta con un mensaje claro.
+- Si el host contiene `ep-rough-hill` (producción) o la URL es igual a `DATABASE_URL_PROD`, la sesión
+  aborta (código 2) antes de abrir cualquier conexión.

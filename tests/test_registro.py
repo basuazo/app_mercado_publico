@@ -8,7 +8,6 @@ Python (sin aritmética de fechas en SQL), así que las dos bases dan lo mismo.
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime, timedelta
 from typing import Any
@@ -45,8 +44,9 @@ from app.models.tables import (
     PerfilBusqueda,
     Usuario,
 )
+from tests import pg_url  # noqa: E402
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_PG = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 _PW = "contraseña-segura-test"
 _EMAILS = ("reg-a@test.cl", "reg-b@test.cl")

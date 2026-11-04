@@ -58,6 +58,9 @@ exclude = ["alembic/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short"
+markers = [
+    "postgres: requiere Postgres con migraciones aplicadas (TEST_DATABASE_URL / DATABASE_URL); `-m \"not postgres\"` para el ciclo rápido",
+]
 
 [tool.coverage.run]
 source = ["app"]

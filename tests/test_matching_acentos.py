@@ -6,7 +6,6 @@ migración aplicada (@needs_postgres).
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import timedelta
 
@@ -30,9 +29,10 @@ from app.models.tables import (
     Usuario,
 )
 from app.plan_busqueda import FiltrosPlanBusqueda, buscar_lineas
+from tests import pg_url  # noqa: E402
 from tests.fixtures.dataset_matching import AHORA
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 needs_postgres = pytest.mark.skipif(
     not _TIENE_POSTGRES,

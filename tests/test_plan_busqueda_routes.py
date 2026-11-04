@@ -9,7 +9,6 @@ tsquery (texto libre o perfil con keywords) están en tests/test_plan_busqueda.p
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 
 import pytest
@@ -30,7 +29,9 @@ from app.models.tables import PerfilBusqueda, PlanCompraLinea, SyncState, Usuari
 _PW = "contraseña-segura-test"
 _AGNO = 2026
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+from tests import pg_url  # noqa: E402
+
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 # La app siempre normaliza el driver a psycopg v3 (app/core/db.py); un
 # create_engine con la URL cruda busca psycopg2, que no está en el stack.

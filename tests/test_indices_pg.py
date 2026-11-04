@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 
 import pytest
@@ -12,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.db import normalizar_url_driver
 from app.matching.engine import _upsert_match
 from app.models.tables import OportunidadMatch, PerfilBusqueda, Usuario
+from tests import pg_url  # noqa: E402
 
-_DB_URL = os.environ.get("DATABASE_URL", "")
+_DB_URL = pg_url.DB_URL
 _TIENE_POSTGRES = _DB_URL.startswith("postgresql") or _DB_URL.startswith("postgres")
 needs_postgres = pytest.mark.skipif(
     not _TIENE_POSTGRES,

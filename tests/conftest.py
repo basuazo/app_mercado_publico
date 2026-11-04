@@ -2,10 +2,68 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.clients.base import reset_rate_limiter_compartido
 from app.core.settings import Settings
+from tests import pg_url
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Guardia de producción y de migraciones, antes de que corra ningún test."""
+    url = pg_url.resolver_url()
+    problema = pg_url.motivo_de_aborto(url, pg_url.resolver_url_prod())
+    if problema:
+        pytest.exit(f"ABORTO (guardia de producción): {problema}", returncode=2)
+    if not pg_url.es_postgres(url):
+        return
+    # Una sola URL para todo: Settings() dentro de los tests ve la misma base.
+    os.environ["DATABASE_URL"] = url
+    if session.config.getoption("markexpr", "").replace(" ", "") == "notpostgres":
+        return  # ciclo rápido: no toca la base, no hace falta que esté arriba
+    _exigir_migrada(url)
+
+
+def _exigir_migrada(url: str) -> None:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import create_engine, text
+
+    cfg = Config(str(pg_url.RAIZ / "alembic.ini"))
+    cfg.set_main_option("script_location", str(pg_url.RAIZ / "alembic"))
+    cabeza = set(ScriptDirectory.from_config(cfg).get_heads())
+    engine = create_engine(url)
+    try:
+        with engine.connect() as c:
+            actual = {r[0] for r in c.execute(text("SELECT version_num FROM alembic_version"))}
+    except Exception as exc:
+        pytest.exit(
+            f"No pude leer alembic_version en la base de tests ({type(exc).__name__}). "
+            "Aplica `alembic upgrade head` en la base de tests.",
+            returncode=2,
+        )
+    finally:
+        engine.dispose()
+    if actual != cabeza:
+        pytest.exit(
+            f"La base de tests está en {sorted(actual)} y el repo en {sorted(cabeza)}: "
+            "aplica `alembic upgrade head` en la base de tests.",
+            returncode=2,
+        )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Marca `postgres` a todo test que necesita Postgres (para -m postgres / -m "not postgres")."""
+    for item in items:
+        usa_pg = "pg_engine" in getattr(item, "fixturenames", ())
+        for m in item.iter_markers("skipif"):
+            razon = str(m.kwargs.get("reason", ""))
+            if "DATABASE_URL" in razon and "ostgres" in razon:
+                usa_pg = True
+        if usa_pg:
+            item.add_marker(pytest.mark.postgres)
 
 
 @pytest.fixture(autouse=True)
