@@ -16,6 +16,15 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="La plataforma ahora se llama Rastrillo",
+        descripcion=(
+            "«MP Oportunidades» pasa a llamarse Rastrillo: cambia el nombre en el menú, el login, "
+            "los títulos de las páginas y los correos. Tus datos y pantallas siguen igual. "
+            "Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="Nuevo diseño de la plataforma",
         descripcion=(
             "La plataforma estrena un diseño más sobrio: menú lateral con íconos (en el celular se "

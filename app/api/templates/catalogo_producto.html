@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ p.nombre }} — Catálogo — MP Oportunidades{% endblock %}
+{% block title %}{{ p.nombre }} — Catálogo — Rastrillo{% endblock %}
 {% block content %}
 <p class="mb-2"><a href="/catalogo?tab=productos">← Productos</a></p>
 <h2 class="mb-3">{{ p.nombre }}{% if not p.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}</h2>

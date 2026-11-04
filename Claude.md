@@ -1,4 +1,4 @@
-# CLAUDE.md — mp-oportunidades
+# CLAUDE.md — mp-oportunidades (app: Rastrillo)
 
 App de búsqueda de oportunidades en compras públicas chilenas (API oficial de
 Mercado Público / ChileCompra) para un equipo de 3–10 usuarios. Flujo: ingesta →

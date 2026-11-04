@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ empresa.nombre }} — Empresas — MP Oportunidades{% endblock %}
+{% block title %}{{ empresa.nombre }} — Empresas — Rastrillo{% endblock %}
 {% block content %}
 <p class="mb-2"><a href="/admin/empresas">← Empresas</a></p>
 <h2 class="mb-4">{{ empresa.nombre }}{% if not empresa.activa %} <span class="badge bg-secondary">inactiva</span>{% endif %}</h2>

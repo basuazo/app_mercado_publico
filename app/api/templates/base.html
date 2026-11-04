@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}MP Oportunidades{% endblock %}</title>
+  <title>{% block title %}Rastrillo{% endblock %}</title>
   <link rel="preload" href="/static/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="/static/app.css?v={{ version_estaticos }}">
@@ -29,7 +29,7 @@
 
 {#- El mismo menú alimenta la barra fija (escritorio) y el offcanvas (móvil). -#}
 {% macro menu(ruta, admin, con_empresa, email, csrf, sufijo) -%}
-<div class="nav-lateral__marca"><a href="/">MP Oportunidades</a></div>
+<div class="nav-lateral__marca"><a href="/">Rastrillo</a></div>
 <nav class="nav-lateral" aria-label="Navegación principal{{ ' (móvil)' if sufijo }}">
   <ul class="nav-lateral__lista">
     {% if con_empresa or admin %}<li>{{ entrada('/', 'Inicio', 'inicio', ruta == '/') }}</li>{% endif %}
@@ -78,7 +78,7 @@
 </aside>
 
 <header class="app-topbar d-lg-none">
-  <a class="app-topbar__marca" href="/">MP Oportunidades</a>
+  <a class="app-topbar__marca" href="/">Rastrillo</a>
   <button class="btn btn-icono" type="button" data-bs-toggle="offcanvas" data-bs-target="#menu-movil"
           aria-controls="menu-movil" aria-label="Abrir navegación">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
@@ -94,7 +94,7 @@
   </div>
 </div>
 {% else %}
-<header class="app-topbar"><a class="app-topbar__marca" href="/">MP Oportunidades</a></header>
+<header class="app-topbar"><a class="app-topbar__marca" href="/">Rastrillo</a></header>
 {% endif %}
 
 <div class="app-contenido{% if current_user is not defined %} app-contenido--ancho{% endif %}">

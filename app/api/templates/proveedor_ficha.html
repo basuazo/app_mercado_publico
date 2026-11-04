@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ p.nombre }} — Proveedores — MP Oportunidades{% endblock %}
+{% block title %}{{ p.nombre }} — Proveedores — Rastrillo{% endblock %}
 {% macro variacion(pct) -%}
   {%- if pct is none %}<span class="text-muted">—</span>
   {%- elif pct > 0 %}<span class="text-danger">▲ {{ "%.1f"|format(pct) }}%</span>

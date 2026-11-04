@@ -1,4 +1,4 @@
-# Estado actual — mp-oportunidades
+# Estado actual — mp-oportunidades (app: Rastrillo)
 
 *29-oct-2026. Documento corto y vivo: se reescribe, no se apila. La bitácora larga de jul–sep
 quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*

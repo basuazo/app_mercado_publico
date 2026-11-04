@@ -1,4 +1,4 @@
-# mp-oportunidades
+# mp-oportunidades (app: Rastrillo)
 
 Alertas de licitaciones y Compras Ágiles del sistema de compras públicas chilenas (Mercado Público / ChileCompra) para equipos de 3–10 usuarios. Costo de operación: **$0** (Render free + Neon free).
 
