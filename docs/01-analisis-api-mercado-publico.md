@@ -273,3 +273,8 @@ La información necesaria está disponible vía API oficial y los términos exig
   `MESES_PRIORITARIOS` del backfill. [V] publicado 2024-10-01→07: `total_resultados=0`. [I] Desde qué mes entrega
   la API todavía no se sabe: un 0 no prueba que no haya datos antes (regla 23). El barrido del horizonte (primera
   semana de 2025-01, 2025-04, 2025-07 y 2025-10, misma sonda) fija `MERCADO_BACKFILL_PRIMER_MES`.
+- **v2: horizonte de `publicado_desde/hasta` en región 16** (barrido de `smoke_test.py --mercado`, Boris,
+  3-nov-2026 ~20:35): [V] días 1–7 de cada mes, sin `estado`: 2025-01 = 362, 2025-04 = 923, 2025-07 = 804,
+  2025-10 = 970; 2024-10 = 0. [I] El inicio de los datos de la API está entre 2024-11 y 2025-01 (un 0 no prueba
+  ausencia antes: regla 23). Por eso `MERCADO_BACKFILL_PRIMER_MES = 2024-11`: el backfill marca `vacio` lo que no
+  tenga datos (a lo más 2 meses, bajo el umbral de "revisar filtros").

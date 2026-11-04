@@ -432,12 +432,12 @@ def test_mercado_ca_detalle_que_falla_suma_fallo_y_sigue(settings, engine, v2):
 def test_meses_por_defecto_en_orden():
     class _S:
         mercado_backfill_meses = ""
-        mercado_backfill_primer_mes = "2024-10"
+        mercado_backfill_primer_mes = "2024-11"
 
     meses = meses_backfill(_S(), date(2026, 11, 3))  # type: ignore[arg-type]
     assert meses[:6] == ["2026-03", "2026-04", "2026-06", "2026-07", "2026-08", "2026-10"]
-    assert meses[-1] == "2024-10"
-    assert len(meses) == len(set(meses)) == 25
+    assert meses[-1] == "2024-11"
+    assert len(meses) == len(set(meses)) == 24
 
 
 def test_meses_explicitos_mandan(monkeypatch):
@@ -643,6 +643,34 @@ def test_un_solo_mes_vacio_al_final_de_la_lista_queda_vacio(settings, engine, v2
     r = run_backfill(_con_meses(settings, "2026-08"), engine, v2, now_fn=_reloj_chile(_NOCHE))
     assert r["meses_completos"] == []
     assert _cursor(engine, "2026-08") == "vacio"
+
+
+def test_primer_mes_por_defecto_es_el_de_la_sonda(settings):
+    assert settings.mercado_backfill_primer_mes == "2024-11"
+
+
+@respx.mock
+def test_meses_completos_previos_cuentan_como_datos(settings, engine, v2):
+    """F-merc-1-fix: desde la segunda noche los meses recientes vienen `completo`; tres
+    meses viejos vacíos después de ellos son vacíos de verdad, no un filtro roto."""
+    with Session(engine) as ses:
+        for mes in ("2026-08", "2026-07", "2026-06"):
+            ses.add(SyncState(fuente=PREFIJO_BACKFILL + mes, cursor=CURSOR_COMPLETO))
+        ses.commit()
+    listado = respx.get(_LISTADO).mock(return_value=httpx.Response(200, json=_listado([])))
+    s = _con_meses(settings, "2026-08,2026-07,2026-06,2026-05,2026-04,2026-03")
+
+    r = run_backfill(s, engine, v2, now_fn=_reloj_chile(_NOCHE))
+
+    assert "revisar filtros" not in r["motivo_fin"]
+    assert listado.call_count == 31 + 30 + 31  # mayo, abril y marzo
+    for mes in ("2026-05", "2026-04", "2026-03"):
+        assert _cursor(engine, mes) == "vacio"
+
+    # La noche siguiente no pide ninguno.
+    r2 = run_backfill(s, engine, v2, now_fn=_reloj_chile(_NOCHE))
+    assert r2["requests"] == 0
+    assert listado.call_count == 92
 
 
 @respx.mock

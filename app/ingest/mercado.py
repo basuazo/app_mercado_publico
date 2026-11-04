@@ -662,11 +662,19 @@ class Backfill:
             session.commit()
 
     def _mes(self, mes: str, hoy: date) -> str:
-        """Recorre un mes. Devuelve 'saltado' (completo o vacío de antes, o mes en curso
-        sin CA), 'datos' (tiene CA) o 'vacio' (terminado y con 0 CA; lo marca `correr`)."""
+        """Recorre un mes. Devuelve 'datos' (tiene CA, aunque esté `completo` de una noche
+        anterior y no se pida nada), 'saltado' (`vacio` de antes, o mes en curso sin CA) o
+        'vacio' (terminado y con 0 CA; lo marca `correr`).
+
+        Un mes `completo` cuenta como 'datos' (F-merc-1-fix): desde la segunda noche los
+        meses recientes ya están completos, y si no contaran, tres meses viejos vacíos
+        seguidos cortarían con "revisar filtros" y se volverían a listar cada noche.
+        """
         with Session(self.engine) as session:
             valor = _leer_cursor_mes(session, mes)
-        if valor in (CURSOR_COMPLETO, CURSOR_VACIO):
+        if valor == CURSOR_COMPLETO:
+            return "datos"
+        if valor == CURSOR_VACIO:
             return "saltado"
         dias = _dias_del_mes(mes)
         terminado = dias[-1] < hoy
@@ -713,7 +721,7 @@ class Backfill:
         """Recorre los meses. Un mes vacío no corta: se marca y se sigue con el siguiente.
 
         Pero si los `_VACIOS_SOSPECHOSOS` primeros meses con requests dan 0 y no hubo
-        ninguno con datos, es más probable un filtro roto que tres meses sin CA: corta,
+        ninguno con datos (ni ya completo ni listado), es más probable un filtro roto que tres meses sin CA: corta,
         deja esos cursores en blanco (se vuelven a listar) y avisa "revisar filtros".
         """
         hoy = self.now_fn(TZ_CHILE).date()

@@ -32,7 +32,12 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
-## F-merc-1 (3-nov, commit local sin push hasta auditar; con migración `e5b9c3a7d2f4`)
+## F-merc-1 + F-merc-1-fix (3-nov, commits locales sin push; F-merc-1 auditada; migración `e5b9c3a7d2f4`)
+**F-merc-1-fix:** horizonte del backfill desde 2024-11 (barrido de la sonda [V]: 2025-01 = 362, 2024-10 = 0); un mes
+`completo` cuenta como "con datos" para la protección "revisar filtros" (si no, desde la segunda noche tres meses
+viejos vacíos cortaban y se re-listaban cada noche); `_job.yml` pasa también `MERCADO_BACKFILL_ESTADOS_DETALLE`,
+`MERCADO_PRODUCTOS_SOLO_GRUPOS` y `MERCADO_BACKFILL_TOPE_BD_MB`. Pasos de Boris en `prompt-F-merc-1-fix.md` §4.
+
 Cotizaciones de CA de `MERCADO_REGIONES` (Ñuble, 16) a Neon: `ca_cotizaciones` (oferta, `seleccionado`
 nullable, `llamado`, `id_oc`) y `ca_cotizacion_productos` (precio unitario neto), más 8 columnas nullable en
 `compras_agiles`. Una sola key (`MP_TICKET`, cuota, pausa y lock de siempre, sin reserva). Jobs: `mercado-ca`

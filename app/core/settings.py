@@ -139,14 +139,18 @@ class Settings(BaseSettings):
         default="",
         description=(
             "Meses del backfill (AAAA-MM separados por coma, en orden). Vacío: los 5 que "
-            "faltan en COT_ y luego 2024-10 … mes anterior, del más reciente al más antiguo"
+            "faltan en COT_ y luego MERCADO_BACKFILL_PRIMER_MES … mes anterior, del más reciente al más antiguo"
         ),
     )
-    # Horizonte: sonda del 3-nov [V] oct-2024 → 0 CA en Ñuble; Boris lo fija con el barrido
-    # de `smoke_test.py --mercado`. Ningún mes anterior se pide.
+    # Horizonte (sonda `smoke_test.py --mercado`, 3-nov [V]): 2024-10 → 0 CA en Ñuble,
+    # 2025-01 → 362. El inicio de la API está entre 2024-11 y 2025-01 [I]; lo que no tenga
+    # datos queda `vacio` (a lo más 2 meses). Ningún mes anterior se pide.
     mercado_backfill_primer_mes: str = Field(
-        default="2024-10",
-        description="Mes más antiguo (AAAA-MM) que `mercado-backfill` pide",
+        default="2024-11",
+        description=(
+            "Mes más antiguo (AAAA-MM) que `mercado-backfill` pide (sonda del 3-nov: "
+            "2024-10 da 0 CA, 2025-01 da 362)"
+        ),
     )
     # Filtro local: el listado va sin `estado` [V, 31-oct]. Solo estas CA piden
     # detalle; mismo default que el puente F-merc-0b (las únicas con ganador).

@@ -107,10 +107,13 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   `MERCADO_BACKFILL_TOPE_BD_MB` (350; Neon free = 512) y recorre primero los meses que más importan.
   **Pendiente de Boris:** acotar el horizonte (12 meses ≈ 180 MB) o guardar productos solo de alimentos (giro
   principal: 182 CA en agosto; ≈ 7 MB/mes, 24 meses ≈ 170 MB). Medir el tamaño real tras la primera noche.
+  **Ajuste F-merc-1-fix (3-nov):** el horizonte real es ≈ 24 meses (2024-11 → mes anterior; la API no trae
+  Ñuble en oct-2024 [V]). Se mantienen `MERCADO_PRODUCTOS_SOLO_GRUPOS=true` y el tope de 350 MB; la decisión
+  de alcance (solo alimentos o no) se toma tras medir en `/salud` la primera noche.
 - **Estados que piden detalle en el backfill (3-nov-2026, F-merc-1, desviación del prompt):** `mercado-backfill`
   pide detalle solo de las CA `proveedor_seleccionado` (`MERCADO_BACKFILL_ESTADOS_DETALLE`, mismo default que el
   puente F-merc-0b); el prompt pedía todas las terminales (`cerrada`, `desierta`, `cancelada`). `mercado-ca` (en
   vivo) sí pide todas. Motivo: cuota (un detalle por CA; ~3.600 CA/mes en Ñuble, de las que ~2.600 tienen
   ganador). Costo: del histórico no quedan las ofertas de las CA desiertas o canceladas (sí su fila básica del
   listado). Se amplía con la variable si P(ganar) las necesita. Horizonte configurable con
-  `MERCADO_BACKFILL_PRIMER_MES` (default 2024-10); un mes terminado y sin CA queda `vacio` y no se repite.
+  `MERCADO_BACKFILL_PRIMER_MES` (default 2024-11 desde F-merc-1-fix); un mes terminado y sin CA queda `vacio` y no se repite.
