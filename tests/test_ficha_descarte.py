@@ -59,7 +59,7 @@ def test_dos_botones_con_match_en_feed_registro_modal_y_pagina(engine, settings)
     _lic(engine, uid, "LIC-V", fecha_cierre=ahora_utc() - timedelta(days=3))  # vencida
     client, _ = _cliente(engine, settings, uid)
 
-    feed = client.get("/").text
+    feed = client.get("/archivo").text
     registro = client.get("/registro?tab=vencidas").text
     modal = client.get("/oportunidad/licitaciones/LIC-M1", headers=_HX).text
     pagina = client.get("/oportunidad/licitaciones/LIC-M1").text
@@ -302,7 +302,7 @@ def _usuario_pg(s: Session) -> int:
     from app.models.enums import RolUsuario
 
     u = Usuario(
-        email=_EMAILS_PG[0], password_hash=hash_password("x"), rol=RolUsuario.USUARIO, activo=True
+        email=_EMAILS_PG[0], password_hash=hash_password("x"), rol=RolUsuario.ADMIN, activo=True
     )
     s.add(u)
     s.flush()
@@ -348,7 +348,7 @@ def test_excluir_desde_el_modal_valida_antes_de_descartar(pg_engine, settings):
 @pytest.mark.parametrize(
     ("desde", "volver"),
     [
-        ("", "/"),
+        ("", "/archivo"),
         ("registro:vencidas", "/registro?tab=vencidas"),
         ("registro:guardadas", "/registro?tab=guardadas"),
         ("explorador", "/compras-agiles"),

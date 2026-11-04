@@ -63,7 +63,7 @@ def settings() -> Settings:
 
 def _usuario(engine, email: str = "ficha-a@test.cl") -> int:
     with Session(engine) as s:
-        u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         return u.id
@@ -383,7 +383,7 @@ def test_feed_con_ficha_en_la_url_incluye_el_modal_sin_propagarla(engine, settin
     uid = _usuario(engine)
     _lic(engine, uid)
     client, _ = _cliente(engine, settings, uid)
-    html = client.get("/?ficha=licitaciones:LIC-M1&texto=Licitaci").text
+    html = client.get("/archivo?ficha=licitaciones:LIC-M1&texto=Licitaci").text
     assert 'id="modal-ficha"' in html and "modal-xl" in html and "modal-fullscreen-md-down" in html
     assert 'src="/static/ficha_modal.js' in html
     assert "ficha=" not in html.replace("ficha_modal", "")

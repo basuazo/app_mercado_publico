@@ -74,7 +74,7 @@ def client(engine, settings):
 
 def _usuario(engine, email: str) -> int:
     with Session(engine) as s:
-        u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -355,7 +355,7 @@ def test_tarjeta_guardada_lleva_chip_con_texto(client, engine, settings, usuario
     assert r.status_code == 200
     assert 'data-accion="guardar" aria-pressed="true"' in r.text
     assert "Guardada: Licitación LIC-CHIP" in r.text  # data-anuncio
-    html = client.get("/", cookies=cookies).text
+    html = client.get("/archivo", cookies=cookies).text
     # (El changelog del modal de novedades sí nombra los botones viejos.)
     assert "Me sirve</button>" not in html and "Activar alertas</button>" not in html
     assert ">Mi registro</a>" in html

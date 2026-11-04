@@ -27,7 +27,7 @@
 
 {# `modo="registro"` (F-registro): tarjeta de Mi registro; `next_url` es la pestaña actual.
    `item.match` puede ser none (guardada sin match): sin score ni razones. #}
-{% macro card_oportunidad(item, csrf_token, idx="", modo="feed", next_url="/", oob=False) %}
+{% macro card_oportunidad(item, csrf_token, idx="", modo="feed", next_url="/archivo", oob=False) %}
 {% set fuente = item.fuente %}
 {% set codigo = item.codigo %}
 {% set origen_acciones = "registro" if modo == "registro" else "dashboard" %}

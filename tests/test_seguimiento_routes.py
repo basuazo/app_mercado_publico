@@ -56,7 +56,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -238,7 +238,7 @@ def test_archivar_seguimiento_ajeno_404(client, usuario, settings, engine):
     client.post("/oportunidad/licitaciones/LIC-001/seguir", data={}, cookies=cookies, headers=headers)
 
     with Session(engine) as s:
-        otro = Usuario(email="otro@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        otro = Usuario(email="otro@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(otro)
         s.commit()
         s.refresh(otro)

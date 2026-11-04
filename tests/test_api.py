@@ -101,6 +101,22 @@ def usuario(engine):
         u = Usuario(
             email="user@test.cl",
             password_hash=hash_password(_PW),
+            rol=RolUsuario.ADMIN,
+            activo=True,
+        )
+        s.add(u)
+        s.commit()
+        s.refresh(u)
+        return u.id
+
+
+@pytest.fixture()
+def usuario_comun(engine):
+    """Usuario sin rol admin (F-plat-nav: `usuario` pasó a admin para correr la app antigua)."""
+    with Session(engine) as s:
+        u = Usuario(
+            email="comun@test.cl",
+            password_hash=hash_password(_PW),
             rol=RolUsuario.USUARIO,
             activo=True,
         )
@@ -215,7 +231,7 @@ def test_login_usuario_inactivo(engine, client, settings):
         u = Usuario(
             email="inactivo@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=False,
         )
         s.add(u)
@@ -299,7 +315,7 @@ def test_oportunidad_ajena_404(engine, client, settings):
         otro = Usuario(
             email="otro@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(otro)
@@ -336,7 +352,7 @@ def _crear_usuario_normal(session: Session, email: str) -> int:
     u = Usuario(
         email=email,
         password_hash=hash_password(_PW),
-        rol=RolUsuario.USUARIO,
+        rol=RolUsuario.ADMIN,
         activo=True,
     )
     session.add(u)
@@ -569,7 +585,7 @@ def test_cuenta_resumen_sin_csrf_403(client, usuario, settings):
 
 def test_home_marca_mostrar_tutorial_si_no_visto(client, usuario, settings):
     cookies, _ = _session(settings, usuario)
-    r = client.get("/", cookies=cookies)
+    r = client.get("/archivo", cookies=cookies)
 
     assert r.status_code == 200
     assert 'data-mostrar-tutorial="true"' in r.text
@@ -610,7 +626,7 @@ def test_tutorial_visto_solo_afecta_usuario_autenticado(engine, client, usuario,
         otro = Usuario(
             email="otro-onboarding@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(otro)
@@ -638,7 +654,7 @@ def test_novedades_null_o_fecha_antigua_autoabre_y_lista_changelog(
 ):
     cookies, _ = _session(settings, usuario)
 
-    r_null = client.get("/", cookies=cookies)
+    r_null = client.get("/archivo", cookies=cookies)
     assert r_null.status_code == 200
     assert 'data-mostrar-novedades="true"' in r_null.text
     assert "Menos correos" in r_null.text
@@ -651,7 +667,7 @@ def test_novedades_null_o_fecha_antigua_autoabre_y_lista_changelog(
         u.novedades_visto_hasta = date(2026, 7, 6)
         s.commit()
 
-    r_antigua = client.get("/", cookies=cookies)
+    r_antigua = client.get("/archivo", cookies=cookies)
     assert 'data-mostrar-novedades="true"' in r_antigua.text
 
 
@@ -694,7 +710,7 @@ def test_novedades_visto_solo_afecta_usuario_autenticado(engine, client, usuario
         otro = Usuario(
             email="otro-novedades@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(otro)
@@ -795,8 +811,8 @@ def test_admin_resetea_password_de_usuario(client, usuario, admin, settings):
     assert r_new.headers["location"] == "/"
 
 
-def test_admin_reset_password_rechaza_no_admin(client, usuario, admin, settings):
-    cookies, headers = _session(settings, usuario)
+def test_admin_reset_password_rechaza_no_admin(client, usuario_comun, admin, settings):
+    cookies, headers = _session(settings, usuario_comun)
     r = client.post(
         f"/admin/usuarios/{admin}/password",
         data={"password_nueva": "reset-admin-seguro"},
@@ -1199,8 +1215,8 @@ def test_api_salud_no_secretos(engine, client, admin, settings):
     assert "jobs-token-secreto" not in body
 
 
-def test_api_salud_usuario_normal_403(client, usuario, settings):
-    r = client.get("/api/salud", cookies=_cookie(settings, usuario))
+def test_api_salud_usuario_normal_403(client, usuario_comun, settings):
+    r = client.get("/api/salud", cookies=_cookie(settings, usuario_comun))
     assert r.status_code == 403
 
 

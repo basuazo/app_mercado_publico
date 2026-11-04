@@ -182,7 +182,7 @@ def _setup_seguida_adjudicada(
     )
     session.add(lic)
     owner = Usuario(
-        email=f"{codigo.lower()}@test.cl", password_hash="x", rol=RolUsuario.USUARIO, activo=True
+        email=f"{codigo.lower()}@test.cl", password_hash="x", rol=RolUsuario.ADMIN, activo=True
     )
     session.add(owner)
     session.flush()
@@ -246,7 +246,7 @@ class TestCapturarCompetencia:
     def test_selectiva_solo_seguidas_no_archivadas_adjudicadas(self, session, settings):
         _setup_seguida_adjudicada(session, "LIC-A", fecha_publicacion=datetime(2026, 5, 1))
 
-        owner_b = Usuario(email="b@test.cl", password_hash="x", rol=RolUsuario.USUARIO, activo=True)
+        owner_b = Usuario(email="b@test.cl", password_hash="x", rol=RolUsuario.ADMIN, activo=True)
         session.add(owner_b)
         session.flush()
         session.add(
@@ -267,7 +267,7 @@ class TestCapturarCompetencia:
             )
         )
 
-        owner_c = Usuario(email="c@test.cl", password_hash="x", rol=RolUsuario.USUARIO, activo=True)
+        owner_c = Usuario(email="c@test.cl", password_hash="x", rol=RolUsuario.ADMIN, activo=True)
         session.add(owner_c)
         session.flush()
         session.add(Licitacion(codigo="LIC-C", nombre="Lic C", estado=EstadoOportunidad.PUBLICADA.value))

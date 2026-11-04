@@ -42,7 +42,7 @@
       </span>
       <form method="post" action="/perfiles/{{ aviso_exclusion.perfil_id }}/deshacer-exclusion" class="ms-auto">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="next" value="/">
+        <input type="hidden" name="next" value="/archivo">
         {% for w in aviso_exclusion.palabras %}
         <input type="hidden" name="palabras" value="{{ w }}">
         {% endfor %}

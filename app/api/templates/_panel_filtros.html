@@ -18,7 +18,7 @@
   manera de distinguir "casilla desmarcada" de "URL sin el parámetro", y las dos
   casillas "Incluir…" tienen que quedar MARCADAS cuando la URL no dice nada.
 #}
-<form id="{{ panel_id }}-form" method="get" action="/" class="panel-filtros__form">
+<form id="{{ panel_id }}-form" method="get" action="/archivo" class="panel-filtros__form">
   <input type="hidden" name="panel" value="1">
   {% if not panel_texto_externo %}<input type="hidden" name="texto" value="{{ texto }}">{% endif %}
   <input type="hidden" name="orden" value="{{ orden }}">

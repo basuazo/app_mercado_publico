@@ -74,7 +74,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -220,8 +220,8 @@ def test_para_mis_perfiles_usa_solo_los_del_usuario_dueno(client, settings, engi
     """Regla 17: nunca las keywords de otro usuario."""
     _marcar_anio_completo_cargado(engine)
     with Session(engine) as s:
-        u1 = Usuario(email="uno@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
-        u2 = Usuario(email="dos@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u1 = Usuario(email="uno@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
+        u2 = Usuario(email="dos@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add_all([u1, u2])
         s.commit()
         s.refresh(u1)
@@ -296,8 +296,8 @@ class TestParaMisPerfilesEndToEnd:
         with Session(pg_engine) as s:
             ahora = datetime.now(UTC).replace(tzinfo=None)
             s.add(SyncState(fuente=f"plan_compra_anual_{_AGNO_PG}", ultima_ejecucion=ahora, ultimo_ok=ahora, cursor="test"))
-            mio = Usuario(email=emails[0], password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
-            otro = Usuario(email=emails[1], password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+            mio = Usuario(email=emails[0], password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
+            otro = Usuario(email=emails[1], password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
             s.add_all([mio, otro])
             s.commit()
             s.refresh(mio)

@@ -64,7 +64,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         return u.id
@@ -90,7 +90,7 @@ def _otro_usuario(engine) -> int:
     from app.auth.password import hash_password
 
     with Session(engine) as s:
-        u = Usuario(email="otro@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="otro@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         return u.id

@@ -39,6 +39,16 @@ que arranca en pausa espera hasta 15 min (`ESPERA_PAUSA_MAX_MIN`) o sale **omiti
 (sin tocar): en el peor caso teórico `ciclo-match` (75 min) y `ciclo-activas` (150 min) ya no
 cubrían la espera de lock de todos sus jobs; la pausa suma hasta 15 min a cada job con API.
 
+## F-plat-nav (4-nov, commit local sin push hasta auditar; sin migración)
+La plataforma es la app: `GET /` es la portada «Hoy» (conteos de CA abiertas de regiones activas, líneas `pendiente|dudosa` y
+proveedores/productos de la empresa; sin empresa → aviso, admin sin empresa → «Hoy» con aviso). El feed antiguo se movió a
+**`/archivo`** (mismos filtros; `_url_feed`, `action` del panel, `next` y redirects apuntan allí). Dependencia `requiere_admin_archivo`
+(`deps.py`) en todas las rutas antiguas: GET de no admin → 303 a `/`, POST → 403; `/organismos/catalogo.json` → 403. Siguen abiertas
+`/cuenta*`, `/perfiles/rut-proveedor` y la ficha `/oportunidad/compras_agiles/{codigo}` (solo con empresa activa y **sin** acciones
+guardar/descartar para no admin); la ficha de licitación es solo admin. Menú: Inicio, Catálogo, Proveedores, Logística, Cuenta; admin
+suma Usuarios, Empresas, Salud y el desplegable Archivo. No se borró nada. La API JSON `/api/oportunidades` y `/api/perfiles*` no se tocó
+(sigue para cualquier usuario autenticado, propio dueño): decidir en F-retiro. Retiro definitivo y F-plat-ui: ver el prompt.
+
 ## F-plat-3 (4-nov, commit local sin push hasta auditar; migración `d3b7a9e1c5f8`)
 Empresas con territorio priorizado, proveedores y costos con historial (pivote, `17-plan-pivote-plataforma-ca.md` §2 C4).
 **Esquema:** `empresas`, `usuarios.empresa_id`, `proveedores`, `proveedor_productos` (precio neto por formato; `producto_id`

@@ -62,7 +62,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -290,10 +290,10 @@ def test_dashboard_descartar_via_htmx_sigue_vacio_sin_origen(client, usuario, se
 
 def test_ficha_volver_conserva_filtros_del_feed(client, usuario, settings, engine):
     _crear_match_lic_con_items(engine, usuario)
-    ref = "http://testserver/?cierre_desde=2026-09-24&cierre_hasta=2026-10-01&fuente=licitaciones"
+    ref = "http://testserver/archivo?cierre_desde=2026-09-24&cierre_hasta=2026-10-01&fuente=licitaciones"
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario), headers={"Referer": ref})
     assert r.status_code == 200
-    esperado = 'href="/?cierre_desde=2026-09-24&amp;cierre_hasta=2026-10-01&amp;fuente=licitaciones"'
+    esperado = 'href="/archivo?cierre_desde=2026-09-24&amp;cierre_hasta=2026-10-01&amp;fuente=licitaciones"'
     assert r.text.count(esperado) == 2  # migas "Dashboard" + botón "Volver"
 
 
@@ -302,7 +302,7 @@ def test_ficha_volver_sin_referer_va_al_feed_limpio(client, usuario, settings, e
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert '>Volver</a>' in r.text
-    assert 'href="/" class="btn btn-outline-secondary ms-2">Volver' in r.text
+    assert 'href="/archivo" class="btn btn-outline-secondary ms-2">Volver' in r.text
 
 
 @pytest.mark.parametrize(
@@ -317,4 +317,4 @@ def test_ficha_volver_ignora_referer_ajeno(client, usuario, settings, engine, re
     r = client.get("/oportunidad/licitaciones/LIC-001", cookies=_cookie(settings, usuario), headers={"Referer": ref})
     assert r.status_code == 200
     assert "evil.example" not in r.text
-    assert 'href="/" class="btn btn-outline-secondary ms-2">Volver' in r.text
+    assert 'href="/archivo" class="btn btn-outline-secondary ms-2">Volver' in r.text

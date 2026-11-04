@@ -60,7 +60,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -148,7 +148,7 @@ def test_feed_excluye_descartadas(client, usuario, settings, engine):
         feed = get_oportunidades_usuario(s, usuario)
         assert feed.total == 0
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert "Licitación LIC-001" not in r.text
 
 
@@ -278,7 +278,7 @@ def test_descartar_sin_csrf_403(client, usuario, settings, engine):
 def test_me_sirve_sobre_match_ajeno_404(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario, "LIC-001")
     with Session(engine) as s:
-        otro = Usuario(email="otro@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        otro = Usuario(email="otro@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(otro)
         s.commit()
         s.refresh(otro)
@@ -296,7 +296,7 @@ def test_me_sirve_sobre_match_ajeno_404(client, usuario, settings, engine):
 def test_descartar_sobre_match_ajeno_404(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario, "LIC-001")
     with Session(engine) as s:
-        otro = Usuario(email="otro2@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        otro = Usuario(email="otro2@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(otro)
         s.commit()
         s.refresh(otro)
@@ -355,7 +355,7 @@ def test_orden_cierre_nulos_al_final(client, usuario, settings, engine):
 
 def test_dashboard_orden_param_en_query(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario, "LIC-001")
-    r = client.get("/?orden=cierre", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?orden=cierre", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
 
 
@@ -418,7 +418,7 @@ def test_descartar_via_htmx_devuelve_200_vacio(client, usuario, settings, engine
 
 def test_dashboard_render_tarjeta_con_acciones(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario, "LIC-001", score=90)
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitación LIC-001" in r.text
     # F-guardar: un solo botón Guardar; "Me sirve" y "Activar alertas" desaparecen.
@@ -433,7 +433,7 @@ def test_dashboard_banner_descartadas(client, usuario, settings, engine):
     cookies, headers = _session(settings, usuario)
     client.post("/oportunidad/licitaciones/LIC-001/descartar", data={}, cookies=cookies, headers=headers)
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
 
 
@@ -491,7 +491,7 @@ def test_dashboard_aplica_default_de_settings(client, usuario, settings, engine)
     _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
     assert settings.feed_min_score_default == 40
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitación LIC-ALTO" in r.text
     assert "Licitación LIC-BAJO" not in r.text
@@ -503,7 +503,7 @@ def test_dashboard_respeta_override_min_score_por_query(client, usuario, setting
     _crear_match_propio(engine, usuario, "LIC-ALTO", score=80)
     _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
 
-    r = client.get("/?min_score=0", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?min_score=0", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitación LIC-ALTO" in r.text
     assert "Licitación LIC-BAJO" in r.text
@@ -512,7 +512,7 @@ def test_dashboard_respeta_override_min_score_por_query(client, usuario, setting
 
 def test_dashboard_render_control_de_relevancia(client, usuario, settings, engine):
     _crear_match_propio(engine, usuario, "LIC-001", score=80)
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     # F-feed-ui-1 le puso encabezado visible "Relevancia" y las tres opciones
     # "Alta" / "Media" / "Todas". F-feed-ui-2 lo mudó al panel de filtros: los
@@ -529,7 +529,7 @@ def test_dashboard_usa_total_filtrado_por_relevancia(client, usuario, settings, 
         _crear_match_propio(engine, usuario, f"LIC-ALTO-{i}", score=80)
     _crear_match_propio(engine, usuario, "LIC-BAJO", score=10)
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "25</strong> oportunidad(es)" in r.text
     # El conteo va envuelto en varias líneas dentro de la barra de resultados.

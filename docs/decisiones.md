@@ -165,3 +165,8 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   deduplicaba (escribe todas las filas de la base) y el puente `backfill_cot_nuble.py` escribía al CSV todas las
   ofertas de la respuesta: los CSV del puente ya traen las ofertas repetidas. Las CA ya guardadas con ofertas de menos
   se reabren con `scripts/mercado/reabrir_ofertas_faltantes.py` (lo corre Boris).
+
+## Plataforma (4-nov-2026)
+- **La plataforma de Compra Ágil es la interfaz principal; la app antigua queda en «Archivo», solo admin** (Boris, 4-nov).
+  Control en el servidor (`requiere_admin_archivo`), no solo menú (regla 17). No se borra ruta, plantilla, job ni tabla; el retiro
+  (F-retiro, con export previo de tablas) lo decide Boris aparte y no antes de que la sombra de F-plat-5 esté andando.

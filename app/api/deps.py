@@ -75,6 +75,25 @@ def html_require_admin(
     return user
 
 
+def es_admin(user: Usuario) -> bool:
+    return user.rol == RolUsuario.ADMIN
+
+
+def requiere_admin_archivo(
+    request: Request,
+    user: Usuario = Depends(html_require_user),
+) -> Usuario:
+    """Guardia de la app antigua («Archivo», F-plat-nav): solo admin, en el servidor (regla 17).
+
+    Un GET de un usuario común vuelve a la portada (303); un POST es 403.
+    """
+    if user.rol == RolUsuario.ADMIN:
+        return user
+    if request.method in ("GET", "HEAD"):
+        raise HTTPException(status_code=303, headers={"Location": "/"})
+    raise HTTPException(status_code=403, detail="Acceso restringido a administradores")
+
+
 def empresa_activa_id(session: Session, user: Usuario) -> int | None:
     """Empresa del usuario si existe y está activa; si no, None ("sin empresa", regla 26)."""
     if user.empresa_id is None:

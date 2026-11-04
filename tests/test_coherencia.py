@@ -180,7 +180,7 @@ def usuario(engine):
         u = Usuario(
             email="dueno@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(u)
@@ -259,7 +259,7 @@ def test_la_ficha_y_la_tarjeta_dicen_lo_mismo_del_cierre(
     cierre = _crear(engine, usuario, fuente=fuente, codigo="OP-1", dias=5)
     esperado = texto_cierre(cierre, 5, fuente)
 
-    feed = client.get("/", cookies=_cookie(settings, usuario)).text
+    feed = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     ficha = client.get(f"/oportunidad/{fuente}/OP-1", cookies=_cookie(settings, usuario)).text
 
     assert esperado in feed

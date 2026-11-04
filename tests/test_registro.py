@@ -99,7 +99,7 @@ def settings() -> Settings:
 
 
 def _usuario(s: Session, email: str = _EMAILS[0]) -> int:
-    u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+    u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
     s.add(u)
     s.flush()
     return u.id
@@ -449,7 +449,7 @@ def test_guardadas_cerradas_y_sin_match(engine, settings):
     assert _codigos(_tab(client, "cerradas")) == ["REG-GCERR"]
 
     # Dashboard: la guardada vigente lleva su chip; la que venció ya no está.
-    feed = client.get("/").text
+    feed = client.get("/archivo").text
     assert "REG-GV" in feed and "Guardada" in feed
     assert "REG-GCERR" not in feed
 
@@ -541,7 +541,7 @@ def test_conteos_igual_a_filas_y_dashboard_igual_a_vencidas(engine, settings):
         assert _conteos(html)[tab] == len(_codigos(html)), tab
     n_vencidas = _conteos(_tab(client, "vencidas"))["vencidas"]
     assert n_vencidas == 3
-    feed = client.get("/").text
+    feed = client.get("/archivo").text
     assert f"{n_vencidas} vencidas recientes en tu registro" in feed
     with Session(engine) as s:
         assert contar_vencidas_recientes(s, uid, ahora_utc(), dias=_DIAS, min_score=_PISO) == n_vencidas

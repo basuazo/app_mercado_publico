@@ -26,7 +26,7 @@ from app.auth.password import hash_password
 from app.auth.session import COOKIE_NAME, create_session_token
 from app.core.settings import Settings
 from app.models.base import Base
-from app.models.enums import EstadoOportunidad, FamiliaEstado, familia_de_estado
+from app.models.enums import EstadoOportunidad, FamiliaEstado, RolUsuario, familia_de_estado
 from app.models.tables import (
     CompraAgil,
     Licitacion,
@@ -250,7 +250,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), activo=True, rol=RolUsuario.ADMIN)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -318,13 +318,13 @@ def _crear_lic(
 def test_la_tarjeta_usa_la_banda_de_match_no_umbrales_propios(client, settings, usuario, engine):
     """65 pasa el preset "Alta relevancia" (60): el anillo va verde, no ámbar."""
     _crear_lic(engine, usuario, score=65)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "anillo-match anillo-match--alta" in html
 
 
 def test_la_tarjeta_con_score_bajo_usa_banda_baja(client, settings, usuario, engine):
     _crear_lic(engine, usuario, score=10)
-    html = client.get("/?min_score=0", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?min_score=0", cookies=_cookie(settings, usuario)).text
     assert "anillo-match anillo-match--baja" in html
 
 
@@ -378,27 +378,27 @@ def test_la_tarjeta_marca_las_cuatro_bandas_de_urgencia(
     client, settings, usuario, engine, dias, clase
 ):
     _crear_lic(engine, usuario, dias=dias)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert f"tarjeta-op tarjeta-op--{clase}" in html
 
 
 def test_monto_ausente_dice_no_informado(client, settings, usuario, engine):
     _crear_lic(engine, usuario, monto=None)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "No informado" in html
     assert "tarjeta-op__monto--ausente" in html
 
 
 def test_monto_presente_va_en_formato_chileno(client, settings, usuario, engine):
     _crear_lic(engine, usuario, monto=12500000)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "$12.500.000" in html
     assert "$12,500,000" not in html
 
 
 def test_licitacion_en_el_feed_no_muestra_hora_de_cierre(client, settings, usuario, engine):
     _crear_lic(engine, usuario, dias=5)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "Cierra en 5 días" in html
     assert "00:00" not in html
 
@@ -428,7 +428,7 @@ def test_compra_agil_en_el_feed_si_muestra_hora(client, settings, usuario, engin
         )
         s.commit()
 
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "Cierra en 4 días" in html
     assert "disponible" in html
     # La hora sí va en Compra Ágil: la fuente la entrega.
@@ -451,7 +451,7 @@ def test_los_chips_se_cortan_en_tres_mas_el_boton_de_resto(client, settings, usu
     )
     # Agrupado por fuente: con "motivo" la misma tarjeta aparece en varios
     # grupos y el conteo se multiplicaría por el número de apariciones.
-    html = client.get("/?agrupar_por=fuente", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?agrupar_por=fuente", cookies=_cookie(settings, usuario)).text
     assert html.count("chip-razon chip-razon--") == 4  # 3 visibles + el "+N"
     assert "chip-razon--mas" in html
     assert "+2" in html
@@ -460,7 +460,7 @@ def test_los_chips_se_cortan_en_tres_mas_el_boton_de_resto(client, settings, usu
 
 def test_los_toggles_de_la_tarjeta_exponen_su_estado(client, settings, usuario, engine):
     _crear_lic(engine, usuario)
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     # F-guardar: un solo toggle Guardar; Descartar abre el modal.
     assert 'data-accion="guardar"' in html
     assert 'data-accion="me-sirve"' not in html
@@ -473,7 +473,7 @@ def test_los_toggles_de_la_tarjeta_exponen_su_estado(client, settings, usuario, 
 
 def test_el_anuncio_nombra_la_oportunidad(client, settings, usuario, engine):
     _crear_lic(engine, usuario, codigo="LIC-NOMBRE")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "No guardada: Licitación LIC-NOMBRE" in html
 
 

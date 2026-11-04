@@ -16,6 +16,16 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="La plataforma de Compra Ágil pasa a ser la portada",
+        descripcion=(
+            "La portada ahora es «Hoy», con las Compras Ágiles abiertas de tus regiones, las líneas "
+            "por revisar en el catálogo y tus proveedores. El menú trae Inicio, Catálogo, Proveedores "
+            "y Logística. La app anterior (feed, perfiles, registro, explorador y Plan Anual) queda "
+            "en «Archivo», solo para el administrador. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="Catálogo de productos y líneas por Compra Ágil",
         descripcion=(
             "Cada producto que pide una Compra Ágil de alimentos se asocia ahora a un producto "

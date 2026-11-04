@@ -63,7 +63,7 @@ def client(engine, settings):
 @pytest.fixture()
 def usuario(engine):
     with Session(engine) as s:
-        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+        u = Usuario(email="user@test.cl", password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
         s.add(u)
         s.commit()
         s.refresh(u)
@@ -322,7 +322,7 @@ def test_umbral_aplica_antes_de_agrupar(client, usuario, settings, engine):
     _crear_match_licitacion(engine, usuario, "LIC-BAJO", score=10, razones={"organismo_seguido": True})
     _crear_match_licitacion(engine, usuario, "LIC-ALTO", score=80, razones={"organismo_seguido": True})
 
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitación LIC-ALTO" in r.text
     assert "Licitación LIC-BAJO" not in r.text
@@ -338,7 +338,7 @@ def test_descartar_oculta_todas_las_apariciones(client, usuario, settings, engin
     )
     cookies, headers = _session(settings, usuario)
 
-    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.text.count('data-oportunidad-key="licitaciones:LIC-DOBLE"') == 2
 
     r_post = client.post(
@@ -346,19 +346,19 @@ def test_descartar_oculta_todas_las_apariciones(client, usuario, settings, engin
     )
     assert r_post.status_code in (200, 303)
 
-    r2 = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
+    r2 = client.get("/archivo?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert "Licitación LIC-DOBLE" not in r2.text
 
 
 def test_render_vista_agrupada_sin_resultados(client, usuario, settings, engine):
-    r = client.get("/", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "No hay oportunidades que coincidan con tus perfiles." in r.text
 
 
 def test_render_grupo_otros_por_defecto(client, usuario, settings, engine):
     _crear_match_licitacion(engine, usuario, "LIC-001", score=80, razones={})
-    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Otros" in r.text
     assert "Licitación LIC-001" in r.text
@@ -372,7 +372,7 @@ def test_render_encabezado_unico_vs_apariciones(client, usuario, settings, engin
         score=80,
         razones={"categorias_hit": ["1010", "1011"]},
     )
-    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "1</strong> oportunidad(es)" in r.text
     assert "algunas aparecen en más de un grupo" in r.text
@@ -382,7 +382,7 @@ def test_agrupar_por_region_via_query(client, usuario, settings, engine):
     _crear_match_ca(engine, usuario, "CA-1", score=80, region=5)
     _crear_match_ca(engine, usuario, "CA-2", score=70, region=None)
 
-    r = client.get("/?agrupar_por=region", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?agrupar_por=region", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Valparaíso" in r.text
     assert "Sin región" in r.text
@@ -392,7 +392,7 @@ def test_agrupar_por_fuente_via_query(client, usuario, settings, engine):
     _crear_match_licitacion(engine, usuario, "LIC-1", score=80)
     _crear_match_ca(engine, usuario, "CA-1", score=70)
 
-    r = client.get("/?agrupar_por=fuente", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?agrupar_por=fuente", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Licitaciones" in r.text
     assert "Compra Ágil" in r.text
@@ -402,6 +402,6 @@ def test_dashboard_cap_por_grupo_muestra_ver_mas(client, usuario, settings, engi
     for i in range(15):
         _crear_match_licitacion(engine, usuario, f"LIC-{i}", score=80, razones={"organismo_seguido": True})
 
-    r = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario))
+    r = client.get("/archivo?agrupar_por=motivo", cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     assert "Ver más en este grupo (10 de 15)" in r.text

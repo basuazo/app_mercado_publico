@@ -91,7 +91,7 @@ def limpio(pg_engine):
 
 
 def _usuario(s: Session, email: str = _EMAIL) -> int:
-    u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+    u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
     s.add(u)
     s.flush()
     return u.id

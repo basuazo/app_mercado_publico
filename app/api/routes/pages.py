@@ -21,11 +21,14 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
-    api_require_user,
+    api_require_admin,
     check_csrf,
+    empresa_activa_id,
+    es_admin,
     get_db,
     html_require_admin,
     html_require_user,
+    requiere_admin_archivo,
     tiene_empresa_activa,
 )
 from app.api.presentacion import (
@@ -310,7 +313,7 @@ def _url_feed(actual: dict[str, Any], **cambios: Any) -> str:
     qs = urlencode(
         [(k, nuevo[k]) for k in _ORDEN_PARAMS if k in nuevo], doseq=True, quote_via=quote
     )
-    return f"/?{qs}" if qs else "/"
+    return f"/archivo?{qs}" if qs else "/archivo"
 
 
 def _url_alternar(actual: dict[str, Any], clave: str, valor: str) -> str:
@@ -460,7 +463,67 @@ def _presets_cierre(hoy: date) -> list[dict[str, Any]]:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
+async def portada(
+    request: Request,
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Portada «Hoy» (F-plat-nav): un conteo por pieza de la plataforma. F-plat-5 la cambia por la mesa."""
+    from sqlalchemy import func
+
+    from app.mercado.territorio import regiones_activas
+    from app.models.tables import CaLinea, Proveedor, ProveedorProducto
+
+    empresa_id = empresa_activa_id(session, user)
+    if empresa_id is None and user.rol != RolUsuario.ADMIN:
+        return _TEMPLATES.TemplateResponse(
+            request, "proveedores_sin_empresa.html", _ctx(request, user)
+        )
+    regiones = regiones_activas(session, request.app.state.settings)
+    ca_abiertas = session.execute(
+        select(func.count())
+        .select_from(CompraAgil)
+        .where(
+            CompraAgil.region.in_(regiones),
+            CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
+            CompraAgil.fecha_cierre > ahora_utc(),
+        )
+    ).scalar_one()
+    lineas_por_revisar = session.execute(
+        select(func.count())
+        .select_from(CaLinea)
+        .join(CompraAgil, CompraAgil.codigo == CaLinea.ca_codigo)
+        .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(("pendiente", "dudosa")))
+    ).scalar_one()
+    n_proveedores = n_productos = 0
+    if empresa_id is not None:
+        n_proveedores = session.execute(
+            select(func.count()).select_from(Proveedor).where(Proveedor.empresa_id == empresa_id)
+        ).scalar_one()
+        n_productos = session.execute(
+            select(func.count())
+            .select_from(ProveedorProducto)
+            .join(Proveedor, Proveedor.id == ProveedorProducto.proveedor_id)
+            .where(Proveedor.empresa_id == empresa_id)
+        ).scalar_one()
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "hoy.html",
+        _ctx(
+            request,
+            user,
+            sin_empresa=empresa_id is None,
+            mostrar_novedades=_hay_novedades_pendientes(user),
+            ca_abiertas=ca_abiertas,
+            lineas_por_revisar=lineas_por_revisar,
+            n_proveedores=n_proveedores,
+            n_productos=n_productos,
+        ),
+    )
+
+
+@router.get("/archivo", response_class=HTMLResponse)
+async def archivo(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     request: Request,
     fuente: list[str] = Query(default=[]),
     texto: str = "",
@@ -490,7 +553,7 @@ async def index(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     excluido: list[str] = Query(default=[]),
     excluidos_n: str = "",
     restaurado: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     settings = request.app.state.settings
@@ -781,7 +844,7 @@ def _aviso_exclusion(
 
 
 @router.get("/descartadas")
-async def descartadas_get(user: Usuario = Depends(html_require_user)) -> RedirectResponse:  # noqa: ARG001
+async def descartadas_get(user: Usuario = Depends(requiere_admin_archivo)) -> RedirectResponse:  # noqa: ARG001
     """Ruta vieja (enlaces guardados): las descartadas viven en Mi registro."""
     return RedirectResponse(url="/registro?tab=descartadas", status_code=303)
 
@@ -800,13 +863,13 @@ def _url_volver_feed(request: Request) -> str:
     """
     ref = request.headers.get("referer", "")
     if not ref:
-        return "/"
+        return "/archivo"
     partes = urlsplit(ref)
     if partes.netloc and partes.netloc != request.url.netloc:
-        return "/"
+        return "/archivo"
     # El explorador (F-ca-explorar) también manda a la ficha: volver conserva sus filtros.
-    if partes.path not in ("/", "/compras-agiles"):
-        return "/"
+    if partes.path not in ("/archivo", "/compras-agiles"):
+        return "/archivo"
     return partes.path + ("?" + partes.query if partes.query else "")
 
 
@@ -913,7 +976,9 @@ def _contexto_ficha(
     perfiles_nombres = nombres_de_perfiles(
         matches_de_oportunidad(session, user.id, fuente, codigo), nombres_perfil
     )
-    volver = _url_volver_feed(request)
+    # Solo el admin ve la app antigua (F-plat-nav): el resto vuelve a la portada y no tiene acciones.
+    admin = es_admin(user)
+    volver = _url_volver_feed(request) if admin else "/"
     lineas_ca = None
     if isinstance(op, CompraAgil):
         # F-plat-1: «Líneas» del catálogo, solo CA de regiones activas y usuarios con empresa.
@@ -953,12 +1018,14 @@ def _contexto_ficha(
         region_nombre=region_nombre,
         razones_chips=razones_tipificadas(match.razones) if match is not None else [],
         perfiles_nombres=perfiles_nombres,
-        acciones=estado_acciones(session, user.id, fuente, codigo),
+        acciones=estado_acciones(session, user.id, fuente, codigo) if admin else None,
         competencia_resumen=competencia_resumen,
         competencia_detalle=competencia_detalle,
         url_volver=volver,
         volver_etiqueta=(
-            "Explorar Compras Ágiles" if volver.startswith("/compras-agiles") else "Dashboard"
+            "Explorar Compras Ágiles"
+            if volver.startswith("/compras-agiles")
+            else ("Archivo" if admin else "Inicio")
         ),
         en_modal=en_modal,
         desde=desde,
@@ -976,6 +1043,11 @@ async def oportunidad_detalle(
 ) -> HTMLResponse:
     """La ficha. Con `HX-Request` (modal del feed y de Mi registro) devuelve solo el
     parcial; sin él, la página completa a la que enlazan los correos."""
+    if not es_admin(user) and (
+        fuente != "compras_agiles" or empresa_activa_id(session, user) is None
+    ):
+        # La app antigua es solo del admin; la ficha de CA queda para quien tenga empresa.
+        raise HTTPException(status_code=303, headers={"Location": "/"})
     en_modal = _es_htmx(request)
     ctx = _contexto_ficha(
         request, user, session, fuente, codigo, en_modal=en_modal, desde=_desde_valido(desde)
@@ -1063,7 +1135,7 @@ def _volver_de(desde: str) -> str:
         return "/compras-agiles"
     if desde:
         return f"/registro?tab={desde.split(':', 1)[1]}"
-    return "/"
+    return "/archivo"
 
 
 def _render_modal_acciones(
@@ -1179,7 +1251,7 @@ async def oportunidad_guardar(
     origen: str = Form("dashboard"),
     desde: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     """Toggle Guardar / Guardada (F-guardar)."""
@@ -1199,14 +1271,14 @@ async def oportunidad_me_sirve(
     next: str = Form(""),
     origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     """Deprecated (F-guardar): alias del toggle de `/guardar`."""
     check_csrf(request, csrf_token)
     return _guardar(
         request, user, session, fuente, codigo,
-        accion="alternar", next_=next, origen=origen, fallback="/",
+        accion="alternar", next_=next, origen=origen, fallback="/archivo",
     )
 
 
@@ -1218,7 +1290,7 @@ async def oportunidad_seguir(
     next: str = Form(""),
     origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     """Deprecated (F-guardar): alias de `/guardar` que solo guarda (idempotente)."""
@@ -1237,7 +1309,7 @@ async def oportunidad_dejar_de_seguir(
     next: str = Form(""),
     origen: str = Form("dashboard"),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     """Deprecated (F-guardar): alias de `/guardar` que solo quita de guardadas."""
@@ -1257,7 +1329,7 @@ async def oportunidad_descartar(
     origen: str = Form("dashboard"),
     desde: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     """Descartar: registra feedback NEGATIVO y, si estaba guardada, la quita de
@@ -1285,7 +1357,7 @@ async def oportunidad_descartar(
             )
         # 200 con cuerpo vacío, no 204: htmx no swapea en absoluto ante un 204.
         return HTMLResponse(content="", status_code=200)
-    return RedirectResponse(url=_safe_next(next, "/"), status_code=303)
+    return RedirectResponse(url=_safe_next(next, "/archivo"), status_code=303)
 
 
 @router.post("/oportunidad/{fuente}/{codigo}/deshacer-descarte", response_model=None)
@@ -1297,7 +1369,7 @@ async def oportunidad_deshacer_descarte(
     origen: str = Form("dashboard"),
     desde: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
@@ -1327,7 +1399,7 @@ async def oportunidad_descartar_opciones(
     codigo: str,
     origen: str = "dashboard",
     desde: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Contenido del panel "Descartar y excluir términos": qué perfil y qué palabras la
@@ -1382,7 +1454,7 @@ async def oportunidad_excluir_vista_previa(
     perfil_id: str = "",
     palabras: list[str] = Query(default=[]),
     palabra_nueva: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Vista previa (HTMX), solo números: cuántos matches del perfil saldrían con
@@ -1421,7 +1493,7 @@ async def oportunidad_descartar_y_excluir(
     origen: str = Form(""),
     desde: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     """Descarta y agrega la(s) palabra(s) a las exclusiones del perfil; lo que ya
@@ -1486,7 +1558,7 @@ async def oportunidad_descartar_y_excluir(
         ],
         quote_via=quote,
     )
-    return RedirectResponse(url=f"/?{qs}", status_code=303)
+    return RedirectResponse(url=f"/archivo?{qs}", status_code=303)
 
 
 @router.post("/perfiles/{perfil_id}/deshacer-exclusion")
@@ -1497,7 +1569,7 @@ async def perfil_deshacer_exclusion(
     palabras: list[str] = Form(default=[]),
     next: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     """Deshacer de "Descartar y excluir": quita las palabras y re-ejecuta el
@@ -1509,9 +1581,9 @@ async def perfil_deshacer_exclusion(
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     session.commit()
     background_tasks.add_task(_match_perfil_background, request.app.state.engine, perfil_id)
-    destino = _safe_next(next, "/")
-    if destino == "/":
-        destino = "/?restaurado=1"
+    destino = _safe_next(next, "/archivo")
+    if destino == "/archivo":
+        destino = "/archivo?restaurado=1"
     return RedirectResponse(url=destino, status_code=303)
 
 
@@ -1523,7 +1595,7 @@ async def oportunidad_archivar(
     next: str = Form(""),
     desde: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
@@ -1544,7 +1616,7 @@ async def oportunidad_desarchivar(
     next: str = Form(""),
     desde: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse | RedirectResponse:
     check_csrf(request, csrf_token)
@@ -1568,7 +1640,7 @@ _PAGINA_REGISTRO = 20
 @router.get("/seguidas")
 async def seguidas_get(
     archivadas: str = "",
-    user: Usuario = Depends(html_require_user),  # noqa: ARG001
+    user: Usuario = Depends(requiere_admin_archivo),  # noqa: ARG001
 ) -> RedirectResponse:
     """Ruta vieja (enlaces guardados): Mi registro, pestaña guardadas o archivadas."""
     tab = "archivadas" if archivadas == "1" else "guardadas"
@@ -1627,7 +1699,7 @@ async def registro_get(
     fuente: str = "",
     texto: str = "",
     n: int = _PAGINA_REGISTRO,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Mi registro: guardadas (vigentes), cerradas (guardadas que ya vencieron),
@@ -1918,7 +1990,7 @@ def _perfiles_pagina(  # noqa: PLR0913 - contexto de una página
 @router.get("/perfiles", response_class=HTMLResponse)
 async def perfiles_get(  # noqa: PLR0913 - parámetros de query de la página
     request: Request,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
     mensaje: str = "",
     error: str = "",
@@ -1935,7 +2007,7 @@ async def perfiles_get(  # noqa: PLR0913 - parámetros de query de la página
 @router.get("/perfiles/nuevo/form", response_class=HTMLResponse)
 async def perfil_form_nuevo(
     request: Request,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
 ) -> HTMLResponse:
     form = _form_ctx(None, _valores_form_vacios())
     return _TEMPLATES.TemplateResponse(request, "_perfil_form.html", _ctx_form(request, user, form))
@@ -1945,7 +2017,7 @@ async def perfil_form_nuevo(
 async def perfil_form_editar(
     request: Request,
     perfil_id: int,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     perfil = obtener_perfil(session, perfil_id, user.id)
@@ -1972,7 +2044,7 @@ async def perfil_tarjeta(
     perfil_id: int,
     intento: int = 1,
     antes: int = -1,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """La tarjeta sola, para refrescar el conteo mientras el match corre en segundo plano."""
@@ -1994,7 +2066,7 @@ async def perfil_activo(  # noqa: PLR0913 - dependencias de la ruta
     background_tasks: BackgroundTasks,
     activo: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> Response:
     """Pausa o reactiva un perfil (`activo=1` lo activa). Pausado no entra al
@@ -2022,7 +2094,7 @@ async def perfil_activo(  # noqa: PLR0913 - dependencias de la ruta
 @router.get("/rubros-favoritos/form", response_class=HTMLResponse)
 async def rubros_favoritos_form(
     request: Request,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
 ) -> HTMLResponse:
     """El <select> de ~510 rubros para agregar un favorito, solo al desplegar la tarjeta."""
     return _TEMPLATES.TemplateResponse(
@@ -2035,7 +2107,7 @@ async def rubros_favoritos_form(
 @router.get("/organismos/catalogo.json")
 async def organismos_catalogo(
     request: Request,
-    user: Usuario = Depends(api_require_user),  # noqa: ARG001
+    user: Usuario = Depends(api_require_admin),  # noqa: ARG001
     session: Session = Depends(get_db),
 ) -> JSONResponse:
     """Catálogo de organismos para el widget del formulario de perfil. Es la ruta que
@@ -2279,7 +2351,7 @@ async def perfil_crear(  # noqa: PLR0913 - un campo del formulario = un parámet
     categorias_unspsc_extra: str = Form(""),
     organismos_seguidos: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> Response:
     check_csrf(request, csrf_token)
@@ -2307,7 +2379,7 @@ async def perfil_eliminar(
     request: Request,
     perfil_id: int,
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     check_csrf(request, csrf_token)
@@ -2335,7 +2407,7 @@ async def perfil_editar(  # noqa: PLR0913 - un campo del formulario = un paráme
     categorias_unspsc_extra: str = Form(""),
     organismos_seguidos: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> Response:
     check_csrf(request, csrf_token)
@@ -2592,7 +2664,7 @@ async def plan_anual_get(
     codigo_entidad: str = "",
     agno: str = "",
     pagina: int = 1,
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     settings = request.app.state.settings
@@ -2750,7 +2822,7 @@ async def plan_anual_conteo(
     todo_el_anio: bool = False,
     monto_min: str = "",
     monto_max: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Conteo en vivo (HTMX): solo números, respeta los mismos filtros que la
@@ -2781,7 +2853,7 @@ async def plan_anual_export_csv(
     todo_el_anio: bool = False,
     monto_min: str = "",
     monto_max: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> Response:
     """CSV de lo filtrado (tope `_EXPORT_MAX_FILAS` en app.plan_busqueda), con
@@ -3005,7 +3077,7 @@ async def explorador_ca_get(  # noqa: PLR0913 - una dimensión filtrable = un pa
     pagina: int = 1,
     panel: str = "",
     sin_favoritos: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     filtros, estado_qs, favoritos = _armar_filtros_explorador(
@@ -3093,7 +3165,7 @@ async def explorador_ca_conteo(  # noqa: PLR0913 - una dimensión filtrable = un
     orden: str = "cierre",
     panel: str = "",
     sin_favoritos: str = "",
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Conteo en vivo (HTMX): solo un número, con los mismos filtros de la
@@ -3127,7 +3199,7 @@ async def rubro_favorito_agregar(
     prefijo: str = Form(""),
     next: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     check_csrf(request, csrf_token)
@@ -3145,7 +3217,7 @@ async def rubro_favorito_quitar(
     prefijo: str = Form(""),
     next: str = Form(""),
     csrf_token: str = Form(""),
-    user: Usuario = Depends(html_require_user),
+    user: Usuario = Depends(requiere_admin_archivo),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     check_csrf(request, csrf_token)

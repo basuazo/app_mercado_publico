@@ -58,7 +58,7 @@ def usuario(engine):
         u = Usuario(
             email="user@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(u)
@@ -77,7 +77,7 @@ def _cookie(settings: Settings, user_id: int) -> dict[str, str]:
 
 
 def test_texto_con_ampersand_se_codifica_en_los_enlaces(client, settings, usuario) -> None:
-    r = client.get("/", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario))
     assert r.status_code == 200
     html = r.text
 
@@ -90,13 +90,13 @@ def test_texto_con_ampersand_se_codifica_en_los_enlaces(client, settings, usuari
 def test_enlaces_de_orden_y_agrupacion_conservan_el_texto_codificado(
     client, settings, usuario
 ) -> None:
-    r = client.get("/", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario))
+    r = client.get("/archivo", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario))
     html = r.text
 
     # Desde F-feed-ui-2 el orden de los parámetros lo fija `_ORDEN_PARAMS`, así
     # que el enlace no empieza necesariamente por el parámetro buscado: se
     # localiza el href completo y se revisa ahí dentro.
-    enlaces = re.findall(r'(?:href|value)="(/\?[^"]*)"', html)
+    enlaces = re.findall(r'(?:href|value)="(/archivo\?[^"]*)"', html)
     # `min_score` salió de esta lista en F-feed-ui-2: dejó de ser un enlace y
     # pasó a ser un radio del panel, que el navegador codifica solo.
     for parametro in ("orden=cierre", "agrupar_por=region"):
@@ -112,7 +112,7 @@ def test_enlaces_de_orden_y_agrupacion_conservan_el_texto_codificado(
 
 
 def test_navbar_colapsa_en_movil(client, settings, usuario) -> None:
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert 'class="navbar-toggler"' in html
     assert 'data-bs-toggle="collapse"' in html
     assert 'data-bs-target="#nav-principal"' in html
@@ -123,7 +123,7 @@ def test_navbar_colapsa_en_movil(client, settings, usuario) -> None:
 
 
 def test_landmark_main_y_enlace_de_salto(client, settings, usuario) -> None:
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert '<main id="contenido"' in html
     assert 'href="#contenido">Saltar al contenido</a>' in html
     assert "visually-hidden-focusable" in html
@@ -132,7 +132,7 @@ def test_landmark_main_y_enlace_de_salto(client, settings, usuario) -> None:
 
 
 def test_region_de_anuncios_aria_live(client, settings, usuario) -> None:
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert 'id="anuncios"' in html
     assert 'role="status"' in html
     assert 'aria-live="polite"' in html
@@ -140,23 +140,23 @@ def test_region_de_anuncios_aria_live(client, settings, usuario) -> None:
 
 
 def test_pagina_actual_marcada_en_la_navegacion(client, settings, usuario) -> None:
-    html = client.get("/perfiles", cookies=_cookie(settings, usuario)).text
-    i = html.index('href="/perfiles"')
+    html = client.get("/cuenta", cookies=_cookie(settings, usuario)).text
+    i = html.index('href="/cuenta"')
     enlace = html[html.rindex("<a", 0, i) : html.index("</a>", i)]
     assert 'aria-current="page"' in enlace
     assert "active" in enlace
 
     # En otra página el mismo enlace no debe declararse actual.
-    html_seguidas = client.get("/registro", cookies=_cookie(settings, usuario)).text
-    j = html_seguidas.index('href="/perfiles"')
-    enlace_perfiles = html_seguidas[
-        html_seguidas.rindex("<a", 0, j) : html_seguidas.index("</a>", j)
+    html_otra = client.get("/proveedores", cookies=_cookie(settings, usuario)).text
+    j = html_otra.index('href="/cuenta"')
+    enlace_perfiles = html_otra[
+        html_otra.rindex("<a", 0, j) : html_otra.index("</a>", j)
     ]
     assert 'aria-current="page"' not in enlace_perfiles
 
 
 def test_salir_ya_no_usa_el_rojo_de_peligro(client, settings, usuario) -> None:
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     i = html.index(">Salir<")
     boton = html[html.rindex("<button", 0, i) : i]
     assert "btn-outline-danger" not in boton
@@ -164,7 +164,7 @@ def test_salir_ya_no_usa_el_rojo_de_peligro(client, settings, usuario) -> None:
 
 def test_clase_num_disponible_para_columnas_numericas(client, settings, usuario) -> None:
     """Desde F-feed-ui-1 la clase vive en el archivo estático, no inline."""
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert '<link rel="stylesheet" href="/static/app.css?v=' in html
 
     css = client.get("/static/app.css")

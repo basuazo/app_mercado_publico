@@ -288,7 +288,7 @@ class TestVocabulario:
 
 def _sembrar_explorador(session: Session) -> int:
     ahora = ahora_utc()
-    usuario = Usuario(email=_EMAIL, password_hash=hash_password("clave-de-prueba-larga"), rol=RolUsuario.USUARIO, activo=True)
+    usuario = Usuario(email=_EMAIL, password_hash=hash_password("clave-de-prueba-larga"), rol=RolUsuario.ADMIN, activo=True)
     session.add(usuario)
     session.flush()
 

@@ -89,7 +89,7 @@ def settings():
 
 
 def _usuario(s: Session, email: str = _EMAIL) -> int:
-    u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.USUARIO, activo=True)
+    u = Usuario(email=email, password_hash=hash_password(_PW), rol=RolUsuario.ADMIN, activo=True)
     s.add(u)
     s.flush()
     return u.id
@@ -269,13 +269,13 @@ def test_deshacer_exclusion_agenda_el_matching_en_segundo_plano(limpio, settings
     ):
         r = client.post(
             f"/perfiles/{pid}/deshacer-exclusion",
-            data={"palabras": ["zzajusrata"], "next": "/"},
+            data={"palabras": ["zzajusrata"], "next": "/archivo"},
             cookies=cookies,
             headers=headers,
             follow_redirects=False,
         )
         assert r.status_code == 303
-        assert r.headers["location"] == "/?restaurado=1"
+        assert r.headers["location"] == "/archivo?restaurado=1"
         en_peticion.assert_not_called()
         tarea.assert_called_once()
         assert tarea.call_args.args[1] == pid
@@ -286,7 +286,7 @@ def test_deshacer_exclusion_agenda_el_matching_en_segundo_plano(limpio, settings
         c2, h2 = _sesion(settings, otro)
         r = client.post(
             f"/perfiles/{pid}/deshacer-exclusion",
-            data={"palabras": ["otra"], "next": "/"},
+            data={"palabras": ["otra"], "next": "/archivo"},
             cookies=c2,
             headers=h2,
             follow_redirects=False,

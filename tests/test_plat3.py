@@ -723,11 +723,11 @@ def test_logistica_se_edita_por_empresa(client, settings, engine, dos_empresas):
 def test_menu_mesa_solo_con_empresa(client, settings, dos_empresas):
     d = dos_empresas
     ck, _ = _sesion(settings, d["ua"])
-    assert 'href="/proveedores"' in client.get("/perfiles", cookies=ck).text
+    assert 'href="/proveedores"' in client.get("/cuenta", cookies=ck).text
     ck, _ = _sesion(settings, d["sin"])
-    assert 'href="/proveedores"' not in client.get("/perfiles", cookies=ck).text
+    assert 'href="/proveedores"' not in client.get("/cuenta", cookies=ck).text
     ck, _ = _sesion(settings, d["admin_sin"])
-    assert 'href="/admin/empresas"' in client.get("/perfiles", cookies=ck).text
+    assert 'href="/admin/empresas"' in client.get("/cuenta", cookies=ck).text
 
 
 # ---------------------------------------------------------------------------
@@ -815,8 +815,8 @@ def test_precio_con_fecha_anterior_no_pisa_el_actual(engine):
 def test_menu_mesa_oculto_con_empresa_inactiva(client, settings, engine, dos_empresas):
     d = dos_empresas
     ck, _ = _sesion(settings, d["ua"])
-    assert 'href="/proveedores"' in client.get("/perfiles", cookies=ck).text
+    assert 'href="/proveedores"' in client.get("/cuenta", cookies=ck).text
     with Session(engine) as s:
         s.get(Empresa, d["a"]).activa = False
         s.commit()
-    assert 'href="/proveedores"' not in client.get("/perfiles", cookies=ck).text
+    assert 'href="/proveedores"' not in client.get("/cuenta", cookies=ck).text

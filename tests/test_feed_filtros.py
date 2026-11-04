@@ -461,7 +461,7 @@ def usuario(engine):
         u = Usuario(
             email="dueno@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(u)

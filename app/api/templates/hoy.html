@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Inicio — MP Oportunidades{% endblock %}
+{% block content %}
+<h2 class="mb-4">Hoy</h2>
+{% if sin_empresa %}
+<div class="alert alert-warning" role="status">
+  Tu cuenta todavía no tiene una empresa activa: asígnate una en <a href="/admin/empresas">Empresas</a>.
+</div>
+{% endif %}
+<div class="row g-3">
+  <div class="col-12 col-md-4">
+    <div class="card h-100"><div class="card-body">
+      <p class="text-muted small mb-1">Compras Ágiles abiertas</p>
+      <p class="display-6 num mb-0" data-hoy="ca-abiertas">{{ ca_abiertas }}</p>
+      <p class="small text-muted mb-0">En las regiones activas, con cierre futuro.</p>
+    </div></div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="card h-100"><div class="card-body">
+      <p class="text-muted small mb-1">Líneas por revisar</p>
+      <p class="display-6 num mb-0" data-hoy="lineas-por-revisar">{{ lineas_por_revisar }}</p>
+      <a href="/catalogo" class="small">Ir al catálogo</a>
+    </div></div>
+  </div>
+  {% if not sin_empresa %}
+  <div class="col-12 col-md-4">
+    <div class="card h-100"><div class="card-body">
+      <p class="text-muted small mb-1">Proveedores y productos cargados</p>
+      <p class="display-6 num mb-0" data-hoy="proveedores">{{ n_proveedores }} <span class="fs-6 text-muted">proveedores</span></p>
+      <p class="mb-0"><span class="num" data-hoy="productos">{{ n_productos }}</span> productos · <a href="/proveedores" class="small">Ir a proveedores</a></p>
+    </div></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

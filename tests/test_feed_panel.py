@@ -40,7 +40,7 @@ _PW = "contraseña-segura-test"
 
 
 def test_url_feed_no_serializa_lo_que_no_esta_activo() -> None:
-    assert _url_feed({}) == "/"
+    assert _url_feed({}) == "/archivo"
 
 
 def test_url_feed_codifica_cada_valor() -> None:
@@ -135,7 +135,7 @@ def usuario(engine):
         u = Usuario(
             email="dueno@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(u)
@@ -228,7 +228,7 @@ def test_filtro_de_monto_desde_el_querystring(client, settings, usuario, engine)
     _crear(engine, usuario, "CARA", monto=50_000_000)
 
     html = client.get(
-        "/?monto_min=1.000.000", cookies=_cookie(settings, usuario)
+        "/archivo?monto_min=1.000.000", cookies=_cookie(settings, usuario)
     ).text
 
     assert "Oportunidad CARA" in html
@@ -243,7 +243,7 @@ def test_filtro_de_estado_ya_no_filtra_y_se_ignora(client, settings, usuario, en
     _crear(engine, usuario, "ABIERTA", estado="publicada")
     _crear(engine, usuario, "ADJUDICADA", estado="adjudicada")
 
-    html = client.get("/?estado=adjudicada", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?estado=adjudicada", cookies=_cookie(settings, usuario)).text
 
     assert "Oportunidad ABIERTA" in html
     assert "Oportunidad ADJUDICADA" not in html
@@ -253,7 +253,7 @@ def test_filtro_de_fuente_desde_el_querystring(client, settings, usuario, engine
     _crear(engine, usuario, "LIC-1", fuente="licitaciones")
     _crear(engine, usuario, "CA-1", fuente="compras_agiles")
 
-    html = client.get("/?fuente=compras_agiles", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?fuente=compras_agiles", cookies=_cookie(settings, usuario)).text
 
     assert "Oportunidad CA-1" in html
     assert "Oportunidad LIC-1" not in html
@@ -266,7 +266,7 @@ def test_las_dos_fuentes_marcadas_es_sin_filtro(client, settings, usuario, engin
     _crear(engine, usuario, "CA-1", fuente="compras_agiles")
 
     html = client.get(
-        "/?fuente=licitaciones&fuente=compras_agiles", cookies=_cookie(settings, usuario)
+        "/archivo?fuente=licitaciones&fuente=compras_agiles", cookies=_cookie(settings, usuario)
     ).text
 
     assert "Oportunidad LIC-1" in html
@@ -278,15 +278,15 @@ def test_el_monto_no_informado_se_incluye_salvo_que_se_pida_lo_contrario(
 ) -> None:
     _crear(engine, usuario, "SIN-MONTO", monto=None)
 
-    incluye = client.get("/", cookies=_cookie(settings, usuario)).text
+    incluye = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert "Oportunidad SIN-MONTO" in incluye
 
     # Desde un enlace (forma canónica).
-    excluye = client.get("/?excluir_sin_monto=1", cookies=_cookie(settings, usuario)).text
+    excluye = client.get("/archivo?excluir_sin_monto=1", cookies=_cookie(settings, usuario)).text
     assert "Oportunidad SIN-MONTO" not in excluye
 
     # Y desde el panel, donde la casilla ausente significa desmarcada.
-    del_panel = client.get("/?panel=1", cookies=_cookie(settings, usuario)).text
+    del_panel = client.get("/archivo?panel=1", cookies=_cookie(settings, usuario)).text
     assert "Oportunidad SIN-MONTO" not in del_panel
 
 
@@ -294,7 +294,7 @@ def test_las_casillas_incluir_van_marcadas_sin_parametros(client, settings, usua
     """Si alguien las da vuelta, el feed se come en silencio las oportunidades
     a las que la fuente no informa el dato."""
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     for id_casilla in ("filtros-escritorio-sin-monto", "filtros-escritorio-sin-cierre"):
         i = html.index(f'id="{id_casilla}"')
@@ -305,7 +305,7 @@ def test_las_casillas_incluir_van_marcadas_sin_parametros(client, settings, usua
 def test_la_busqueda_con_ampersand_sobrevive_a_los_enlaces(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "LIC-1")
     html = client.get(
-        "/", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario)
+        "/archivo", params={"texto": "aseo & mantención"}, cookies=_cookie(settings, usuario)
     ).text
 
     assert "texto=aseo%20%26%20mantenci%C3%B3n" in html
@@ -319,7 +319,7 @@ def test_la_busqueda_con_ampersand_sobrevive_a_los_enlaces(client, settings, usu
 
 def test_sin_filtros_no_se_renderiza_la_fila_de_chips(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert "chip-filtro" not in html
     assert "Limpiar todo" not in html
@@ -331,7 +331,7 @@ def test_los_chips_reflejan_exactamente_los_filtros_activos(
     _crear(engine, usuario, "CA-1", fuente="compras_agiles", region=5)
 
     html = client.get(
-        "/?fuente=compras_agiles&region=5&monto_min=1000000&monto_max=50000000",
+        "/archivo?fuente=compras_agiles&region=5&monto_min=1000000&monto_max=50000000",
         cookies=_cookie(settings, usuario),
     ).text
 
@@ -344,7 +344,7 @@ def test_los_chips_reflejan_exactamente_los_filtros_activos(
 
 def test_el_chip_quita_solo_su_filtro(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "CA-1", fuente="compras_agiles", region=5)
-    html = client.get("/?region=5&monto_min=1000000", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?region=5&monto_min=1000000", cookies=_cookie(settings, usuario)).text
 
     # El enlace del chip de región conserva el monto y suelta la región.
     i = html.index("Quitar filtro Región")
@@ -364,7 +364,7 @@ def test_el_default_de_agrupacion_es_ninguno(client, settings, usuario, engine) 
     """Agrupando por motivo la misma oportunidad aparece en varios grupos; sin
     agrupar aparece una vez y sus motivos viven como chips en la tarjeta."""
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert 'id="feed-agrupado"' not in html
     i = html.index('id="agrupar-select"')
@@ -375,7 +375,7 @@ def test_el_default_de_agrupacion_es_ninguno(client, settings, usuario, engine) 
 
 def test_el_orden_por_monto_esta_ofrecido(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert "Monto mayor" in html
 
@@ -387,7 +387,7 @@ def test_ordenar_por_monto_pone_los_no_informados_al_final(
     _crear(engine, usuario, "CHICA", monto=1_000)
     _crear(engine, usuario, "GRANDE", monto=90_000_000)
 
-    html = client.get("/?orden=monto", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?orden=monto", cookies=_cookie(settings, usuario)).text
 
     assert html.index("Oportunidad GRANDE") < html.index("Oportunidad CHICA")
     assert html.index("Oportunidad CHICA") < html.index("Oportunidad SIN-MONTO")
@@ -397,7 +397,7 @@ def test_la_paginacion_aparece_sin_agrupar(client, settings, usuario, engine) ->
     for i in range(LIMITE_PAGINA_DEFAULT + 5):
         _crear(engine, usuario, f"LIC-{i:02d}")
 
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert "quedan 5" in html
     assert f"offset={LIMITE_PAGINA_DEFAULT}" in html
@@ -408,7 +408,7 @@ def test_la_paginacion_no_aparece_agrupando(client, settings, usuario, engine) -
     for i in range(LIMITE_PAGINA_DEFAULT + 5):
         _crear(engine, usuario, f"LIC-{i:02d}")
 
-    html = client.get("/?agrupar_por=motivo", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?agrupar_por=motivo", cookies=_cookie(settings, usuario)).text
 
     assert "Paginación del feed" not in html
     assert "quedan" not in html
@@ -419,7 +419,7 @@ def test_la_segunda_pagina_trae_las_siguientes(client, settings, usuario, engine
         _crear(engine, usuario, f"LIC-{i:02d}")
 
     html = client.get(
-        f"/?offset={LIMITE_PAGINA_DEFAULT}", cookies=_cookie(settings, usuario)
+        f"/archivo?offset={LIMITE_PAGINA_DEFAULT}", cookies=_cookie(settings, usuario)
     ).text
 
     assert "Ver las 20 anteriores" in html
@@ -436,7 +436,7 @@ def test_el_panel_muestra_los_conteos_por_faceta(client, settings, usuario, engi
     _crear(engine, usuario, "LIC-2", fuente="licitaciones")
     _crear(engine, usuario, "CA-1", fuente="compras_agiles")
 
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     i = html.index('id="filtros-escritorio-sec-fuente"')
     seccion = html[i : html.index("accordion-item", i + 10)]
 
@@ -451,7 +451,7 @@ def test_la_faceta_de_la_fuente_filtrada_no_cae_a_cero(client, settings, usuario
     _crear(engine, usuario, "LIC-2", fuente="licitaciones")
     _crear(engine, usuario, "CA-1", fuente="compras_agiles")
 
-    html = client.get("/?fuente=compras_agiles", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?fuente=compras_agiles", cookies=_cookie(settings, usuario)).text
     i = html.index('id="filtros-escritorio-fuente-licitaciones"')
     fin = html.index("</div>", html.index("</label>", i))
 
@@ -463,7 +463,7 @@ def test_el_panel_advierte_que_la_region_solo_aplica_a_compra_agil(
 ) -> None:
     """Obligatoria: sin ella el filtro miente sobre lo que hace."""
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert "El filtro de región aplica solo a Compra Ágil" in html
 
@@ -474,7 +474,7 @@ def test_el_panel_no_escribe_los_cortes_de_relevancia_a_mano(
     """Los cortes vienen de la ruta (`_RELEVANCIA_ALTA` y el default de
     settings), no de números escritos en la plantilla."""
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert 'name="min_score" value="60"' in html
     assert f'name="min_score" value="{settings.feed_min_score_default}"' in html
@@ -484,7 +484,7 @@ def test_el_panel_existe_dos_veces_con_ids_distintos(client, settings, usuario, 
     """Barra lateral y offcanvas comparten marcado pero no ids: dos elementos
     con el mismo id rompen el `for` de las etiquetas."""
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert html.count('id="filtros-escritorio-form"') == 1
     assert html.count('id="filtros-movil-form"') == 1
@@ -493,7 +493,7 @@ def test_el_panel_existe_dos_veces_con_ids_distintos(client, settings, usuario, 
 
 def test_el_boton_de_filtros_movil_cuenta_los_activos(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "CA-1", fuente="compras_agiles", region=5)
-    html = client.get("/?region=5&monto_min=1000000", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?region=5&monto_min=1000000", cookies=_cookie(settings, usuario)).text
 
     i = html.index('id="boton-filtros"')
     assert "Filtros (2)" in html[i : html.index("</button>", i)]
@@ -501,7 +501,7 @@ def test_el_boton_de_filtros_movil_cuenta_los_activos(client, settings, usuario,
 
 def test_el_feed_vacio_con_filtros_ofrece_limpiarlos(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "LIC-1", monto=1_000)
-    html = client.get("/?monto_min=99000000", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?monto_min=99000000", cookies=_cookie(settings, usuario)).text
 
     assert "No hay oportunidades con estos filtros." in html
     assert "Limpiar los filtros" in html
@@ -516,7 +516,7 @@ def test_sin_seccion_estado_en_el_panel(client, settings, usuario, engine) -> No
     """La sección "Estado" del panel se saca por completo (F-vigencia): con
     solo_vigentes=True lo único que quedaría siempre es "Abierta"."""
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
 
     assert 'id="filtros-escritorio-sec-estado"' not in html
 
@@ -530,7 +530,7 @@ def test_filtro_de_perfil_admite_varios_seleccionados(client, settings, usuario,
     _crear(engine, usuario, "P3")
 
     html = client.get(
-        f"/?perfil_id={p1}&perfil_id={p2}", cookies=_cookie(settings, usuario)
+        f"/archivo?perfil_id={p1}&perfil_id={p2}", cookies=_cookie(settings, usuario)
     ).text
 
     assert "Oportunidad P1" in html
@@ -545,7 +545,7 @@ def test_filtro_de_perfil_de_otro_usuario_se_ignora(client, settings, usuario, e
         otro = Usuario(
             email="otro@test.cl",
             password_hash=hash_password(_PW),
-            rol=RolUsuario.USUARIO,
+            rol=RolUsuario.ADMIN,
             activo=True,
         )
         s.add(otro)
@@ -557,7 +557,7 @@ def test_filtro_de_perfil_de_otro_usuario_se_ignora(client, settings, usuario, e
     _crear(engine, usuario, "PROPIA")
 
     html = client.get(
-        f"/?perfil_id={perfil_ajeno}", cookies=_cookie(settings, usuario)
+        f"/archivo?perfil_id={perfil_ajeno}", cookies=_cookie(settings, usuario)
     ).text
 
     assert "Oportunidad PROPIA" in html
@@ -574,7 +574,7 @@ def test_faceta_de_palabra_clave_filtra_y_cuenta(client, settings, usuario, engi
     _crear(engine, usuario, "CON-ASEO", perfil_id=perfil_id, razones={"keywords_hit": ["aseo"]})
     _crear(engine, usuario, "SIN-ASEO", perfil_id=perfil_id, razones={})
 
-    html = client.get("/?kw=aseo", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?kw=aseo", cookies=_cookie(settings, usuario)).text
 
     assert "Oportunidad CON-ASEO" in html
     assert "Oportunidad SIN-ASEO" not in html
@@ -582,6 +582,6 @@ def test_faceta_de_palabra_clave_filtra_y_cuenta(client, settings, usuario, engi
 
 def test_una_kw_que_no_es_de_mis_perfiles_se_ignora(client, settings, usuario, engine) -> None:
     _crear(engine, usuario, "LIC-1")
-    html = client.get("/?kw=palabra-inventada", cookies=_cookie(settings, usuario)).text
+    html = client.get("/archivo?kw=palabra-inventada", cookies=_cookie(settings, usuario)).text
 
     assert "Oportunidad LIC-1" in html
