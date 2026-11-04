@@ -232,7 +232,7 @@ recomienda para fases completas (tiende a dejar tests y mypy a medias); sirve pa
 | 0 | F-merc-1 | `prompt-F-merc-1.md` (ya escrito; aplicar la nota de C1) | Opus | Cotizaciones de CA de Ñuble en Neon, `mercado-ca` en vivo, backfill | Conciliación con `cot_api_2026-08.csv.gz`: mismas CA y filas ±0,5 % |
 | 1 | F-merc-2 | `prompt-F-merc-2.md` (ya escrito) | Sonnet | `oc_lineas_ca`, `precio_referencia`, `app/catalogos/mercado.py` | 12 meses de alimentos = $682 M ±0,5 % |
 | 2 | F-plat-3 | `prompt-F-plat-3.md` | Sonnet | Empresa con territorio priorizado, admin de empresas y usuarios, proveedores, costos con historial, tarifa logística, importadores; `mercado_regiones` sale de las empresas | Boris crea la empresa, agrega 2 usuarios, carga 3 proveedores y 40 productos en < 30 min; un usuario de otra empresa no ve nada de eso |
-| 3 | F-plat-1 | `prompt-F-plat-1.md` | **Opus** | Catálogo canónico, alias, `ca_linea`, bandera "sin detalle", `/catalogo` | ≥ 70 % del monto de alimentos de 12 meses con línea `ok`; walk-forward de precio por producto canónico ≤ 25 % (desde 33 % en alimentos con UNSPSC) |
+| 3 | F-plat-1 | `prompt-F-plat-1.md` | **Opus** | Catálogo canónico, alias, `ca_linea`, bandera "sin detalle", `/catalogo` | ≥ 70 % del monto de CA de alimentos **con líneas propias** con línea `ok` (cobertura total se reporta; ~39 % alcanzable sin anexos [V 4-nov]); walk-forward de precio por producto canónico ≤ 25 % (desde 33 % en alimentos con UNSPSC) |
 | 4 | F-plat-2 | `prompt-F-plat-2.md` | **Opus** | Sonda de documentos, carga de anexos, extractor OpenRouter, revisión, presupuesto | Set de 30 anexos: ≥ 95 % de líneas correctas con el modelo elegido; costo < US$0,01 por anexo |
 | 5 | F-plat-4 | `prompt-F-plat-4.md` | **Opus** | `precio_indice`, modelo de adjudicación, evaluación walk-forward, job `mercado-indices` | Calibración: Brier ≤ 0,20 y intervalo 80 % acierta ≥ 70 % en el último mes cerrado |
 | 6 | F-plat-5 | `prompt-F-plat-5.md` | Sonnet | `/mesa`, ficha ampliada, ofertas propias, modo sombra, exportación | 4 semanas en sombra (peldaño 2 de `16-pivote` §2) |
@@ -294,7 +294,7 @@ modo sombra de F-plat-5 (4 semanas) sigue siendo el plazo largo y no se acorta c
 | Riesgo | Señal | Mitigación |
 |---|---|---|
 | La API no entrega anexos | Sonda de F-plat-2 §0 | Flujo manual desde el día 1; el volumen es ~6 CA de alimentos/día |
-| El catálogo no converge (textos demasiado libres) | < 70 % del monto con línea `ok` tras F-plat-1 | Acotar la canasta a los 80 productos de mayor monto; el resto queda `dudosa` y se cotiza a mano |
+| El catálogo no converge (textos demasiado libres) | < 70 % del monto con líneas propias con línea `ok` tras F-plat-1 | Acotar la canasta a los 80 productos de mayor monto; el resto queda `dudosa` y se cotiza a mano |
 | P(ganar) mal calibrada (59 % "gana el más barato" en agosto) | Brier > 0,25 o curva de confiabilidad torcida | Reportar el número; volver a un modelo más simple (ranking por ratio) antes que uno más complejo |
 | 429 por IP (H1 abierta) al subir `mercado-ca` a cada 15 min | 429 en `job_runs` | Ya cubierto por pausa persistida; bajar frecuencia a 30 min |
 | Neon 0,5 GB | `/salud` > 70 % | Guardar `productos_cotizados` solo de CA en alcance (previsto en F-merc-1 §1.5) |
