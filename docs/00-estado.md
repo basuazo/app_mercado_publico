@@ -78,8 +78,10 @@ luego cierre asc; espera por fallos) corre **antes** que la de cerradas, con top
 toca `ca_cotizaciones` ni `cotizaciones_obtenidas_en` (si lo hiciera, la cola de cerradas podría no volver a pedir la CA tras el
 cierre y se perdería el ganador). Un 429 en vigentes corta la corrida sin pedir cerradas. Resumen: `vigentes_cola`,
 `vigentes_detalles`, `vigentes_pendientes`. El cursor de `mercado-catalogo` suma `detalle_vigente_en`.
-**Pendiente:** medir el volumen (CA de región 16 por día, mediana y p90) en la base de producción para confirmar los defaults;
-la base del `.env` del asistente (rama dev, sin migrar) no tiene CA de Ñuble.
+**Volumen medido (4-nov, Neon prod) [V]:** CA de región 16 publicadas por día (hora de Chile, últimos 30 días): mediana 142,
+p90 196, máximo 239; abiertas al momento: 252. El tope (60 por corrida × 4 por hora = 240/h) cubre de sobra el ritmo diario
+(~6–10/h en promedio). La primera puesta al día tras el deploy tarda ~5 corridas (~75 min). Las re-descargas por cambio
+(`detalle_vigente_en < fecha_ultimo_cambio`) no están medidas [I]: mirar `vigentes_detalles` por día los primeros días.
 
 ## F-plat-1 (4-nov, commit local sin push hasta auditar; migración `a9d4c7e1f2b6`)
 Catálogo canónico y líneas 1:1 por Compra Ágil (pivote, `17-plan-pivote-plataforma-ca.md` §2 C2). **Sin modelo de lenguaje:**
