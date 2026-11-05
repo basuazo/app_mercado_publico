@@ -174,16 +174,25 @@ La información necesaria está disponible vía API oficial y los términos exig
 - R5. Formato de fecha v1 `ddmmaaaa` propenso a errores (vs ISO en v2).
 - R6. Erratas oficiales en slugs de estado de OC (`recepcionaceptadacialmente`, `recepecionconformeincompleta`).
 - R7. JSON potencialmente grande en días de alta actividad → parseo en streaming o paginación donde exista.
-- R8. **Descarga de anexos de Compra Ágil: SIN VERIFICAR** (F-plat-2 §0.a, 4-nov-2026). La guía v3.0
+- R8. **Descarga de anexos de Compra Ágil por la API: NO HAY RUTA (sonda 5-nov-2026, Boris) [V].**
+  `python scripts/smoke_test.py --documentos`: la CA `3600-210-COT26` trae `documentos` = lista de 1 con claves
+  `['id', 'nombre']` [V]. Las tres rutas candidatas (`/v2/compra-agil/{codigo}/documentos/{id}`,
+  `/v2/compra-agil/{codigo}/documento/{id}`, `/v2/documentos/{id}`) respondieron **HTTP 403,
+  `content-type=application/json`, largo 42** [V], con el ticket válido en el header. Un 403 JSON de 42 bytes es
+  exactamente `{"message":"Missing Authentication Token"}`, la respuesta de AWS API Gateway a un recurso/método
+  que no existe [I: la sonda no imprime el cuerpo; confirmar con una sola llamada si hace falta]. Lectura: no es
+  un problema de permisos del ticket sino de que la ruta no existe; `DOCUMENTOS_API_HABILITADO` sigue en `false`
+  y §1.6 de F-plat-2 queda apagada. Camino vigente para los anexos: carga masiva / subida (F-plat-anexos-2) y,
+  como última alternativa (regla 9), la descarga directa del adjunto público (§2.7), que necesita la URL real
+  capturada en el navegador (DevTools → Network al bajar un adjunto de la ficha): **pendiente de Boris**.
+  Historia (4-nov): la guía v3.0
   documenta `documentos[].{id, nombre}` en el detalle [V en la guía] y no documenta ninguna ruta de
   descarga; que el servidor no la tenga es [I]. `mp_v2.py` lee los ids (`CompraAgilDetalle.documentos`)
   y prueba la primera de tres rutas candidatas [I] (`/v2/compra-agil/{codigo}/documentos/{id}`,
   `/documento/{id}`, `/v2/documentos/{id}`) solo con `DOCUMENTOS_API_HABILITADO=true`, que está apagado.
   El bundle JS del buscador no se pudo revisar: `buscador.mercadopublico.cl` responde 403 de
   CloudFront a clientes sin navegador [V, 4-nov]; hay que mirarlo con un navegador real (DevTools →
-  Network al bajar un adjunto de una ficha) y probar esa ruta con `--ruta`. Pendiente:
-  `python scripts/smoke_test.py --documentos` (Boris) → anotar acá el status y `content-type` de
-  cada ruta con [V].
+  Network al bajar un adjunto de una ficha) y probar esa ruta con `--ruta`.
 
 ---
 

@@ -360,8 +360,9 @@ ficha > API, cola vigentes-primero, modelo de respaldo) → **F-plat-lote** (`pr
 CA, solicitud de precios a proveedores, precios vencidos a los 15 días, «En trabajo») → **F-plat-seguimiento**
 (`prompt-F-plat-seguimiento.md`, Sonnet: checklist, cotización formal DOCX, ventas y caja) ∥ F-plat-7. Los porcentajes
 de P(ganar) se siguen mostrando (F-plat-5c descartada, en `archivo/`). Explicación técnica de los adjuntos para Gonzalo
-y Conejo: `19-adjuntos-ca-explicacion-tecnica.md`. Pendiente previo que sigue primero: `python scripts/smoke_test.py
---documentos` (R8; la sonda espera la pausa de 429 persistida: correrla fuera de la pausa). **Regla 9 reescrita el 5-nov**
+y Conejo: `19-adjuntos-ca-explicacion-tecnica.md`. ~~Sonda `--documentos`~~ hecha el 5-nov: **la API no descarga anexos** (3 rutas → 403 JSON; `01-analisis` R8 [V]);
+§1.6 de F-plat-2 queda apagada y la carga masiva (F-plat-anexos-2) es el camino principal. Pendiente de Boris: capturar
+en el navegador la URL real del adjunto de la ficha pública (sin eso §2.7 no se enciende). **Regla 9 reescrita el 5-nov**
 (descarga directa del adjunto público como última alternativa; `prompt-F-plat-anexos-2.md` §2.7). Handoff de la sesión
 en el proyecto de Cowork (`claude/02-handoff-proxima-sesion.md`).
 **Primero, antes de la ventana D: F-plat-6-cruce** (`prompt-F-plat-6-cruce.md`, Sonnet, sin ticket ni migración). Hallazgo
@@ -371,6 +372,10 @@ mientras `mercado.py` guarda la OC en `ca_cotizaciones.id_oc`. Sin el cruce no s
 (queda en RUT) y la regla de doble conteo trataría todo como «sin OC» en cuanto haya líneas `ok`. Paso previo humano:
 `scripts/mercado/sonda_cruce_ca_oc.py` (solo lectura) para ver si `id_oc` calza con `oc_lineas_ca.codigo_oc` tal cual,
 normalizado o nunca; el arreglo depende de eso (prompt §2).
+**Hallazgo al auditar `prompt-F-plat-capas.md` (5-nov) [V]:** `proveedor_productos.producto_id`/`formato_id` (F-plat-1) no los
+escribe ningún código de producción (`guardar_producto`, formulario, `importar.py`): con datos reales `mejor_costo(producto_id)`,
+los candidatos de «mi oferta» (F-plat-5) y `tiene_costos` de la adjudicación devuelven vacío. Lo arregla F-plat-capas §1.3
+(vinculación por sugerencia única + acción «vincular pendientes» por empresa); puede ir como commit previo `F-plat-capas-0`.
 
 **Plan confirmado (3-nov):** `17-plan-pivote-plataforma-ca.md` (plataforma de intermediación de CA: líneas 1:1,
 anexos, proveedores y costos, P(ganar), mesa del día, demanda) con prompts `prompt-F-plat-1..7.md` y reglas 24–26

@@ -14,8 +14,10 @@
   (`POST /oportunidad/{fuente}/{codigo}/anexo`, `anexo-resuelto`), `app/mercado/catalogo.py`
   (`recalcular_detalle_lineas`), `app/clients/mp_v2.py` (`documentos`, rutas candidatas, `descargar_documento`),
   `app/core/settings.py` (`documentos_api_habilitado`, `llm_*`), `app/api/query.py` (URL del buscador).
-- **La sonda sigue siendo el paso 1** (regla 20). Esta fase no la reemplaza: si `smoke_test.py --documentos`
-  encuentra descarga, §1.6 de F-plat-2 se enciende y la carga masiva pasa a ser el respaldo.
+- **Sonda hecha (5-nov, Boris) [V]:** las tres rutas candidatas devuelven 403 JSON (`01-analisis` R8: recurso
+  inexistente en el gateway [I]). **§1.6 de F-plat-2 queda apagada** (`DOCUMENTOS_API_HABILITADO=false`); la carga
+  masiva/subida es el camino principal de esta fase, no el respaldo. §2.7 sigue como última alternativa y sigue
+  esperando la captura de la URL real en el navegador.
 - **Regla 9 reescrita (5-nov):** la descarga directa del adjunto público es la **última alternativa**, después de la
   API (sonda) y de la subida manual/carga masiva. Esta fase la implementa en §2.7, apagada por defecto.
 
@@ -94,7 +96,7 @@ mesa, en la ficha y en «líneas por revisar» como «Abrir en Mercado Público�
 - `/salud` → LLM: llamadas por modelo y cuántas cayeron al respaldo.
 
 ### 2.7 Descarga directa del adjunto público (última alternativa; `ANEXOS_DESCARGA_DIRECTA=false` por defecto)
-- Solo si la sonda `--documentos` no encontró ruta en la API. Boris captura en el navegador (DevTools → Network al bajar
+- La sonda `--documentos` no encontró ruta en la API (5-nov [V]): condición cumplida. Boris captura en el navegador (DevTools → Network al bajar
   un adjunto de la ficha pública) la URL real del archivo y su forma (¿lleva el `id` de `documentos[]`? ¿firmada?
   ¿expira?) y la deja en `01-analisis` R8 como [V]. **Sin esa captura, §2.7 no se enciende.**
 - `app/clients/mp_documentos.py` (capa anti-corrupción, el único que conoce esa URL): `descargar_adjunto(codigo, doc)
@@ -136,9 +138,10 @@ Changelog («Anexos: carga masiva por código, el anexo manda sobre la API, enla
 la sonda sigue pendiente. Commit: `F-plat-anexos-2: carga masiva de anexos por código y prioridad del anexo`.
 
 ## 6. Pasos de Boris
-1. **Antes o después, pero esta semana:** `python scripts/smoke_test.py --documentos` (fuera de la pausa de 429) y
-   anotar [V] en R8. Si no hay ruta en la API: capturar la URL real del adjunto en el navegador y anotarla también.
-   Recién con eso se puede encender `ANEXOS_DESCARGA_DIRECTA` (§2.7).
+1. ~~`smoke_test.py --documentos`~~ hecho el 5-nov (R8: sin ruta en la API). Falta: capturar la URL real del
+   adjunto en el navegador (DevTools → Network al bajar un adjunto de la ficha pública de una CA con
+   `n_documentos > 0`, p. ej. `3600-210-COT26`) y anotarla en R8. Recién con eso se puede encender
+   `ANEXOS_DESCARGA_DIRECTA` (§2.7).
 2. Deploy con migración. Generar el token de la empresa y guardarlo donde lo use quien automatice (Gonzalo/Conejo),
    junto con `19-adjuntos-ca-explicacion-tecnica.md` §5.
 3. Bajar a mano los anexos de las CA vigentes de una mañana (5–10), subirlos de una vez con la carga masiva y medir
