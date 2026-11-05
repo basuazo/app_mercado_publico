@@ -18,6 +18,40 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-6 (5-nov, commit local sin push hasta auditar; migración `c8f3a1e6d2b4`, cuelga de `b3e7c1d9f4a2`)
+Demanda por comprador, pronóstico y abastecimiento (`prompt-F-plat-6.md`, reescrito el 5-nov).
+**Esquema:** `demanda_series` (comprador × nivel × ítem × mes; región; n_oc, n_ca, cantidad en base, monto, precio
+mediano, n proveedores), `pronosticos` (v1 a 3 meses con la línea base al lado: `compra_base`, `cantidad_linea_base`,
+`monto_linea_base`; `region` para acotar por empresa; intervalo en dos columnas), `demanda_nombres` (no estaba en el
+prompt: nombres de compradores e ítems y proveedores principales precalculados, para que ningún request recorra
+`oc_lineas_ca`) y `recomendaciones` (de la empresa; `comprador` = '' y no NULL cuando no aplica: dos NULL no chocan en el
+UNIQUE de Postgres y el upsert duplicaría).
+**Código:** `app/mercado/demanda.py` (medición §1.0, series, pronóstico, backtest, job), `app/mercado/abastecimiento.py`
+(recomendaciones, upsert con `RETURNING` que conserva el estado, consultas de la UI), `app/api/routes/abastecimiento.py`,
+`canonico.sugerencia_unica`. `mercado-indices` ya no borra las filas `demanda` de `evaluacion_modelo` (`MODELOS_AJENOS`).
+**Medición §1.0 [V dev 5-nov, solo OC; dev no tiene CA]:** 108.051 líneas de Ñuble (oct-2024 a nov-2026); (a) y (c) sin
+medir (sin CA); (b) 112 RUT, 38 con más de una unidad (máx. 25, media 2,0); (d) UNSPSC × base cubre el 60,7 % del
+monto (34,6 % del de alimentos), familia el 100 %, producto 0 % en dev (catálogo vacío ahí); (e) cantidad en base:
+`cantidad × precio_neto / precio_base` = `total / precio_base` en 78.072 de 78.072 líneas. Mes de la OC = mes de
+`fecha_creacion` (fecha local sin hora; coincide con el `mes` del archivo en el 95 %). Clave del comprador: la elige la
+medición en cada corrida (ver `decisiones.md`); sin CA gana el RUT.
+**Backtest [V dev, solo OC, últimos 6 meses (may–oct 2026), clave RUT]:** UNSPSC × base (10.993 series evaluadas): precisión 33,3 % vs base 30,9 %, recall 45,3 % vs 66,2 %,
+F1 0,38 vs 0,42, MAPE 1.165 % vs 513 %, cobertura de alimentos 40 %. Familia (7.310): precisión 63,1 % vs 59,3 %, recall
+70,9 % vs 85,7 %, F1 0,67 vs 0,70, cobertura 84 %. Con clave por unidad es peor (UNSPSC P 30,3 % / R 45,2 %; familia
+P 50,9 % / R 64,1 %). **Ni el v1 ni la base cumplen la meta (P ≥ 70 %, R ≥ 50 %) y el v1 no le gana a la base: con estos
+datos la UI y las recomendaciones usan la línea base y lo dicen.** El MAPE explota por compras puntuales muy grandes
+frente a meses chicos. Producto: sin series en dev (catálogo vacío). Falta el backtest con CA y catálogo en producción.
+**Desvíos anotados:** niveles PARALELOS (una línea suma en producto, UNSPSC y familia; las recomendaciones usan el más
+fino sin repetir), porque con niveles exclusivos cada alias nuevo del catálogo cortaría la serie UNSPSC; tendencia con
+las compras desestacionalizadas (si no, el que compra el triple en marzo que en septiembre «cae» a la mitad cada
+septiembre); «le gana a la línea base» = cumple la meta y la base no, o ambas y mayor F1.
+**Fuera de esta fase:** alarmas en la campana (§1.5), filtro por `codigo_estado` de OC (sin semántica verificada de los
+códigos: la medición los informa).
+**Pendiente de Boris:** (1) `alembic upgrade head` en la base de tests local y `python -m pytest -rs` completo
+(`tests/test_plat6_pg.py`); (2) deploy (prompt §5.1); (3) `mercado-demanda --completo` contra producción y pegar
+`medicion` y `backtest`; (4) revisar las 20 primeras recomendaciones y ajustar `DEMANDA_UMBRALES`; (5) mirar
+`duracion_s` de las 07:45.
+
 ## F-plat-5 (5-nov, commit local sin push hasta auditar; migración `b3e7c1d9f4a2`, cuelga de `a8d4f2c6e9b1`)
 Precio, margen y P(ganar) en la mesa; mi oferta; modo sombra (`prompt-F-plat-5.md`, reescrito el 5-nov).
 **Modo sombra: inicio = el día del deploy con costos cargados (previsto 6-nov-2026); fin = +4 semanas (previsto

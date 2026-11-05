@@ -205,3 +205,19 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   preferencias (actividad del equipo, asignada a mí, cierre cercano, resultado), todas prendidas por defecto; la mención
   siempre llega. El cupo de Brevo queda para los resúmenes (regla 14); `generar_alarmas` y `consulta_no_leidos` quedan listas
   para un resumen por correo futuro. `ca_descartes_mesa` de F-plat-5 no se crea: el descarte es `ca_trabajo`.
+- **Clave del comprador en la demanda: la decide la medición, no el código** (F-plat-6, 5-nov). Regla del prompt: si ≥ 80 %
+  de las CA con OC tienen `clave_unidad(organismo_rut, unidad de la CA)` = `clave_unidad(rut_unidad, unidad de la OC)` →
+  `clave_unidad`; si no, el RUT (`indice._rut`), con las unidades como detalle. Nunca un cruce por nombre libre. Con menos
+  de 30 CA medibles no hay evidencia y gana el RUT. `mercado-demanda` mide (c) en cada corrida y, si la clave guardada no
+  es la que toca, recalcula TODAS las series (nunca mezcla claves). **Hoy [V dev, 5-nov]:** dev no tiene CA, así que (c)
+  no se puede medir y gana el RUT; (b) en Ñuble: 38 de 112 RUT compran con más de una unidad (máx. 25), así que con el RUT
+  se juntan DAEM, salud, etc. de una municipalidad. El enlace a `/competencia?comprador=…` solo aparece con `clave_unidad`.
+  La decisión definitiva sale de la primera corrida `--completo` en producción (Boris pega `medicion.c_*`).
+- **Pronóstico de demanda: el juez manda y la meta no se afloja** (F-plat-6, 5-nov). El v1 se usa en la UI y en las
+  recomendaciones de un nivel solo si cumple la meta (precisión ≥ 70 % y recall ≥ 50 % de «compra en M» con p ≥ 0,6) Y le
+  gana a la línea base en la misma población (la base no cumple la meta, o la cumple con menor F1); si no, se muestra la
+  línea base («compró el mismo mes del año anterior o el último mes observado») y se dice. No se ajustó la fórmula del
+  prompt mirando el backtest: una variante (recurrencia de 12 meses, K = 2) llegó a la meta en familia en los 6 meses
+  evaluados, pero no en los 6 anteriores, así que se descartó por sobreajuste.
+- **Umbrales de «pedir precio firme»: 200 kg, 300 L, 500 u en 3 meses** (F-plat-6, default del prompt; `DEMANDA_UMBRALES`
+  en JSON). A revisar por Boris con las 20 primeras recomendaciones reales (prompt §5.3).

@@ -1437,3 +1437,119 @@ class OfertaPropia(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     precio_ganador_real: Mapped[float | None] = mapped_column(Float, nullable=True)
     margen_realizado: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# F-plat-6: demanda por comprador, pronóstico y abastecimiento. `demanda_series`, `pronosticos` y
+# `demanda_nombres` son datos públicos comunes (sin `empresa_id`, regla 26); `recomendaciones`
+# pertenece a una empresa. Las tres primeras las reescribe el job `mercado-demanda`.
+# ---------------------------------------------------------------------------
+
+
+class DemandaSerie(Base):
+    """Lo que compró un comprador de un ítem en un mes (de las OC; ver `app.mercado.demanda`).
+
+    `nivel` = producto (catálogo canónico) | unspsc (`UNSPSC|base`) | familia; los niveles son
+    paralelos: una línea suma en todos los que alcanza. `cantidad_base` solo existe dentro de una
+    misma `base` (kg, L o u) y nunca a nivel familia (solo monto). `comprador` es la clave elegida
+    por la medición de §1.0 (`clave_unidad` «RUT|unidad» o solo el RUT)."""
+
+    __tablename__ = "demanda_series"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    comprador: Mapped[str] = mapped_column(String(600), nullable=False)
+    nivel: Mapped[str] = mapped_column(String(8), nullable=False)
+    item: Mapped[str] = mapped_column(String(100), nullable=False)
+    mes: Mapped[str] = mapped_column(String(7), nullable=False)
+    region: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_oc: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_ca: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cantidad_base: Mapped[float | None] = mapped_column(Float, nullable=True)
+    base: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    monto_neto: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    precio_mediana: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n_proveedores: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class Pronostico(Base):
+    """Pronóstico v1 de un comprador × ítem para un mes objetivo (horizonte 3 meses), con la
+    línea base al lado (`compra_base`: compró el mismo mes del año anterior o el último mes
+    observado). `metodo` = v1 | insuficiente (< 4 meses con compra: sin p ni cantidad).
+    `cantidad_esperada` es la cantidad si compra (monto a nivel familia)."""
+
+    __tablename__ = "pronosticos"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    comprador: Mapped[str] = mapped_column(String(600), nullable=False)
+    nivel: Mapped[str] = mapped_column(String(8), nullable=False)
+    item: Mapped[str] = mapped_column(String(100), nullable=False)
+    region: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    base: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    mes_objetivo: Mapped[str] = mapped_column(String(7), nullable=False)
+    p_compra: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cantidad_esperada: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_esperado: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intervalo_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intervalo_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    debil: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    compra_base: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cantidad_linea_base: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_linea_base: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n_meses_con_compra: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    metodo: Mapped[str] = mapped_column(String(12), nullable=False)
+    generado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+class DemandaNombre(Base):
+    """Nombres para la UI de abastecimiento, precalculados por el job (ningún request recorre
+    `oc_lineas_ca`). `tipo` = comprador (clave de comprador) | item (`nivel:item`). `datos` del
+    comprador: RUT, comuna, unidades y proveedores principales (12 meses)."""
+
+    __tablename__ = "demanda_nombres"
+
+    tipo: Mapped[str] = mapped_column(String(10), primary_key=True)
+    clave: Mapped[str] = mapped_column(String(620), primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(600), nullable=False, default="")
+    region: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    datos: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
+class Recomendacion(Base):
+    """Recomendación de abastecimiento de una empresa (regla 26). El job hace upsert por la
+    clave única y NUNCA pisa el `estado` que puso una persona (re-ejecutar no resucita una
+    descartada ni duplica una hecha). `comprador` = '' cuando no aplica (no NULL: en Postgres dos
+    NULL no chocan en el UNIQUE y el upsert duplicaría)."""
+
+    __tablename__ = "recomendaciones"
+    __table_args__ = (
+        UniqueConstraint(
+            "empresa_id", "tipo", "nivel", "item", "comprador", "mes_objetivo",
+            name="uq_recomendacion",
+        ),  # fmt: skip
+        Index("ix_recomendaciones_empresa_estado", "empresa_id", "estado"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    nivel: Mapped[str] = mapped_column(String(8), nullable=False)
+    item: Mapped[str] = mapped_column(String(100), nullable=False)
+    comprador: Mapped[str] = mapped_column(String(600), nullable=False, default="")
+    mes_objetivo: Mapped[str] = mapped_column(String(7), nullable=False)
+    cantidad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    texto: Mapped[str] = mapped_column(String(1000), nullable=False)
+    datos: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    generada_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="nueva")
+    usuario_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    actualizada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+Index("ix_demanda_series_mes_region", DemandaSerie.mes, DemandaSerie.region)
+Index("ix_demanda_series_item", DemandaSerie.nivel, DemandaSerie.item)
+Index("ix_demanda_series_comprador", DemandaSerie.comprador)
+Index("ix_pronosticos_region", Pronostico.region)

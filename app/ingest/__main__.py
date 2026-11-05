@@ -33,6 +33,7 @@ from app.ingest.orchestrator import (
     run_mercado_ca,
     run_mercado_catalogo,
     run_mercado_competencia,
+    run_mercado_demanda,
     run_mercado_indices,
     run_mercado_mesa,
     run_mercado_oc,
@@ -68,6 +69,7 @@ _JOBS = (
     "mercado-catalogo",
     "mercado-indices",
     "mercado-competencia",
+    "mercado-demanda",
     "mercado-mesa",
 )
 
@@ -222,6 +224,12 @@ def cmd_run_once(
             "mercado-competencia",
             lambda: run_mercado_competencia(settings, engine, completo=completo),
         ),
+        # F-plat-6: solo base de datos. Va después de `mercado-competencia` en su workflow;
+        # `--completo` recalcula todas las series (desde el PC con DATABASE_URL de producción).
+        "mercado-demanda": _locked(
+            "mercado-demanda",
+            lambda: run_mercado_demanda(settings, engine, completo=completo),
+        ),
         # F-plat-5: solo base de datos. Va en `mercado.yml` después de `mercado-ca` y
         # `mercado-catalogo`: caché de evaluaciones, predicciones del modo sombra y su cierre.
         "mercado-mesa": _locked("mercado-mesa", lambda: run_mercado_mesa(settings, engine)),
@@ -364,7 +372,8 @@ def main() -> None:
         action="store_true",
         help=(
             "mercado-indices: índice completo y evaluación de los últimos 6 meses; "
-            "mercado-competencia: recalcula todos los meses"
+            "mercado-competencia: recalcula todos los meses; "
+            "mercado-demanda: recalcula todas las series de demanda"
         ),
     )
     once.add_argument(

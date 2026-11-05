@@ -1,6 +1,8 @@
 # Mercado índices (F-plat-4): comuna de las CA, índice de precios por producto × ámbito × mes,
 # evaluación walk-forward del último mes cerrado y reentrenamiento del modelo de P(ganar). Después,
 # `mercado-competencia` (F-plat-comp): agregado de competencia de los 2 últimos meses y sus jueces.
+# Al final, `mercado-demanda` (F-plat-6): series de demanda de los 3 últimos meses, backtest,
+# pronósticos a 3 meses y recomendaciones de abastecimiento (usa las desiertas de competencia).
 # Solo base de datos: sin ticket, sin cuota, sin API.
 #
 # Disparo: desde cron-job.org, una vez al día a las 07:45 hora de Chile (workflow_dispatch),
@@ -25,10 +27,13 @@ jobs:
     uses: ./.github/workflows/_job.yml
     secrets: inherit
     with:
-      jobs: "mercado-indices mercado-competencia"
+      jobs: "mercado-indices mercado-competencia mercado-demanda"
       # mercado-indices: 10 de espera del lock + índice de 3 meses + evaluación y dos entrenamientos
       # en Python puro. mercado-competencia (F-plat-comp): 1 min de pausa entre jobs + hasta 10 de
       # espera del lock (lo puede tomar el `mercado` de las 08:00) + recálculo de 2 meses, juez y
-      # aporte al modelo (medido en docs/operacion-disparos.md).
+      # aporte al modelo (medido en docs/operacion-disparos.md). mercado-demanda (F-plat-6): otra
+      # pausa de 1 min + hasta 10 de espera del lock + una pasada liviana por las OC, 3 meses de
+      # series, backtest de 6 meses en Python puro y recomendaciones. Medido en dev el 5-nov (solo
+      # OC, 108 mil líneas): ~1 min de lectura + 11 s de backtest. Ajustar con la corrida real.
       timeout_min: 60
       esperar_lock_min: 10

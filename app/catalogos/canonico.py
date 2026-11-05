@@ -275,6 +275,19 @@ def sugerir_producto(
     return None
 
 
+def sugerencia_unica(
+    texto: str | None, unspsc: str | None, catalogo: Catalogo
+) -> Sugerencia | None:
+    """`sugerir_producto` solo si no hay ambigüedad (F-plat-6, nivel «producto» de la demanda):
+    alias exacto o contenido (≥ 0,8), o una palabra clave cuando el texto nombra UNA sola
+    categoría de la canasta (la regla toma la primera que calza aunque haya dos)."""
+    s = sugerir_producto(texto, unspsc, catalogo)
+    if s is None or s.confianza >= CONF_OK:
+        return s
+    crudo = norm(texto)
+    return s if len({r.categoria for r, p in _REGLAS_C if p.search(crudo)}) == 1 else None
+
+
 def mejor_sugerencia(
     textos: Iterable[str | None], unspsc: str | None, catalogo: Catalogo
 ) -> Sugerencia | None:

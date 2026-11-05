@@ -296,6 +296,20 @@ def run_mercado_competencia(
         return run_competencia_mercado(session, regiones, completo=completo)
 
 
+def run_mercado_demanda(
+    settings: Settings, engine: Engine, completo: bool = False
+) -> dict[str, Any]:
+    """Job `mercado-demanda` (F-plat-6): series de demanda por comprador desde las OC (los 3
+    últimos meses, o todo con `completo`), backtest, pronósticos a 3 meses y recomendaciones de
+    cada empresa. Solo base de datos: sin ticket, sin cuota, sin red. Corre después de
+    `mercado-competencia` (usa sus CA desiertas)."""
+    from app.mercado.abastecimiento import run_mercado_demanda as _run
+
+    regiones = regiones_activas_engine(engine, settings)
+    with Session(engine) as session:
+        return _run(session, regiones, completo=completo, umbrales=settings.demanda_umbrales)
+
+
 def run_mercado_mesa(settings: Settings, engine: Engine) -> dict[str, Any]:
     """Job `mercado-mesa` (F-plat-5): evaluaciones en caché de las CA vigentes, predicciones del
     modo sombra y su cierre. Solo base de datos: sin ticket, sin cuota, sin red. Corre en

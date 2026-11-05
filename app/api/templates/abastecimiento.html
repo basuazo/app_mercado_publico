@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado, vacio %}
+{% block title %}Abastecimiento — Rastrillo{% endblock %}
+
+{#- Cantidad con su unidad base (o monto a nivel familia). -#}
+{% macro cantidad(valor, base, nivel) -%}
+{%- if nivel == 'familia' or not base -%}{{ valor | clp }}{%- else -%}{{ valor | numero }} {{ base }}{%- endif -%}
+{%- endmacro %}
+
+{% macro marca_debil(debil) -%}
+{% if debil %}<span class="badge text-bg-light border fw-normal ms-1" title="Menos de dos años del mismo mes, o pronóstico de línea base por pocos meses con compra">débil</span>{% endif %}
+{%- endmacro %}
+
+{% macro enlace_item(nivel, item, nombre) -%}
+<a href="/abastecimiento?{{ {'tab': 'item', 'nivel': nivel, 'item': item} | urlencode }}">{{ nombre }}</a>
+{%- endmacro %}
+
+{% macro enlace_comprador(clave, nombre) -%}
+<a href="/abastecimiento?{{ {'tab': 'compradores', 'comprador': clave} | urlencode }}">{{ nombre }}</a>
+{%- endmacro %}
+
+{% block content %}
+{{ encabezado("Abastecimiento", "Qué va a comprar cada comprador de tu territorio, cuánto y cuándo: para pedir precio firme, preparar stock y llegar antes a la Compra Ágil.") }}
+
+{#- Juez: backtest de 6 meses al lado de la línea base. -#}
+{% set sin_v1 = backtest | rejectattr('gana') | list %}
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h6 mb-2">¿Cuánto acierta el pronóstico?</h2>
+  {% if backtest | selectattr('elegibles') | list | length == 0 %}
+  <p class="small mb-0" role="status">Todavía no hay backtest (lo corre el job diario): se muestra la <strong>línea base</strong> — «compra este mes si compró el mismo mes del año anterior o el mes pasado».</p>
+  {% else %}
+  {% if sin_v1 %}
+  <p class="small mb-2" role="status"><strong>Aviso:</strong> en {{ sin_v1 | map(attribute='nivel') | join(', ') }} el pronóstico v1 no cumple la meta (precisión ≥ 70 % y recall ≥ 50 %) o no le gana a la línea base: ahí se muestra la <strong>línea base</strong> («compra si compró el mismo mes del año anterior o el mes pasado») y así lo indican los números.</p>
+  {% endif %}
+  <details class="small"><summary>Ver el backtest (últimos 6 meses)</summary>
+  <div class="table-responsive">
+  <table class="table table-sm mb-0 mt-2">
+    <thead><tr><th scope="col">Nivel</th><th scope="col" class="text-end">Series evaluadas</th>
+      <th scope="col" class="text-end">Precisión v1 / base</th><th scope="col" class="text-end">Recall v1 / base</th>
+      <th scope="col" class="text-end">Error medio (MAPE) v1 / base</th><th scope="col" class="text-end">Cobertura alimentos</th><th scope="col">Se usa</th></tr></thead>
+    <tbody>{% for b in backtest %}
+    <tr><td>{{ b.nivel }}</td><td class="text-end num">{{ b.elegibles | numero }}</td>
+      <td class="text-end num">{{ b.precision | pct }} / {{ b.precision_base | pct }}</td>
+      <td class="text-end num">{{ b.recall | pct }} / {{ b.recall_base | pct }}</td>
+      <td class="text-end num">{{ b.mape | pct }} / {{ b.mape_base | pct }}</td>
+      <td class="text-end num">{{ b.cobertura | pct }}</td>
+      <td>{{ 'pronóstico v1' if b.gana else 'línea base' }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+  <p class="text-muted mb-0">Cada mes se pronostica con los datos anteriores y se compara con lo que se compró. Precisión = de lo que se pronosticó «compra», cuánto compró; recall = de lo que compró, cuánto se anticipó. Meta: precisión ≥ 70 % y recall ≥ 50 %.</p>
+  </details>
+  {% endif %}
+</div></div>
+
+<ul class="nav nav-tabs mb-3">
+  {% for clave, texto in [('recomendaciones', 'Recomendaciones'), ('calendario', 'Calendario'), ('compradores', 'Compradores'), ('item', 'Ítem')] %}
+  <li class="nav-item"><a class="nav-link {% if tab == clave %}active{% endif %}" {% if tab == clave %}aria-current="page"{% endif %} href="/abastecimiento?tab={{ clave }}">{{ texto }}</a></li>
+  {% endfor %}
+</ul>
+
+{% if tab == 'recomendaciones' %}
+<p class="small mb-2">
+  {% if cerradas %}<a href="/abastecimiento?tab=recomendaciones">Ocultar hechas y descartadas</a>{% else %}<a href="/abastecimiento?tab=recomendaciones&amp;cerradas=true">Mostrar también hechas y descartadas</a>{% endif %}
+  · Tus comunas prioritarias van primero.
+</p>
+{% set hay = namespace(n=0) %}
+{% for t in tipos %}{% set lista = recs.get(t, []) %}{% if lista %}{% set hay.n = hay.n + 1 %}
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h5">{{ etiquetas[t] }} <span class="text-muted small">({{ lista | length }})</span></h2>
+  <ul class="list-unstyled mb-0">
+  {% for r in lista %}{% set d = r.datos or {} %}
+  <li class="rec border-top py-2">
+    <div class="d-flex flex-wrap justify-content-between gap-2">
+      <div>
+        <p class="mb-1">{{ r.texto }}{% if d.prioritaria %} <span class="badge text-bg-primary fw-normal">Comuna prioritaria</span>{% endif %}{{ marca_debil(d.debil) }}
+          {% if r.estado != 'nueva' %}<span class="badge text-bg-light border fw-normal ms-1">{{ r.estado }}</span>{% endif %}</p>
+        <p class="small text-muted mb-0">
+          {% if t == 'precio_firme' %}
+            Costo actual {{ d.costo_unitario | clp }} por {{ d.base }}{% if d.variacion_90 is not none %} ({{ '%+.1f' | format(d.variacion_90) | replace('.', ',') }} % en 90 días){% endif %}
+            · Referencia {{ d.precio_referencia | clp }} por {{ d.base }} ({{ d.fuente_referencia }})
+            {% if d.margen_pct is not none %}· Margen {{ d.margen_pct | pct }}{% endif %}
+            · {{ d.n_compradores }} compradores: {{ (d.compradores or []) | join('; ') }}
+          {% elif t == 'hueco_proveedor' %}
+            {{ d.n_compradores }} compradores: {{ (d.compradores or []) | join('; ') }}
+          {% elif t == 'proxima_compra' %}
+            {% if d.metodo == 'v1' %}P(compra) {{ d.p_compra | pct }}{% else %}Línea base: compró el mismo mes del año anterior o el mes pasado{% endif %}
+            · Cantidad típica {{ cantidad(d.cantidad or 0, d.base, r.nivel) }} · {{ d.n_meses_con_compra }} meses con compra
+            {% if d.comuna %}· {{ d.comuna }}{% endif %}
+            · {{ enlace_comprador(r.comprador, 'ver comprador') }}
+          {% elif t == 'demanda_desierta' %}
+            {% if d.comuna %}{{ d.comuna }} · {% endif %}<a href="/competencia?{{ {'comprador': r.comprador, 'familia': r.item} | urlencode }}">ver competencia de este comprador</a>
+          {% endif %}
+          {% if r.nivel != 'familia' and t != 'demanda_desierta' %}· {{ enlace_item(r.nivel, r.item, 'ver ítem') }}{% endif %}
+        </p>
+      </div>
+      {% if r.estado in ('nueva', 'vista') %}
+      <div class="d-flex gap-1 align-items-start">
+        {% for estado, texto, clase in [('hecha', 'Hecha', 'btn-outline-primary'), ('descartada', 'Descartar', 'btn-outline-secondary')] %}
+        <form method="post" action="/abastecimiento/recomendaciones/{{ r.id }}" hx-post="/abastecimiento/recomendaciones/{{ r.id }}" hx-target="closest .rec" hx-swap="outerHTML" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="estado" value="{{ estado }}">
+          <button type="submit" class="btn btn-sm {{ clase }}">{{ texto }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% elif cerradas %}
+      <form method="post" action="/abastecimiento/recomendaciones/{{ r.id }}" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="estado" value="nueva">
+        <button type="submit" class="btn btn-sm btn-link">Reabrir</button>
+      </form>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+  </ul>
+</div></div>
+{% endif %}{% endfor %}
+{% if hay.n == 0 %}
+{{ vacio("Todavía no hay recomendaciones para tu empresa: las calcula el job diario de demanda. Cargar proveedores con costo ayuda a convertir la demanda en «pedir precio firme».", "/proveedores", "Proveedores") }}
+{% endif %}
+
+{% elif tab == 'calendario' %}
+<form method="get" action="/abastecimiento" class="d-flex flex-wrap gap-2 align-items-end mb-3" aria-label="Nivel del calendario">
+  <input type="hidden" name="tab" value="calendario">
+  <div>
+    <label class="form-label small mb-1" for="cal-nivel">Nivel</label>
+    <select class="form-select form-select-sm" id="cal-nivel" name="nivel">
+      {% for n, texto in [('unspsc', 'Producto ONU × unidad (kg, L, u)'), ('producto', 'Producto del catálogo'), ('familia', 'Familia (solo monto)')] %}
+      <option value="{{ n }}" {% if nivel == n %}selected{% endif %}>{{ texto }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn btn-primary btn-sm" type="submit">Ver</button>
+</form>
+{% if cal['items'] %}
+<p class="small text-muted mb-2">Cantidad esperada {% if cal.v1 %}(probabilidad de compra × cantidad típica){% else %}según la <strong>línea base</strong> (lo que compró el mismo mes del año anterior o el mes pasado){% endif %}. «n compran» = compradores que se espera que compren ese mes, sobre los que tienen historia.</p>
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <caption class="visually-hidden">Calendario de demanda esperada</caption>
+  <thead><tr><th scope="col">Ítem</th>{% for m in cal.meses %}<th scope="col" class="text-end">{{ nombre_mes(m) }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for x in cal['items'] %}
+  <tr>
+    <td>{{ enlace_item(cal.nivel, x.item, x.nombre) }}</td>
+    {% for m in cal.meses %}{% set c = x.meses[m] %}
+    <td class="text-end">
+      {% if c.n %}<span class="num">{{ cantidad(c.cantidad, x.base, cal.nivel) }}</span>{{ marca_debil(c.debil) }}
+      <div class="text-muted small" title="{% for comp in c.compradores %}{{ comp.nombre }}{% if comp.p is not none %} ({{ comp.p | pct }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}">{{ c.n_compran }} compran / n = {{ c.n }}</div>
+      {% else %}<span class="text-muted">—</span>{% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+{{ vacio("Sin pronósticos para tus regiones en este nivel todavía: los calcula el job diario de demanda.") }}
+{% endif %}
+
+{% elif tab == 'compradores' and comprador %}
+{% set c = comprador %}
+<p class="mb-2"><a href="/abastecimiento?tab=compradores">← Todos los compradores</a></p>
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h5 mb-1">{{ c.nombre }}</h2>
+  <p class="small text-muted mb-2">
+    {% if c.comuna %}{{ c.comuna }}{% if c.prioritaria %} <span class="badge text-bg-primary fw-normal">Comuna prioritaria</span>{% endif %} · {% endif %}
+    {{ c.monto | clp }} en 12 meses · compró en {{ c.meses_con_compra }} de 12 meses
+    {% if c.es_unidad %}· <a href="/competencia?{{ {'comprador': c.clave} | urlencode }}">ver competencia</a>{% endif %}
+  </p>
+  {% if not c.es_unidad and c.datos.unidades %}<p class="small mb-2">Unidades de compra ({{ c.datos.n_unidades }}): {{ c.datos.unidades | join('; ') }}</p>{% endif %}
+  {% if c.datos.proveedores %}<p class="small mb-0">Le vende sobre todo (12 meses, OC): {% for p in c.datos.proveedores %}<a href="/competencia/{{ p.rut | urlencode }}">{{ p.nombre }}</a> ({{ p.monto | clp }}){% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+</div></div>
+
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h6">Qué compra, cada cuánto y a qué precio (12 meses)</h2>
+  {% if c['items'] %}
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th scope="col">Ítem</th><th scope="col" class="text-end">Monto</th><th scope="col" class="text-end">Cantidad</th>
+      <th scope="col" class="text-end">Meses con compra</th><th scope="col" class="text-end">Precio mediano</th><th scope="col" class="text-end">Proveedores</th><th scope="col">Próximos meses</th></tr></thead>
+    <tbody>{% for i in c['items'] %}
+    <tr><td>{{ enlace_item(i.nivel, i.item, i.nombre) }}</td>
+      <td class="text-end num">{{ i.monto | clp }}</td>
+      <td class="text-end num">{{ cantidad(i.cantidad, i.base, i.nivel) }}</td>
+      <td class="text-end num">{{ i.meses_con_compra }} / 12</td>
+      <td class="text-end num">{% if i.precio_mediana is not none %}{{ i.precio_mediana | clp }} por {{ i.base }}{% else %}—{% endif %}</td>
+      <td class="text-end num">{{ i.n_proveedores }}</td>
+      <td class="small">{% for p in i.pronostico %}{{ nombre_mes(p.mes) }}: {% if p.metodo == 'insuficiente' and not v1.get(i.nivel) %}{{ 'compra' if p.compra else 'no' }} (base){% elif p.metodo == 'insuficiente' %}<span class="text-muted">insuficiente</span>{% elif v1.get(i.nivel) %}{{ p.p | pct }}{% else %}{{ 'compra' if p.compra else 'no' }} (base){% endif %}{{ marca_debil(p.debil) }}{% if not loop.last %} · {% endif %}{% else %}<span class="text-muted">sin pronóstico</span>{% endfor %}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p class="small text-muted mb-0">Sin ítems con unidad comparable (solo montos por familia).</p>{% endif %}
+</div></div>
+
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h6">Por familia (monto)</h2>
+  <table class="table table-sm mb-0"><thead><tr><th scope="col">Familia</th><th scope="col" class="text-end">Monto</th><th scope="col" class="text-end">Meses con compra</th></tr></thead>
+  <tbody>{% for f in c.familias %}<tr><td>{{ enlace_item('familia', f.item, f.nombre) }}</td><td class="text-end num">{{ f.monto | clp }}</td><td class="text-end num">{{ f.meses_con_compra }} / 12</td></tr>{% endfor %}</tbody></table>
+</div></div>
+
+{% elif tab == 'compradores' %}
+<form method="get" action="/abastecimiento" class="d-flex flex-wrap gap-2 align-items-end mb-3" role="search">
+  <input type="hidden" name="tab" value="compradores">
+  <div><label class="form-label small mb-1" for="comp-q">Buscar comprador</label>
+  <input type="search" class="form-control form-control-sm" id="comp-q" name="q" value="{{ q }}" maxlength="100"></div>
+  <button class="btn btn-primary btn-sm" type="submit">Buscar</button>
+</form>
+{% if compradores %}
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <caption class="visually-hidden">Compradores del territorio</caption>
+  <thead><tr><th scope="col">Comprador</th><th scope="col">Comuna</th><th scope="col" class="text-end">Monto (12 meses)</th>
+    <th scope="col" class="text-end">Meses con compra</th><th scope="col" class="text-end">OC</th><th scope="col">Le vende sobre todo</th></tr></thead>
+  <tbody>{% for c in compradores %}
+  <tr><td>{{ enlace_comprador(c.clave, c.nombre) }}</td>
+    <td>{{ c.comuna or '—' }}{% if c.prioritaria %} <span class="badge text-bg-primary fw-normal">Prioritaria</span>{% endif %}</td>
+    <td class="text-end num">{{ c.monto | clp }}</td>
+    <td class="text-end num">{{ c.meses_con_compra }} / 12</td>
+    <td class="text-end num">{{ c.n_oc | numero }}</td>
+    <td class="small">{% for p in c.proveedores %}{{ p.nombre }}{% if not loop.last %}; {% endif %}{% else %}—{% endfor %}</td></tr>
+  {% endfor %}</tbody>
+</table>
+</div>
+{% else %}
+{{ vacio("Sin compradores con órdenes de compra en tus regiones todavía (o ninguno coincide con la búsqueda).") }}
+{% endif %}
+
+{% elif tab == 'item' %}
+{% set x = it %}
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h5 mb-1">{{ x.nombre }}</h2>
+  <p class="small text-muted mb-2">Nivel {{ x.nivel }}{% if x.base %} · cantidades en {{ x.base }}{% else %} · solo monto{% endif %} · últimos 24 meses en tus regiones</p>
+  {% set ancho = 24 %}
+  <svg viewBox="0 0 {{ x.serie | length * ancho }} 120" width="100%" height="140" role="img"
+       aria-label="{{ 'Cantidad' if x.base else 'Monto' }} comprada por mes (24 meses)" preserveAspectRatio="none">
+    {% for s in x.serie %}{% set px = loop.index0 * ancho + 3 %}
+    <rect x="{{ px }}" y="{{ 100 - s.alto }}" width="{{ ancho - 6 }}" height="{{ s.alto }}" fill="currentColor" opacity="0.6"><title>{{ s.mes }}: {{ s.valor | numero }} ({{ s.n_compradores }} compradores)</title></rect>
+    <text x="{{ px + (ancho - 6) / 2 }}" y="114" font-size="7" text-anchor="middle" fill="currentColor">{{ s.mes[5:] }}</text>
+    {% endfor %}
+  </svg>
+  <details class="small mt-1"><summary>Ver datos</summary>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Mes</th><th scope="col" class="text-end">{{ 'Cantidad' if x.base else 'Monto' }}</th><th scope="col" class="text-end">Monto</th><th scope="col" class="text-end">Compradores</th></tr></thead>
+    <tbody>{% for s in x.serie %}<tr><td class="num">{{ s.mes }}</td><td class="text-end num">{{ cantidad(s.valor, x.base, x.nivel) }}</td><td class="text-end num">{{ s.monto | clp }}</td><td class="text-end num">{{ s.n_compradores }}</td></tr>{% endfor %}</tbody></table>
+  </details>
+</div></div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Próximos 3 meses</h2>
+    <p class="small text-muted">{% if x.v1 %}Pronóstico v1 (probabilidad × cantidad típica).{% else %}Línea base: lo que compraron el mismo mes del año anterior o el mes pasado.{% endif %}</p>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Mes</th><th scope="col" class="text-end">Esperado</th><th scope="col" class="text-end">Compradores</th></tr></thead>
+    <tbody>{% for p in x.pronostico %}<tr><td>{{ nombre_mes(p.mes) }}</td><td class="text-end num">{{ cantidad(p.cantidad, x.base, x.nivel) }}{{ marca_debil(p.debil) }}</td><td class="text-end num">{{ p.n_compran }} / n = {{ p.n }}</td></tr>{% endfor %}</tbody></table>
+  </div></div></div>
+  <div class="col-12 col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Estacionalidad</h2>
+    <p class="small text-muted">Índice = promedio de ese mes / promedio de los 24 meses (1 = mes normal). Con un solo año, débil.</p>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Mes</th><th scope="col" class="text-end">Índice</th><th scope="col" class="text-end">n</th></tr></thead>
+    <tbody>{% for e in x.estacionalidad %}<tr><td>{{ e.mes }}</td><td class="text-end num">{% if e.indice is not none %}{{ ('%.2f' % e.indice) | replace('.', ',') }}{% else %}—{% endif %}{{ marca_debil(e.debil and e.n) }}</td><td class="text-end num">{{ e.n }}</td></tr>{% endfor %}</tbody></table>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Quién lo compra (12 meses)</h2>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Comprador</th><th scope="col" class="text-end">Monto</th></tr></thead>
+    <tbody>{% for c in x.compradores %}<tr><td>{{ enlace_comprador(c.clave, c.nombre) }}</td><td class="text-end num">{{ c.monto | clp }}</td></tr>{% else %}<tr><td colspan="2" class="text-muted">Sin compras en los últimos 12 meses.</td></tr>{% endfor %}</tbody></table>
+  </div></div></div>
+  <div class="col-12 col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Tus proveedores</h2>
+    {% if x.proveedores %}
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Proveedor</th><th scope="col">Producto</th><th scope="col" class="text-end">Costo por {{ x.base }}</th><th scope="col" class="text-end">90 días</th></tr></thead>
+    <tbody>{% for cand, var in x.proveedores %}<tr><td><a href="/proveedores/{{ cand.proveedor_id }}">{{ cand.proveedor }}</a></td><td>{{ cand.producto_texto }}{% if cand.formato_texto %} · {{ cand.formato_texto }}{% endif %}</td>
+      <td class="text-end num">{{ cand.precio_por_unidad_base | clp }}</td>
+      <td class="text-end num">{% if var and var.pct_vs_90 is not none %}{{ ('%+.1f' % var.pct_vs_90) | replace('.', ',') }} %{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table>
+    {% else %}
+    <p class="small mb-0">{% if x.nivel == 'familia' %}A nivel familia no se cruza con costos.{% else %}Ningún proveedor tuyo tiene este ítem con costo (por producto del catálogo o código ONU y unidad). <a href="/proveedores">Cargar costos →</a>{% endif %}</p>
+    {% endif %}
+  </div></div></div>
+</div>
+{% endif %}
+
+<p class="text-muted small mt-3 mb-0">Regiones: {{ regiones_texto or "sin regiones" }} · Demanda desde las órdenes de compra de Compra Ágil (datos abiertos) y las Compras Ágiles cerradas sin orden cargada; las desiertas no suman · «débil» = poca historia para ese mes · Fuente: Dirección ChileCompra</p>
+{% endblock %}

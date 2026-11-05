@@ -18,10 +18,13 @@ from app.core.tiempo import TZ_CHILE
 from app.models.tables import (
     CaCotizacion,
     CaCotizacionProducto,
+    DemandaSerie,
     OcLineaCa,
     PlanCompraLinea,
     PrecioIndice,
     PrecioReferencia,
+    Pronostico,
+    Recomendacion,
     RubroVocabulario,
     SyncState,
 )
@@ -144,6 +147,10 @@ def _tablas_mercado_salud(session: Session) -> list[dict[str, Any]]:
         ("precio_indice", PrecioIndice),
         ("ca_cotizaciones", CaCotizacion),
         ("ca_cotizacion_productos", CaCotizacionProducto),
+        # F-plat-6: demanda, pronósticos y recomendaciones (derivadas salvo las recomendaciones).
+        ("demanda_series", DemandaSerie),
+        ("pronosticos", Pronostico),
+        ("recomendaciones", Recomendacion),
     )
     return [
         {

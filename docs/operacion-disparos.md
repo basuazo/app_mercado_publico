@@ -76,7 +76,7 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — **F-merc-1, sin crear todavía** |
 | GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — **F-merc-2, sin crear todavía** (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
 | GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
-| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; corre `mercado-indices` y luego `mercado-competencia`; ver nota abajo) |
+| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; corre `mercado-indices`, `mercado-competencia` y `mercado-demanda`; ver nota abajo) |
 
 **`mercado-indices` (F-plat-4).** De noche no hay hueco: el lock lo tienen `mercado-nocturno` (22:30–06:45),
 `nocturno` (01:10), `retencion` (05:40) y `mercado-oc` (07:20); a las 04:00 saldría siempre `omitido`. A las 07:45
@@ -103,6 +103,20 @@ del modo sombra y cierra las que ya tienen resultado. **Sin medir todavía** con
 `job_runs` las primeras corridas con ~400 vigentes y 1 empresa. Si pasa de **2 min**, sacarlo a un workflow propio
 cada hora (`mercado-mesa.yml`, `jobs: "mercado-mesa"`) y quitarlo de `mercado.yml`. Sin modelo activo sale un
 `::warning::` y no crea predicciones (la caché se escribe igual).
+
+**`mercado-demanda` (F-plat-6).** Tercer job de `mercado-indices.yml`, después de `mercado-competencia` (usa sus CA
+desiertas): `jobs: "mercado-indices mercado-competencia mercado-demanda"`, otra pausa de 1 min y otra espera del lock
+de hasta 10 min. Sin API. Una pasada liviana por todas las OC de las regiones activas (medición §1.0, nombres de
+compradores e ítems), recálculo de `demanda_series` del mes en curso y los 2 anteriores (`--completo`, o si la medición
+cambia la clave del comprador: todos los meses), backtest de 6 meses (`evaluacion_modelo`, modelo `demanda`),
+`pronosticos` a 3 meses y `recomendaciones` de cada empresa activa. **Medido el 5-nov en Neon dev desde el PC** (solo
+OC, 108 mil líneas de Ñuble; dev no tiene CA): pasada liviana ~45 s, series de 25 meses unos minutos (latencia de red
+de Neon desde el PC), backtest 11 s en Python puro. **Pendiente medir con la corrida real** (`duracion_s`,
+`segundos_series`, `segundos_backtest` en `job_runs`): si la suma de las 07:45 (`mercado-indices` + competencia +
+demanda) pasa de ~25 min, proponer un workflow propio `mercado-demanda.yml` a otra hora. Avisos como `::warning::`:
+el v1 no cumple la meta o no le gana a la línea base (la UI muestra la base), cantidad en base que no calza en ≥ 99 %
+de las líneas, cambio de clave del comprador, tablas > 40 MB (regla 11). La carga completa (`--completo`) se corre
+desde el PC.
 
 Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push
 (pasos en `00-estado.md`). Usan el mismo advisory lock que el resto: de noche `mercado-nocturno` lo

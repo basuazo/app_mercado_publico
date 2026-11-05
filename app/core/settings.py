@@ -235,6 +235,12 @@ class Settings(BaseSettings):
     costo_financiero_mensual: float = Field(
         default=0.015, ge=0, description="Tasa mensual del costo financiero (0,015 = 1,5 %)"
     )
+    # F-plat-6: demanda esperada en 3 meses a partir de la cual se recomienda pedir precio firme
+    # (o buscar proveedor), por unidad base. Variable de entorno en JSON: {"kg":200,"L":300,"u":500}.
+    demanda_umbrales: dict[str, float] = Field(
+        default_factory=lambda: {"kg": 200.0, "L": 300.0, "u": 500.0},
+        description="Umbral de demanda (3 meses) por unidad base para recomendar precio firme",
+    )
 
     # --- Estados vencidos (F-estados-vencidos) ---
     estados_vencidos_max_requests: int = Field(

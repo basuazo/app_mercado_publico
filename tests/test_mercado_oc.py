@@ -528,6 +528,9 @@ def test_salud_muestra_tablas_de_mercado(
         "precio_indice",  # F-plat-4
         "ca_cotizaciones",
         "ca_cotizacion_productos",
+        "demanda_series",  # F-plat-6
+        "pronosticos",
+        "recomendaciones",
     }
 
 

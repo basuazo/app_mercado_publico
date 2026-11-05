@@ -16,6 +16,26 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 5),
+        titulo="Abastecimiento: qué van a comprar y cuándo",
+        descripcion=(
+            "Nueva sección «Abastecimiento» en la barra lateral. A partir de las órdenes de compra "
+            "de Compra Ágil de tu territorio (más de dos años de historia), muestra qué compra "
+            "cada comprador, cada cuánto, a quién y a qué precio, y qué se espera que compre en "
+            "los próximos tres meses. «Recomendaciones» te propone pedir precio firme a tu "
+            "proveedor más barato cuando la demanda esperada de un producto supera un umbral "
+            "(con su costo, la variación de 90 días, el precio de referencia y el margen), "
+            "buscar proveedor para lo que se va a comprar y no tienes, preparar ofertas para los "
+            "compradores que suelen comprar el mes siguiente y mirar compradores con Compras "
+            "Ágiles desiertas; tus comunas prioritarias van primero y cada una se marca como "
+            "hecha o descartada sin que vuelva a aparecer. «Calendario» y «Ítem» muestran la "
+            "demanda por mes, la estacionalidad y tus proveedores. Cada número trae su n y lo "
+            "que tiene poca historia se marca. La plataforma mide cuánto acierta el pronóstico "
+            "contra una regla simple (compra si compró el mismo mes del año anterior o el mes "
+            "pasado) y, si no le gana, muestra esa regla y lo dice. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 5),
         titulo="Precio, margen y mi oferta en la mesa",
         descripcion=(
             "Cada tarjeta de la mesa muestra ahora el precio sugerido con el rango en que suele "

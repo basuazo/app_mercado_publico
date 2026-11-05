@@ -77,6 +77,9 @@ DIAS_MODELOS_VIEJOS = 30
 # Filas de `evaluacion_modelo` de F-plat-comp (juez de competidores y Brier con/sin variables de
 # competencia): las escribe `mercado-competencia`; `mercado-indices` no las borra al reevaluar un mes.
 MODELO_COMPETENCIA = "competencia"
+# F-plat-6: backtest del pronóstico de demanda (lo escribe `mercado-demanda`). Tampoco se borra.
+MODELO_DEMANDA = "demanda"
+MODELOS_AJENOS = (MODELO_COMPETENCIA, MODELO_DEMANDA)  # no evalúan el modelo de P(ganar)
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +499,7 @@ def run_indices(
         ok, info = elegibilidad(cas, mes)
         session.execute(
             delete(EvaluacionModelo).where(
-                EvaluacionModelo.mes == mes, EvaluacionModelo.modelo != MODELO_COMPETENCIA
+                EvaluacionModelo.mes == mes, EvaluacionModelo.modelo.notin_(MODELOS_AJENOS)
             )
         )
         if not ok:

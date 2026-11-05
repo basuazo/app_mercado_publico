@@ -55,6 +55,7 @@
     <li>{{ entrada('/actividad', 'Actividad', 'actividad', ruta == '/actividad') }}</li>
     <li>{{ entrada('/competencia', 'Competencia', 'competencia', ruta == '/competencia' or ruta.startswith('/competencia/')) }}</li>
     <li>{{ entrada('/estrategia', 'Estrategia', 'estrategia', ruta == '/estrategia') }}</li>
+    <li>{{ entrada('/abastecimiento', 'Abastecimiento', 'abastecimiento', ruta == '/abastecimiento') }}</li>
     <li>{{ entrada('/catalogo', 'Catálogo', 'catalogo', ruta.startswith('/catalogo')) }}</li>
     <li>{{ entrada('/proveedores', 'Proveedores', 'proveedores', ruta.startswith('/proveedores') and not ruta.startswith('/proveedores/logistica')) }}</li>
     <li>{{ entrada('/proveedores/logistica', 'Logística', 'logistica', ruta.startswith('/proveedores/logistica')) }}</li>
