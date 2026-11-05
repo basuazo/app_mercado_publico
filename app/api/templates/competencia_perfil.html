@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado, vacio %}
+{% from "_competencia_macros.html" import tasa, nosotros_badge, pie %}
+{% block title %}{{ p.razon_social or p.rut }} — Competencia — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado(p.razon_social or p.rut, "Perfil de oferente en Compra Ágil, en las regiones de tu empresa.") }}
+<p class="mb-3">
+  <span class="num">{{ p.rut }}</span>{{ nosotros_badge(es_nosotros) }}
+  {% if p.es_emt is true %}<span class="badge text-bg-light border fw-normal ms-1">Empresa de menor tamaño (EMT)</span>
+  {% elif p.es_emt is false %}<span class="badge text-bg-light border fw-normal ms-1">No EMT</span>{% endif %}
+  {% if p.comuna or region_proveedor %}
+  <span class="badge text-bg-light border fw-normal ms-1" title="Según sus órdenes de compra (datos abiertos)">Ubicación conocida: {{ p.comuna or "" }}{% if p.comuna and region_proveedor %}, {% endif %}{{ region_proveedor or "" }}</span>
+  {% endif %}
+  · <a href="/competencia">Volver a Competencia</a>
+</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">CA en que ofertó</p>
+    <p class="tarjeta-numero__valor">{{ p.n_ca | numero }}</p>
+    <p class="tarjeta-numero__nota">{{ p.n_ofertas | numero }} ofertas · {{ p.n_ca_un_oferente | numero }} como único oferente</p>
+  </div></div></div>
+  <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">Tasa de adjudicación</p>
+    <p class="tarjeta-numero__valor">{{ p.tasa.p | pct }}</p>
+    <p class="tarjeta-numero__nota">{{ tasa(p.tasa) }}{% if p.n_sin_dato %} · {{ p.n_sin_dato }} sin resultado informado{% endif %}</p>
+  </div></div></div>
+  <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">Precio relativo típico</p>
+    <p class="tarjeta-numero__valor" style="font-size: 20px;">{{ p.precio_relativo | pct_firmado }}</p>
+    <p class="tarjeta-numero__nota">frente a la mediana de cada CA (mediana aproximada, n = {{ p.n_precio }})</p>
+  </div></div></div>
+  <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">Monto ganado</p>
+    <p class="tarjeta-numero__valor" style="font-size: 20px;">{{ p.monto_ganado | clp }}</p>
+    <p class="tarjeta-numero__nota">neto, suma de sus ofertas seleccionadas</p>
+  </div></div></div>
+</div>
+
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h5">Tendencia mensual</h2>
+  {% set ancho = 28 %}
+  <svg viewBox="0 0 {{ p.tendencia | length * ancho }} 120" width="100%" height="140" role="img"
+       aria-label="CA en que ofertó (barra clara) y ganadas (barra oscura) por mes" preserveAspectRatio="none">
+    {% for t in p.tendencia %}
+    {% set x = loop.index0 * ancho + 4 %}
+    <rect x="{{ x }}" y="{{ 100 - t.alto }}" width="{{ ancho - 8 }}" height="{{ t.alto }}" fill="currentColor" opacity="0.25"><title>{{ t.mes }}: {{ t.n_ca }} CA</title></rect>
+    <rect x="{{ x }}" y="{{ 100 - t.alto_ganadas }}" width="{{ ancho - 8 }}" height="{{ t.alto_ganadas }}" fill="currentColor" opacity="0.8"><title>{{ t.mes }}: {{ t.n_ganadas }} ganadas</title></rect>
+    <text x="{{ x + (ancho - 8) / 2 }}" y="114" font-size="8" text-anchor="middle" fill="currentColor">{{ t.mes[5:] }}</text>
+    {% endfor %}
+  </svg>
+  <details class="small mt-1"><summary>Ver datos</summary>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Mes</th><th scope="col" class="text-end">CA</th><th scope="col" class="text-end">Ganadas</th></tr></thead>
+    <tbody>{% for t in p.tendencia %}<tr><td class="num">{{ t.mes }}</td><td class="text-end num">{{ t.n_ca }}</td><td class="text-end num">{{ t.n_ganadas }}</td></tr>{% endfor %}</tbody></table>
+  </details>
+</div></div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h5">Compradores donde más oferta</h2>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Comprador</th><th scope="col" class="text-end">CA</th><th scope="col">Tasa</th></tr></thead>
+    <tbody>{% for c in p.compradores %}
+      <tr><td><a href="/competencia?{{ {'comprador': c.clave} | urlencode }}">{{ c.nombre }}</a></td><td class="text-end num">{{ c.n_ca }}</td><td>{{ tasa(c.tasa) }}</td></tr>
+    {% endfor %}</tbody></table>
+  </div></div></div>
+  <div class="col-12 col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h5">Familias donde más oferta</h2>
+    <table class="table table-sm mb-0"><thead><tr><th scope="col">Familia</th><th scope="col" class="text-end">CA</th><th scope="col">Tasa</th></tr></thead>
+    <tbody>{% for f in p.familias %}
+      <tr><td><a href="/estrategia?{{ {'familia': f.clave} | urlencode }}">{{ f.nombre }}</a></td><td class="text-end num">{{ f.n_ca }}</td><td>{{ tasa(f.tasa) }}</td></tr>
+    {% endfor %}</tbody></table>
+  </div></div></div>
+</div>
+
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h5">Cara a cara</h2>
+  <form method="get" action="/competencia/{{ p.rut | urlencode }}" class="row g-2 align-items-end mb-2">
+    <div class="col-12 col-md-5">
+      <label class="form-label small mb-1" for="vs">RUT del otro oferente</label>
+      <input type="text" class="form-control form-control-sm" id="vs" name="vs" value="{{ vs or (nosotros if nosotros and not es_nosotros else '') }}" maxlength="30" placeholder="76123456-7">
+    </div>
+    <div class="col-auto"><button class="btn btn-outline-primary btn-sm" type="submit">Comparar</button></div>
+  </form>
+  {% if duelo %}
+  {% if duelo.mercados %}
+  <p class="small mb-2">En los mercados (comprador × familia × mes) donde ofertaron ambos:
+    <strong>{{ duelo.a.nombre }}</strong> ganó {{ duelo.a.tasa.k }} de {{ duelo.a.n_ca }} CA y
+    <strong>{{ duelo.b.nombre }}</strong> ganó {{ duelo.b.tasa.k }} de {{ duelo.b.n_ca }}.
+    Precio relativo de {{ duelo.a.nombre }} frente a {{ duelo.b.nombre }}: {{ duelo.diferencia | pct_firmado }}.</p>
+  <div class="table-responsive"><table class="table table-sm mb-0">
+    <thead><tr><th scope="col">Comprador · familia</th><th scope="col" class="text-end">CA de {{ duelo.a.nombre }}</th><th scope="col">Tasa</th><th scope="col" class="text-end">CA de {{ duelo.b.nombre }}</th><th scope="col">Tasa</th><th scope="col">Precio relativo A vs. B</th></tr></thead>
+    <tbody>{% for m in duelo.mercados %}
+      <tr><td>{{ m.nombre }} · {{ m.familia }}</td><td class="text-end num">{{ m.a.n_ca }}</td><td>{{ tasa(m.a.tasa) }}</td>
+          <td class="text-end num">{{ m.b.n_ca }}</td><td>{{ tasa(m.b.tasa) }}</td><td>{{ m.diferencia | pct_firmado }}</td></tr>
+    {% endfor %}</tbody></table></div>
+  <p class="text-muted small mt-2 mb-0">Comparación por mercado y mes, no CA a CA.</p>
+  {% else %}
+  <p class="text-muted small mb-0">No coinciden en ningún comprador × familia × mes del período.</p>
+  {% endif %}
+  {% endif %}
+</div></div>
+
+{{ pie(p.meses, "regiones de tu empresa") }}
+{% endblock %}

@@ -18,6 +18,29 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-comp (5-nov, commit local sin push hasta auditar; migración `f6b2d9a4c1e8`, cuelga de `e4a7c2f9d1b3`)
+Análisis de competencia (`prompt-F-plat-comp.md`, con su §6 «Revisión 5-nov»).
+**Esquema:** `competencia_mes` (RUT × `clave_comprador` × familia × mes: CA, ofertas, ganadas, sin dato, log_ratio con
+suma/n/p50, monto ganado, un oferente, razón social, EMT y ubicación precalculada de `oc_lineas_ca`) y
+`competencia_comprador_mes` (comprador × familia × mes: CA, desiertas, oferentes, un oferente, «no ganó el más barato»).
+Derivadas: el job borra y reinserta por mes. Sin índice `(organismo_rut, familia)`: ninguna consulta lo usa.
+**Código:** `app/mercado/eleccion.py` (**`elegir_por_rut`: única regla F-merc-1c**; reemplaza las 3 copias de
+`comprador`, `indice` y `adjudicacion`), `app/mercado/comprador.py` (`rut_competidor`: `normalizar_rut` con caída a
+`indice._rut`; también en el top de proveedores de la mesa), `app/mercado/competencia.py` (adaptador genérico
+`_filas_desde_ca` → `Proceso`/`Oferta`, `recalcular_competencia`, consultas de la UI, `variables_competencia` registrada
+como grupo `competencia`, juez de competidores, aporte al modelo, job), `app/api/routes/competencia.py`.
+**UI:** `/competencia` (buscador, ranking del territorio, competidores de un comprador × familia), `/competencia/{rut}`
+(perfil con Wilson, tendencia en SVG inline, cara a cara por mercado), `/estrategia` (mapa filtrable y ordenable);
+regiones de la empresa; enlace desde el historial de la mesa; menú «Competencia» y «Estrategia».
+**Job `mercado-competencia`:** en `mercado-indices.yml` después de `mercado-indices` (timeout 60). Medido (sintético, Postgres
+local, 1.200 CA/mes × 7): diario 5,3 s. **Tamaño:** 241 B/fila (tras VACUUM); 12 meses ≈ 24 MB con el sintético (peor caso,
+sin repetición RUT × comprador) y ≤ ≈ 20 MB con el volumen real de §6.1 (cota sin agregación). El job avisa si pasa de 20 MB.
+**Juez y modelo:** con los datos de hoy, «Brier con/sin: pendiente, 0 meses evaluables» (variables fuera del modelo); predicción de
+competidores solo para noviembre (entrenada con octubre) y parcial.
+**Pendiente de Boris:** (1) deploy con migración (pasos en el prompt §5); (2) `mercado-competencia --completo` desde el PC
+contra producción y pegar: cuadratura por mes, top 1 / precisión / recall de noviembre, `ruts_no_validos` y
+`ruts_forma_distinta`, `bytes`; (3) revisar `/estrategia` y 5 perfiles conocidos; (4) decidir trimestral si `bytes` > 20 MB.
+
 ## F-mesa-v0 (5-nov, commit local sin push hasta auditar; sin migración)
 `/mesa` (`prompt-F-mesa-v0.md`): CA vigentes (`publicada` + cierre futuro) de `regiones_activas`, 50 por página,
 orden por cierre y, si la empresa tiene `comunas_prioritarias`, primero las que nombran alguna en `direccion_entrega`

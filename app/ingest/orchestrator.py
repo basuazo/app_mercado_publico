@@ -262,6 +262,19 @@ def run_mercado_indices(
         )
 
 
+def run_mercado_competencia(
+    settings: Settings, engine: Engine, completo: bool = False
+) -> dict[str, Any]:
+    """Job `mercado-competencia` (F-plat-comp): agregado de competencia de los 2 últimos meses (o
+    todo con `completo`), juez de predicción de competidores y aporte al modelo de P(ganar). Solo
+    base de datos: sin ticket, sin cuota, sin red. Corre después de `mercado-indices`."""
+    from app.mercado.competencia import run_competencia_mercado
+
+    regiones = regiones_activas_engine(engine, settings)
+    with Session(engine) as session:
+        return run_competencia_mercado(session, regiones, completo=completo)
+
+
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
     """Job `vocabulario-rubros` (F-ca-explorar): regenera `rubro_vocabulario` desde
     `licitacion_items`. Solo base de datos: sin ticket, sin cuota, sin red."""

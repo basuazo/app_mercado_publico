@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado, vacio %}
+{% from "_competencia_macros.html" import tasa, enlace_rut, nosotros_badge, pie %}
+{% block title %}Competencia — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado("Competencia", "Contra quién compites: quién gana qué, a qué precio relativo y con qué compradores.") }}
+
+<form method="get" action="/competencia" class="card card-body mb-3" role="search" aria-label="Buscar competidor">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label small mb-1" for="comp-q">RUT o razón social</label>
+      <input type="search" class="form-control form-control-sm" id="comp-q" name="q" value="{{ q }}"
+             maxlength="100" placeholder="Ej.: 76123456 o Distribuidora">
+    </div>
+    <div class="col-12 col-md-auto d-flex gap-2">
+      <button class="btn btn-primary btn-sm" type="submit">Buscar</button>
+      {% if q or vista_comprador %}<a class="btn btn-outline-secondary btn-sm" href="/competencia">Ver ranking del territorio</a>{% endif %}
+    </div>
+  </div>
+</form>
+
+{% if not tiene_rut %}
+<p class="text-muted small">Tu empresa no tiene RUT registrado: no podemos marcarte entre los oferentes (lo agrega el administrador en Empresas).</p>
+{% endif %}
+
+{% if vista_comprador %}
+{% set v = vista_comprador %}
+<h2 class="h5 mb-1">{{ v.nombre }}{% if v.familia %} · {{ v.familia }}{% endif %}</h2>
+<p class="text-muted small mb-2">
+  <span class="num">{{ v.n_ca | numero }}</span> CA cerradas ·
+  <span class="num">{{ v.n_con_ofertas | numero }}</span> con ofertas ·
+  <span class="num">{{ v.n_desiertas | numero }}</span> desiertas o sin oferentes ·
+  <span class="num">{{ v.n_un_oferente | numero }}</span> con un solo oferente
+  {% if v.familia %}· <a href="/competencia?{{ {'comprador': v.clave} | urlencode }}">Ver todas las familias</a>{% endif %}
+</p>
+{% if v.competidores %}
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <caption class="visually-hidden">Competidores del comprador</caption>
+  <thead><tr>
+    <th scope="col">Oferente</th>
+    <th scope="col" class="text-end">CA en que ofertó</th>
+    <th scope="col" class="text-end">Participación</th>
+    <th scope="col">Tasa de adjudicación</th>
+    <th scope="col">Precio relativo</th>
+    <th scope="col" class="text-end">Monto ganado</th>
+  </tr></thead>
+  <tbody>
+  {% for c in v.competidores %}
+  <tr{% if c.es_nosotros %} class="table-primary"{% endif %}>
+    <td>{{ enlace_rut(c.rut, c.nombre, c.es_nosotros) }}</td>
+    <td class="text-end num">{{ c.n_ca | numero }}</td>
+    <td class="text-end num">{{ c.participacion | pct }}</td>
+    <td>{{ tasa(c.tasa) }}</td>
+    <td>{{ c.precio_relativo | pct_firmado }}{% if c.n_precio %} <span class="text-muted small">(n = {{ c.n_precio }})</span>{% endif %}</td>
+    <td class="text-end num">{{ c.monto_ganado | clp }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+{{ vacio("No hay ofertas leídas de este comprador en los últimos meses.") }}
+{% endif %}
+
+{% elif resultados is not none %}
+<h2 class="h5">Resultados para «{{ q }}»</h2>
+{% if resultados %}
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <caption class="visually-hidden">Competidores encontrados</caption>
+  <thead><tr><th scope="col">Oferente</th><th scope="col" class="text-end">CA</th><th scope="col">Tasa de adjudicación</th><th scope="col" class="text-end">Monto ganado</th></tr></thead>
+  <tbody>
+  {% for c in resultados %}
+  <tr{% if c.es_nosotros %} class="table-primary"{% endif %}>
+    <td>{{ enlace_rut(c.rut, c.nombre, c.es_nosotros) }}</td>
+    <td class="text-end num">{{ c.n_ca | numero }}</td>
+    <td>{{ tasa(c.tasa) }}</td>
+    <td class="text-end num">{{ c.monto_ganado | clp }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+{{ vacio("Ningún oferente de tu territorio coincide con la búsqueda.", "/competencia", "Ver el ranking") }}
+{% endif %}
+
+{% else %}
+<h2 class="h5">Ranking del territorio</h2>
+<p class="text-muted small">Por monto ganado. Abre un oferente para ver su perfil, sus compradores y su tendencia.</p>
+{% if ranking %}
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <caption class="visually-hidden">Ranking de competidores del territorio</caption>
+  <thead><tr>
+    <th scope="col">#</th><th scope="col">Oferente</th><th scope="col" class="text-end">CA</th>
+    <th scope="col">Tasa de adjudicación</th><th scope="col">Precio relativo</th><th scope="col" class="text-end">Monto ganado</th>
+  </tr></thead>
+  <tbody>
+  {% for c in ranking %}
+  <tr{% if c.es_nosotros %} class="table-primary"{% endif %}>
+    <td class="num text-muted">{{ loop.index }}</td>
+    <td>{{ enlace_rut(c.rut, c.nombre, c.es_nosotros) }}</td>
+    <td class="text-end num">{{ c.n_ca | numero }}</td>
+    <td>{{ tasa(c.tasa) }}</td>
+    <td>{{ c.precio_relativo | pct_firmado }}</td>
+    <td class="text-end num">{{ c.monto_ganado | clp }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+{{ vacio("Todavía no hay análisis de competencia: lo calcula el job diario después del índice de precios.") }}
+{% endif %}
+{% endif %}
+
+<p class="small mt-2 mb-0"><a href="/estrategia{{ '?' ~ qs_estrategia if qs_estrategia }}">Ver el mapa de mercado →</a></p>
+{{ pie(meses, regiones_texto) }}
+{% endblock %}

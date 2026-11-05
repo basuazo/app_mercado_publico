@@ -16,13 +16,16 @@ import statistics
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from operator import itemgetter
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.catalogos.mercado import norm
+from app.mercado.eleccion import elegir_por_rut
 from app.mercado.indice import LOTE, _rut
+from app.mercado.proveedores import normalizar_rut
 from app.models.tables import CaCotizacion, CompraAgil
 
 DIAS_HISTORIAL = 365  # «últimos 12 meses»
@@ -50,21 +53,18 @@ def _rut_sql(col: Any) -> Any:
     return func.upper(func.replace(func.replace(func.coalesce(col, ""), ".", ""), " ", ""))
 
 
-def _elegir(
-    ofertas: list[tuple[str, str | None, bool | None, float | None]],
-) -> dict[str, tuple[str, bool | None, float | None]]:
-    """Una oferta por RUT (F-merc-1c): la seleccionada; si no, la de menor valor neto."""
-    elegida: dict[str, tuple[str, bool | None, float | None]] = {}
-    for rut, nombre, sel, valor in ofertas:
-        if not rut:
-            continue
-        act = elegida.get(rut)
-        s, s_act = sel is True, act is not None and act[1] is True
-        v = valor if valor is not None else float("inf")
-        v_act = act[2] if act is not None and act[2] is not None else float("inf")
-        if act is None or (s and not s_act) or (s == s_act and v < v_act):
-            elegida[rut] = (nombre or "", sel, valor)
-    return elegida
+def rut_competidor(valor: str | None) -> tuple[str, bool]:
+    """(RUT, válido) de un proveedor que oferta (F-plat-comp §6.3).
+
+    `ca_cotizaciones.rut_proveedor` se guarda tal como viene de la API. Se normaliza con
+    `proveedores.normalizar_rut` (la forma de `empresas.rut` y de `oc_lineas_ca`: sin puntos, con
+    guion); si no es un RUT válido, cae a la forma laxa de `indice._rut` y avisa con `False`. Lo
+    usan la mesa (top proveedores) y la competencia, para que el enlace de la mesa a
+    `/competencia/{rut}` siempre encuentre al competidor. La clave de comprador NO usa esto."""
+    try:
+        return normalizar_rut(valor) or "", True
+    except ValueError:
+        return _rut(valor), False
 
 
 def historial_comprador(
@@ -108,18 +108,20 @@ def historial_comprador(
                 CaCotizacion.valor_neto,
             ).where(CaCotizacion.ca_codigo.in_(codigos[i : i + LOTE]))
         ):
-            ofertas[ca].append((_rut(rut), nombre, sel, valor))
+            r = rut_competidor(rut)[0]
+            if r:  # una oferta sin RUT no se atribuye a nadie
+                ofertas[ca].append((r, nombre, sel, valor))
     n_oferentes: list[int] = []
     ganadas: Counter[str] = Counter()
     nombres: dict[str, str] = {}
     for codigo in codigos:
-        elegidas = _elegir(ofertas[codigo])
+        elegidas = elegir_por_rut(ofertas[codigo], itemgetter(0), itemgetter(2), itemgetter(3))
         if codigo in leidas:
             n_oferentes.append(len(elegidas))
-        for rut, (nombre, sel, valor) in elegidas.items():
+        for rut, (_, nombre, sel, valor) in elegidas.items():
             if sel is True:
                 ganadas[rut] += 1
-                nombres.setdefault(rut, nombre)
+                nombres.setdefault(rut, nombre or "")
                 if valor is not None:
                     hist.monto_adjudicado += valor
     hist.n_con_ofertas = len(n_oferentes)

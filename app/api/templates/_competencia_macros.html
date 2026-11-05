@@ -1,0 +1,26 @@
+{#- Piezas comunes de Competencia y Estrategia (F-plat-comp). -#}
+
+{#- Tasa con intervalo de Wilson al 95 % y su n: con n chico, el intervalo lo dice. -#}
+{% macro tasa(t) -%}
+{%- if t.n == 0 -%}<span class="text-muted" title="Sin CA con resultado conocido">—</span>
+{%- else -%}
+<span class="num">{{ t.p | pct }}</span>
+<span class="text-muted small" title="Intervalo de Wilson al 95 %">({{ t.bajo | pct }}–{{ t.alto | pct }}, n = {{ t.n }})</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro nosotros_badge(es) -%}
+{% if es %}<span class="badge text-bg-primary fw-normal ms-1">Nosotros</span>{% endif %}
+{%- endmacro %}
+
+{% macro enlace_rut(rut, nombre, es_nosotros=false) -%}
+<a href="/competencia/{{ rut | urlencode }}">{{ nombre }}</a>{{ nosotros_badge(es_nosotros) }}
+<div class="text-muted small num">{{ rut }}</div>
+{%- endmacro %}
+
+{% macro pie(meses, regiones_texto) -%}
+<p class="text-muted small mt-3 mb-0">Últimos {{ meses }} meses · {{ regiones_texto or "sin regiones" }} ·
+  Tasa de adjudicación = CA ganadas sobre CA con resultado conocido (las ofertas cuyo resultado la API no informó no cuentan como derrota) ·
+  Precio relativo = precio del oferente frente a la mediana de las ofertas de la misma CA (solo CA con 2 o más oferentes) ·
+  Datos públicos: no se exportan en bloque · Fuente: Dirección ChileCompra</p>
+{%- endmacro %}

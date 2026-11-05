@@ -53,6 +53,22 @@ def formato_numero(valor: float | int | None) -> str:
     return f"{valor:,.0f}".replace(",", ".")
 
 
+def formato_pct(valor: float | None, decimales: int = 0) -> str:
+    """Fracción → porcentaje con coma decimal: 0.125 → "13 %" (o "12,5 %"). None -> '—'."""
+    if valor is None:
+        return "—"
+    return f"{valor * 100:.{decimales}f}".replace(".", ",") + " %"
+
+
+def formato_pct_firmado(valor: float | None) -> str:
+    """Precio relativo: +0.031 → "3 % sobre", −0.05 → "5 % bajo", ~0 → "en la mediana"."""
+    if valor is None:
+        return "—"
+    if abs(valor) < 0.005:
+        return "en la mediana"
+    return f"{formato_pct(abs(valor))} {'sobre' if valor > 0 else 'bajo'}"
+
+
 def fecha_chile(valor: datetime | None) -> str:
     """Día `dd/mm/aaaa` en hora de Chile de un instante guardado naive en UTC
     (p. ej. `fecha_publicacion`). Sin esto, desde las 21:00 de Chile se mostraba
@@ -86,6 +102,8 @@ def registrar_filtros(env: Any) -> None:
     env.filters["clp"] = formato_clp
     env.filters["numero"] = formato_numero
     env.filters["fecha_chile"] = fecha_chile
+    env.filters["pct"] = formato_pct
+    env.filters["pct_firmado"] = formato_pct_firmado
     env.globals["version_estaticos"] = VERSION_ESTATICOS
 
 

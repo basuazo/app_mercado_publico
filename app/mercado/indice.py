@@ -26,6 +26,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from operator import itemgetter
 from typing import Any
 
 from sqlalchemy import delete, insert, select, update
@@ -33,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.catalogos.territorio_nuble import comuna_canonica, comuna_en_texto, provincia_de
 from app.core.tiempo import TZ_CHILE
+from app.mercado.eleccion import elegir_por_rut
 from app.models.tables import (
     CaCotizacion,
     CaCotizacionProducto,
@@ -320,19 +322,6 @@ def lineas_atribuibles(
     return out
 
 
-def _elegir_por_rut(
-    ofertas: Iterable[tuple[str, bool | None, float]],
-) -> dict[str, tuple[bool, float]]:
-    """Regla de elección F-merc-1c: una por RUT (la seleccionada; si no, la más barata)."""
-    elegida: dict[str, tuple[bool, float]] = {}
-    for rut, sel, precio in ofertas:
-        s = sel is True
-        actual = elegida.get(rut)
-        if actual is None or (s and not actual[0]) or (s == actual[0] and precio < actual[1]):
-            elegida[rut] = (s, precio)
-    return elegida
-
-
 def observaciones_de_cas(
     session: Session, cas: list[tuple[str, str | None, int | None]], conteo: ConteoUnion
 ) -> list[Observacion]:
@@ -358,13 +347,16 @@ def observaciones_de_cas(
     out: list[Observacion] = []
     for codigo_ca, comuna, region in cas:
         for codigo_prod, la in lineas_atribuibles(lineas_por_ca.get(codigo_ca, ()), conteo).items():
-            elegidas = _elegir_por_rut(precios.get((codigo_ca, codigo_prod), ()))
+            elegidas = elegir_por_rut(  # (rut, sel, precio); regla F-merc-1c
+                precios.get((codigo_ca, codigo_prod), ()), itemgetter(0), itemgetter(1),
+                itemgetter(2),
+            )  # fmt: skip
             if not elegidas:
                 conteo.sin_ofertas += 1
                 continue
             conteo.usadas += 1
             factor = la.cantidad / la.cantidad_base  # unidades pedidas por unidad base
-            ganadores = [p for s, p in elegidas.values() if s]
+            ganadores = [p for _, s, p in elegidas.values() if s is True]
             ganador = min(ganadores) if ganadores else None
             out.append(
                 Observacion(
@@ -374,7 +366,7 @@ def observaciones_de_cas(
                     comuna=comuna,
                     region=region,
                     ganador=ganador * factor if ganador is not None else None,
-                    ofertas=[p * factor for _, p in elegidas.values()],
+                    ofertas=[p * factor for _, _, p in elegidas.values()],
                     monto_ganador=ganador * la.cantidad if ganador is not None else None,
                 )
             )

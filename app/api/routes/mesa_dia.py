@@ -29,6 +29,7 @@ from app.mercado.mesa_dia import (
     PAGINA,
     FiltrosMesa,
     buscar_codigos,
+    familias_de_ca,
     familias_por_ca,
     tarjetas,
 )
@@ -160,8 +161,18 @@ async def mesa_comprador(
     if ca is None or ca.region not in regiones:
         raise HTTPException(status_code=404, detail="Compra Ágil no encontrada")
     hist = historial_comprador(session, ca.organismo_rut, ca.unidad_compra, ahora=ahora_utc())
+    # F-plat-comp: enlace a los competidores del comprador × la familia de la tarjeta (la misma
+    # etiqueta de la mesa); «Varias» o «Sin productos» enlazan sin familia.
+    familias = familias_de_ca(session, codigo)
+    qs = {"comprador": hist.clave}
+    if len(familias) == 1:
+        qs["familia"] = familias[0]
     return _TEMPLATES.TemplateResponse(
         request,
         "_mesa_comprador.html",
-        {"h": hist, "region_nombre": nombre_region(ca.region)},
+        {
+            "h": hist,
+            "region_nombre": nombre_region(ca.region),
+            "url_competencia": "/competencia?" + urlencode(qs),
+        },
     )

@@ -1122,6 +1122,86 @@ class EvaluacionModelo(Base):
     calculado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
 
+class CompetenciaMes(Base):
+    """Agregado mensual de competencia (F-plat-comp): una fila por RUT × comprador × familia × mes.
+
+    Derivada de `ca_cotizaciones` (regla de elección F-merc-1c: una oferta por RUT) por el job
+    `mercado-competencia`, que borra y reinserta los meses que recalcula. Solo CA cerradas de las
+    regiones activas; las desiertas o canceladas no entran (cuentan en el comprador). Datos públicos
+    y comunes: no pertenecen a una empresa (regla 26 aplica a nuestras ofertas, no a competidores).
+
+    - `rut`: `comprador.rut_competidor` (forma de `empresas.rut`); `clave_comprador`:
+      `comprador.clave_unidad` (la misma del modelo y de la mesa); `familia`: `familia_de_ca`.
+    - `n_sin_dato`: la oferta elegida tiene `seleccionado` nulo (la API no lo dijo: no es derrota).
+    - `log_ratio` = log(precio del RUT / mediana de los precios de la CA), solo en CA con ≥ 2
+      oferentes con precio; `p50_log_ratio` es la mediana del mes (la de varios meses se aproxima
+      ponderando por `n_log_ratio`).
+    - `comuna_proveedor`/`region_proveedor`: la más frecuente del RUT en `oc_lineas_ca` (precalculada
+      para que ningún request recorra esa tabla).
+    """
+
+    __tablename__ = "competencia_mes"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    mes: Mapped[str] = mapped_column(String(7), nullable=False)
+    region: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rut: Mapped[str] = mapped_column(String(20), nullable=False)
+    clave_comprador: Mapped[str] = mapped_column(String(600), nullable=False)
+    organismo_rut: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    familia: Mapped[str] = mapped_column(String(100), nullable=False)
+    razon_social: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    es_emt: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    comuna_proveedor: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    region_proveedor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_ca: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_ofertas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_ganadas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_sin_dato: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    suma_log_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    n_log_ratio: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    p50_log_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    monto_ganado: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    n_ca_un_oferente: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CompetenciaCompradorMes(Base):
+    """Agregado mensual por comprador × familia (F-plat-comp), para el mapa de mercado.
+
+    Lo que no sale de sumar filas por RUT: CA cerradas (con y sin ofertas), desiertas o canceladas
+    (o leídas sin ningún oferente), mediana de oferentes, CA de un solo oferente y CA en que no ganó
+    el más barato (entre las de ≥ 2 oferentes con precio y ganador conocido). Mismo job y misma
+    idempotencia que `competencia_mes`.
+    """
+
+    __tablename__ = "competencia_comprador_mes"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    mes: Mapped[str] = mapped_column(String(7), nullable=False)
+    region: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    clave_comprador: Mapped[str] = mapped_column(String(600), nullable=False)
+    organismo_rut: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    comprador_nombre: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    familia: Mapped[str] = mapped_column(String(100), nullable=False)
+    n_ca: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_desiertas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_con_ofertas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    suma_oferentes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    p50_oferentes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n_un_oferente: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_con_ganador: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_2mas_con_ganador: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_no_gano_mas_barato: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    monto_adjudicado: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+Index("ix_competencia_mes_rut", CompetenciaMes.rut)
+# Sin índice (organismo_rut, familia) (§1.1): ninguna consulta lo usa y pesa ~13 % de la tabla (regla 11).
+Index("ix_competencia_mes_comprador_familia", CompetenciaMes.clave_comprador, CompetenciaMes.familia)
+Index(
+    "ix_competencia_comprador_mes_comprador_familia",
+    CompetenciaCompradorMes.clave_comprador,
+    CompetenciaCompradorMes.familia,
+)
 Index("ix_precio_indice_mes", PrecioIndice.mes)
 Index("ix_evaluacion_modelo_mes", EvaluacionModelo.mes)
 Index("ix_modelo_adjudicacion_activo", ModeloAdjudicacion.activo)

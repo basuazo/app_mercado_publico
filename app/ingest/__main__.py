@@ -32,6 +32,7 @@ from app.ingest.orchestrator import (
     run_mercado_backfill,
     run_mercado_ca,
     run_mercado_catalogo,
+    run_mercado_competencia,
     run_mercado_indices,
     run_mercado_oc,
     run_plan_anual,
@@ -65,6 +66,7 @@ _JOBS = (
     "mercado-oc",
     "mercado-catalogo",
     "mercado-indices",
+    "mercado-competencia",
 )
 
 _log = get_logger(__name__)
@@ -212,6 +214,12 @@ def cmd_run_once(
         "mercado-indices": _locked(
             "mercado-indices", lambda: run_mercado_indices(settings, engine, completo=completo)
         ),
+        # F-plat-comp: solo base de datos. Va después de `mercado-indices` en su workflow;
+        # `--completo` recalcula todos los meses (desde el PC con DATABASE_URL de producción).
+        "mercado-competencia": _locked(
+            "mercado-competencia",
+            lambda: run_mercado_competencia(settings, engine, completo=completo),
+        ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.
@@ -349,7 +357,10 @@ def main() -> None:
     once.add_argument(
         "--completo",
         action="store_true",
-        help="Índice completo y evaluación de los últimos 6 meses (solo job=mercado-indices)",
+        help=(
+            "mercado-indices: índice completo y evaluación de los últimos 6 meses; "
+            "mercado-competencia: recalcula todos los meses"
+        ),
     )
     once.add_argument(
         "--esperar-lock-min",

@@ -76,7 +76,7 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — **F-merc-1, sin crear todavía** |
 | GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — **F-merc-2, sin crear todavía** (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
 | GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
-| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; ver nota abajo) |
+| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; corre `mercado-indices` y luego `mercado-competencia`; ver nota abajo) |
 
 **`mercado-indices` (F-plat-4).** De noche no hay hueco: el lock lo tienen `mercado-nocturno` (22:30–06:45),
 `nocturno` (01:10), `retencion` (05:40) y `mercado-oc` (07:20); a las 04:00 saldría siempre `omitido`. A las 07:45
@@ -84,6 +84,17 @@ choca con el disparo de `mercado` de la misma hora: el workflow espera el lock h
 las primeras corridas (`duracion_s` en el resultado y en `job_runs`): si pasa de ~10 min, los `mercado` que caigan
 en medio salen `omitido` (aceptado una vez al día; se ponen al día desde el cursor). Las metas no cumplidas salen
 como `::warning::` sin poner el job en rojo. La carga completa (`--completo`) se corre desde el PC.
+
+**`mercado-competencia` (F-plat-comp).** Mismo workflow, después de `mercado-indices` (`jobs: "mercado-indices
+mercado-competencia"`; 1 min de pausa entre jobs y otra espera del lock de hasta 10 min, porque el `mercado` de
+las 08:00 puede tomarlo en medio). Sin API. Recalcula `competencia_mes` y `competencia_comprador_mes` del mes
+anterior y del actual (`--completo`: todos los meses con ofertas), corre el juez de predicción de competidores de
+los últimos 6 meses y el Brier con/sin variables de competencia del último mes cerrado (`evaluacion_modelo`, modelo
+`competencia`; `mercado-indices` no borra esas filas). **Medido el 5-nov** en Postgres local con volumen sintético
+(1.200 CA/mes × 7 ofertas): job diario **5,3 s** (recálculo de 2 meses 3,1 s). La suma diaria la domina
+`mercado-indices` (19 min el `--completo`); `timeout_min` del workflow pasó de 40 a 60 por la segunda espera del
+lock, no por la duración. Avisos como `::warning::`: cuadratura de `n_ganadas` fuera de ±0,5 %, top 1 bajo la meta
+del 60 %, ningún mes con datos suficientes, tablas > 20 MB (regla 11).
 
 Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push
 (pasos en `00-estado.md`). Usan el mismo advisory lock que el resto: de noche `mercado-nocturno` lo

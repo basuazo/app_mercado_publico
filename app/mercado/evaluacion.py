@@ -74,6 +74,9 @@ META_INTERVALO = 0.70
 META_BRIER = 0.20
 META_GANABLES = 0.10
 DIAS_MODELOS_VIEJOS = 30
+# Filas de `evaluacion_modelo` de F-plat-comp (juez de competidores y Brier con/sin variables de
+# competencia): las escribe `mercado-competencia`; `mercado-indices` no las borra al reevaluar un mes.
+MODELO_COMPETENCIA = "competencia"
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +494,11 @@ def run_indices(
     evaluados: list[dict[str, Any]] = []
     for mes in evaluar:
         ok, info = elegibilidad(cas, mes)
-        session.execute(delete(EvaluacionModelo).where(EvaluacionModelo.mes == mes))
+        session.execute(
+            delete(EvaluacionModelo).where(
+                EvaluacionModelo.mes == mes, EvaluacionModelo.modelo != MODELO_COMPETENCIA
+            )
+        )
         if not ok:
             session.add(
                 EvaluacionModelo(

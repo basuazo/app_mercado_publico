@@ -16,6 +16,22 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 5),
+        titulo="Competencia y mapa de mercado",
+        descripcion=(
+            "Dos entradas nuevas en el menú. «Competencia»: busca a un oferente por RUT o razón "
+            "social y ve el ranking de tu territorio; cada perfil muestra en cuántas Compras Ágiles "
+            "ofertó, su tasa de adjudicación (con su margen de error cuando hay pocos casos), su "
+            "precio típico frente a la mediana de cada compra, sus compradores y familias "
+            "principales, su tendencia mes a mes y una comparación cara a cara con otro oferente. "
+            "«Estrategia»: el mapa de mercado de tus regiones, comprador por familia, con monto, "
+            "n.º de compras, oferentes, compras de un solo oferente, desiertas, el competidor "
+            "dominante y cuántas veces no ganó el más barato. En la mesa, el historial del "
+            "comprador enlaza a sus competidores. Si tu empresa tiene RUT, te marcamos como "
+            "«Nosotros». Se actualiza cada mañana. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 5),
         titulo="Mesa: las Compras Ágiles vigentes de tu territorio",
         descripcion=(
             "Nueva entrada «Mesa» en el menú: todas las Compras Ágiles que siguen abiertas en las "

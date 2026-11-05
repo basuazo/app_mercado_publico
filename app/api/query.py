@@ -31,7 +31,7 @@ from app.matching.feedback import listar_descartadas, listar_feedback_usuario, o
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import esta_guardada, listar_seguidas, obtener_seguimiento
 from app.mercado.adjudicacion import COSTO_FINANCIERO_DEFAULT, EvaluacionCA, evaluar_ca
-from app.mercado.evaluacion import metas_del_mes
+from app.mercado.evaluacion import MODELO_COMPETENCIA, metas_del_mes
 from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, ValorFeedback
 from app.models.tables import (
     CompraAgil,
@@ -1630,7 +1630,9 @@ def resumen_evaluacion_modelo(session: Session) -> dict[str, Any]:
         .limit(1)
     ).scalar_one_or_none()
     meses = session.execute(
-        select(EvaluacionModelo.mes, EvaluacionModelo.metrica).distinct()
+        select(EvaluacionModelo.mes, EvaluacionModelo.metrica)
+        .where(EvaluacionModelo.modelo != MODELO_COMPETENCIA)  # F-plat-comp no evalúa el modelo
+        .distinct()
     ).all()
     evaluados = sorted({m for m, met in meses if met != "sin_datos_suficientes"})
     sin_datos = sorted({m for m, met in meses if met == "sin_datos_suficientes"})

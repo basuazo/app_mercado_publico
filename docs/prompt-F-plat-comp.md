@@ -1,12 +1,12 @@
 # Prompt de implementación — F-plat-comp (análisis de competencia) · 4-nov-2026
 
 > Para Claude Code. **Modelo: Opus** (estadística con juez, variables nuevas para el modelo de F-plat-4, esquema).
-> Una fase = un commit, **sin push**. **Con migración.** Corre **en paralelo con F-plat-4** (ventana B' de
-> `docs/17-plan-pivote-plataforma-ca.md` §7, con las reglas de §4-bis: worktree, rama de Neon y `down_revision`
-> propios) y **se audita después de F-plat-4**: antes de auditarla, `git rebase main` y re-apuntar la migración.
-> Origen: `17-plan` §7 (decisión de Boris, 4-nov noche).
-> **Revisado contra el código el 4-nov-2026 (HEAD `67160e9`).** Lo marcado [V] está verificado; si no calza con lo
-> que dejen F-plat-2, F-mesa-v0 o F-plat-4, gana el código: anotarlo en el commit y no inventar.
+> Una fase = un commit, **sin push**. **Con migración** (`down_revision = "e4a7c2f9d1b3"`, la cabeza actual [V]).
+> Se implementa **sobre `main`**, en la carpeta normal: F-plat-4 y F-mesa-v0 ya están en `main` (la idea de worktree
+> paralelo de §4-bis quedó obsoleta). Origen: `17-plan` §7 (decisión de Boris, 4-nov noche).
+> **Revisado contra el código el 5-nov-2026 (después de `5d9b36b` F-mesa-v0 y F-tasa-respuesta).** Lo marcado [V]
+> está verificado. Si algo no calza con el código, gana el código: anotarlo en el commit y no inventar.
+> **Leer primero §6 «Revisión 5-nov»: corrige y precisa partes de §0–§5.**
 
 ## Objetivo
 Saber **contra quién competimos, dónde y cómo**: quién gana qué, a qué precio relativo, con qué compradores y en
@@ -32,8 +32,8 @@ llevará a licitaciones: la lógica no debe depender de nada propio de CA (ver �
   `familia_alimento` (`app/catalogos/mercado.py`). **RUT:** hay tres normalizadores [V] (`app/matching/engine.py:
   normalizar_rut`, `app/mercado/proveedores.py: normalizar_rut`, `app/catalogos/mercado.py: rut`): usar el de
   `app/mercado/proveedores.py` y anotar en el commit si los otros difieren en algún caso.
-- Medir antes de diseñar: cuántos meses completos de `ca_cotizaciones` hay en Neon dev (el backfill sigue llenando
-  la historia; `meses_completos`) y cuántos RUT distintos. Anotarlo en el commit.
+- Medir antes de diseñar: ver §6.1 (datos reales de producción; Neon dev puede no responder desde la máquina de
+  Claude Code y tiene menos historia).
 
 ## 1. Cambios
 
@@ -109,6 +109,79 @@ Changelog ("Competencia y mapa de mercado"). `00-estado.md`. Commit:
 `F-plat-comp: análisis de competencia, mapa de mercado y variables para P(ganar)`.
 
 ## 5. Pasos de Boris
-1. Deploy de día con `GH mercado` en pausa (migración). 2. `python -m app.ingest run-once mercado-competencia
---completo` desde el PC. 3. Revisar `/estrategia` y 5 perfiles de competidores que el equipo conozca: ¿calza con lo
-que saben del mercado? Anotar discrepancias.
+1. Deploy de día, antes de las 22:30, con `GH mercado` pausado y Actions vacío (la migración toma locks); en el log
+de Render, un `Running upgrade e4a7c2f9d1b3 -> …`; reactivar `GH mercado`.
+2. Carga completa desde el PC contra producción:
+   ```powershell
+   $env:DATABASE_URL = ((Get-Content .env | Select-String '^DATABASE_URL_PROD=').Line -split '=',2)[1]
+   python -m app.ingest run-once --job mercado-competencia --completo --esperar-lock-min 10
+   Remove-Item Env:DATABASE_URL
+   ```
+3. Revisar `/estrategia` y 5 perfiles de competidores que el equipo conozca: ¿calza con lo que saben del mercado?
+   Anotar discrepancias.
+
+## 6. Revisión 5-nov (Cowork, contra el código en `main` + F-mesa-v0 + F-tasa-respuesta) — manda sobre §0–§5
+
+### 6.1 Datos reales (producción, corrida `mercado-indices --completo` del 5-nov) [V]
+- Dataset de F-plat-4: **1.194 CA cerradas con ofertas, 6.987 ofertas**. CA con ≥ 2 oferentes: **0 de mayo a
+  septiembre y 775 en octubre**. La historia de ofertas empieza en la práctica en **octubre de 2026**; el backfill de
+  detalles la va extendiendo hacia atrás (más rápido desde F-tasa-respuesta).
+- `evaluacion.elegibilidad` exige ≥ 50 CA con ≥ 2 oferentes en el mes **y ≥ 3 meses previos** con ≥ 20 CA
+  (`MIN_MESES_PREVIOS = 3`, `app/mercado/evaluacion.py`) [V]. Hoy **ningún mes es evaluable** y el modelo activo es
+  `base`.
+- Consecuencias para el juez (§2), sin aflojar metas:
+  - **Aporte al modelo (Brier con y sin):** usar exactamente la elegibilidad y el walk-forward de F-plat-4. Si no
+    hay meses evaluables, las variables quedan **registradas pero fuera del modelo**, y el commit dice
+    «Brier con/sin: pendiente, 0 meses evaluables». No crear una evaluación paralela más laxa.
+  - **Predicción de competidores:** puede correr con 1 mes previo (es un ranking, no el modelo). Reportar por mes
+    con su `n` y marcar `datos_insuficientes` si el mes evaluado tiene < 50 CA con ≥ 2 oferentes. Hoy se espera
+    solo noviembre (entrenado con octubre) y parcial: anotarlo.
+  - Cuadratura de `n_ganadas`: sí se puede verificar ya.
+
+### 6.2 Reutilizar lo que dejaron F-plat-4 y F-mesa-v0 [V]
+- **Comprador:** `app/mercado/comprador.py: clave_unidad(organismo_rut, unidad_compra)` es la ÚNICA clave. En
+  `competencia_mes` guardar esa clave como columna (`clave_comprador`, string) además de `organismo_rut`; no armar
+  `organismo_rut + unidad_norm` por otro camino.
+- **Familia:** usar `familia_de_codigo` / `familia_de_ca` de `app/mercado/adjudicacion.py` (las mismas que usan el
+  modelo y la mesa, `mesa_dia.familias_por_ca`), no `grupo_de`/`familia_alimento` directo. Así la familia que ve el
+  usuario en `/mesa` es la misma con la que se filtra en `/competencia` y `/estrategia`.
+- **Regla de elección F-merc-1c:** hoy está implementada **dos veces** (`comprador._elegir` e
+  `indice._elegir_por_rut`). No escribir una tercera: dejar una sola función pública (p. ej. en `comprador.py`) y que
+  `indice.py`, `comprador.py` y `competencia.py` la usen. Si las dos actuales difieren en algún caso (p. ej. precio
+  `None`), anotarlo en el commit y cubrirlo con un test.
+- **Variables para el modelo:** el punto de extensión es `registrar_variable(nombre, extractor)` sobre `VARIABLES` en
+  `adjudicacion.py`, y se piden con `entrenar_logistico(filas, variables=(*VARIABLES_BASE, ...))` [V]. Usarlo; no
+  tocar `VARIABLES_BASE`.
+- **Wilson:** si ya existe un intervalo de Wilson en `app/mercado/`, reutilizarlo; si no, uno solo en `competencia.py`.
+
+### 6.3 RUT
+- `ca_cotizaciones.rut_proveedor` se guarda **tal como viene de la API** (`app/ingest/mercado.py`) [V], y
+  `clave_unidad` usa `indice._rut` (sin puntos ni espacios, en mayúscula; **no** agrega guion). Ya son cuatro
+  normalizadores. Para el RUT del **competidor** y `empresas.rut` usar `app/mercado/proveedores.py:
+  normalizar_rut`; si lanza `ValueError`, caer a `indice._rut` y contar el caso (`ruts_no_validos` en el resumen).
+  Usar el mismo normalizador en `historial_comprador` (top proveedores de la mesa) para que el enlace de la mesa a
+  `/competencia/{rut}` siempre encuentre al competidor. Medir en los datos cuántos RUT cambian de forma entre
+  normalizadores y anotarlo. La clave de comprador **no** se toca (cambiarla movería el modelo de F-plat-4).
+
+### 6.4 UI
+- **No hay librería de gráficos** en la plataforma [V] (`app/api/static`: solo JS propio). La tendencia mensual va
+  como barras con CSS o SVG inline generado en la plantilla, sin dependencias nuevas.
+- Enlace desde la mesa: en `_mesa_comprador.html` (desplegable del historial), enlazar a
+  `/competencia?comprador=<clave>&familia=<familia de la tarjeta>`. Si la tarjeta dice «Varias» o «Sin productos»,
+  enlazar sin familia. Cada proveedor del top enlaza a `/competencia/{rut}`.
+- Queries de la UI solo sobre `competencia_mes` (y `oc_lineas_ca` para la ubicación), por `rut` y por
+  `clave_comprador`; ningún request recorre `ca_cotizaciones`.
+
+### 6.5 Job y operación
+- `mercado-competencia` se registra en `_JOBS` de `app/ingest/__main__.py` con `_locked(...)`, igual que
+  `mercado-indices` [V], y acepta `--completo`.
+- Workflow: agregarlo a `mercado-indices.yml` después de `mercado-indices` (`jobs: "mercado-indices
+  mercado-competencia"`). Medir la duración del recálculo de 2 meses en la base de tests con volumen sintético
+  parecido al real (unas 1.200 CA cerradas al mes, 7 ofertas por CA) y subir `timeout_min` si hace falta. Recordar
+  que `mercado-indices --completo` tardó 19 min en producción: si la suma diaria pasa de ~15 min, proponer un
+  workflow propio en vez de alargar el lock de las 07:45. Documentar en `operacion-disparos.md`.
+- Regla 11: medir bytes por fila y estimar el total a 12 meses con el volumen real de §6.1; anotarlo en el commit.
+
+### 6.6 Fuera de alcance
+Licitaciones (regla 24), exportar perfiles en bloque, IA. No cambiar `MIN_MESES_PREVIOS` ni la elegibilidad de
+F-plat-4.

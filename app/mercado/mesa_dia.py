@@ -139,6 +139,19 @@ def familias_por_ca(
     return out
 
 
+def familias_de_ca(session: Session, codigo: str) -> list[str]:
+    """Familias distintas de UNA CA, como `familias_por_ca` (la más frecuente primero)."""
+    cuenta = Counter(
+        familia_de_codigo(c, n)
+        for c, n in session.execute(
+            select(CaProducto.codigo_producto, CaProducto.nombre).where(
+                CaProducto.ca_codigo == codigo
+            )
+        )
+    )
+    return [f for f, _ in sorted(cuenta.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
 def etiqueta_familia(familias: list[str]) -> str:
     if not familias:
         return "Sin productos"

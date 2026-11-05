@@ -28,6 +28,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from operator import itemgetter
 from typing import Any, NamedTuple
 
 from sqlalchemy import select
@@ -36,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, G_ALIM, grupo_de, norm
 from app.catalogos.territorio_nuble import REGION_NUBLE, comuna_canonica, provincia_de
 from app.mercado.comprador import clave_unidad  # única definición (F-mesa-v0)
+from app.mercado.eleccion import elegir_por_rut  # única regla F-merc-1c (F-plat-comp)
 from app.mercado.indice import (
     LOTE,
     IndiceMemoria,
@@ -541,12 +543,7 @@ def _ca_dataset(
     lineas: list[tuple[int, float]] | None,
 ) -> CaDataset | None:
     # Regla de elección F-merc-1c con la oferta completa: la seleccionada; si no, la más barata.
-    elegida: dict[str, tuple[str, bool | None, float, bool | None]] = {}
-    for o in ofertas:
-        act = elegida.get(o[0])
-        s, s_act = o[1] is True, act is not None and act[1] is True
-        if act is None or (s and not s_act) or (s == s_act and o[2] < act[2]):
-            elegida[o[0]] = o
+    elegida = elegir_por_rut(ofertas, itemgetter(0), itemgetter(1), itemgetter(2))
     if not any(o[1] is True for o in elegida.values()):
         return None  # sin ganador conocido
     med = statistics.median(o[2] for o in elegida.values())

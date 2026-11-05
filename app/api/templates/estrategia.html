@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado, vacio %}
+{% from "_competencia_macros.html" import pie %}
+{% block title %}Estrategia — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado("Estrategia", "Mapa de mercado: cada comprador × familia de tu territorio, cuánto compra y cómo compite.") }}
+
+<form method="get" action="/estrategia" class="card card-body mb-3" aria-label="Filtros del mapa">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label small mb-1" for="est-familia">Familia</label>
+      <select class="form-select form-select-sm" id="est-familia" name="familia">
+        <option value="">Todas</option>
+        {% for f in mapa.familias %}<option value="{{ f }}" {% if familia == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small mb-1" for="est-orden">Ordenar por</label>
+      <select class="form-select form-select-sm" id="est-orden" name="orden">
+        {% for clave, texto in [("monto", "Monto adjudicado"), ("n_ca", "N.º de CA"), ("oferentes", "Oferentes por CA"),
+                                ("un_oferente", "% con un solo oferente"), ("desiertas", "% desiertas"),
+                                ("no_barato", "% en que no ganó el más barato")] %}
+        <option value="{{ clave }}" {% if orden == clave %}selected{% endif %}>{{ texto }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-auto d-flex gap-2">
+      <button class="btn btn-primary btn-sm" type="submit">Aplicar</button>
+      <a class="btn btn-outline-secondary btn-sm" href="/estrategia">Limpiar</a>
+    </div>
+  </div>
+</form>
+
+{% if mapa.filas %}
+<p class="text-muted small mb-2">{{ mapa.total | numero }} combinaciones comprador × familia{% if mapa.total > mapa.filas | length %} (se muestran las primeras {{ mapa.filas | length }}){% endif %}.
+  «No ganó el más barato» alto = el comprador premia otra cosa además del precio.</p>
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <caption class="visually-hidden">Mapa de mercado</caption>
+  <thead><tr>
+    <th scope="col">Comprador</th><th scope="col">Familia</th>
+    <th scope="col" class="text-end">Monto adjudicado</th><th scope="col" class="text-end">CA</th>
+    <th scope="col" class="text-end">Oferentes (mediana)</th><th scope="col" class="text-end">Un oferente</th>
+    <th scope="col" class="text-end">Desiertas</th><th scope="col">Competidor dominante</th>
+    <th scope="col" class="text-end">No ganó el más barato</th>
+  </tr></thead>
+  <tbody>
+  {% for f in mapa.filas %}
+  <tr>
+    <td><a href="/competencia?{{ {'comprador': f.clave, 'familia': f.familia} | urlencode }}">{{ f.nombre or f.clave }}</a></td>
+    <td>{{ f.familia }}</td>
+    <td class="text-end num">{{ f.monto | clp }}</td>
+    <td class="text-end num">{{ f.n_ca | numero }}</td>
+    <td class="text-end num">{{ ('%g' % f.oferentes) | replace('.', ',') if f.oferentes is not none else '—' }}</td>
+    <td class="text-end num">{{ f.pct_un_oferente | pct }}</td>
+    <td class="text-end num">{{ f.pct_desiertas | pct }}</td>
+    <td>{% if f.dominante %}<a href="/competencia/{{ f.dominante.rut | urlencode }}">{{ f.dominante.nombre }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+    <td class="text-end num">{{ f.pct_no_mas_barato | pct }}{% if f.n_2mas_g %} <span class="text-muted small">(n = {{ f.n_2mas_g }})</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+{{ vacio("Todavía no hay mapa de mercado para tus regiones: lo calcula el job diario después del índice de precios.") }}
+{% endif %}
+{{ pie(meses, regiones_texto) }}
+{% endblock %}

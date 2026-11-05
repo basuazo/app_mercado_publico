@@ -1,4 +1,4 @@
-{# Historial descriptivo del comprador (F-mesa-v0). El análisis de competencia es de F-plat-comp. #}
+{# Historial descriptivo del comprador (F-mesa-v0); enlaza al análisis de competencia (F-plat-comp). #}
 {% if h.n_ca == 0 %}
 <p class="mb-0 text-muted">Este comprador no tiene Compras Ágiles cerradas en los últimos 12 meses en nuestros datos.</p>
 {% else %}
@@ -14,11 +14,12 @@
 <p class="mb-1 fw-semibold">Proveedores que más le ganaron</p>
 <ol class="mb-1 ps-3">
   {% for rut, nombre, n in h.top_proveedores %}
-  <li>{{ nombre }} <span class="text-muted">({{ rut }})</span> — {{ n }} adjudicaci{{ 'ón' if n == 1 else 'ones' }}</li>
+  <li><a href="/competencia/{{ rut | urlencode }}">{{ nombre }}</a> <span class="text-muted">({{ rut }})</span> — {{ n }} adjudicaci{{ 'ón' if n == 1 else 'ones' }}</li>
   {% endfor %}
 </ol>
 {% else %}
 <p class="mb-1 text-muted">Sin adjudicaciones conocidas en el período.</p>
 {% endif %}
 {% endif %}
+{% if url_competencia %}<p class="mb-1"><a href="{{ url_competencia }}">Ver competidores de este comprador →</a></p>{% endif %}
 <p class="mb-0 text-muted">Últimos 12 meses · Fuente: Dirección ChileCompra</p>
