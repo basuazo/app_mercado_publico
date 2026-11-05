@@ -27,11 +27,14 @@
   - `oc_lineas_ca`: `comuna_compra`, `rut_unidad`, `comuna_proveedor`, `region_proveedor`, `proveedor_local`,
     `precio_base` y `base` (kg|L|u).
   - `ca_cotizacion_productos` no tiene vínculo con `ca_lineas`: se une por `(ca_codigo, codigo_producto)`.
-- **Dependencia: Python puro (recomendación de Cowork, 4-nov; Boris confirma antes de pasar el prompt).** La logística con L2 se ajusta
-  por IRLS/Newton con ~20 variables (sistema de 20×20 por eliminación gaussiana) sobre < 100.000 filas: segundos.
-  Sin `numpy`, que no está en el lock [V] y además cargaría ~30 MB en el proceso web de Render (512 MB), porque
-  `p_ganar` se llama desde la web. Si el ajuste no converge en Python puro, proponer `numpy` en el commit
-  con números y **no** agregarlo sin permiso.
+- **Dependencia: Python puro (decidido por Boris, 4-nov noche).** La logística con L2 se ajusta por IRLS/Newton con
+  ~20–30 variables (sistema chico por eliminación gaussiana) sobre < 100.000 filas: segundos a un par de minutos en
+  el job. La web solo evalúa coeficientes ya guardados (producto punto + sigmoide). Motivo: una dependencia menos
+  (`numpy` no está en el lock [V]); la RAM de Render no es el argumento, porque el entrenamiento corre en Actions.
+  Si el ajuste no converge o tarda más de 5 min, proponer `numpy` **solo para el job** (import local, nunca en la
+  web) en el commit, con números, y **no** agregarlo sin permiso.
+- **Paralelo con F-plat-comp (`17-plan` §7).** Esta fase se audita primero. Dejar en `adjudicacion.py` un punto
+  claro donde F-plat-comp agregará variables de competencia (lista de variables configurable, no columnas fijas).
 
 ## 1. Cambios
 

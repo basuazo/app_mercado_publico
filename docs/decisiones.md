@@ -178,3 +178,11 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   nuevo). Tipografía Inter autoalojada (`static/fonts/`, OFL; sin CDN de fuentes). Barra lateral de 232 px (offcanvas < 992 px);
   el admin ve «Administración» (Empresas, Usuarios, Salud, Archivo con sus subpáginas). El modal de onboarding del feed
   antiguo solo lo ve el admin en las pantallas de Archivo. Sin modo oscuro. Colores y densidad: a ajustar tras la revisión de Boris.
+- **Foco de la plataforma: pronosticar y diseñar estrategias para adjudicar** (Boris, 4-nov noche; `17-plan` §7). La
+  corrección de líneas es el cimiento (estandarizar productos), no el fin. Se entrena con Compra Ágil y, cuando el método
+  funcione, se lleva a licitaciones; reabrir licitaciones exige cambiar la regla 24 y es otra decisión. Consecuencias:
+  fase nueva **F-plat-comp** (competencia: ficha de competidor, mapa comprador × competidor, variables para el modelo),
+  en paralelo con F-plat-4; **vista de estrategia** (compradores × familia) dentro de F-plat-5; módulos de `app/mercado/`
+  con "proceso/oferta/comprador" genéricos para portarlos a licitaciones.
+- **Mesa v0 sí** (Boris, 4-nov noche): CA vigentes de Ñuble sin predicción, antes de F-plat-4, para que el equipo use la
+  plataforma con CA vivas. Orden: F-plat-2 → mesa v0 → F-plat-4 ∥ F-plat-comp → F-plat-5 ampliada ∥ F-plat-6 → F-plat-7.

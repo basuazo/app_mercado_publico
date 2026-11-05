@@ -8,6 +8,17 @@
 > sección "Revisión 4-nov" manda sobre el resto del prompt donde choquen. Si algo no calza con lo que dejen F-plat-1, 2
 > o 4, gana el código: anotarlo en el commit y no inventar.
 
+## Revisión 4-nov noche (Cowork) — manda sobre todo lo demás
+1. **`/mesa` ya existe** (F-mesa-v0, `app/api/routes/mesa_dia.py`) con vigentes, filtros, banderas e historial del
+   comprador, y `clave_comprador` en `app/mercado/comprador.py`. Esta fase **amplía** esa pantalla (precio sugerido,
+   margen, P(ganar), ofertas propias, sombra); no la reescribe.
+2. **Competencia:** los "competidores probables" de la tarjeta y la pestaña Comprador usan `competidores_de` y
+   `perfil_competidor` de F-plat-comp (`app/mercado/competencia.py`); no se recalcula desde las ofertas crudas.
+3. **Vista de estrategia:** `/estrategia` (F-plat-comp) se completa acá con P(ganar) al precio sugerido y margen
+   esperado por comprador × familia, usando los costos de la empresa. Es la pantalla de "a quién apuntamos, en qué
+   rubro y a qué precio".
+4. Prerrequisitos nuevos: F-mesa-v0 y F-plat-comp, además de F-plat-4.
+
 ## Revisión 4-nov (Cowork) — leer primero
 1. **Prerrequisito nuevo: F-merc-3 (detalle de CA vigentes).** Hoy nadie baja el detalle de las CA abiertas [V]:
    `cola_mercado_ca` (`app/ingest/mercado.py`) solo toma terminales o `publicada` con el cierre ya pasado, y el job

@@ -313,3 +313,45 @@ modo sombra de F-plat-5 (4 semanas) sigue siendo el plazo largo y no se acorta c
 | Confirmar que no hay API de oferta en la guía (o que sí la hay) | Alcance de F-plat-5 |
 
 *Fuente de los datos de dominio: Dirección ChileCompra.*
+
+## 7. Revisión 4-nov (noche): foco en pronóstico y estrategia de adjudicación — manda sobre §4 donde choque
+
+*Boris con Claude (Cowork). Pendiente de que Boris la apruebe para `decisiones.md`.*
+
+**Foco (Boris, 4-nov).** La corrección histórica de líneas sirve para estandarizar productos; **el objetivo es
+pronosticar y diseñar estrategias para adjudicar**. Se entrena con Compra Ágil (Ñuble) y, cuando el método
+funcione, se lleva a **licitaciones**. Mientras dure el pivote, la regla 24 sigue igual: la cuota de la API es
+solo para CA.
+
+**Diagnóstico del plan contra ese foco.**
+- Precio esperado, P(ganar), margen con proveedores propios y demanda: cubiertos por C5, C6 y C7.
+- **Competencia: débil.** Hoy se reduce a "top 3 competidores probables" en la tarjeta de la mesa (F-plat-5 rev.
+  §10), `es_local` en el modelo (F-plat-4) y "demanda desierta" (F-plat-6). No hay vista de competidor ni
+  variables de competidores en el modelo.
+- **Visibilidad tardía.** La primera pantalla de CA vigentes llega en F-plat-5, la sexta de ocho fases. Hasta
+  entonces el equipo solo corrige históricas.
+
+**Cambios.**
+1. **F-plat-comp (nueva, Opus, en paralelo con F-plat-4: ventana B').** Lee solo `ca_cotizaciones` y sus productos
+   (`rut_proveedor`, `razon_social`, `es_emt`, ganador [V, `app/models/tables.py`]) y `compras_agiles`. Casi todo
+   se compara **dentro de la misma CA**, así que no depende del catálogo canónico.
+   - Ficha de competidor (por RUT): CA en que participa, tasa de adjudicación, precio relativo típico (mediana de
+     `log(precio / mediana de la CA)`), compradores y familias donde domina, tendencia mensual.
+   - Mapa comprador × competidor: quién le gana a quién, CA con un solo oferente o desiertas, y compradores que no
+     premian al más barato (el 41 % de §1).
+   - Variables para el modelo de F-plat-4 (vía la misma `clave_comprador` de F-plat-5 rev. §10): competidores
+     habituales esperados y su agresividad. Entran al logístico solo si mejoran el Brier en el walk-forward.
+   - Juez: el competidor más frecuente de cada comprador × familia predice, en el mes M, a alguien que realmente
+     oferta en ≥ 60 % de las CA de ese par (meta a medir; se reporta aunque no llegue).
+2. **Vista de estrategia (en F-plat-5 ampliada).** Compradores × familia: monto anual, recurrencia, ofertas
+   típicas, competidor dominante, P(ganar) y margen al precio sugerido. Es la pantalla de "a quién apuntamos, en
+   qué rubro y a qué precio"; la mesa del día queda como la vista táctica.
+3. **Mesa v0 (opcional, Sonnet, corta, sin migración si alcanza).** CA vigentes de Ñuble con cierre, comprador,
+   líneas, banderas y el historial del comprador, sin predicción. Adelanta el uso real y hace que los anexos se
+   suban sobre CA vivas.
+4. **Portabilidad a licitaciones.** Los módulos de `app/mercado/` (índice, adjudicación, competencia, demanda)
+   reciben "proceso", "oferta" y "comprador" genéricos; lo propio de CA queda en los adaptadores. Reabrir
+   licitaciones exige cambiar la regla 24 y es otra decisión de Boris.
+
+**Orden nuevo.** F-plat-2 (en curso) → [mesa v0, si Boris la quiere] → **F-plat-4 ∥ F-plat-comp** → F-plat-5
+ampliada (mesa + estrategia + competencia, sombra 4 semanas) ∥ F-plat-6 → F-plat-7 → F-retiro.
