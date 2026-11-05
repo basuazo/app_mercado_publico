@@ -13,6 +13,11 @@ from tests import pg_url
 
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Guardia de producción y de migraciones, antes de que corra ningún test."""
+    # Los tests nunca ven la key real de OpenRouter del .env: una variable de entorno
+    # (aun vacía) manda sobre el .env en pydantic-settings, así que cubre todo
+    # Settings() de la suite, no solo el de un fixture.
+    os.environ["OPENROUTER_API_KEY"] = ""
+    os.environ["LLM_MODELO_EXTRACCION"] = ""
     url = pg_url.resolver_url()
     problema = pg_url.motivo_de_aborto(url, pg_url.resolver_url_prod())
     if problema:
