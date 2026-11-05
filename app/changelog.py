@@ -15,6 +15,19 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 11, 5),
+        titulo="Precio esperado y probabilidad de adjudicación por Compra Ágil",
+        descripcion=(
+            "La plataforma ya calcula, para cada producto del catálogo, el precio al que se gana y "
+            "el de las ofertas por comuna, provincia y región, y estima la probabilidad de ganar una "
+            "Compra Ágil según el precio que ofrezcas. Con los costos y tarifas de tu empresa calcula "
+            "el margen esperado (si falta algún costo, el margen queda sin calcular, nunca en cero). "
+            "Cada día se mide contra las adjudicaciones reales del mes anterior y el administrador ve "
+            "en Salud si se cumplen las metas. Las pantallas llegan en la próxima versión. "
+            "Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 11, 4),
         titulo="Anexos largos: se leen las primeras 40 páginas",
         descripcion=(

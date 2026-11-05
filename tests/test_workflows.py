@@ -108,6 +108,8 @@ _PROGRAMADOS = {
     "mercado-nocturno.yml",
     # F-merc-2: datos abiertos, 07:20 Chile.
     "mercado-oc.yml",
+    # F-plat-4: índice y modelo de adjudicación, 07:45 Chile.
+    "mercado-indices.yml",
 }
 
 

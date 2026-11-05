@@ -32,6 +32,7 @@ from app.ingest.orchestrator import (
     run_mercado_backfill,
     run_mercado_ca,
     run_mercado_catalogo,
+    run_mercado_indices,
     run_mercado_oc,
     run_plan_anual,
     run_resumen,
@@ -63,6 +64,7 @@ _JOBS = (
     "mercado-backfill",
     "mercado-oc",
     "mercado-catalogo",
+    "mercado-indices",
 )
 
 _log = get_logger(__name__)
@@ -142,6 +144,7 @@ def cmd_run_once(
     esperar_lock_min: int = 0,
     desde: str | None = None,
     inicial: bool = False,
+    completo: bool = False,
 ) -> None:
     setup_logging()
     settings = get_settings()
@@ -204,6 +207,11 @@ def cmd_run_once(
         "mercado-catalogo": _locked(
             "mercado-catalogo", lambda: run_mercado_catalogo(settings, engine, inicial=inicial)
         ),
+        # F-plat-4: solo base de datos. `--completo` recalcula todo el índice y evalúa 6 meses
+        # (desde el PC con DATABASE_URL de producción); el disparo diario va a las 07:45 Chile.
+        "mercado-indices": _locked(
+            "mercado-indices", lambda: run_mercado_indices(settings, engine, completo=completo)
+        ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.
@@ -251,6 +259,10 @@ def cmd_run_once(
         return
     for nombre, causa in _cortes(job, result):
         print(f"::warning::[{nombre}] cortado por {causa}; avance parcial guardado")
+    # F-plat-4: metas no cumplidas y otros avisos se ven en Actions, sin poner el job en rojo.
+    if isinstance(result, dict):
+        for aviso in result.get("avisos") or []:
+            print(f"::warning::[{job}] {aviso}")
     print(f"[{job}] {result}")
 
 
@@ -335,6 +347,11 @@ def main() -> None:
         help="Recorre todas las CA, no solo las cambiadas (solo job=mercado-catalogo)",
     )
     once.add_argument(
+        "--completo",
+        action="store_true",
+        help="Índice completo y evaluación de los últimos 6 meses (solo job=mercado-indices)",
+    )
+    once.add_argument(
         "--esperar-lock-min",
         type=_minutos_no_negativos,
         default=0,
@@ -357,6 +374,7 @@ def main() -> None:
             esperar_lock_min=args.esperar_lock_min,
             desde=args.desde,
             inicial=args.inicial,
+            completo=args.completo,
         )
     elif args.cmd == "run-scheduler":
         cmd_run_scheduler()

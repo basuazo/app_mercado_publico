@@ -313,8 +313,13 @@ def test_clave_de_cache_distinta_para_dos_escaneados_distintos():
 
 
 def test_sin_key_o_sin_modelo_el_cliente_esta_apagado(engine):
-    assert not orc.OpenRouterClient(_settings(llm_modelo_extraccion="m"), engine).habilitado
-    assert not orc.OpenRouterClient(_settings(openrouter_api_key=_KEY), engine).habilitado
+    # Explícitos: el .env de desarrollo puede traer una key o un modelo reales.
+    assert not orc.OpenRouterClient(
+        _settings(openrouter_api_key="", llm_modelo_extraccion="m"), engine
+    ).habilitado
+    assert not orc.OpenRouterClient(
+        _settings(openrouter_api_key=_KEY, llm_modelo_extraccion=""), engine
+    ).habilitado
 
 
 # ---------------------------------------------------------------------------

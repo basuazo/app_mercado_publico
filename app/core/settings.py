@@ -231,6 +231,10 @@ class Settings(BaseSettings):
     mercado_anexos_max: int = Field(
         default=20, description="Tope de anexos descargados por corrida de `mercado-ca`"
     )
+    # F-plat-4: costo financiero del margen (30 días de capital de trabajo × esta tasa).
+    costo_financiero_mensual: float = Field(
+        default=0.015, ge=0, description="Tasa mensual del costo financiero (0,015 = 1,5 %)"
+    )
 
     # --- Estados vencidos (F-estados-vencidos) ---
     estados_vencidos_max_requests: int = Field(

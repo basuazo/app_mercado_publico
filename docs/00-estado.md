@@ -18,6 +18,27 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-4 (5-nov, commit local sin push hasta auditar; migración `e4a7c2f9d1b3`, cuelga de `c5f1a8d3e7b9`)
+Precio esperado, P(ganar) y evaluación walk-forward (`prompt-F-plat-4.md`, con su Revisión 5-nov). Solo backend: la UI es F-plat-5.
+**Esquema:** `precio_indice` (producto × `comuna:|provincia:|region:` × mes; el país se lee de `precio_referencia`),
+`modelo_adjudicacion` (logístico y línea base, uno `activo`), `evaluacion_modelo` (métricas por mes; «ganables» por empresa),
+`compras_agiles.comuna_inferida`/`comuna_fuente` (`oc|texto|NULL`; se escriben con `actualizado_en` fijo).
+**Código:** `app/catalogos/territorio_nuble.py` (comunas → provincias, claves de `PROVINCIAS_NUBLE`; lista [I] a confirmar),
+`app/mercado/indice.py` (unión ofertas × líneas `ok`, `referencia_precio` jerárquica con los 3 meses anteriores),
+`app/mercado/adjudicacion.py` (logística L2 en Python puro, registro de variables para F-plat-comp, `p_ganar`,
+`curva_p_ganar`, `evaluar_ca`), `app/mercado/evaluacion.py` (walk-forward y job), `query.py` (`evaluacion_ca`,
+`resumen_evaluacion_modelo`), bloque en `/salud`.
+**Job `mercado-indices`** (`mercado-indices.yml`, 07:45 Chile, sin crear en cron-job.org): índice de los últimos 3 meses,
+evaluación del último mes cerrado, reentrena y activa. `--completo`: índice entero y evaluación de 6 meses.
+**Medido (sintético, PC):** ajuste logístico de 168 mil ofertas y 62 columnas en 21 s (11 iteraciones), base en 4 s →
+`--completo` ≈ 7 ajustes ≈ 2,5 min de entrenamiento; diario ≈ 2 ajustes. Sin `numpy`.
+**Números reales de la evaluación:** pendientes de la corrida de Boris (`--completo` contra producción, paso 1 abajo).
+Sin migrar no se puede correr en Neon y el asistente no aplica migraciones en bases reales.
+**Pendiente de Boris:** (1) migración según `despliegue.md` y `python -m app.ingest run-once --job mercado-indices --completo`
+desde el PC; (2) pegar por mes Brier (≥ 2 ofertas, ex ante), intervalo 80 %, ganables, cobertura y `descartadas_anexo`;
+(3) crear `GH mercado-indices` a las 07:45 y medir la duración; (4) confirmar la lista de comunas por provincia;
+(5) decidir con los números si F-plat-5 entra en sombra con el logístico o con la base.
+
 ## F-plat-2 (4-nov, commit local sin push hasta auditar; migración `c5f1a8d3e7b9`)
 Anexos de CA → líneas con extracción asistida (OpenRouter) y revisión humana (`17-plan-pivote-plataforma-ca.md` §2 C3).
 **Esquema:** `ca_anexos` (metadatos + `texto_extraido` ≤ 50.000; **sin el binario**: se procesa en memoria), `llm_uso`

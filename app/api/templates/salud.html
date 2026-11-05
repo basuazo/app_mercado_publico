@@ -73,6 +73,54 @@
   </tbody>
 </table>
 
+<!-- Modelo de adjudicación y metas del peldaño 2 (F-plat-4) -->
+{% set ma = salud.modelo_adjudicacion %}
+<h5>Precio esperado y P(ganar)</h5>
+{% if ma.modelo_activo %}
+<p class="small text-muted mb-2">
+  Modelo activo: <strong>{{ 'logístico' if ma.modelo_activo.tipo == 'logistico' else 'línea base (ranking simple)' }}</strong>,
+  datos hasta {{ ma.modelo_activo.datos_hasta_mes }}, entrenado {{ ma.modelo_activo.entrenado_en }}
+  ({{ ma.modelo_activo.n_filas | numero }} ofertas).
+</p>
+{% else %}
+<p class="small text-muted mb-2">Sin modelo entrenado (job mercado-indices pendiente).</p>
+{% endif %}
+{% if ma.metas %}
+<table class="table table-sm table-bordered w-auto mb-2">
+  <caption class="small">Metas del mes {{ ma.ultimo_mes_evaluado }} (walk-forward)</caption>
+  <thead class="table-dark">
+    <tr><th scope="col">Meta</th><th scope="col">Valor</th><th scope="col">Umbral</th><th scope="col">Estado</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Intervalo 80 % acierta</td>
+      <td>{{ '%.1f %%' % (ma.metas.intervalo_80.valor * 100) if ma.metas.intervalo_80.valor is not none else '—' }}</td>
+      <td>≥ 70 %</td>
+      <td class="{{ 'text-success' if ma.metas.intervalo_80.cumple else 'text-danger' }}">{{ 'cumple' if ma.metas.intervalo_80.cumple else 'no cumple' }}</td>
+    </tr>
+    <tr>
+      <td>Brier (CA con ≥ 2 ofertas)</td>
+      <td>{{ '%.3f' % ma.metas.brier.valor if ma.metas.brier.valor is not none else '—' }}</td>
+      <td>≤ 0,20</td>
+      <td class="{{ 'text-success' if ma.metas.brier.cumple else 'text-danger' }}">{{ 'cumple' if ma.metas.brier.cumple else 'no cumple' }}</td>
+    </tr>
+    {% for g in ma.metas.ganables %}
+    <tr>
+      <td>Ganables (empresa {{ g.empresa_id }})</td>
+      <td>{% if g.estado == 'sin_costos' %}sin costos{% elif g.valor is not none %}{{ '%.1f %%' % (g.valor * 100) }}{% else %}—{% endif %}</td>
+      <td>≥ 10 %</td>
+      <td class="{{ 'text-muted' if g.cumple is none else ('text-success' if g.cumple else 'text-danger') }}">{{ '—' if g.cumple is none else ('cumple' if g.cumple else 'no cumple') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if ma.meses_sin_datos_suficientes %}
+<p class="small text-muted mb-4">Meses sin datos suficientes (el backfill sigue llenando la historia): {{ ma.meses_sin_datos_suficientes | join(', ') }}</p>
+{% else %}
+<div class="mb-4"></div>
+{% endif %}
+
 <!-- Vocabulario por rubro (F-ca-explorar) -->
 <h5>Vocabulario por rubro</h5>
 <p class="small text-muted mb-4">

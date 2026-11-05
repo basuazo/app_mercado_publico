@@ -525,6 +525,7 @@ def test_salud_muestra_tablas_de_mercado(
     assert set(por_tabla) == {
         "oc_lineas_ca",
         "precio_referencia",
+        "precio_indice",  # F-plat-4
         "ca_cotizaciones",
         "ca_cotizacion_productos",
     }

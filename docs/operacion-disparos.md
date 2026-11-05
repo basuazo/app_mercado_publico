@@ -76,6 +76,14 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — **F-merc-1, sin crear todavía** |
 | GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — **F-merc-2, sin crear todavía** (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
 | GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
+| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; ver nota abajo) |
+
+**`mercado-indices` (F-plat-4).** De noche no hay hueco: el lock lo tienen `mercado-nocturno` (22:30–06:45),
+`nocturno` (01:10), `retencion` (05:40) y `mercado-oc` (07:20); a las 04:00 saldría siempre `omitido`. A las 07:45
+choca con el disparo de `mercado` de la misma hora: el workflow espera el lock hasta 10 min. Medir la duración de
+las primeras corridas (`duracion_s` en el resultado y en `job_runs`): si pasa de ~10 min, los `mercado` que caigan
+en medio salen `omitido` (aceptado una vez al día; se ponen al día desde el cursor). Las metas no cumplidas salen
+como `::warning::` sin poner el job en rojo. La carga completa (`--completo`) se corre desde el PC.
 
 Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push
 (pasos en `00-estado.md`). Usan el mismo advisory lock que el resto: de noche `mercado-nocturno` lo

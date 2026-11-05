@@ -228,6 +228,10 @@ class CompraAgil(Base):
     # F-plat-2: una persona (o la extracción) resolvió el anexo y se borraron los
     # placeholders: `mercado-catalogo` no los vuelve a crear.
     anexo_resuelto_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # F-plat-4: la API no trae comuna. `comuna_fuente` = oc (la más frecuente de las OC del mismo
+    # comprador) | texto (nombrada en organismo o dirección) | NULL (no se pudo o no se calculó).
+    comuna_inferida: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    comuna_fuente: Mapped[str | None] = mapped_column(String(5), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -1055,6 +1059,72 @@ class LlmCache(Base):
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
 
+class PrecioIndice(Base):
+    """Índice robusto de precio NETO por unidad base (kg, L o u) por producto canónico (F-plat-4).
+
+    `ambito` = `comuna:<nombre>` | `provincia:<nombre>` | `region:<n>`. El nivel país no se
+    materializa: `referencia_precio` lo lee de `precio_referencia` (F-merc-2). Ganador y ofertas
+    salen de las cotizaciones (`ca_cotizacion_productos` × `ca_lineas` ok); donde no hay ninguna
+    cotización con ganador, el ganador sale de `oc_lineas_ca` (`fuente_ganador = 'oc'`).
+    Derivada: el job `mercado-indices` la reescribe por mes. Común a todas las empresas.
+    """
+
+    __tablename__ = "precio_indice"
+
+    producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id", ondelete="CASCADE"), primary_key=True
+    )
+    ambito: Mapped[str] = mapped_column(String(120), primary_key=True)
+    mes: Mapped[str] = mapped_column(String(7), primary_key=True)
+    n_ganador: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    p25_ganador: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mediana_ganador: Mapped[float | None] = mapped_column(Float, nullable=True)
+    p75_ganador: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n_ofertas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    p25_ofertas: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mediana_ofertas: Mapped[float | None] = mapped_column(Float, nullable=True)
+    p75_ofertas: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fuente_ganador: Mapped[str | None] = mapped_column(String(3), nullable=True)  # cot | oc
+
+
+class ModeloAdjudicacion(Base):
+    """Un modelo de P(ganar) entrenado por `mercado-indices` (F-plat-4). `tipo` = logistico | base
+    (ranking simple). Exactamente uno `activo`: el logístico solo si supera a la base en Brier."""
+
+    __tablename__ = "modelo_adjudicacion"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    tipo: Mapped[str] = mapped_column(String(12), nullable=False)
+    entrenado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    datos_hasta_mes: Mapped[str] = mapped_column(String(7), nullable=False)
+    n_filas: Mapped[int] = mapped_column(Integer, nullable=False)
+    coeficientes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    metricas: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class EvaluacionModelo(Base):
+    """Walk-forward por mes (F-plat-4): `modelo` = logistico | base | indice. Las métricas de
+    margen («ganables») son de una empresa (`empresa_id`, regla 26); el resto, comunes (NULL)."""
+
+    __tablename__ = "evaluacion_modelo"
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    mes: Mapped[str] = mapped_column(String(7), nullable=False)
+    modelo: Mapped[str] = mapped_column(String(12), nullable=False)
+    metrica: Mapped[str] = mapped_column(String(40), nullable=False)
+    valor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    detalle: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    empresa_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=True
+    )
+    calculado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+Index("ix_precio_indice_mes", PrecioIndice.mes)
+Index("ix_evaluacion_modelo_mes", EvaluacionModelo.mes)
+Index("ix_modelo_adjudicacion_activo", ModeloAdjudicacion.activo)
 Index("ix_ca_anexos_ca_codigo", CaAnexo.ca_codigo)
 Index("ix_ca_lineas_anexo_id", CaLinea.anexo_id)
 Index("ix_producto_alias_producto_id", ProductoAlias.producto_id)

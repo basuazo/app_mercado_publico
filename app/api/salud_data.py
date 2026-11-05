@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.api.query import resumen_evaluacion_modelo
 from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE
@@ -19,6 +20,7 @@ from app.models.tables import (
     CaCotizacionProducto,
     OcLineaCa,
     PlanCompraLinea,
+    PrecioIndice,
     PrecioReferencia,
     RubroVocabulario,
     SyncState,
@@ -94,6 +96,8 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
         "plan_anual": _plan_anual_salud(session),
         "vocabulario_rubros": _vocabulario_salud(session),
         "tablas_mercado": _tablas_mercado_salud(session),
+        # F-plat-4: metas del peldaño 2 en verde/rojo (no se aflojan: se reportan tal cual).
+        "modelo_adjudicacion": resumen_evaluacion_modelo(session),
     }
 
 
@@ -137,6 +141,7 @@ def _tablas_mercado_salud(session: Session) -> list[dict[str, Any]]:
     modelos = (
         ("oc_lineas_ca", OcLineaCa),
         ("precio_referencia", PrecioReferencia),
+        ("precio_indice", PrecioIndice),
         ("ca_cotizaciones", CaCotizacion),
         ("ca_cotizacion_productos", CaCotizacionProducto),
     )

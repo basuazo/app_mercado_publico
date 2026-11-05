@@ -244,6 +244,24 @@ def run_mercado_catalogo(
         return procesar_catalogo(session, regiones, inicial=inicial)
 
 
+def run_mercado_indices(
+    settings: Settings, engine: Engine, completo: bool = False
+) -> dict[str, Any]:
+    """Job `mercado-indices` (F-plat-4): comuna de las CA, índice de precios, evaluación
+    walk-forward y reentrenamiento del modelo de adjudicación. Solo base de datos: sin ticket,
+    sin cuota, sin red. `completo=True` recalcula el índice entero y evalúa los últimos 6 meses."""
+    from app.mercado.evaluacion import run_indices
+
+    regiones = regiones_activas_engine(engine, settings)
+    with Session(engine) as session:
+        return run_indices(
+            session,
+            regiones,
+            completo=completo,
+            tasa_financiera=settings.costo_financiero_mensual,
+        )
+
+
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
     """Job `vocabulario-rubros` (F-ca-explorar): regenera `rubro_vocabulario` desde
     `licitacion_items`. Solo base de datos: sin ticket, sin cuota, sin red."""

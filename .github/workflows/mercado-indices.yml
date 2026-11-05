@@ -1,0 +1,30 @@
+# Mercado índices (F-plat-4): comuna de las CA, índice de precios por producto × ámbito × mes,
+# evaluación walk-forward del último mes cerrado y reentrenamiento del modelo de P(ganar).
+# Solo base de datos: sin ticket, sin cuota, sin API.
+#
+# Disparo: desde cron-job.org, una vez al día a las 07:45 hora de Chile (workflow_dispatch),
+# después de `mercado-oc` (07:20). Documentado en docs/operacion-disparos.md. Sin `schedule`.
+# Choca con el `mercado` de las 07:45 (mismo advisory lock): espera el lock hasta 10 min. Si la
+# corrida pasa de ~10 min, los `mercado` que caigan en medio salen `omitido` (aceptado una vez al
+# día). La carga completa (`--completo`) se corre desde el PC con el CLI.
+name: mercado-indices
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "mercado-indices"
+      # 10 de espera del lock + índice de 3 meses + evaluación y dos entrenamientos en Python puro.
+      timeout_min: 40
+      esperar_lock_min: 10

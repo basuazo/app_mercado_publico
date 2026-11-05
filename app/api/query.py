@@ -30,12 +30,16 @@ from app.core.vigencia import (
 from app.matching.feedback import listar_descartadas, listar_feedback_usuario, obtener_feedback
 from app.matching.perfiles import listar_perfiles
 from app.matching.seguimiento import esta_guardada, listar_seguidas, obtener_seguimiento
+from app.mercado.adjudicacion import COSTO_FINANCIERO_DEFAULT, EvaluacionCA, evaluar_ca
+from app.mercado.evaluacion import metas_del_mes
 from app.models.enums import SECTOR_SIN_CLASIFICACION, EstadoOportunidad, ValorFeedback
 from app.models.tables import (
     CompraAgil,
+    EvaluacionModelo,
     InstitucionPAC,
     Licitacion,
     MatchFeedback,
+    ModeloAdjudicacion,
     OcLineaCa,
     OfertaCompetencia,
     OportunidadMatch,
@@ -1596,3 +1600,53 @@ def resumen_mercado(session: Session, region: int, desde: str, hasta: str) -> di
         xs = [v for v in oc_monto.values() if lo <= v < hi]
         resultado["tickets"].append({"banda": etiqueta, "oc": len(xs), "monto": sum(xs)})
     return resultado
+
+
+# ---------------------------------------------------------------------------
+# Precio esperado y P(ganar) por Compra Ágil (F-plat-4). Solo backend: la UI es F-plat-5.
+# ---------------------------------------------------------------------------
+
+
+def evaluacion_ca(
+    session: Session,
+    ca_codigo: str,
+    empresa_id: int,
+    *,
+    costo_financiero_mensual: float = COSTO_FINANCIERO_DEFAULT,
+) -> EvaluacionCA | None:
+    """Evaluación de una CA para UNA empresa (regla 26): costos, tarifas y margen salen solo de
+    `empresa_id`. La ruta debe pasar la empresa del usuario en sesión, nunca una del cliente."""
+    return evaluar_ca(
+        session, ca_codigo, empresa_id, costo_financiero_mensual=costo_financiero_mensual
+    )
+
+
+def resumen_evaluacion_modelo(session: Session) -> dict[str, Any]:
+    """Para /salud (solo admin): modelo activo, último mes evaluado y metas en verde/rojo."""
+    activo = session.execute(
+        select(ModeloAdjudicacion)
+        .where(ModeloAdjudicacion.activo.is_(True))
+        .order_by(ModeloAdjudicacion.entrenado_en.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    meses = session.execute(
+        select(EvaluacionModelo.mes, EvaluacionModelo.metrica).distinct()
+    ).all()
+    evaluados = sorted({m for m, met in meses if met != "sin_datos_suficientes"})
+    sin_datos = sorted({m for m, met in meses if met == "sin_datos_suficientes"})
+    tipo = activo.tipo if activo else "base"
+    ultimo = evaluados[-1] if evaluados else None
+    return {
+        "modelo_activo": None
+        if activo is None
+        else {
+            "tipo": activo.tipo,
+            "datos_hasta_mes": activo.datos_hasta_mes,
+            "entrenado_en": activo.entrenado_en.isoformat(),
+            "n_filas": activo.n_filas,
+            "brier_walk_forward": (activo.metricas or {}).get("brier_walk_forward"),
+        },
+        "ultimo_mes_evaluado": ultimo,
+        "metas": metas_del_mes(session, ultimo, tipo) if ultimo else None,
+        "meses_sin_datos_suficientes": sin_datos,
+    }
