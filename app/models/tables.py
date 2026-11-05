@@ -225,6 +225,9 @@ class CompraAgil(Base):
     detalle_lineas: Mapped[str] = mapped_column(
         String(12), nullable=False, default="sin_detalle", server_default="sin_detalle"
     )
+    # F-plat-2: una persona (o la extracción) resolvió el anexo y se borraron los
+    # placeholders: `mercado-catalogo` no los vuelve a crear.
+    anexo_resuelto_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -971,6 +974,11 @@ class CaLinea(Base):
     codigo_unspsc: Mapped[str | None] = mapped_column(String(20), nullable=True)
     origen: Mapped[str] = mapped_column(String(10), nullable=False, default="api")
     estado: Mapped[str] = mapped_column(String(10), nullable=False, default="pendiente")
+    # F-plat-2: anexo del que salió la línea (`origen = 'anexo'`, `n ≥ 1000`). NULL en las de
+    # la API, en las manuales y en el placeholder «sin detalle (anexo)».
+    anexo_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("ca_anexos.id", ondelete="SET NULL"), nullable=True
+    )
     revisado_por: Mapped[int | None] = mapped_column(
         BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
@@ -981,6 +989,74 @@ class CaLinea(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Anexos de Compra Ágil y uso del modelo de lenguaje (F-plat-2)
+# ---------------------------------------------------------------------------
+
+
+class CaAnexo(Base):
+    """Un anexo subido (o descargado) para una CA. SIN el binario (reglas 10 y 11): se procesa
+    en memoria y el original sigue en la ficha pública. Común a las empresas, como `ca_lineas`."""
+
+    __tablename__ = "ca_anexos"
+    __table_args__ = (
+        CheckConstraint(
+            "extraccion_estado IN ('pendiente', 'hecha', 'sin_presupuesto', 'error')",
+            name="estado",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo", ondelete="CASCADE"), nullable=False
+    )
+    nombre_original: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    tamano: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    paginas: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    escaneado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    texto_extraido: Mapped[str | None] = mapped_column(Text, nullable=True)  # ≤ 50.000
+    # NULL = lo descargó `mercado-ca` (§1.6).
+    subido_por: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    subido_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    # pendiente | hecha | sin_presupuesto | error
+    extraccion_estado: Mapped[str] = mapped_column(String(16), nullable=False, default="pendiente")
+    extraccion_modelo: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    extraccion_costo_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    extraccion_detalle: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class LlmUso(Base):
+    """Gasto del mes en OpenRouter (regla 10: el presupuesto vive en Postgres). Upsert por mes."""
+
+    __tablename__ = "llm_uso"
+
+    mes: Mapped[str] = mapped_column(String(7), primary_key=True)  # AAAA-MM, hora de Chile
+    requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_in: Mapped[int] = mapped_column(BigInt, nullable=False, default=0)
+    tokens_out: Mapped[int] = mapped_column(BigInt, nullable=False, default=0)
+    costo_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Algún costo del mes salió de la tarifa configurada y no de `usage.cost`.
+    estimado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class LlmCache(Base):
+    """Respuesta ya pagada: clave = sha256(modelo + versión del prompt + sha256 del contenido).
+    El mismo anexo nunca se paga dos veces, aunque llegue en otra CA."""
+
+    __tablename__ = "llm_cache"
+
+    clave: Mapped[str] = mapped_column(String(64), primary_key=True)
+    modelo: Mapped[str] = mapped_column(String(200), nullable=False)
+    respuesta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+Index("ix_ca_anexos_ca_codigo", CaAnexo.ca_codigo)
+Index("ix_ca_lineas_anexo_id", CaLinea.anexo_id)
 Index("ix_producto_alias_producto_id", ProductoAlias.producto_id)
 Index("ix_ca_lineas_producto_id", CaLinea.producto_id)
 Index("ix_ca_lineas_estado", CaLinea.estado)

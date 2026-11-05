@@ -14,27 +14,7 @@
 <div class="card mb-4">
   <div class="card-header">{% if confirmado %}Resultado{% else %}Vista previa (todavía no se guardó nada){% endif %}</div>
   <div class="card-body">
-    <ul class="mb-3">
-      <li>Proveedores nuevos: <strong>{{ resumen.proveedores_nuevos }}</strong>{% if resumen.proveedores_actualizados %} · con datos actualizados: {{ resumen.proveedores_actualizados }}{% endif %}</li>
-      <li>Productos nuevos: <strong>{{ resumen.productos_nuevos }}</strong></li>
-      <li>Precios cambiados: <strong>{{ resumen.precios_cambiados }}</strong></li>
-      {% if resumen.precios_historicos %}<li>Precios históricos agregados (fecha anterior a la vigente; el precio actual no cambia): <strong>{{ resumen.precios_historicos }}</strong></li>{% endif %}
-      <li>Filas sin cambios: {{ resumen.sin_cambios }}</li>
-      <li>Condiciones de proveedor actualizadas: {{ resumen.condiciones_actualizadas }}</li>
-      <li>Tarifas de logística: {{ resumen.tarifas_nuevas }} nuevas, {{ resumen.tarifas_actualizadas }} actualizadas</li>
-    </ul>
-    {% if resumen.ejemplos %}
-    <p class="small text-muted">Filas de ejemplo ignoradas ({{ resumen.ejemplos|length }} proveedor(es)): {{ resumen.ejemplos|join(", ") }}.</p>
-    {% endif %}
-    {% if resumen.errores %}
-    <div class="alert alert-warning">
-      <div class="fw-semibold">{{ resumen.errores|length }} fila(s) con error{% if not confirmado %} (se omitirán al confirmar){% else %} (omitidas){% endif %}:</div>
-      <ul class="mb-0">
-        {% for e in resumen.errores[:50] %}<li>{{ e }}</li>{% endfor %}
-        {% if resumen.errores|length > 50 %}<li>…y {{ resumen.errores|length - 50 }} más</li>{% endif %}
-      </ul>
-    </div>
-    {% endif %}
+    {% include "_importar_resumen.html" %}
     {% if not confirmado %}
       {% if resumen.hay_cambios %}
       <form method="post" action="/proveedores/importar/confirmar">

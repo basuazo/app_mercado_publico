@@ -198,6 +198,40 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Anexos de Compra Ágil y extracción con OpenRouter (F-plat-2) ---
+    # Secreto como MP_TICKET (reglas 1 y 26): repr=False y enmascarado en el logger.
+    openrouter_api_key: str = Field(
+        default="", description="API key de OpenRouter (extracción de anexos)", repr=False
+    )
+    # Sin default en código: lo elige el set de evaluación y Boris lo fija en el .env. Vacío =
+    # extracción deshabilitada (el flujo manual sigue). Debe aceptar imágenes (escaneados).
+    llm_modelo_extraccion: str = Field(
+        default="", description="Modelo de OpenRouter con visión para leer anexos (vacío = apagado)"
+    )
+    llm_presupuesto_mes_usd: float = Field(
+        default=5.0, description="Gasto máximo del mes en OpenRouter (USD); al llegar, flujo manual"
+    )
+    llm_timeout_s: float = Field(default=60.0, description="Timeout de cada request a OpenRouter (s)")
+    llm_max_tokens: int = Field(default=4000, description="Tokens máximos de la respuesta del modelo")
+    llm_max_paginas_imagen: int = Field(
+        default=5, description="Páginas de un PDF escaneado que se envían al modelo como imagen"
+    )
+    # Solo si OpenRouter no informa `usage.cost`: el gasto se estima y se marca `estimado`.
+    llm_costo_por_mtoken_in: float = Field(
+        default=1.0, description="USD por millón de tokens de entrada (estimación de respaldo)"
+    )
+    llm_costo_por_mtoken_out: float = Field(
+        default=4.0, description="USD por millón de tokens de salida (estimación de respaldo)"
+    )
+    # §1.6: apagado hasta que la sonda `smoke_test.py --documentos` confirme la descarga.
+    documentos_api_habilitado: bool = Field(
+        default=False,
+        description="Descargar anexos de CA vigentes por la API en `mercado-ca` (requiere la sonda)",
+    )
+    mercado_anexos_max: int = Field(
+        default=20, description="Tope de anexos descargados por corrida de `mercado-ca`"
+    )
+
     # --- Estados vencidos (F-estados-vencidos) ---
     estados_vencidos_max_requests: int = Field(
         default=150,

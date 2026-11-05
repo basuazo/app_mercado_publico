@@ -18,6 +18,30 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-2 (4-nov, commit local sin push hasta auditar; migración `c5f1a8d3e7b9`)
+Anexos de CA → líneas con extracción asistida (OpenRouter) y revisión humana (`17-plan-pivote-plataforma-ca.md` §2 C3).
+**Esquema:** `ca_anexos` (metadatos + `texto_extraido` ≤ 50.000; **sin el binario**: se procesa en memoria), `llm_uso`
+(gasto del mes, upsert) y `llm_cache` (clave = sha256 de modelo + versión del prompt + sha256 del texto e imágenes),
+`ca_lineas.anexo_id`, `compras_agiles.anexo_resuelto_en`.
+**Flujo:** ficha de CA (pestaña «Líneas», visible si hay líneas o `n_documentos > 0`) o `/catalogo/ca/{codigo}` → «Subir anexo»
+(`POST /oportunidad/compras_agiles/{codigo}/anexo`; PDF/XLSX/DOCX/PNG/JPG ≤ 10 MB validados por firma) → texto con pdfplumber
+(tablas con `|`), openpyxl o python-docx; PDF sin capa de texto → PNG de las primeras `LLM_MAX_PAGINAS_IMAGEN` (5) páginas;
+si pdfplumber no abre el PDF, respaldo con pdfium → OpenRouter → líneas `origen=anexo`, `estado=dudosa` **siempre** (`n ≥ 1000`).
+Reemplazan los placeholders y las líneas de anexo no confirmadas; no tocan `ok`, API ni manuales. Tabla editable (producto,
+formato, cantidad), «Confirmar fila/todas», «Eliminar fila», «Agregar fila», **«Anexo resuelto»** (borra placeholders).
+**Bandera:** solo el placeholder (`anexo` + `pendiente`) deja `sin_detalle`; las líneas leídas por confirmar → `incompleto`.
+`mercado-catalogo` no recrea placeholders con `anexo_resuelto_en` ni toca líneas con `n ≥ 1000`.
+**Sin modelo, sin key o sin presupuesto:** anexo `sin_presupuesto`, misma tabla vacía y flujo manual.
+**Guardas de memoria (512 MB):** DOCX/XLSX que se expanden > 50 MB o con un miembro comprimido > 100:1 se rechazan (solo se lee
+el directorio del ZIP); las páginas se renderizan con el lado mayor ≤ 2.000 px (máx. 150 dpi), lo que también baja tokens.
+**Lista de precios por foto/PDF** (`/proveedores/{id}/lista-precios`): mismo extractor con esquema `precios`, vista previa
+editable y confirmación = `importar.aplicar` de F-plat-3 sobre ese proveedor (`fuente=lista_llm`, con historial).
+**§1.6 (descarga por API):** escrito y apagado (`DOCUMENTOS_API_HABILITADO=false`) hasta la sonda `--documentos`; la ruta es [I].
+**Medido en la muestra (32 archivos, 4-nov):** 16 PDF van como imagen (15 sin capa de texto + 1 que pdfplumber no abre y pdfium sí),
+9 PDF con texto, 6 DOCX, 1 XLSX, 1 vacío; `texto_extraido` mediana 0 B (escaneados), máx. 19 KB, total 56 KB.
+**Pendiente de Boris:** sonda `--documentos`; key en `.env` y Render; `evaluar_extraccion.py` y fijar `LLM_MODELO_EXTRACCION`
+(anotar en `decisiones.md`); revisar el bundle del buscador con navegador real (CloudFront bloquea `curl`); medir minutos por CA.
+
 ## F-plat-ui (4-nov, commit local sin push hasta auditar; sin migración)
 - Diseño nuevo de la plataforma (estilo dashboard sobrio, tokens `--c-*` en `app.css`, Inter autoalojada, barra lateral con
   íconos y offcanvas en móvil, tablas/botones/badges/formularios restilizados sobre Bootstrap 5.3). Decisión en `decisiones.md`.

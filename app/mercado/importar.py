@@ -384,6 +384,49 @@ def parsear(data: bytes, nombre_archivo: str) -> Planilla:
     return p
 
 
+def planilla_de_lista(
+    proveedor: Proveedor, filas: list[tuple[str, str, Any]], vigente_desde: date | None = None
+) -> Planilla:
+    """Planilla de una lista de precios leída de una foto o PDF (F-plat-2 §1.4).
+
+    `filas` = (producto, formato, precio neto). Mismas validaciones que la hoja `precios`; el
+    factor y la unidad base salen del formato ("bolsa 1 kg" → 1 kg) cuando se pueden leer."""
+    from app.catalogos.canonico import extraer_formato
+
+    p = Planilla()
+    vigente = vigente_desde or hoy_chile()
+    for i, (producto, formato, precio) in enumerate(filas, start=1):
+        prod = " ".join((producto or "").split())
+        fmt = " ".join((formato or "").split())
+        if not prod:
+            continue  # fila borrada en la vista previa
+        try:
+            valor = _num(precio)
+        except ValueError:
+            valor = None
+        if valor is None or valor <= 0:
+            p.errores.append(f"fila {i} ({prod[:60]}): falta el precio neto")
+            continue
+        f = extraer_formato(fmt or prod)
+        p.precios.append(
+            FilaPrecio(
+                linea=i,
+                proveedor=proveedor.nombre,
+                rut=proveedor.rut,
+                comuna=None,
+                contacto=None,
+                telefono=None,
+                producto=prod[:300],
+                formato=fmt[:200],
+                factor_base=f[2] if f else None,
+                unidad_base=f[3] if f else None,
+                precio_neto=valor,
+                vigente_desde=vigente,
+            )
+        )
+    return p
+
+
 # ---------------------------------------------------------------------------
 # Escritura
 # ---------------------------------------------------------------------------
@@ -451,20 +494,32 @@ def aplicar(
     empresa_id: int,
     planilla: Planilla,
     usuario_id: int | None = None,
+    *,
+    proveedor_fijo: Proveedor | None = None,
+    fuente: str = "planilla",
 ) -> Resumen:
-    """Escribe la planilla (flush, sin commit). La vista previa es esto + rollback."""
+    """Escribe la planilla (flush, sin commit). La vista previa es esto + rollback.
+
+    `proveedor_fijo` (F-plat-2, lista de precios por foto/PDF): todas las filas de precios van a
+    ese proveedor, que ya es de la empresa (lo valida la ruta), sin buscarlo por nombre."""
+    if proveedor_fijo is not None and proveedor_fijo.empresa_id != empresa_id:
+        raise ValueError("El proveedor no es de la empresa")
     r = Resumen(ejemplos=list(planilla.ejemplos), errores=list(planilla.errores))
     indice = _Indice(session, empresa_id)
 
     for fila in planilla.precios:
-        prov, _existia = indice.resolver(fila.proveedor, fila.rut)
+        prov: Proveedor | None
+        if proveedor_fijo is not None:
+            prov = proveedor_fijo
+        else:
+            prov, _existia = indice.resolver(fila.proveedor, fila.rut)
         if prov is None:
             prov = indice.crear(fila.proveedor, fila.rut)
             prov.comuna = _recortar(fila.comuna, 100)
             prov.contacto_nombre = _recortar(fila.contacto, 200)
             prov.telefono = _recortar(fila.telefono, 50)
             r.proveedores_nuevos += 1
-        else:
+        elif proveedor_fijo is None:
             cambios = [
                 _set_si_cambia(prov, "rut", None if prov.rut else fila.rut),
                 _set_si_cambia(prov, "comuna", _recortar(fila.comuna, 100)),
@@ -485,7 +540,7 @@ def aplicar(
                 vigente_desde=fila.vigente_desde,
                 factor_base=fila.factor_base,
                 unidad_base=fila.unidad_base,
-                fuente="planilla",
+                fuente=fuente,
                 usuario_id=usuario_id,
             )
         except ValueError as exc:  # no debería: parsear ya validó

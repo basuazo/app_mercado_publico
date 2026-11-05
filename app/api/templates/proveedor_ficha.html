@@ -47,6 +47,21 @@
 </div>
 <div id="form-producto"></div>
 
+{# F-plat-2 §1.4: lista de precios en foto o PDF → vista previa → importación con historial. #}
+<details class="mb-3">
+  <summary class="small">Subir una lista de precios (foto, PDF, Excel o Word)</summary>
+  <form method="post" action="/proveedores/{{ p.id }}/lista-precios" enctype="multipart/form-data" class="row g-2 align-items-end mt-1">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-md-6">
+      <label class="form-label small" for="lista-archivo">Archivo (hasta 10 MB)</label>
+      <input class="form-control form-control-sm" type="file" id="lista-archivo" name="archivo"
+             accept=".pdf,.xlsx,.docx,.png,.jpg,.jpeg" required>
+    </div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Leer y ver vista previa</button></div>
+  </form>
+  <p class="small text-muted mt-1 mb-0">Verás los precios leídos antes de guardar nada; puedes corregirlos o borrar filas.</p>
+</details>
+
 <div class="table-responsive">
 <table class="table table-sm align-middle">
   <thead class="table-dark">

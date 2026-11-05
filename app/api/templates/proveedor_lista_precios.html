@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Lista de precios — {{ p.nombre }} — Rastrillo{% endblock %}
+{% block content %}
+{#
+  Lista de precios leída de una foto o PDF (F-plat-2 §1.4). Contexto: `p`, `filas` [(producto,
+  formato, precio)], `resumen` (conteos de `importar.aplicar`), `confirmado`, `error`,
+  `aviso_paginas`, `sin_filas`. La confirmación reenvía las filas (editadas) y aplica la
+  importación de F-plat-3 sobre este proveedor, con historial.
+#}
+<p class="mb-2"><a href="/proveedores/{{ p.id }}">← {{ p.nombre }}</a></p>
+<h2 class="mb-3">Lista de precios de {{ p.nombre }}</h2>
+
+{% if error %}<div class="alert alert-warning" role="alert">{{ error }}</div>{% endif %}
+{% if confirmado and resumen %}<div class="alert alert-success" role="status">Precios guardados.</div>{% endif %}
+{% if aviso_paginas %}<div class="alert alert-info py-2">Solo se leyeron las primeras páginas: faltan {{ aviso_paginas }}. Agrega esos precios a mano.</div>{% endif %}
+{% if sin_filas %}<div class="alert alert-info py-2">No se encontraron precios en el archivo.</div>{% endif %}
+
+{% if resumen %}
+<div class="card mb-4">
+  <div class="card-header">{% if confirmado %}Resultado{% else %}Vista previa (todavía no se guardó nada){% endif %}</div>
+  <div class="card-body">
+    {% include "_importar_resumen.html" %}
+    {% if not confirmado and filas %}
+    <form method="post" action="/proveedores/{{ p.id }}/lista-precios/confirmar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p class="small text-muted">Revisa cada fila: corrige el texto o el precio (neto, sin IVA, por formato). Deja el producto vacío para no guardar esa fila.</p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th scope="col">Producto</th><th scope="col">Formato</th><th scope="col" class="text-end">Precio neto</th></tr></thead>
+          <tbody>
+            {% for prod, fmt, precio in filas %}
+            <tr>
+              <td><label class="visually-hidden" for="lp-prod-{{ loop.index }}">Producto</label>
+                <input class="form-control form-control-sm" id="lp-prod-{{ loop.index }}" name="producto" value="{{ prod }}"></td>
+              <td><label class="visually-hidden" for="lp-fmt-{{ loop.index }}">Formato</label>
+                <input class="form-control form-control-sm" id="lp-fmt-{{ loop.index }}" name="formato" value="{{ fmt }}"></td>
+              <td><label class="visually-hidden" for="lp-precio-{{ loop.index }}">Precio neto</label>
+                <input class="form-control form-control-sm text-end" id="lp-precio-{{ loop.index }}" name="precio" value="{{ precio }}" inputmode="decimal"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-primary">Confirmar precios</button>
+      <a class="btn btn-outline-secondary" href="/proveedores/{{ p.id }}">Cancelar</a>
+    </form>
+    {% elif confirmado %}
+    <a class="btn btn-primary" href="/proveedores/{{ p.id }}">Ver el proveedor</a>
+    {% endif %}
+  </div>
+</div>
+{% elif not confirmado %}
+<a class="btn btn-outline-secondary" href="/proveedores/{{ p.id }}">Volver al proveedor</a>
+{% endif %}
+{% endblock %}

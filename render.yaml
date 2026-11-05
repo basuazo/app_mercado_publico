@@ -26,6 +26,12 @@ services:
       # Brevo REST API (reemplaza SMTP; Render bloquea TCP saliente a puertos SMTP)
       - key: BREVO_API_KEY
         sync: false
+      # F-plat-2: lectura de anexos con OpenRouter (la subida corre en la web). Sin estas dos
+      # el flujo es manual. El modelo lo fija el set de evaluación (docs/decisiones.md).
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: LLM_MODELO_EXTRACCION
+        sync: false
       # SMTP (solo para desarrollo local; deprecated en producción)
       - key: SMTP_HOST
         sync: false

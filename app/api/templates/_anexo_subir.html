@@ -1,0 +1,24 @@
+{#
+  «Subir anexo» de una Compra Ágil (F-plat-2). Contexto: `codigo`, `csrf_token` y `con_htmx`
+  (por omisión sí). Por HTMX el resultado (tabla de líneas por revisar) llega a #anexo-resultado;
+  sin HTMX (o con `con_htmx=false`, en la página de la CA) se recarga esa página.
+  El archivo se lee en memoria y no se guarda.
+#}
+{% set _hx = con_htmx is not defined or con_htmx %}
+<form method="post" action="/oportunidad/compras_agiles/{{ codigo }}/anexo" enctype="multipart/form-data"
+      {% if _hx %}hx-post="/oportunidad/compras_agiles/{{ codigo }}/anexo" hx-encoding="multipart/form-data"
+      hx-target="#anexo-resultado" hx-swap="innerHTML" hx-indicator="#anexo-leyendo"{% endif %}
+      class="row g-2 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="col-md-8">
+    <label class="form-label small" for="anexo-archivo">Anexo (PDF, Excel, Word, PNG o JPG; hasta 10 MB)</label>
+    <input class="form-control form-control-sm" type="file" id="anexo-archivo" name="archivo"
+           accept=".pdf,.xlsx,.docx,.png,.jpg,.jpeg" required>
+  </div>
+  <div class="col-md-4">
+    <button class="btn btn-sm btn-primary w-100">Subir anexo</button>
+  </div>
+  {% if _hx %}<div id="anexo-leyendo" class="htmx-indicator small text-muted col-12" role="status">Leyendo el anexo… puede tardar un minuto.</div>{% endif %}
+</form>
+<p class="small text-muted mt-1 mb-0">Descarga el anexo desde la ficha oficial y súbelo acá: las filas quedan para que las revises antes de confirmarlas.</p>
+{% if _hx %}<div id="anexo-resultado" class="mt-2" aria-live="polite"></div>{% endif %}

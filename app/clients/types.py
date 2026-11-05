@@ -345,6 +345,50 @@ class CompraAgilDetalle(CompraAgilBasica):
     motivo_desierta: str | None = None
     motivo_cancelacion: str | None = None
     n_documentos: int | None = None
+    # F-plat-2: `documentos[].{id, nombre}` (guía v3.0 [V en la guía]); la descarga está por
+    # verificar (`smoke_test.py --documentos`). Solo los ids legibles.
+    documentos: list[DocumentoCA] = field(default_factory=list)
+
+
+@dataclass
+class DocumentoCA:
+    """Un anexo listado en el detalle de una CA (F-plat-2). No se persiste."""
+
+    id: str
+    nombre: str = ""
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter (F-plat-2): extracción de líneas de un anexo
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LineaExtraida:
+    """Una fila que el modelo leyó en un anexo. Todo opcional salvo el texto (regla 6).
+
+    `cantidad` para anexos de CA; `precio` (neto, por formato) para listas de proveedor."""
+
+    texto: str
+    cantidad: float | None = None
+    unidad: str | None = None
+    formato: str | None = None
+    observacion: str | None = None
+    precio: float | None = None
+
+
+@dataclass
+class ExtraccionAnexo:
+    lineas: list[LineaExtraida] = field(default_factory=list)
+    modelo: str = ""
+    tokens_in: int = 0
+    tokens_out: int = 0
+    costo_usd: float = 0.0
+    desde_cache: bool = False
+    # El costo salió de la tarifa configurada, no de `usage.cost` de OpenRouter.
+    estimado: bool = False
+    # La respuesta no parseó ni tras el reintento: `lineas` queda vacía (no es "anexo vacío").
+    invalida: bool = False
 
 
 @dataclass

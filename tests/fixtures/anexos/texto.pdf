@@ -1,0 +1,42 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 298 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+50 780 Td
+(ANEXO DE PRUEBA - DATOS SINTETICOS) Tj T*
+(Producto | Cantidad | Unidad) Tj T*
+(Arroz grado 1 bolsa 1 kg | 20 | bolsa) Tj T*
+(Aceite vegetal botella 1 L | 12 | unidad) Tj T*
+(Te negro caja 100 bolsitas | 5 | caja) Tj T*
+(Galletas de agua 150 g | 40 | paquete) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000590 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+660
+%%EOF

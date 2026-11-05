@@ -16,6 +16,20 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="Anexos de Compra Ágil convertidos en líneas, con revisión",
+        descripcion=(
+            "Cuando una Compra Ágil dice «según anexo», ahora puedes subir ese anexo (PDF, Excel, "
+            "Word o foto) en la pestaña «Líneas» de la ficha o en el catálogo. Las filas se leen "
+            "solas, incluso de documentos escaneados, y se marcan «por revisar»: tú eliges el producto, "
+            "corriges la cantidad y confirmas fila por fila o todas juntas. Si la lectura automática "
+            "no está disponible, la misma tabla te deja agregar las filas a mano, y «Anexo resuelto» "
+            "cierra el anexo cuando ya están todas. En la ficha de un proveedor también puedes subir "
+            "una foto o PDF de su lista de precios y revisarla antes de guardarla. El archivo no se "
+            "guarda: se lee y se descarta. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="La plataforma ahora se llama Rastrillo",
         descripcion=(
             "«MP Oportunidades» pasa a llamarse Rastrillo: cambia el nombre en el menú, el login, "

@@ -21,8 +21,9 @@ Jobs: GitHub Actions (CLI `python -m app.ingest run-once`) disparado por cron-jo
 Render solo sirve la web; correo por API REST de Brevo.
 
 ## API de Mercado Público — reglas duras (NO negociables)
-1. MP_TICKET solo en variable de entorno. Nunca en código, tests, fixtures,
-   logs ni commits. El logger enmascara ticket, SECRET_KEY y JOBS_TOKEN.
+1. MP_TICKET y OPENROUTER_API_KEY solo en variable de entorno. Nunca en código, tests,
+   fixtures, logs ni commits. El logger enmascara ticket, SECRET_KEY, JOBS_TOKEN y
+   OPENROUTER_API_KEY.
 2. v1 (api.mercadopublico.cl/servicios/v1/): ticket por query param; fechas ddmmaaaa.
    v2 (api2.mercadopublico.cl): ticket por HEADER "ticket"; ISO-8601;
    envelope {success, payload, errors}; paginación máx 50.

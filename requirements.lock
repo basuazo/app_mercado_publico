@@ -28,9 +28,13 @@ certifi==2026.6.17
     #   httpcore
     #   httpx
 cffi==2.0.0
-    # via bcrypt
+    # via
+    #   bcrypt
+    #   cryptography
 cfgv==3.5.0
     # via pre-commit
+charset-normalizer==3.4.4
+    # via pdfminer-six
 click==8.4.1
     # via uvicorn
 colorama==0.4.6
@@ -40,6 +44,8 @@ colorama==0.4.6
     #   uvicorn
 coverage[toml]==7.14.2
     # via pytest-cov
+cryptography==46.0.5
+    # via pdfminer-six
 distlib==0.4.3
     # via virtualenv
 et-xmlfile==2.0.0
@@ -81,6 +87,8 @@ jinja2==3.1.6
     # via mp-oportunidades (pyproject.toml)
 librt==0.11.0
     # via mypy
+lxml==6.1.3
+    # via python-docx
 mako==1.3.12
     # via alembic
 markupsafe==3.0.3
@@ -101,6 +109,12 @@ passlib[bcrypt]==1.7.4
     # via mp-oportunidades (pyproject.toml)
 pathspec==1.1.1
     # via mypy
+pdfminer-six==20260107
+    # via pdfplumber
+pdfplumber==0.11.10
+    # via mp-oportunidades (pyproject.toml)
+pillow==13.0.0
+    # via pdfplumber
 platformdirs==4.10.0
     # via
     #   python-discovery
@@ -127,6 +141,8 @@ pydantic-settings==2.14.2
     # via mp-oportunidades (pyproject.toml)
 pygments==2.20.0
     # via pytest
+pypdfium2==5.14.0
+    # via pdfplumber
 pytest==9.1.1
     # via
     #   mp-oportunidades (pyproject.toml)
@@ -137,6 +153,8 @@ python-dateutil==2.9.0.post0
     # via freezegun
 python-discovery==1.4.2
     # via virtualenv
+python-docx==1.2.0
+    # via mp-oportunidades (pyproject.toml)
 python-dotenv==1.2.2
     # via
     #   mp-oportunidades (pyproject.toml)
@@ -164,6 +182,7 @@ tenacity==9.1.4
     # via mp-oportunidades (pyproject.toml)
 typing-extensions==4.15.0
     # via
+    #   python-docx
     #   alembic
     #   fastapi
     #   mypy

@@ -1,9 +1,12 @@
 {#
   Fila de una línea de Compra Ágil en curación (F-plat-1). Contexto: `v` (ln, ca, producto_nombre,
-  productos, formatos), `vista` ("pendientes" | "ca"), `csrf_token`. Confirmar o marcar «sin detalle»
-  por HTMX: en Pendientes la fila desaparece (200 vacío + aviso fuera de banda), en la ficha se repinta.
+  productos, formatos), `vista` ("pendientes" | "ca" | "anexo"), `csrf_token`. Confirmar o marcar
+  «sin detalle» por HTMX: en Pendientes la fila desaparece (200 vacío + aviso fuera de banda), en la
+  ficha y en la tabla del anexo se repinta. Las líneas leídas de un anexo (F-plat-2, `ln.anexo_id`)
+  editan también la cantidad y se pueden eliminar.
 #}
 {% set ln = v.ln %}
+{% set de_anexo = ln.anexo_id is not none %}
 <tr id="linea-{{ ln.id }}">
   <td class="small">
     <a href="/catalogo/ca/{{ ln.ca_codigo }}" class="num">{{ ln.ca_codigo }}</a>
@@ -30,19 +33,27 @@
         {% include "_catalogo_selector.html" %}
         {% endwith %}
       </div>
-      <button class="btn btn-sm btn-primary mt-1">Confirmar</button>
+      {% if de_anexo %}
+      <label class="small text-muted mt-1" for="cant-{{ ln.id }}">Cantidad</label>
+      <input class="form-control form-control-sm w-auto d-inline-block" id="cant-{{ ln.id }}" name="cantidad"
+             inputmode="decimal" size="8" value="{{ '%g' % ln.cantidad if ln.cantidad is not none else '' }}">
+      {% endif %}
+      <button class="btn btn-sm btn-primary mt-1">{{ 'Confirmar fila' if de_anexo else 'Confirmar' }}</button>
     </form>
     <div class="d-flex gap-1 mt-1">
+      {% if not de_anexo %}
       <form method="post" action="/catalogo/lineas/{{ ln.id }}/anexo" hx-post="/catalogo/lineas/{{ ln.id }}/anexo"
             hx-target="#linea-{{ ln.id }}" hx-swap="outerHTML" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="vista" value="{{ vista }}">
         <button class="btn btn-sm btn-outline-secondary">Sin detalle (anexo)</button>
       </form>
-      {% if ln.origen == 'manual' and vista == 'ca' %}
-      <form method="post" action="/catalogo/lineas/{{ ln.id }}/quitar" class="m-0">
+      {% endif %}
+      {% if de_anexo or (ln.origen == 'manual' and vista in ('ca', 'anexo')) %}
+      <form method="post" action="/catalogo/lineas/{{ ln.id }}/quitar" hx-post="/catalogo/lineas/{{ ln.id }}/quitar"
+            hx-target="#linea-{{ ln.id }}" hx-swap="outerHTML" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn btn-sm btn-outline-danger">Quitar</button>
+        <button class="btn btn-sm btn-outline-danger">{{ 'Eliminar fila' if de_anexo else 'Quitar' }}</button>
       </form>
       {% endif %}
     </div>

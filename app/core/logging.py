@@ -18,6 +18,7 @@ class _SecretFilter(logging.Filter):
         "DATABASE_URL",
         "DATABASE_URL_PROD",
         "ADMIN_PASSWORD",
+        "OPENROUTER_API_KEY",
     )
 
     def __init__(self) -> None:

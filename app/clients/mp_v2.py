@@ -21,6 +21,7 @@ from app.clients.types import (
     CompraAgilItem,
     CotizacionCA,
     CotizacionCAProducto,
+    DocumentoCA,
     PaginacionV2,
     RespuestaListadoV2,
     parse_binario,
@@ -37,6 +38,15 @@ _log = get_logger(__name__)
 _BASE = "https://api2.mercadopublico.cl"
 _LISTADO = _BASE + "/v2/compra-agil"
 _DETALLE = _BASE + "/v2/compra-agil/{codigo}"
+# F-plat-2 §0.a: la guía v3.0 lista `documentos[].{id, nombre}` y NO documenta la descarga.
+# Rutas candidatas [I] que prueba `smoke_test.py --documentos`; la primera es la que usa
+# `descargar_documento`, apagada tras `documentos_api_habilitado=False` hasta la sonda.
+_DOCUMENTO_CANDIDATAS = (
+    _BASE + "/v2/compra-agil/{codigo}/documentos/{id}",
+    _BASE + "/v2/compra-agil/{codigo}/documento/{id}",
+    _BASE + "/v2/documentos/{id}",
+)
+_DOCUMENTO = _DOCUMENTO_CANDIDATAS[0]
 
 
 def _iso_para_la_api(dt: datetime) -> str:
@@ -303,6 +313,12 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
     presupuesto = _dict(payload.get("presupuesto"))
     motivos = _dict(payload.get("motivos"))
     documentos = payload.get("documentos")
+    docs: list[DocumentoCA] = []
+    if isinstance(documentos, list):
+        for d in documentos:
+            doc_id = _texto_o_none(d.get("id")) if isinstance(d, dict) else None
+            if doc_id is not None:
+                docs.append(DocumentoCA(id=doc_id, nombre=_texto_o_none(d.get("nombre")) or ""))
 
     return CompraAgilDetalle(
         codigo=base.codigo,
@@ -332,6 +348,7 @@ def _parse_ca_detalle(payload: dict[str, object]) -> CompraAgilDetalle:
         motivo_desierta=_texto_o_none(motivos.get("motivo_desierta")),
         motivo_cancelacion=_texto_o_none(motivos.get("motivo_cancelacion")),
         n_documentos=len(documentos) if isinstance(documentos, list) else None,
+        documentos=docs,
     )
 
 
@@ -489,3 +506,11 @@ class MercadoPublicoV2Client:
         data = self._get(url, reintentar_transitorios=reintentar_transitorios)
         payload = _validar_envelope(data)
         return _parse_ca_detalle(payload)
+
+    def descargar_documento(self, codigo: str, documento_id: str) -> bytes | None:
+        """Bytes de un anexo de la CA (F-plat-2 §1.6), o None si la API no lo entrega.
+
+        Mismo rate limit, cuota y política de 429 que el resto (cuenta como request de CA,
+        R-p1). Ruta [I] hasta la sonda. Sin reintento de 5xx: el anexo vuelve a la cola."""
+        url = _DOCUMENTO.format(codigo=codigo, id=documento_id)
+        return self._client._request_bytes("GET", url, reintentar_transitorios=False)

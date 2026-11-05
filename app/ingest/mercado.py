@@ -315,11 +315,123 @@ def guardar_detalle_vigente(session: Session, det: CompraAgilDetalle, ahora: dat
     ca.detalle_ultimo_fallo = None
 
 
-def _bajar_y_guardar_vigente(engine: Engine, v2: MercadoPublicoV2Client, codigo: str) -> None:
+def _bajar_y_guardar_vigente(
+    engine: Engine, v2: MercadoPublicoV2Client, codigo: str
+) -> CompraAgilDetalle:
     det = v2.detalle_compra_agil(codigo, reintentar_transitorios=False)
     with Session(engine) as session:
         guardar_detalle_vigente(session, det, ahora_utc())
         session.commit()
+    return det
+
+
+# ---------------------------------------------------------------------------
+# mercado-ca: anexos de las vigentes (F-plat-2 §1.6, detrás de `documentos_api_habilitado`)
+# ---------------------------------------------------------------------------
+
+
+def cola_anexos(session: Session, regiones: list[int], ahora: datetime, limite: int) -> list[str]:
+    """CA vigentes de `regiones` cuyo detalle viene en un anexo y que todavía no tienen ninguno.
+
+    `publicada`, abierta, `detalle_lineas = sin_detalle` CON el placeholder «sin detalle
+    (anexo)» (sin él, una CA sin alimentos también es `sin_detalle`), `n_documentos > 0`, sin
+    filas en `ca_anexos` y sin «Anexo resuelto». Cierre ascendente."""
+    from app.models.tables import CaAnexo, CaLinea
+
+    con_placeholder = (
+        select(CaLinea.id)
+        .where(
+            CaLinea.ca_codigo == CompraAgil.codigo,
+            CaLinea.origen == "anexo",
+            CaLinea.estado == "pendiente",
+        )
+        .exists()
+    )
+    con_anexo = select(CaAnexo.id).where(CaAnexo.ca_codigo == CompraAgil.codigo).exists()
+    stmt = (
+        select(CompraAgil.codigo)
+        .where(
+            CompraAgil.region.in_(regiones),
+            CompraAgil.estado == "publicada",
+            CompraAgil.fecha_cierre > ahora,
+            CompraAgil.detalle_lineas == "sin_detalle",
+            CompraAgil.n_documentos > 0,
+            CompraAgil.anexo_resuelto_en.is_(None),
+            con_placeholder,
+            ~con_anexo,
+        )
+        .order_by(CompraAgil.fecha_cierre.asc(), CompraAgil.codigo)
+        .limit(limite)
+    )
+    return list(session.execute(stmt).scalars())
+
+
+def bajar_anexos(
+    settings: Settings,
+    engine: Engine,
+    v2: MercadoPublicoV2Client,
+    regiones: list[int],
+    resultado: dict[str, Any],
+    documentos: dict[str, list[Any]] | None = None,
+) -> None:
+    """Descarga los anexos de :func:`cola_anexos` y los pasa por la extracción (§1.2–§1.3) con
+    `subido_por = NULL`. Tope `mercado_anexos_max` descargas por corrida; cada descarga (y el
+    detalle, si la CA no se pidió en esta corrida) es un request de CA con la cuota de siempre.
+    Sin OpenRouter configurado no pide nada: el anexo quedaría `sin_presupuesto` y no se
+    volvería a bajar. Un 429 o la cuota cortan y dejan `cortado_por`."""
+    from app.clients.openrouter import OpenRouterClient
+    from app.mercado import anexos
+
+    extractor = OpenRouterClient(settings, engine)
+    if not extractor.habilitado:
+        resultado["anexos_omitidos"] = "sin_llm"
+        return
+    documentos = documentos or {}
+    with Session(engine) as session:
+        cola = cola_anexos(session, regiones, ahora_utc(), settings.mercado_anexos_max)
+    bajados = procesados = 0
+    for codigo in cola:
+        if bajados >= settings.mercado_anexos_max:
+            break
+        try:
+            docs = documentos.get(codigo)
+            if docs is None:
+                docs = v2.detalle_compra_agil(codigo, reintentar_transitorios=False).documentos
+            for doc in docs:
+                if bajados >= settings.mercado_anexos_max:
+                    break
+                data = v2.descargar_documento(codigo, doc.id)
+                bajados += 1
+                if data is None:
+                    continue
+                with Session(engine) as session:
+                    ca = session.get(CompraAgil, codigo)
+                    if ca is None:
+                        break
+                    try:
+                        anexos.procesar_anexo_ca(
+                            session, ca, data, doc.nombre, usuario_id=None, extractor=extractor,
+                            max_paginas_imagen=settings.llm_max_paginas_imagen,
+                        )  # fmt: skip
+                    except anexos.AnexoInvalido as exc:
+                        # Se registra igual: si no, la CA volvería a la cola en cada corrida.
+                        session.rollback()
+                        ca = session.get(CompraAgil, codigo)
+                        assert ca is not None
+                        session.add(anexos.anexo_rechazado(ca, data, doc.nombre, str(exc)))
+                    session.commit()
+                    procesados += 1
+        except MPAuthError:
+            raise
+        except _ERRORES_DE_CORTE as exc:
+            _log.warning("mercado-ca: anexos cortados por %s — %s", type(exc).__name__, exc)
+            resultado["cortado_por"] = type(exc).__name__
+            break
+        except Exception:
+            _log.error("mercado-ca: error con los anexos de %s", codigo, exc_info=True)
+    resultado.update(
+        {"anexos_cola": len(cola), "anexos_bajados": bajados, "anexos_procesados": procesados}
+    )
 
 
 def _bajar_y_guardar(
@@ -574,10 +686,12 @@ def sync_mercado_ca(
             settings.detalles_espera_horas,
         )
     vigentes_ok = 0
+    documentos: dict[str, list[Any]] = {}
 
     def _vigente(codigo: str) -> None:
         nonlocal vigentes_ok
-        _bajar_y_guardar_vigente(engine, v2, codigo)
+        det = _bajar_y_guardar_vigente(engine, v2, codigo)
+        documentos[codigo] = det.documentos
         vigentes_ok += 1
 
     v_intentados, _ = _recorrer_cola(
@@ -601,6 +715,12 @@ def sync_mercado_ca(
     if resultado.get("cortado_por") != corte_del_listado:
         # 429 o cuota: se corta la corrida guardando el avance, sin pedir las cerradas.
         return resultado
+
+    # F-plat-2 §1.6: anexos de las vigentes, apagado hasta que la sonda confirme la descarga.
+    if settings.documentos_api_habilitado:
+        bajar_anexos(settings, engine, v2, regiones, resultado, documentos)
+        if resultado.get("cortado_por") != corte_del_listado:
+            return resultado
 
     with Session(engine) as session:
         cola = cola_mercado_ca(

@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -20,10 +20,12 @@ from app.api.deps import check_csrf, get_db, html_require_empresa
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.catalogos.canonico import normalizar_texto
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
+from app.mercado import anexos
 from app.mercado import catalogo as cat
 from app.mercado.territorio import regiones_activas
 from app.models.enums import RolUsuario
 from app.models.tables import (
+    CaAnexo,
     CaLinea,
     CompraAgil,
     ProductoAlias,
@@ -318,14 +320,14 @@ def _respuesta_linea(
     texto_aviso: str,
 ) -> Response:
     """Pendientes: la fila desaparece (200 vacío + aviso fuera de banda; nunca 204, que HTMX
-    ignora). Ficha de CA: la fila se repinta con su estado nuevo."""
+    ignora). Ficha de CA y tabla del anexo: la fila se repinta con su estado nuevo."""
     if vista == "pendientes":
         return HTMLResponse(_aviso(texto_aviso))
     return HTMLResponse(_html_fila(request, user, session, ln, ca, vista) + _aviso(texto_aviso))
 
 
 def _volver(request: Request, vista: str, ca_codigo: str, mensaje: str) -> RedirectResponse:
-    destino = f"/catalogo/ca/{quote(ca_codigo)}" if vista == "ca" else "/catalogo"
+    destino = f"/catalogo/ca/{quote(ca_codigo)}" if vista in ("ca", "anexo") else "/catalogo"
     return RedirectResponse(f"{destino}?mensaje={quote(mensaje)}", status_code=303)
 
 
@@ -335,6 +337,7 @@ async def catalogo_confirmar(
     linea_id: int,
     producto_id: int = Form(...),
     formato_id: str = Form(""),
+    cantidad: str = Form(""),
     vista: str = Form("pendientes"),
     csrf_token: str = Form(""),
     ctx: tuple[Usuario, int] = Depends(html_require_empresa),
@@ -345,12 +348,18 @@ async def catalogo_confirmar(
     regiones = regiones_activas(session, request.app.state.settings)
     ln, ca = _linea_o_404(session, linea_id, regiones)
     try:
+        nueva_cantidad = None
+        if cantidad.strip() and ln.anexo_id is not None:
+            nueva_cantidad = _csv_float(cantidad)
+            if nueva_cantidad is None:
+                raise cat.CatalogoError("La cantidad debe ser un número")
         otras = cat.confirmar_linea(
             session,
             ln,
             producto_id=producto_id,
             formato_id=int(formato_id) if formato_id.strip().isdigit() else None,
             usuario_id=user.id,
+            cantidad=nueva_cantidad,
         )
     except cat.CatalogoError as exc:
         session.rollback()
@@ -421,7 +430,179 @@ async def catalogo_ca(
             productos_todos=_productos_activos(session, "", 400),
             mensaje=mensaje,
             error=error,
+            **_estado_anexos(session, ca, lineas),
         ),
+    )
+
+
+# ===========================================================================
+# Anexos (F-plat-2): subir, confirmar todas, «Anexo resuelto»
+# ===========================================================================
+
+ETIQUETA_EXTRACCION = {
+    "hecha": ("Leído", "success"),
+    "pendiente": ("Pendiente", "secondary"),
+    "sin_presupuesto": ("Manual (sin lectura automática)", "warning"),
+    "error": ("Manual (no se pudo leer)", "danger"),
+}
+
+
+def _estado_anexos(session: Session, ca: CompraAgil, lineas: list[CaLinea]) -> dict[str, Any]:
+    return {
+        "anexos": list(
+            session.execute(
+                select(CaAnexo).where(CaAnexo.ca_codigo == ca.codigo).order_by(CaAnexo.id.desc())
+            ).scalars()
+        ),
+        "etiqueta_extraccion": ETIQUETA_EXTRACCION,
+        "n_placeholders": sum(
+            1 for ln in lineas if ln.origen == "anexo" and ln.estado == "pendiente"
+        ),
+        "n_por_confirmar": sum(
+            1 for ln in lineas if ln.anexo_id is not None and ln.estado == "dudosa"
+        ),
+    }
+
+
+def _extractor(request: Request) -> anexos.Extractor | None:
+    """OpenRouter si está configurado; si no, None (flujo manual)."""
+    from app.clients.openrouter import OpenRouterClient
+
+    cliente = OpenRouterClient(request.app.state.settings, request.app.state.engine)
+    return cliente if cliente.habilitado else None
+
+
+@router.post("/oportunidad/{fuente}/{codigo}/anexo", response_model=None)
+def anexo_subir(
+    request: Request,
+    fuente: str,
+    codigo: str,
+    archivo: UploadFile = File(...),
+    csrf_token: str = Form(""),
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """Sube un anexo a una CA y lo convierte en líneas `dudosa` (F-plat-2 §1.2–§1.3).
+
+    Síncrona a propósito: la extracción puede tardar ~1 min y FastAPI la corre en el pool de
+    hilos. El archivo se procesa en memoria y NO se guarda (reglas 10 y 11)."""
+    check_csrf(request, csrf_token)
+    if fuente != "compras_agiles":
+        raise HTTPException(status_code=404, detail="Solo las Compras Ágiles tienen anexos")
+    user, _ = ctx
+    settings = request.app.state.settings
+    ca = _ca_o_404(session, codigo, regiones_activas(session, settings))
+    data = archivo.file.read(anexos.MAX_BYTES + 1)
+    es_htmx = request.headers.get("HX-Request") == "true"
+    base = f"/catalogo/ca/{quote(ca.codigo)}"
+    try:
+        res = anexos.procesar_anexo_ca(
+            session,
+            ca,
+            data,
+            archivo.filename or "",
+            usuario_id=user.id,
+            extractor=_extractor(request),
+            max_paginas_imagen=settings.llm_max_paginas_imagen,
+        )
+    except anexos.AnexoInvalido as exc:
+        session.rollback()
+        if es_htmx:
+            return _TEMPLATES.TemplateResponse(
+                request, "_anexo_resultado.html", _ctx(request, user, ca=ca, error=str(exc))
+            )
+        return RedirectResponse(f"{base}?error={quote(str(exc))}", status_code=303)
+    session.commit()
+    if not es_htmx:
+        return RedirectResponse(f"{base}?mensaje={quote(res.aviso)}", status_code=303)
+    nombres = _nombres_productos(session)
+    session.refresh(ca)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_anexo_resultado.html",
+        _ctx(
+            request,
+            user,
+            ca=ca,
+            anexo=res.anexo,
+            aviso=res.aviso,
+            etiqueta_extraccion=ETIQUETA_EXTRACCION,
+            lineas=[_vista_linea(session, ln, ca, nombres) for ln in res.lineas],
+            n_placeholders=sum(
+                1
+                for ln in session.execute(
+                    select(CaLinea).where(CaLinea.ca_codigo == ca.codigo)
+                ).scalars()
+                if ln.origen == "anexo" and ln.estado == "pendiente"
+            ),
+        ),
+    )
+
+
+@router.post("/catalogo/ca/{codigo}/anexo/confirmar-todas", response_model=None)
+async def anexo_confirmar_todas(
+    request: Request,
+    codigo: str,
+    csrf_token: str = Form(""),
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """Confirma con su sugerencia las líneas de anexo `dudosa` que tienen producto. Las que no
+    tienen producto quedan para elegirlo fila por fila."""
+    check_csrf(request, csrf_token)
+    user, _ = ctx
+    ca = _ca_o_404(session, codigo, regiones_activas(session, request.app.state.settings))
+    lineas = list(
+        session.execute(
+            select(CaLinea).where(
+                CaLinea.ca_codigo == ca.codigo,
+                CaLinea.anexo_id.isnot(None),
+                CaLinea.estado == "dudosa",
+            )
+        ).scalars()
+    )
+    hechas = sin_producto = 0
+    for ln in lineas:
+        if ln.producto_id is None:
+            sin_producto += 1
+            continue
+        try:
+            cat.confirmar_linea(
+                session, ln, producto_id=ln.producto_id, formato_id=ln.formato_id,
+                usuario_id=user.id,
+            )  # fmt: skip
+        except cat.CatalogoError:
+            sin_producto += 1
+            continue
+        hechas += 1
+    session.commit()
+    texto = f"{hechas} línea(s) confirmada(s)." + (
+        f" {sin_producto} sin producto: elígelo en cada fila." if sin_producto else ""
+    )
+    return RedirectResponse(
+        f"/catalogo/ca/{quote(ca.codigo)}?mensaje={quote(texto)}", status_code=303
+    )
+
+
+@router.post("/catalogo/ca/{codigo}/anexo-resuelto", response_model=None)
+async def anexo_resuelto(
+    request: Request,
+    codigo: str,
+    csrf_token: str = Form(""),
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """La persona ya tipeó las líneas: borra los placeholders «sin detalle (anexo)». Agregar una
+    línea manual NO lo hace sola, porque pueden faltar filas: lo decide la persona."""
+    check_csrf(request, csrf_token)
+    ca = _ca_o_404(session, codigo, regiones_activas(session, request.app.state.settings))
+    borradas = anexos.resolver_anexo(session, ca)
+    session.commit()
+    texto = "Anexo marcado como resuelto." + (
+        f" Se quitó {borradas} línea(s) «sin detalle»." if borradas else ""
+    )
+    return RedirectResponse(
+        f"/catalogo/ca/{quote(ca.codigo)}?mensaje={quote(texto)}", status_code=303
     )
 
 
@@ -469,12 +650,17 @@ async def catalogo_quitar_manual(
     regiones = regiones_activas(session, request.app.state.settings)
     ln, _ca = _linea_o_404(session, linea_id, regiones)
     base = f"/catalogo/ca/{quote(ln.ca_codigo)}"
+    es_htmx = request.headers.get("HX-Request") == "true"
     try:
         cat.quitar_linea_manual(session, ln)
     except cat.CatalogoError as exc:
         session.rollback()
+        if es_htmx:
+            return HTMLResponse(_aviso(str(exc), "danger"), headers={"HX-Reswap": "none"})
         return RedirectResponse(f"{base}?error={quote(str(exc))}", status_code=303)
     session.commit()
+    if es_htmx:  # la fila desaparece: 200 con solo el aviso fuera de banda (nunca 204)
+        return HTMLResponse(_aviso("Línea quitada."))
     return RedirectResponse(f"{base}?mensaje={quote('Línea quitada')}", status_code=303)
 
 
@@ -658,7 +844,8 @@ def lineas_para_ficha(
     session: Session, ca: CompraAgil, user: Usuario, regiones: list[int]
 ) -> dict[str, Any] | None:
     """Sección «Líneas» de la ficha de una CA: solo para CA de regiones activas, usuarios con
-    empresa activa y CA que tengan líneas. Si no, None (la ficha no cambia)."""
+    empresa activa y CA que tengan líneas o anexos (F-plat-2: ahí se sube el anexo). Si no,
+    None (la ficha no cambia)."""
     from app.api.deps import empresa_activa_id
 
     if ca.region not in regiones or empresa_activa_id(session, user) is None:
@@ -669,9 +856,11 @@ def lineas_para_ficha(
         .where(CaLinea.ca_codigo == ca.codigo)
         .order_by(CaLinea.n)
     ).all()
-    if not filas:
+    if not filas and not (ca.n_documentos or 0):
         return None
     return {
         "filas": [{"ln": ln, "producto": nombre} for ln, nombre in filas],
         "bandera": ETIQUETA_BANDERA.get(ca.detalle_lineas, ETIQUETA_BANDERA["sin_detalle"]),
+        "sin_detalle": ca.detalle_lineas == "sin_detalle",
+        "n_documentos": ca.n_documentos,
     }

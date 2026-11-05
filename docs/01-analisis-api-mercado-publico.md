@@ -174,6 +174,16 @@ La información necesaria está disponible vía API oficial y los términos exig
 - R5. Formato de fecha v1 `ddmmaaaa` propenso a errores (vs ISO en v2).
 - R6. Erratas oficiales en slugs de estado de OC (`recepcionaceptadacialmente`, `recepecionconformeincompleta`).
 - R7. JSON potencialmente grande en días de alta actividad → parseo en streaming o paginación donde exista.
+- R8. **Descarga de anexos de Compra Ágil: SIN VERIFICAR** (F-plat-2 §0.a, 4-nov-2026). La guía v3.0
+  documenta `documentos[].{id, nombre}` en el detalle [V en la guía] y no documenta ninguna ruta de
+  descarga; que el servidor no la tenga es [I]. `mp_v2.py` lee los ids (`CompraAgilDetalle.documentos`)
+  y prueba la primera de tres rutas candidatas [I] (`/v2/compra-agil/{codigo}/documentos/{id}`,
+  `/documento/{id}`, `/v2/documentos/{id}`) solo con `DOCUMENTOS_API_HABILITADO=true`, que está apagado.
+  El bundle JS del buscador no se pudo revisar: `buscador.mercadopublico.cl` responde 403 de
+  CloudFront a clientes sin navegador [V, 4-nov]; hay que mirarlo con un navegador real (DevTools →
+  Network al bajar un adjunto de una ficha) y probar esa ruta con `--ruta`. Pendiente:
+  `python scripts/smoke_test.py --documentos` (Boris) → anotar acá el status y `content-type` de
+  cada ruta con [V].
 
 ---
 

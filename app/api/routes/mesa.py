@@ -780,6 +780,108 @@ async def proveedor_activo(
 # --- Ficha ----------------------------------------------------------------------
 
 
+# --- Lista de precios por foto o PDF (F-plat-2 §1.4) ----------------------------
+# Mismo extractor que los anexos de CA, con el esquema `precios`; la confirmación es la
+# importación de F-plat-3 (`importar.aplicar`, con historial) sobre ESTE proveedor.
+
+
+def _pagina_lista(
+    request: Request, user: Usuario, prov: Proveedor, *, status_code: int = 200, **extra: Any
+) -> HTMLResponse:
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "proveedor_lista_precios.html",
+        _ctx(request, user, **{"p": prov, "resumen": None, "error": "", "filas": [], **extra}),
+        status_code=status_code,
+    )
+
+
+@router.post("/proveedores/{proveedor_id}/lista-precios", response_class=HTMLResponse)
+def proveedor_lista_precios(
+    request: Request,
+    proveedor_id: int,
+    archivo: UploadFile = File(...),
+    csrf_token: str = Form(""),
+    ue: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Lee la lista con el modelo y muestra la vista previa editable (no guarda nada)."""
+    from app.clients.openrouter import LLMError, OpenRouterClient
+    from app.mercado import anexos
+
+    check_csrf(request, csrf_token)
+    user, empresa_id = ue
+    prov = _proveedor_o_404(session, empresa_id, proveedor_id)
+    settings = request.app.state.settings
+    data = archivo.file.read(anexos.MAX_BYTES + 1)
+    try:
+        mime = anexos.validar_archivo(data)
+    except anexos.AnexoInvalido as exc:
+        return _pagina_lista(request, user, prov, status_code=422, error=str(exc))
+    res = anexos.extraer_texto(data, mime, max_paginas_imagen=settings.llm_max_paginas_imagen)
+    if res.error or not res.hay_contenido:
+        return _pagina_lista(
+            request, user, prov, status_code=422,
+            error=(res.error or "El archivo no trae contenido legible") + ". Carga los precios a mano o con la planilla.",
+        )  # fmt: skip
+    cliente = OpenRouterClient(settings, request.app.state.engine)
+    if not cliente.habilitado:
+        return _pagina_lista(
+            request, user, prov,
+            error="La lectura automática no está configurada: carga los precios a mano o con la planilla.",
+        )  # fmt: skip
+    try:
+        ext = cliente.extraer_lineas(res.texto or None, res.imagenes, esquema="precios")
+    except LLMError as exc:
+        return _pagina_lista(
+            request, user, prov,
+            error=f"No se pudo leer la lista ({exc}). Carga los precios a mano o con la planilla.",
+        )  # fmt: skip
+    filas = [
+        (ln.texto, ln.formato or "", "" if ln.precio is None else f"{ln.precio:g}")
+        for ln in ext.lineas
+    ]
+    planilla = importar.planilla_de_lista(prov, filas)
+    resumen = importar.aplicar(
+        session, empresa_id, planilla, usuario_id=user.id, proveedor_fijo=prov, fuente="lista_llm"
+    )
+    session.rollback()  # vista previa: la misma escritura de la confirmación, revertida
+    return _pagina_lista(
+        request,
+        user,
+        prov,
+        resumen=resumen,
+        filas=filas,
+        aviso_paginas=res.paginas_omitidas,
+        sin_filas=not filas,
+    )
+
+
+@router.post("/proveedores/{proveedor_id}/lista-precios/confirmar", response_model=None)
+async def proveedor_lista_precios_confirmar(
+    request: Request,
+    proveedor_id: int,
+    ue: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    form = await request.form()
+    check_csrf(request, str(form.get("csrf_token") or ""))
+    user, empresa_id = ue
+    prov = _proveedor_o_404(session, empresa_id, proveedor_id)
+    productos = [str(x) for x in form.getlist("producto")]
+    formatos = [str(x) for x in form.getlist("formato")]
+    precios = [str(x) for x in form.getlist("precio")]
+    if not (len(productos) == len(formatos) == len(precios)):
+        return _pagina_lista(request, user, prov, status_code=422, error="Formulario incompleto")
+    filas = list(zip(productos, formatos, precios, strict=True))
+    planilla = importar.planilla_de_lista(prov, filas)
+    resumen = importar.aplicar(
+        session, empresa_id, planilla, usuario_id=user.id, proveedor_fijo=prov, fuente="lista_llm"
+    )
+    session.commit()
+    return _pagina_lista(request, user, prov, resumen=resumen, confirmado=True)
+
+
 @router.get("/proveedores/{proveedor_id}", response_class=HTMLResponse)
 async def proveedor_ficha(
     request: Request,

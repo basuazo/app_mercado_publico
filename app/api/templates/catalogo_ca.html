@@ -16,13 +16,44 @@
     <tbody>
       {% set vista = 'ca' %}
       {% for v in lineas %}{% include "_catalogo_linea.html" %}
-      {% else %}<tr><td colspan="3" class="text-muted">Esta Compra Ágil no tiene líneas de alimentos en el catálogo. Puedes agregarlas a mano.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="3" class="text-muted">Esta Compra Ágil no tiene líneas de alimentos en el catálogo. Puedes subir el anexo o agregarlas a mano.</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>
 
-<h3 class="h5 mt-4">Agregar línea a mano</h3>
-<p class="small text-muted">Para anexos que todavía no se leen automáticamente: producto, formato y cantidad.</p>
+{% if n_por_confirmar or n_placeholders %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  {% if n_por_confirmar %}
+  <form method="post" action="/catalogo/ca/{{ ca.codigo }}/anexo/confirmar-todas" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm btn-success">Confirmar todas las del anexo ({{ n_por_confirmar }})</button>
+  </form>
+  {% endif %}
+  {% if n_placeholders %}
+  <form method="post" action="/catalogo/ca/{{ ca.codigo }}/anexo-resuelto" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm btn-outline-secondary"
+            title="Ya tipeaste todas las líneas del anexo: quita la línea «sin detalle»">Anexo resuelto</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+<h3 class="h5 mt-4">Anexo</h3>
+{% with codigo=ca.codigo, con_htmx=false %}{% include "_anexo_subir.html" %}{% endwith %}
+{% if anexos %}
+<ul class="small mt-2">
+  {% for a in anexos %}
+  {% set et = etiqueta_extraccion.get(a.extraccion_estado, ('', 'secondary')) %}
+  <li>{{ a.nombre_original }} · <span class="badge bg-{{ et[1] }}">{{ et[0] }}</span>
+    {% if a.paginas %}· {{ a.paginas }} pág.{% endif %}{% if a.escaneado %} · escaneado{% endif %}
+    {% if a.extraccion_detalle %}<span class="text-muted">— {{ a.extraccion_detalle }}</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h3 class="h5 mt-4" id="agregar">Agregar línea a mano</h3>
+<p class="small text-muted">Producto, formato y cantidad. Agregar líneas no marca el anexo como resuelto: hazlo con «Anexo resuelto» cuando estén todas.</p>
 <form method="post" action="/catalogo/ca/{{ ca.codigo }}/lineas" class="row g-2 align-items-end">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="col-md-5"><label class="form-label" for="man-prod">Producto</label>

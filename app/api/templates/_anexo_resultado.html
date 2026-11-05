@@ -1,0 +1,40 @@
+{#
+  Resultado de subir un anexo (F-plat-2), respuesta HTMX. Contexto: `ca`, y `error` (archivo
+  rechazado) o `anexo`, `aviso`, `etiqueta_extraccion`, `lineas` (vistas de `_catalogo_linea`),
+  `n_placeholders`. Cada fila se confirma, corrige o elimina por separado.
+#}
+<div id="catalogo-aviso" aria-live="polite"></div>
+{% if error %}
+<div class="alert alert-danger py-2" role="alert">{{ error }}</div>
+{% else %}
+{% set et = etiqueta_extraccion.get(anexo.extraccion_estado, ('', 'secondary')) %}
+<div class="alert alert-{{ 'success' if lineas else et[1] }} py-2" role="status">
+  <strong>{{ anexo.nombre_original }}</strong> · {{ et[0] }}. {{ aviso }}
+</div>
+{% if lineas %}
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead><tr><th scope="col">Línea</th><th scope="col">Texto del anexo</th><th scope="col">Producto, formato y cantidad</th></tr></thead>
+    <tbody>
+      {% set vista = 'anexo' %}
+      {% for v in lineas %}{% include "_catalogo_linea.html" %}{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+<div class="d-flex flex-wrap gap-2">
+  {% if lineas %}
+  <form method="post" action="/catalogo/ca/{{ ca.codigo }}/anexo/confirmar-todas" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm btn-success">Confirmar todas</button>
+  </form>
+  {% endif %}
+  <a class="btn btn-sm btn-outline-primary" href="/catalogo/ca/{{ ca.codigo }}#agregar">Agregar fila</a>
+  {% if n_placeholders %}
+  <form method="post" action="/catalogo/ca/{{ ca.codigo }}/anexo-resuelto" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm btn-outline-secondary">Anexo resuelto</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}

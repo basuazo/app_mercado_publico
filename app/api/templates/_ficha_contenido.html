@@ -226,9 +226,16 @@
                     <td class="text-end num">{{ f.ln.cantidad | numero }}</td>
                     <td>{{ f.ln.estado }}{% if f.ln.origen != 'api' %} · {{ f.ln.origen }}{% endif %}</td>
                   </tr>
+                  {% else %}
+                  <tr><td colspan="4" class="text-muted">Sin líneas todavía.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
+            </div>
+            {# F-plat-2: el detalle viene en un anexo → subirlo y revisar las filas. #}
+            <div class="border rounded p-2 mt-2">
+              <p class="small fw-semibold mb-1">Subir anexo{% if lineas_ca.n_documentos %} <span class="text-muted fw-normal">(la CA trae {{ lineas_ca.n_documentos }} documento{{ 's' if lineas_ca.n_documentos != 1 else '' }})</span>{% endif %}</p>
+              {% include "_anexo_subir.html" %}
             </div>
           </div>
           {% endif %}

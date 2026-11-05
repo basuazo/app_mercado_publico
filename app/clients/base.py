@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
+from typing import TypeVar
 
 import httpx
 from sqlalchemy import DateTime, Engine, bindparam, inspect, text
@@ -16,6 +17,7 @@ from app.core.logging import get_logger
 from app.core.tiempo import TZ_CHILE
 
 _log = get_logger(__name__)
+_T = TypeVar("_T")
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +520,22 @@ class BaseClient:
         self._http = httpx.Client(headers=default_headers or {}, timeout=timeout)
 
     def _handle_response(self, response: httpx.Response) -> dict[str, object]:
+        self._verificar_estado(response)
+        try:
+            return response.json()  # type: ignore[no-any-return]
+        except Exception as exc:
+            raise MPParseError(f"Respuesta no es JSON válido: {exc}") from exc
+
+    def _handle_bytes(self, response: httpx.Response) -> bytes | None:
+        """Cuerpo binario (F-plat-2, anexos). Mismo trato de 401/429/5xx que el JSON; un
+        4xx distinto (404: no hay descarga) o un cuerpo vacío → None, sin excepción."""
+        self._verificar_estado(response)
+        if response.status_code >= 400 or not response.content:
+            _log.info("Descarga sin contenido: HTTP %s", response.status_code)
+            return None
+        return response.content
+
+    def _verificar_estado(self, response: httpx.Response) -> None:
         if response.status_code == 401:
             raise MPAuthError("Ticket inválido o ausente (401)")
         if response.status_code == 429:
@@ -572,10 +590,19 @@ class BaseClient:
                 f"Error del servidor ({response.status_code}): {cuerpo}",
                 status_code=response.status_code,
             )
-        try:
-            return response.json()  # type: ignore[no-any-return]
-        except Exception as exc:
-            raise MPParseError(f"Respuesta no es JSON válido: {exc}") from exc
+
+    def _request_bytes(
+        self,
+        method: str,
+        url: str,
+        *,
+        reintentar_transitorios: bool = True,
+        **kwargs: object,
+    ) -> bytes | None:
+        """Como `_request`, pero devuelve el cuerpo binario (o None). Misma cuota y reintentos."""
+        return self._emitir(
+            method, url, self._handle_bytes, reintentar_transitorios=reintentar_transitorios, **kwargs
+        )
 
     def _request(
         self,
@@ -585,6 +612,23 @@ class BaseClient:
         reintentar_transitorios: bool = True,
         **kwargs: object,
     ) -> dict[str, object]:
+        return self._emitir(
+            method,
+            url,
+            self._handle_response,
+            reintentar_transitorios=reintentar_transitorios,
+            **kwargs,
+        )
+
+    def _emitir(
+        self,
+        method: str,
+        url: str,
+        leer: Callable[[httpx.Response], _T],
+        *,
+        reintentar_transitorios: bool = True,
+        **kwargs: object,
+    ) -> _T:
         # MPServerError: máx 2 intentos totales (1 reintento) — absorbe errores transitorios
         # httpx.TimeoutException y errores de transporte: máx 3 intentos totales
         # (2 reintentos), con un contador compartido
@@ -630,7 +674,7 @@ class BaseClient:
                     # sobre lo que sale bien; contar solo los éxitos hacía que
                     # /api/salud informara un piso en vez del consumo real.
                     self._quota.consume()
-                return self._handle_response(response)
+                return leer(response)
             except MPConcurrencyError:
                 if concurrency_retry >= len(_CONCURRENCY_DELAYS):
                     raise

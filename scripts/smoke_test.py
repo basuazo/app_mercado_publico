@@ -13,6 +13,7 @@ Uso:
     python scripts/smoke_test.py estados-ca           # F-datos-1: ¿v2 acepta desierta/cancelada? (2 req)
     python scripts/smoke_test.py --mercado            # F-merc-1: antigüedad (mar-2026, oct-2024) y horizonte 2025 (6 req)
     python scripts/smoke_test.py --detalle-ca COD [COD ...]  # sonda: ofertas repetidas del mismo RUT (1 req/código)
+    python scripts/smoke_test.py --documentos [--ruta /v2/...{codigo}...{id}]  # F-plat-2: ¿descarga de anexos? (~3–5 req)
 """
 
 from __future__ import annotations
@@ -1031,6 +1032,90 @@ def sonda_detalle_ca(
     print(f"\nSalida guardada en {archivo}")
 
 
+# ---------------------------------------------------------------------------
+# Sonda de F-plat-2 — ¿la API v2 entrega los anexos de una Compra Ágil?
+# ---------------------------------------------------------------------------
+#
+# La guía v3.0 documenta `documentos[].{id, nombre}` en el detalle y NO documenta la descarga:
+# que no exista es [I] hasta probarlo (regla 20). Imprime solo claves, status, content-type y
+# largo: ningún valor del documento, URL con parámetros ni el ticket. ~3–5 requests. El bundle
+# JS del buscador (docs/04 §0) responde 403 de CloudFront a clientes sin navegador [V, 4-nov]:
+# una ruta que aparezca ahí (DevTools → Network al bajar un adjunto) se prueba con --ruta.
+
+
+def _ca_con_documentos(engine: Engine) -> list[str]:
+    """Códigos candidatos: primero con `n_documentos > 0` (F-merc-3), luego de agosto 2026."""
+    with engine.connect() as c:
+        filas = c.execute(
+            text(
+                "SELECT codigo FROM compras_agiles WHERE region = 16 AND ("
+                " n_documentos > 0 OR (fecha_publicacion >= '2026-08-01'"
+                " AND fecha_publicacion < '2026-09-01'))"
+                " ORDER BY (n_documentos > 0) DESC NULLS LAST, fecha_publicacion DESC LIMIT 3"
+            )
+        ).fetchall()
+    return [str(f[0]) for f in filas]
+
+
+def sonda_documentos(engine: Engine, v2: MercadoPublicoV2Client, rutas_extra: list[str]) -> None:
+    from app.clients.base import MPRateLimitError, leer_pausa
+    from app.clients.mp_v2 import _BASE, _DETALLE, _DOCUMENTO_CANDIDATAS, _validar_envelope
+    from app.core.tiempo import ahora_utc
+
+    print("=== Sonda documentos (F-plat-2 §0.a) ===\n")
+    pausa = leer_pausa(engine)
+    if pausa is not None and pausa.replace(tzinfo=None) > ahora_utc():
+        print(f"Pausa vigente hasta {pausa.isoformat()} UTC. No se pide nada.")
+        return
+    codigo, doc_id = "", ""
+    for cand in _ca_con_documentos(engine):
+        try:
+            det = _validar_envelope(
+                v2._get(_DETALLE.format(codigo=cand), reintentar_transitorios=False)
+            )
+        except MPRateLimitError as exc:
+            print(f"DETALLE {cand}: 429 -> {_error_seguro(exc)}. Se corta (regla 3).")
+            return
+        except Exception as exc:
+            print(f"DETALLE {cand}: {_error_seguro(exc)}")
+            continue
+        docs = det.get("documentos")
+        print(f"1. {cand}: documentos = {_forma(docs)}")
+        if isinstance(docs, list) and docs and isinstance(docs[0], dict):
+            print(f"   claves de documentos[0]: {sorted(docs[0])}")
+            codigo, doc_id = cand, str(docs[0].get("id") or "")
+            break
+        time.sleep(1.0)
+    if not codigo or not doc_id:
+        print("\nNinguna CA candidata trae documentos con id. Prueba con otra CA (--detalle-ca).")
+        return
+
+    rutas = [r.format(codigo=codigo, id=doc_id) for r in _DOCUMENTO_CANDIDATAS]
+    rutas += [_BASE + r.format(codigo=codigo, id=doc_id) for r in rutas_extra]
+    http = v2._client._http
+    quota = v2._client._quota
+    print(f"\n2. Descarga del documento {doc_id[:6]}… de {codigo} ({len(rutas)} rutas, 1 req c/u):")
+    for i, url in enumerate(rutas, start=1):
+        time.sleep(1.5)
+        quota.check_budget()
+        v2._client._rate_limiter.acquire()
+        try:
+            r = http.get(url)
+        except Exception as exc:
+            print(f"   ruta {i}: {type(exc).__name__}")
+            continue
+        finally:
+            quota.consume()
+        ruta_txt = url.replace(_BASE, "").replace(codigo, "{codigo}").replace(doc_id, "{id}")
+        print(
+            f"   ruta {i} {ruta_txt}: HTTP {r.status_code}  content-type="
+            f"{r.headers.get('content-type', '(ninguno)')}  largo={len(r.content)}"
+        )
+        if r.status_code == 429:
+            v2._client._handle_response(r)  # persiste la pausa (regla 3); lanza
+    print("\n3. Anotar el resultado en docs/01-analisis-api-mercado-publico.md §8 con [V].")
+
+
 def main() -> None:
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
@@ -1043,6 +1128,14 @@ def main() -> None:
     v2 = MercadoPublicoV2Client(settings, engine)
 
     args = sys.argv[1:]
+    if args[:1] == ["--documentos"]:
+        extra = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--ruta"]
+        try:
+            sonda_documentos(engine, v2, extra)
+        except Exception as exc:
+            print(f"Sonda cortada: {_error_seguro(exc)}")
+        return
+
     if args[:1] == ["--detalle-ca"]:
         if len(args) < 2:
             print("Uso: --detalle-ca CODIGO [CODIGO ...]")

@@ -206,8 +206,10 @@ def _formato_por_unidad(producto: ProductoInfo, unidad_ca: str | None) -> int | 
 def recalcular_detalle_lineas(session: Session, ca_codigos: Iterable[str]) -> None:
     """Bandera de la CA («la CA no trae el detalle»):
 
-    - `sin_detalle`: sin líneas, o con alguna línea `origen = 'anexo'` sin resolver (no `ok`);
-    - `incompleto`: alguna línea `pendiente` o `dudosa` (sin anexo pendiente);
+    - `sin_detalle`: sin líneas, o con el placeholder «sin detalle (anexo)» (`origen = 'anexo'`
+      y `estado = 'pendiente'`);
+    - `incompleto`: alguna línea `pendiente` o `dudosa` (sin placeholder). Las líneas que se
+      leyeron de un anexo esperan confirmación como `dudosa`: «líneas por revisar» (F-plat-2);
     - `completo`: todas las líneas `ok`.
 
     Una línea `pendiente` normal (las reglas no la reconocieron) NO es «sin detalle»: la CA sí
@@ -223,7 +225,7 @@ def recalcular_detalle_lineas(session: Session, ca_codigos: Iterable[str]) -> No
         .distinct()
     ):
         estados[ca_codigo].add(estado)
-        if origen == "anexo" and estado != "ok":
+        if origen == "anexo" and estado == "pendiente":
             anexo_sin_resolver.add(ca_codigo)
     for ca_codigo, es in estados.items():
         if not es or ca_codigo in anexo_sin_resolver:
@@ -326,6 +328,10 @@ def _procesar_lote(
                 continue
 
             sin_detalle = detectar_sin_detalle(texto, prod.cantidad, ca.monto_disponible_clp)
+            if sin_detalle and ca.anexo_resuelto_en is not None:
+                # F-plat-2: el anexo ya se resolvió (extracción o «Anexo resuelto»): el
+                # placeholder no vuelve. Fuera de `vigentes`, el que quede sin revisar se quita.
+                continue
             sug = None
             if not sin_detalle:
                 otros = ofertas.get((ca.codigo, prod.codigo_producto), [])
@@ -358,9 +364,12 @@ def _procesar_lote(
         vigentes_por_ca[ca.codigo] = vigentes
 
     # La CA ya no trae esa posición (o ya no es alimento): se quita la línea sin revisar.
+    # Las de `n ≥ N_MANUAL_DESDE` no son posiciones de la API (manuales y leídas de un anexo,
+    # F-plat-2): el job nunca las toca.
     for (ca_codigo, n), ln in existentes.items():
         if (
-            ln.origen != "manual"
+            n < N_MANUAL_DESDE
+            and ln.origen != "manual"
             and ln.revisado_por is None
             and n not in vigentes_por_ca[ca_codigo]
         ):
@@ -567,18 +576,30 @@ def confirmar_linea(
     producto_id: int,
     formato_id: int | None,
     usuario_id: int,
+    cantidad: float | None = None,
 ) -> int:
     """Confirma una línea: `ok` + revisión, crea o refuerza el alias (`humano`, 1,0) y lo
     re-aplica a las demás líneas `pendiente|dudosa` con el mismo texto (misma transacción).
-    Devuelve cuántas OTRAS líneas se resolvieron."""
+    Devuelve cuántas OTRAS líneas se resolvieron.
+
+    `cantidad` solo se acepta en las líneas leídas de un anexo (F-plat-2): en las de la API
+    manda la API. Una línea de anexo confirmada sigue con `origen = 'anexo'`; el placeholder
+    confirmado pasa a `api` (la persona le dio producto al texto de la API)."""
     producto = _producto_activo(session, producto_id)
     formato = _formato_valido(session, producto.id, formato_id)
+    if cantidad is not None:
+        if linea.anexo_id is None:
+            raise CatalogoError("La cantidad solo se corrige en las líneas leídas de un anexo")
+        if cantidad <= 0:
+            raise CatalogoError("La cantidad debe ser mayor que cero")
+        linea.cantidad = cantidad
     ahora = ahora_utc()
     linea.producto_id = producto.id
     linea.formato_id = formato.id if formato else None
     linea.cantidad_base = _cantidad_base(linea.cantidad, formato.factor_base if formato else None)
     linea.estado = "ok"
-    linea.origen = "api" if linea.origen == "anexo" else linea.origen
+    if linea.origen == "anexo" and linea.anexo_id is None:
+        linea.origen = "api"
     linea.revisado_por, linea.revisado_en = usuario_id, ahora
     session.flush()
     clave = linea.texto_norm or normalizar_texto(linea.texto_origen)
@@ -627,6 +648,7 @@ def marcar_sin_detalle(session: Session, linea: CaLinea, usuario_id: int) -> Non
     `sin_detalle`. La revisión evita que el reproceso la vuelva a calcular."""
     linea.producto_id = linea.formato_id = linea.cantidad_base = None
     linea.origen, linea.estado = "anexo", "pendiente"
+    linea.anexo_id = None  # es un placeholder, aunque venga de una fila leída de un anexo
     linea.revisado_por, linea.revisado_en = usuario_id, ahora_utc()
     session.flush()
     recalcular_detalle_lineas(session, [linea.ca_codigo])
@@ -672,8 +694,11 @@ def agregar_linea_manual(
 
 
 def quitar_linea_manual(session: Session, linea: CaLinea) -> None:
-    if linea.origen != "manual":
-        raise CatalogoError("Solo se pueden quitar las líneas agregadas a mano")
+    """Quita una línea agregada a mano o leída de un anexo (F-plat-2, «Eliminar fila»)."""
+    if linea.origen != "manual" and linea.anexo_id is None:
+        raise CatalogoError(
+            "Solo se pueden quitar las líneas agregadas a mano o leídas de un anexo"
+        )
     ca_codigo = linea.ca_codigo
     session.delete(linea)
     session.flush()
