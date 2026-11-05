@@ -24,7 +24,11 @@
           <label class="form-label">Email</label>
           <input type="email" name="email" class="form-control" required>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+          <label class="form-label" for="nuevo_nombre">Nombre visible</label>
+          <input type="text" name="nombre" id="nuevo_nombre" class="form-control" maxlength="100" placeholder="Opcional">
+        </div>
+        <div class="col-md-2">
           <label class="form-label">Contraseña</label>
           <input type="password" name="password" class="form-control" required minlength="8">
         </div>
@@ -54,7 +58,7 @@
 <table class="table table-bordered">
   <thead class="table-dark">
     <tr>
-      <th scope="col">ID</th><th scope="col">Email</th><th scope="col">Rol</th><th scope="col">Empresa</th><th scope="col">Activo</th><th scope="col">Acciones</th>
+      <th scope="col">ID</th><th scope="col">Email</th><th scope="col">Nombre visible</th><th scope="col">Rol</th><th scope="col">Empresa</th><th scope="col">Activo</th><th scope="col">Acciones</th>
     </tr>
   </thead>
   <tbody>
@@ -62,6 +66,14 @@
     <tr>
       <td>{{ u.id }}</td>
       <td>{{ u.email }}</td>
+      <td>
+        <form method="post" action="/admin/usuarios/{{ u.id }}/nombre" class="d-flex gap-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="text" name="nombre" class="form-control form-control-sm" maxlength="100"
+                 value="{{ u.nombre or '' }}" placeholder="{{ u.email.split('@')[0] }}" aria-label="Nombre visible de {{ u.email }}">
+          <button class="btn btn-sm btn-outline-secondary">Guardar</button>
+        </form>
+      </td>
       <td><span class="badge {% if u.rol == 'admin' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ u.rol }}</span></td>
       <td>{{ nombres_empresa.get(u.empresa_id, "—") if u.empresa_id else "—" }}</td>
       <td>{% if u.activo %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}</td>

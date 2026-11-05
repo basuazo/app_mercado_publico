@@ -1,0 +1,41 @@
+{#- Mensajes del hilo + líneas de sistema. Se refresca solo cada 60 s mientras está a la vista. -#}
+<div id="hilo-lista-{{ codigo }}" class="hilo__lista" data-hilo-lista
+     hx-get="/equipo/ca/{{ codigo }}/hilo?lista=1" hx-trigger="every 60s" hx-swap="outerHTML">
+  {% for it in items %}
+  {% if it.clase == 'sistema' %}
+  <p class="hilo__sistema">{{ it.texto }} · {{ it.hora }}</p>
+  {% else %}
+  <div class="hilo__msg{% if it.autor_id == yo %} hilo__msg--mio{% endif %}" id="comentario-{{ it.id }}">
+    <div class="small text-muted"><strong class="text-body">{{ it.autor }}</strong> · {{ it.hora }}{% if it.editado %} (editado){% endif %}</div>
+    {% if it.eliminado %}
+    <p class="hilo__texto fst-italic text-muted mb-0">comentario eliminado</p>
+    {% else %}
+    <p class="hilo__texto mb-0">{{ it.texto }}</p>
+    {% if it.autor_id == yo %}
+    <div class="d-flex gap-2 mt-1">
+      <details>
+        <summary class="small link-secondary">Editar</summary>
+        <form method="post" action="/equipo/comentarios/{{ it.id }}/editar" class="mt-1"
+              hx-post="/equipo/comentarios/{{ it.id }}/editar" hx-target="#hilo-{{ codigo }}" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="visually-hidden" for="editar-{{ it.id }}">Editar comentario</label>
+          <textarea class="form-control form-control-sm" name="texto" id="editar-{{ it.id }}" rows="2"
+                    maxlength="{{ texto_max }}" required>{{ it.texto }}</textarea>
+          <button type="submit" class="btn btn-sm btn-outline-primary mt-1">Guardar</button>
+        </form>
+      </details>
+      <form method="post" action="/equipo/comentarios/{{ it.id }}/eliminar" class="d-inline"
+            hx-post="/equipo/comentarios/{{ it.id }}/eliminar" hx-target="#hilo-{{ codigo }}" hx-swap="outerHTML"
+            hx-confirm="¿Eliminar tu comentario?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-link btn-sm p-0 link-danger small">Eliminar</button>
+      </form>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="text-muted small mb-0">Todavía no hay comentarios ni cambios en esta CA.</p>
+  {% endfor %}
+</div>

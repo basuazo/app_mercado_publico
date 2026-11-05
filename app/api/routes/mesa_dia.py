@@ -22,6 +22,7 @@ from app.api.query import _url_ficha, mostrar_ficha_oficial
 from app.api.routes.mesa import _sin_empresa
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.core.tiempo import ahora_utc
+from app.mercado import equipo as eq
 from app.mercado.comprador import historial_comprador
 from app.mercado.mesa_dia import (
     CIERRES,
@@ -72,6 +73,8 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     anexos: str = "",
     monto_min: str = "",
     q: str = "",
+    equipo: str = "",
+    descartadas: str = "",
     pagina: int = 1,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -79,12 +82,16 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     empresa_id = empresa_activa_id(session, user)
     if empresa_id is None:
         return _sin_empresa(request, user)
+    equipo = equipo if equipo in eq.FILTROS_EQUIPO else ""
+    ver_descartadas = descartadas == "1"
     ahora = ahora_utc()
     regiones = regiones_activas(session, request.app.state.settings)
     comunas = _comunas(session, empresa_id)
     filtros = _filtros(familia, cierre, detalle, anexos, monto_min, q)
     familias = familias_por_ca(session, regiones, ahora)
     codigos = buscar_codigos(session, regiones, comunas, filtros, ahora, familias)
+    # F-equipo: filtro «Equipo»; las descartadas se ocultan salvo que se pidan.
+    codigos = eq.filtrar_equipo(session, empresa_id, user.id, codigos, equipo, ver_descartadas)
     total = len(codigos)
     total_paginas = max(1, ceil(total / PAGINA))
     pagina = min(max(pagina, 1), total_paginas)
@@ -93,6 +100,7 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     )
     for it in items:
         it["url_publica"] = _url_ficha("compras_agiles", it["codigo"])
+    estado_equipo = eq.equipo_de(session, empresa_id, user, [it["codigo"] for it in items])
     opciones_familia = sorted({f for fs in familias.values() for f in fs})
     qs = {
         "familia": filtros.familia,
@@ -101,7 +109,10 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         "anexos": "1" if filtros.con_anexos else "",
         "monto_min": str(filtros.monto_min or ""),
         "q": filtros.q,
+        "equipo": equipo,
+        "descartadas": "1" if ver_descartadas else "",
     }
+    empresa = session.get(Empresa, empresa_id)
     return _TEMPLATES.TemplateResponse(
         request,
         "mesa_dia.html",
@@ -117,6 +128,14 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             comunas_prioritarias=comunas,
             qs_base=urlencode({k: v for k, v in qs.items() if v}),
             mostrar_publica=mostrar_ficha_oficial(EstadoOportunidad.PUBLICADA.value),
+            estado_equipo=estado_equipo,
+            filtro_equipo=equipo,
+            ver_descartadas=ver_descartadas,
+            filtros_equipo=eq.ETIQUETA_FILTRO,
+            yo=user.id,
+            miembros=[(m.id, eq.nombre_visible(m)) for m in eq.miembros(session, empresa_id)],
+            estados=eq.ETIQUETA_ESTADO,
+            empresa_sin_rut=eq.rut_empresa(empresa) is None,
         ),
     )
 
@@ -130,14 +149,25 @@ async def mesa_conteo(  # noqa: PLR0913
     anexos: str = "",
     monto_min: str = "",
     q: str = "",
+    equipo: str = "",
+    descartadas: str = "",
     sesion: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Conteo en vivo (HTMX), con los mismos filtros: solo un número, nunca filas."""
+    user, empresa_id = sesion
     ahora = ahora_utc()
     regiones = regiones_activas(session, request.app.state.settings)
     codigos = buscar_codigos(
         session, regiones, [], _filtros(familia, cierre, detalle, anexos, monto_min, q), ahora
+    )
+    codigos = eq.filtrar_equipo(
+        session,
+        empresa_id,
+        user.id,
+        codigos,
+        equipo if equipo in eq.FILTROS_EQUIPO else "",
+        descartadas == "1",
     )
     return _TEMPLATES.TemplateResponse(
         request, "_explorador_conteo.html", {"total": len(codigos)}

@@ -16,6 +16,23 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 5),
+        titulo="Trabajo en equipo, comentarios y alarmas",
+        descripcion=(
+            "Cada Compra Ágil de la mesa tiene ahora un estado compartido por todo el equipo: "
+            "Nueva, Priorizada, Cotizando, Lista para enviar, Enviada o Descartada (con motivo), "
+            "y un responsable. Desde la tarjeta puedes priorizar, tomarla, asignarla a alguien o "
+            "avanzarla; si otra persona la cambió justo antes, te avisamos quién y no pisamos su "
+            "cambio. Cada CA tiene su conversación: comenta, edita o elimina tus mensajes y menciona "
+            "a un compañero con @nombre. La campana de la barra te muestra lo que hizo el equipo, "
+            "cuándo te asignan o mencionan, las CA en curso que cierran en 24 h o 4 h y el resultado "
+            "de las enviadas (ganada, perdida u oferta no registrada). «Actividad» guarda el registro "
+            "completo, «Hoy» suma tus CA y las que cierran sin enviar, y en «Cuenta» eliges qué "
+            "alarmas recibir. La mesa tiene un filtro «Equipo» y oculta las descartadas. "
+            "Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 5),
         titulo="Competencia y mapa de mercado",
         descripcion=(
             "Dos entradas nuevas en el menú. «Competencia»: busca a un oferente por RUT o razón "

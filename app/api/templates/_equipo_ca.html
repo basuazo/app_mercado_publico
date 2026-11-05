@@ -1,0 +1,102 @@
+{#- Estado compartido de una CA (F-equipo). Lo comparten la tarjeta de la mesa y la ficha; toda
+    acción reemplaza este bloque entero (hx-swap="outerHTML" sobre el [data-equipo] más cercano).
+    Un 409 (otro la cambió antes) o un 422 (descartar sin motivo) también se pintan acá: los deja
+    pasar static/equipo.js. Contexto: e (EquipoCA), yo, origen, miembros, estados,
+    empresa_sin_rut, csrf_token. -#}
+{% macro accion(e, ruta, campo, valor, texto, clase, origen, csrf_token, accion_id) -%}
+<form method="post" action="/equipo/ca/{{ e.codigo }}/{{ ruta }}" class="d-inline"
+      hx-post="/equipo/ca/{{ e.codigo }}/{{ ruta }}" hx-target="closest [data-equipo]" hx-swap="outerHTML">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="version" value="{{ e.version }}">
+  <input type="hidden" name="origen" value="{{ origen }}">
+  <input type="hidden" name="{{ campo }}" value="{{ valor }}">
+  <button type="submit" class="btn btn-sm {{ clase }}" data-accion="equipo-{{ accion_id }}">{{ texto }}</button>
+</form>
+{%- endmacro %}
+<div class="equipo-ca" id="equipo-ca-{{ e.codigo }}" data-equipo
+     data-anuncio="Estado: {{ e.etiqueta }}{% if e.responsable %}, responsable {{ e.responsable }}{% endif %}">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <span class="chip-equipo chip-equipo--{{ e.estado }}" data-equipo-estado="{{ e.estado }}">{{ e.etiqueta }}</span>
+    {% if e.responsable %}
+    <span class="avatar-iniciales" title="Responsable: {{ e.responsable }}">{{ e.responsable_iniciales }}<span class="visually-hidden"> (responsable: {{ e.responsable }})</span></span>
+    {% else %}
+    <span class="small text-muted">Sin responsable</span>
+    {% endif %}
+    {% if e.etiqueta_resultado %}
+    <span class="badge text-bg-{{ 'success' if e.resultado == 'ganada' else 'secondary' }} fw-normal">Resultado: {{ e.etiqueta_resultado }}</span>
+    {% endif %}
+    {% if e.actualizado_por and e.version %}
+    <span class="small text-muted">· último cambio: {{ e.actualizado_por }}</span>
+    {% endif %}
+  </div>
+
+  {% if e.conflicto %}<div class="alert alert-warning py-1 px-2 small mt-2 mb-0" role="alert">{{ e.conflicto }}</div>{% endif %}
+  {% if e.error %}<div class="alert alert-danger py-1 px-2 small mt-2 mb-0" role="alert">{{ e.error }}</div>{% endif %}
+  {% if e.estado == 'descartada' and e.motivo_descarte %}
+  <p class="small text-muted mt-1 mb-0">Motivo del descarte: {{ e.motivo_descarte }}</p>
+  {% endif %}
+  {% if e.estado == 'enviada' and empresa_sin_rut %}
+  <p class="small mt-1 mb-0">Para saber si ganamos, tu empresa necesita su RUT: <a href="/admin/empresas">Empresas</a>.</p>
+  {% endif %}
+
+  <div class="d-flex flex-wrap gap-1 mt-2 align-items-center">
+    {% if e.estado in ('nueva', 'descartada') %}
+    {{ accion(e, 'estado', 'estado', 'priorizada', 'Priorizar' if e.estado == 'nueva' else 'Reabrir y priorizar', 'btn-primary', origen, csrf_token, 'priorizar') }}
+    {% endif %}
+    {% if e.responsable_id != yo %}
+    {{ accion(e, 'asignar', 'responsable_id', 'yo', 'Tomar', 'btn-outline-primary', origen, csrf_token, 'tomar') }}
+    {% endif %}
+    {% for est, txt in (('cotizando', 'Cotizando'), ('lista', 'Lista'), ('enviada', 'Enviada')) %}
+    {% if e.estado != est and e.estado != 'descartada' %}
+    {{ accion(e, 'estado', 'estado', est, txt, 'btn-outline-secondary', origen, csrf_token, est) }}
+    {% endif %}
+    {% endfor %}
+
+    <details class="equipo-ca__mas">
+      <summary class="btn btn-sm btn-outline-secondary">Asignar a…</summary>
+      <form method="post" action="/equipo/ca/{{ e.codigo }}/asignar" class="d-flex gap-1 mt-1"
+            hx-post="/equipo/ca/{{ e.codigo }}/asignar" hx-target="closest [data-equipo]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ e.version }}">
+        <input type="hidden" name="origen" value="{{ origen }}">
+        <label class="visually-hidden" for="asignar-{{ e.codigo }}-{{ origen }}">Responsable</label>
+        <select class="form-select form-select-sm" name="responsable_id" id="asignar-{{ e.codigo }}-{{ origen }}">
+          <option value="">Sin responsable</option>
+          {% for mid, mnombre in miembros %}
+          <option value="{{ mid }}" {% if mid == e.responsable_id %}selected{% endif %}>{{ mnombre }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-primary" data-accion="equipo-asignar">Asignar</button>
+      </form>
+    </details>
+
+    {% if e.estado != 'descartada' %}
+    <details class="equipo-ca__mas">
+      <summary class="btn btn-sm btn-outline-danger">Descartar</summary>
+      <form method="post" action="/equipo/ca/{{ e.codigo }}/estado" class="d-flex gap-1 mt-1"
+            hx-post="/equipo/ca/{{ e.codigo }}/estado" hx-target="closest [data-equipo]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ e.version }}">
+        <input type="hidden" name="origen" value="{{ origen }}">
+        <input type="hidden" name="estado" value="descartada">
+        <label class="visually-hidden" for="motivo-{{ e.codigo }}-{{ origen }}">Motivo del descarte</label>
+        <input class="form-control form-control-sm" name="motivo" id="motivo-{{ e.codigo }}-{{ origen }}"
+               maxlength="300" required placeholder="Motivo (obligatorio)">
+        <button type="submit" class="btn btn-sm btn-danger" data-accion="equipo-descartar">Descartar</button>
+      </form>
+    </details>
+    {% else %}
+    {{ accion(e, 'estado', 'estado', 'nueva', 'Reabrir', 'btn-outline-secondary', origen, csrf_token, 'reabrir') }}
+    {% endif %}
+
+    {% if origen == 'mesa' %}
+    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto equipo-ca__hilo"
+            data-bs-toggle="offcanvas" data-bs-target="#panel-hilo"
+            hx-get="/equipo/ca/{{ e.codigo }}/hilo" hx-target="#panel-hilo-cuerpo" hx-swap="innerHTML">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><path d="M4 5h16v11H9l-5 4V5Z"/></svg>
+      <span class="num">{{ e.n_comentarios }}</span><span class="visually-hidden"> comentario{{ '' if e.n_comentarios == 1 else 's' }}</span>
+      {% if e.comentarios_no_leidos %}<span class="punto-nuevo" title="Hay comentarios sin leer"></span><span class="visually-hidden">, con comentarios sin leer</span>{% endif %}
+    </button>
+    {% endif %}
+  </div>
+</div>

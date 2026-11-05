@@ -39,4 +39,53 @@
   </div>
   {% endif %}
 </div>
+
+{% if equipo_hoy %}
+<section class="mt-4" aria-labelledby="hoy-equipo">
+  <h2 class="fs-5 mb-3" id="hoy-equipo">Equipo</h2>
+  <div class="row g-3">
+    <div class="col-12 col-lg-4">
+      <div class="card h-100"><div class="card-body">
+        <p class="tarjeta-numero__etiqueta">Mis CA</p>
+        <ul class="list-unstyled mb-0 small" data-hoy="mis-ca">
+          {% for c in equipo_hoy.mias %}
+          <li class="mb-1"><a href="/oportunidad/compras_agiles/{{ c.codigo }}">{{ c.nombre }}</a>
+            <span class="text-muted">· {{ c.estado }} · {{ c.cierre }}</span></li>
+          {% else %}
+          <li class="text-muted">No tienes CA a tu cargo. Tómalas desde la <a href="/mesa">mesa</a>.</li>
+          {% endfor %}
+        </ul>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-4">
+      <div class="card h-100"><div class="card-body">
+        <p class="tarjeta-numero__etiqueta">Cierran en menos de 24 h sin enviar</p>
+        <ul class="list-unstyled mb-0 small" data-hoy="urgentes">
+          {% for c in equipo_hoy.urgentes %}
+          <li class="mb-1"><a href="/oportunidad/compras_agiles/{{ c.codigo }}">{{ c.nombre }}</a>
+            <span class="text-muted">· {{ c.estado }} · {{ c.cierre }}</span></li>
+          {% else %}
+          <li class="text-muted">Ninguna priorizada cierra en las próximas 24 h.</li>
+          {% endfor %}
+        </ul>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-4">
+      <div class="card h-100"><div class="card-body">
+        <p class="tarjeta-numero__etiqueta">Últimas actividades</p>
+        <ul class="list-unstyled mb-0 small" data-hoy="actividad">
+          {% for it in equipo_hoy.actividad %}
+          <li class="mb-1"><a href="{{ it.url }}" class="text-body">{{ it.antes }} <em>{{ it.ca }}</em> {{ it.despues }}</a>
+            <span class="text-muted d-block">{{ it.cuando }}</span></li>
+          {% else %}
+          <li class="text-muted">Todavía no hay actividad del equipo.</li>
+          {% endfor %}
+        </ul>
+        <a href="/actividad" class="tarjeta-numero__ver">Ver todo →</a>
+      </div></div>
+    </div>
+  </div>
+  <p class="small text-muted mt-2 mb-0">Fuente: Dirección ChileCompra</p>
+</section>
+{% endif %}
 {% endblock %}

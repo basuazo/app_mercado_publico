@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/app.css?v={{ version_estaticos }}">
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
   <script src="/static/util.js?v={{ version_estaticos }}" defer></script>
+  <script src="/static/equipo.js?v={{ version_estaticos }}" defer></script>
 </head>
 <body
   {% if current_user is defined %}
@@ -27,14 +28,31 @@
 <a class="nav-lateral__item{% if activa %} active{% endif %}" href="{{ href }}"{% if activa %} aria-current="page"{% endif %}>{% if nombre_icono %}{{ icono(nombre_icono) }}<span>{{ texto }}</span>{% else %}{{ texto }}{% endif %}</a>
 {%- endmacro %}
 
+{#- Campana de actividad del equipo (F-equipo): una por barra; el número llega por el sondeo
+    único de abajo (fuera de banda a las dos). El menú se carga al abrirla. -#}
+{% macro campana(sufijo) -%}
+<div class="dropdown campana">
+  <button class="btn btn-icono campana__boton" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+          data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+          hx-get="/actividad/campana" hx-target="#campana-lista{{ sufijo }}" hx-trigger="click">
+    {{ icono('campana') }}<span class="visually-hidden">Actividad del equipo</span>
+    <span id="campana-n{{ sufijo }}" class="campana__n d-none" data-no-leidos="0"></span>
+  </button>
+  <div class="dropdown-menu campana__menu p-0" id="campana-lista{{ sufijo }}">
+    <p class="px-3 py-2 small text-muted mb-0">Cargando…</p>
+  </div>
+</div>
+{%- endmacro %}
+
 {#- El mismo menú alimenta la barra fija (escritorio) y el offcanvas (móvil). -#}
 {% macro menu(ruta, admin, con_empresa, email, csrf, sufijo) -%}
-<div class="nav-lateral__marca"><a href="/">Rastrillo</a></div>
+<div class="nav-lateral__marca d-flex align-items-center justify-content-between"><a href="/">Rastrillo</a>{% if con_empresa and not sufijo %}{{ campana('') }}{% endif %}</div>
 <nav class="nav-lateral" aria-label="Navegación principal{{ ' (móvil)' if sufijo }}">
   <ul class="nav-lateral__lista">
     {% if con_empresa or admin %}<li>{{ entrada('/', 'Inicio', 'inicio', ruta == '/') }}</li>{% endif %}
     {% if con_empresa %}
     <li>{{ entrada('/mesa', 'Mesa', 'mesa', ruta == '/mesa' or ruta.startswith('/mesa/')) }}</li>
+    <li>{{ entrada('/actividad', 'Actividad', 'actividad', ruta == '/actividad') }}</li>
     <li>{{ entrada('/competencia', 'Competencia', 'competencia', ruta == '/competencia' or ruta.startswith('/competencia/')) }}</li>
     <li>{{ entrada('/estrategia', 'Estrategia', 'estrategia', ruta == '/estrategia') }}</li>
     <li>{{ entrada('/catalogo', 'Catálogo', 'catalogo', ruta.startswith('/catalogo')) }}</li>
@@ -82,6 +100,7 @@
 
 <header class="app-topbar d-lg-none">
   <a class="app-topbar__marca" href="/">Rastrillo</a>
+  {% if tiene_empresa_activa %}<div class="ms-auto me-2">{{ campana('-m') }}</div>{% endif %}
   <button class="btn btn-icono" type="button" data-bs-toggle="offcanvas" data-bs-target="#menu-movil"
           aria-controls="menu-movil" aria-label="Abrir navegación">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
@@ -121,6 +140,18 @@
   <div class="modal-dialog modal-dialog-scrollable">
     <div class="modal-content" id="modal-descartar-contenido"></div>
   </div>
+</div>
+{% endif %}
+
+{% if current_user is defined and tiene_empresa_activa %}
+{# F-equipo: sondeo único de la campana (60 s; solo un número) y panel lateral del hilo de una CA. #}
+<div hidden hx-get="/actividad/contador" hx-trigger="load, every 60s" hx-swap="none" data-campana-sondeo></div>
+<div class="offcanvas offcanvas-end panel-hilo" tabindex="-1" id="panel-hilo" aria-labelledby="panel-hilo-titulo">
+  <div class="offcanvas-header">
+    <h2 class="offcanvas-title fs-6" id="panel-hilo-titulo">Conversación del equipo</h2>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body" id="panel-hilo-cuerpo"></div>
 </div>
 {% endif %}
 

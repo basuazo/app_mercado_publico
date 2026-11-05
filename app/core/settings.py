@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Versión de los estáticos: se usa como ?v= al enlazar app.css, para que un
 # deploy invalide la caché del navegador. Se sube A MANO en la fase que toca
 # el CSS; nada de hashes calculados en tiempo de request.
-VERSION_ESTATICOS = "f-ca-explorar"
+VERSION_ESTATICOS = "f-equipo"
 
 
 class Settings(BaseSettings):

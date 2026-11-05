@@ -43,6 +43,14 @@
       </select>
     </div>
     <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-equipo">Equipo</label>
+      <select class="form-select form-select-sm" id="mesa-equipo" name="equipo">
+        {% for clave, etiqueta in filtros_equipo.items() %}
+        <option value="{{ clave }}" {% if filtro_equipo == clave %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
       <label class="form-label small mb-1" for="mesa-monto">Monto mínimo (CLP)</label>
       <input type="number" min="0" step="1" class="form-control form-control-sm" id="mesa-monto" name="monto_min"
              value="{{ filtros.monto_min or '' }}">
@@ -52,6 +60,11 @@
         <input class="form-check-input" type="checkbox" name="anexos" value="1" id="mesa-anexos"
                {% if filtros.con_anexos %}checked{% endif %}>
         <label class="form-check-label small" for="mesa-anexos">Con anexos</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="descartadas" value="1" id="mesa-descartadas"
+               {% if ver_descartadas %}checked{% endif %}>
+        <label class="form-check-label small" for="mesa-descartadas">Ver descartadas</label>
       </div>
     </div>
     <div class="col-12 col-md-auto ms-md-auto d-flex align-items-center gap-3">
@@ -116,6 +129,7 @@
       <summary class="small">Historial del comprador (12 meses)</summary>
       <div id="mesa-hist-{{ it.codigo }}" class="small mt-2"><span class="text-muted">Cargando…</span></div>
     </details>
+    {% with e = estado_equipo[it.codigo], origen = 'mesa' %}{% include "_equipo_ca.html" %}{% endwith %}
   </div>
   {% else %}
   {{ vacio("No hay Compras Ágiles vigentes con estos filtros.", "/mesa", "Limpiar filtros") }}

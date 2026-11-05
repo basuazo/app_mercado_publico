@@ -18,6 +18,29 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-equipo (5-nov, commit local sin push hasta auditar; migración `a8d4f2c6e9b1`, cuelga de `f6b2d9a4c1e8`)
+Trabajo en equipo sobre las CA, alarmas dentro de la app y sin correo (`prompt-F-equipo.md`).
+**Esquema:** `ca_trabajo` (estado compartido por empresa × CA: `nueva` = sin fila, `priorizada`, `cotizando`, `lista`,
+`enviada`, `descartada` con motivo; responsable; `version` para concurrencia; `resultado`/`resultado_en`), `ca_eventos`
+(solo se agrega; `usuario_id` NULL = sistema, único por empresa × CA × tipo con índice parcial; columna `destinatario_id`
+para asignada/mención, así los no leídos no leen JSON), `ca_comentarios` (hilo por CA; eliminar es lógico),
+`preferencias_alarma` (sin fila = activa), `usuarios.nombre` y `usuarios.actividad_leida_hasta`.
+**Código:** `app/mercado/equipo.py` (transiciones con evento en la misma transacción; conflicto de versión con FOR UPDATE y
+UNIQUE; menciones resueltas en servidor contra los activos de la empresa; `consulta_no_leidos` sin fan-out (sin
+`actividad_leida_hasta`, solo cuenta lo de los últimos 7 días; también el punto de comentarios de la tarjeta);
+`generar_alarmas` idempotente; resultado con `elegir_por_rut` y `rut_competidor`; `purgar_eventos`),
+`app/api/routes/equipo.py`, `static/equipo.js` (409/422 se pintan, título con contador, Enter/Shift+Enter, autocompletar @).
+**UI:** campana en las dos barras (un sondeo de 60 s a `/actividad/contador`, que de paso genera las alarmas a lo más una
+vez por minuto por empresa con marca en `sync_state`), `/actividad` (registro paginado con filtros), bloque de equipo y
+panel lateral del hilo en cada tarjeta de `/mesa` (filtro «Equipo», descartadas ocultas por defecto), bloque «Equipo» e hilo
+en la ficha, bloque «Equipo» en «Hoy», interruptores en `/cuenta`, nombre visible en `/admin/usuarios`.
+**Jobs:** `mercado-ca` y `mercado-backfill` (workflow `mercado-nocturno`) generan las alarmas de todas las empresas activas
+al final (sin API; un fallo no rompe la ingesta). **Retención:** `ca_eventos` > 12 meses se purgan; una CA con `ca_trabajo`
+no se purga. **Tamaño:** ~100 B por evento [I, a medir con `tests/test_equipo_pg.py` contra Postgres; el test exige < 200 B].
+**Pendiente de Boris:** (1) `alembic upgrade head` en la base de tests local y `python -m pytest -rs` completo (el
+clasificador no deja al asistente migrar ninguna base); (2) deploy con migración (pasos en el prompt §8); (3) nombres
+visibles de Mario y Gonzalo en `/admin/usuarios` y que estén activos en la misma empresa; (4) prueba con dos navegadores.
+
 ## F-plat-comp (5-nov, commit local sin push hasta auditar; migración `f6b2d9a4c1e8`, cuelga de `e4a7c2f9d1b3`)
 Análisis de competencia (`prompt-F-plat-comp.md`, con su §6 «Revisión 5-nov»).
 **Esquema:** `competencia_mes` (RUT × `clave_comprador` × familia × mes: CA, ofertas, ganadas, sin dato, log_ratio con

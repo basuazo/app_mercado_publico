@@ -1,0 +1,4 @@
+{#- Respuesta del sondeo de 60 s: solo el número, en las dos barras (fuera de banda). -#}
+{% for sufijo in ('', '-m') %}
+<span id="campana-n{{ sufijo }}" hx-swap-oob="true" class="campana__n{% if not n %} d-none{% endif %}" data-no-leidos="{{ n }}">{{ n if n < 100 else '99+' }}<span class="visually-hidden"> sin leer</span></span>
+{% endfor %}

@@ -195,3 +195,13 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   juez/prompt: varios modelos leen **peor los PDF con texto que los escaneados** (Qwen3.6 y Qwen3.7: 0 % en texto), lo
   que apunta [I] al formato del texto que se le pasa (tablas con `|`) o a convenciones de la verdad (multiplicadores,
   consolidado) que el prompt no explica.
+- **La plataforma es un espacio de trabajo colaborativo; estados del flujo de una CA** (Boris, 5-nov; F-equipo). Por
+  empresa: `nueva` (sin fila), `priorizada`, `cotizando`, `lista` (para enviar), `enviada`, `descartada` (con motivo
+  obligatorio). Transiciones libres (equipo chico, no se bloquea); reabrir una descartada se permite y queda en el registro.
+  El resultado (ganada, perdida, no registrada, sin dato, desierta) va aparte, no como estado. Concurrencia: cada cambio
+  manda la versión que vio el usuario; si no calza no se aplica y se muestra quién la cambió. Tomar o asignar una CA
+  `nueva` la deja en `priorizada`.
+- **Alarmas dentro de la app, sin correo por ahora** (Boris, 5-nov; F-equipo). Campana con sondeo de 60 s; cuatro
+  preferencias (actividad del equipo, asignada a mí, cierre cercano, resultado), todas prendidas por defecto; la mención
+  siempre llega. El cupo de Brevo queda para los resúmenes (regla 14); `generar_alarmas` y `consulta_no_leidos` quedan listas
+  para un resumen por correo futuro. `ca_descartes_mesa` de F-plat-5 no se crea: el descarte es `ca_trabajo`.

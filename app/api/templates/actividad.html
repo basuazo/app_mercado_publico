@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado, vacio %}
+{% block title %}Actividad — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado("Actividad del equipo", "Todo lo que el equipo hizo sobre las Compras Ágiles, lo más nuevo primero.") }}
+
+<form method="get" action="/actividad" class="card card-body mb-3" role="search" aria-label="Filtros de la actividad">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-3">
+      <label class="form-label small mb-1" for="act-persona">Persona</label>
+      <select class="form-select form-select-sm" id="act-persona" name="persona">
+        <option value="">Todas</option>
+        {% for pid, pnombre in personas %}
+        <option value="{{ pid }}" {% if filtro_persona == pid %}selected{% endif %}>{{ pnombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small mb-1" for="act-tipo">Tipo</label>
+      <select class="form-select form-select-sm" id="act-tipo" name="tipo">
+        <option value="">Todos</option>
+        {% for clave, etiqueta in tipos.items() %}
+        <option value="{{ clave }}" {% if filtro_tipo == clave %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-3">
+      <label class="form-label small mb-1" for="act-ca">Código de la CA</label>
+      <input type="search" class="form-control form-control-sm" id="act-ca" name="ca" value="{{ filtro_ca }}" maxlength="50">
+    </div>
+    <div class="col-12 col-md-auto d-flex gap-2">
+      <button class="btn btn-primary btn-sm" type="submit">Aplicar</button>
+      <a class="btn btn-outline-secondary btn-sm" href="/actividad">Limpiar</a>
+    </div>
+  </div>
+</form>
+
+<p class="small text-muted"><span class="num">{{ total | numero }}</span> evento{{ '' if total == 1 else 's' }}</p>
+<ul class="list-group mb-3">
+  {% for it in items %}
+  <li class="list-group-item">
+    <a href="{{ it.url }}" class="text-decoration-none text-body">{{ it.antes }} <em>{{ it.ca }}</em> {{ it.despues }}</a>
+    <span class="d-block small text-muted">{{ it.cuando }} · <span class="num">{{ it.codigo }}</span></span>
+  </li>
+  {% else %}
+  <li class="list-group-item">{{ vacio("No hay actividad con estos filtros.", "/actividad", "Limpiar filtros") }}</li>
+  {% endfor %}
+</ul>
+
+{% if total_paginas > 1 %}
+<nav class="d-flex justify-content-between align-items-center gap-2" aria-label="Paginación de la actividad">
+  {% if pagina > 1 %}
+  <a class="btn btn-outline-secondary btn-sm" href="/actividad?{{ qs_base }}{{ '&' if qs_base }}pagina={{ pagina - 1 }}">Más nuevas</a>
+  {% else %}<span></span>{% endif %}
+  <span class="small text-muted">Página {{ pagina }} de {{ total_paginas }}</span>
+  {% if pagina < total_paginas %}
+  <a class="btn btn-outline-secondary btn-sm" href="/actividad?{{ qs_base }}{{ '&' if qs_base }}pagina={{ pagina + 1 }}">Más antiguas</a>
+  {% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

@@ -206,7 +206,25 @@ def run_mercado_ca(settings: Settings, engine: Engine) -> dict[str, Any]:
     from app.ingest.mercado import sync_mercado_ca
 
     _, v2 = _make_clients(settings, engine, reserva_ca=False)
-    return sync_mercado_ca(settings, engine, v2)
+    resultado = sync_mercado_ca(settings, engine, v2)
+    resultado["alarmas_equipo"] = _alarmas_equipo(engine)
+    return resultado
+
+
+def _alarmas_equipo(engine: Engine) -> dict[str, int] | str:
+    """F-equipo §2: alarmas de sistema (cierre 24 h / 4 h, resultado) de todas las empresas
+    activas, al final de `mercado-ca` y de `mercado-backfill`. Solo base de datos, idempotente.
+    Un fallo acá no rompe la ingesta: se registra y la campana las genera igual al sondear."""
+    from app.mercado.equipo import generar_alarmas_todas
+
+    try:
+        with Session(engine) as session:
+            cuenta = generar_alarmas_todas(session, ahora_utc())
+            session.commit()
+            return cuenta
+    except Exception as exc:
+        _log.error("alarmas del equipo: %s", type(exc).__name__, exc_info=True)
+        return f"error: {type(exc).__name__}"
 
 
 def run_mercado_backfill(
@@ -216,7 +234,10 @@ def run_mercado_backfill(
     from app.ingest.mercado import run_backfill
 
     _, v2 = _make_clients(settings, engine, reserva_ca=False)
-    return run_backfill(settings, engine, v2, now_fn=now_fn)
+    resultado = run_backfill(settings, engine, v2, now_fn=now_fn)
+    if isinstance(resultado, dict):
+        resultado["alarmas_equipo"] = _alarmas_equipo(engine)
+    return resultado
 
 
 def run_mercado_oc(

@@ -489,7 +489,16 @@ async def portada(
         .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(("pendiente", "dudosa")))
     ).scalar_one()
     n_proveedores = n_productos = 0
+    equipo_hoy: dict[str, Any] | None = None
     if empresa_id is not None:
+        from app.mercado import equipo as eq
+
+        ahora = ahora_utc()
+        equipo_hoy = {
+            "mias": eq.mis_ca(session, empresa_id, user.id, ahora),
+            "urgentes": eq.cierran_sin_enviar(session, empresa_id, ahora),
+            "actividad": eq.ultimas_actividades(session, empresa_id, user.id, ahora),
+        }
         n_proveedores = session.execute(
             select(func.count()).select_from(Proveedor).where(Proveedor.empresa_id == empresa_id)
         ).scalar_one()
@@ -512,6 +521,7 @@ async def portada(
             lineas_por_revisar=lineas_por_revisar,
             n_proveedores=n_proveedores,
             n_productos=n_productos,
+            equipo_hoy=equipo_hoy,
         ),
     )
 
@@ -979,12 +989,18 @@ def _contexto_ficha(
         from app.api.routes.catalogo import lineas_para_ficha
         from app.mercado.territorio import regiones_activas
 
-        lineas_ca = lineas_para_ficha(session, op, user, regiones_activas(session, settings))
+        regiones_ficha = regiones_activas(session, settings)
+        lineas_ca = lineas_para_ficha(session, op, user, regiones_ficha)
+        # F-equipo: bloque «Equipo» e hilo, solo con empresa activa y CA del territorio.
+        con_equipo = op.region in regiones_ficha and empresa_activa_id(session, user) is not None
+    else:
+        con_equipo = False
     return _ctx(
         request,
         user,
         match=match,
         lineas_ca=lineas_ca,
+        con_equipo=con_equipo,
         # Misma definición de "alta"/"media" que los presets del feed:
         # el badge de la ficha ya no puede contradecir al filtro (2.2).
         banda=(
@@ -2128,11 +2144,18 @@ async def organismos_catalogo(
 async def cuenta_get(
     request: Request,
     user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
     mensaje: str = "",
     error: str = "",
 ) -> HTMLResponse:
+    from app.mercado import equipo as eq
+
+    alarmas = None
+    if empresa_activa_id(session, user) is not None:
+        prefs = eq.preferencias(session, user.id)
+        alarmas = [(t, eq.ETIQUETA_PREFERENCIA[t], prefs[t]) for t in eq.PREFERENCIAS]
     return _TEMPLATES.TemplateResponse(
-        request, "cuenta.html", _ctx(request, user, mensaje=mensaje, error=error)
+        request, "cuenta.html", _ctx(request, user, mensaje=mensaje, error=error, alarmas=alarmas)
     )
 
 
@@ -2461,6 +2484,7 @@ async def admin_usuario_crear(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
+    nombre: str = Form(""),
     rol: str = Form("usuario"),
     empresa_id: int | None = Form(None),
     csrf_token: str = Form(""),
@@ -2479,6 +2503,7 @@ async def admin_usuario_crear(
         )
     nuevo = Usuario(
         email=email,
+        nombre=" ".join(nombre.split())[:100] or None,
         password_hash=hash_password(password),
         rol=RolUsuario(rol),
         activo=True,

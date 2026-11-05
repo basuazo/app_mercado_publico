@@ -1,0 +1,24 @@
+{#- Hilo del equipo de una CA (F-equipo): el mismo componente en el panel lateral de la mesa y en la
+    ficha. Más antiguo arriba; cuadro abajo (Enter envía, Shift+Enter salto de línea; @ menciona).
+    Los comentarios se escapan siempre (nunca |safe); los saltos de línea los muestra el CSS. -#}
+<section class="hilo" id="hilo-{{ codigo }}" aria-label="Conversación del equipo sobre {{ ca_nombre }}">
+  {% include "_equipo_hilo_lista.html" %}
+  <form method="post" action="/equipo/ca/{{ codigo }}/comentarios" class="hilo__form mt-2"
+        hx-post="/equipo/ca/{{ codigo }}/comentarios" hx-target="#hilo-{{ codigo }}" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="form-label small mb-1" for="hilo-texto-{{ codigo }}">Comentar</label>
+    <div class="position-relative">
+      <textarea class="form-control form-control-sm" name="texto" id="hilo-texto-{{ codigo }}" rows="2"
+                maxlength="{{ texto_max }}" required data-hilo-texto
+                data-miembros='{{ miembros_nombres | tojson }}'
+                aria-describedby="hilo-ayuda-{{ codigo }}">{{ borrador }}</textarea>
+      <ul class="hilo__sugerencias list-unstyled d-none" role="listbox" aria-label="Personas para mencionar"></ul>
+    </div>
+    {% if error %}<div class="text-danger small mt-1" role="alert">{{ error }}</div>{% endif %}
+    <div class="d-flex justify-content-between align-items-center mt-1">
+      <span class="small text-muted" id="hilo-ayuda-{{ codigo }}">Enter envía · Shift+Enter salto de línea · @ para mencionar</span>
+      <button type="submit" class="btn btn-sm btn-primary">Enviar</button>
+    </div>
+  </form>
+  <p class="small text-muted mt-2 mb-0">Datos de la CA: Fuente: Dirección ChileCompra</p>
+</section>

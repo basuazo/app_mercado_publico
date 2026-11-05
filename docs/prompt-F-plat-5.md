@@ -8,6 +8,17 @@
 > sección "Revisión 4-nov" manda sobre el resto del prompt donde choquen. Si algo no calza con lo que dejen F-plat-1, 2
 > o 4, gana el código: anotarlo en el commit y no inventar.
 
+## Revisión F-equipo (5-nov) — manda sobre todo lo demás
+F-equipo ya define el estado compartido de cada CA (`ca_trabajo`, `ca_eventos`, `ca_comentarios`; `app/mercado/equipo.py`).
+1. **`ca_descartes_mesa` no se crea:** descartar es `ca_trabajo.estado = 'descartada'` con motivo
+   (`equipo.cambiar_estado`, que escribe su evento).
+2. **«Marcar enviada»** cambia `ca_trabajo` a `enviada` con `equipo.cambiar_estado` (y su evento); `ofertas_propias` guarda
+   solo el contenido de la oferta (líneas, precios, total), no el estado del flujo.
+3. **El cierre de §1.4 reutiliza F-equipo §1.3:** `equipo.resultado_de` / `equipo.generar_alarmas` (resultado ganada,
+   perdida, no_registrada, sin_dato, desierta, con `elegir_por_rut` y `rut_competidor`). No se define dos veces.
+4. **La mesa respeta el filtro «Equipo»** (`equipo.filtrar_equipo`) y oculta las descartadas por defecto; las tarjetas
+   nuevas conservan el bloque `_equipo_ca.html` y el panel del hilo.
+
 ## Revisión 4-nov noche (Cowork) — manda sobre todo lo demás
 1. **`/mesa` ya existe** (F-mesa-v0, `app/api/routes/mesa_dia.py`) con vigentes, filtros, banderas e historial del
    comprador, y `clave_comprador` en `app/mercado/comprador.py`. Esta fase **amplía** esa pantalla (precio sugerido,

@@ -21,6 +21,7 @@ from app.models.enums import ESTADOS_TERMINALES
 from app.models.tables import (
     Alerta,
     CaProducto,
+    CaTrabajo,
     CompraAgil,
     JobRun,
     Licitacion,
@@ -62,7 +63,9 @@ def purgar_terminales(
     ).union(
         select(OportunidadSeguida.codigo_oportunidad).where(
             OportunidadSeguida.fuente == "compras_agiles"
-        )
+        ),
+        # F-equipo: una CA que algún equipo trabajó no se purga (como F-plat-5 §12).
+        select(CaTrabajo.ca_codigo),
     )
 
     # -- Licitaciones terminales antiguas --
@@ -117,6 +120,11 @@ def purgar_terminales(
     # -- Historial de corridas de jobs --
     job_runs_borrados = purgar_job_runs(session, dias=dias)
 
+    # -- Registro de actividad del equipo (F-equipo): 12 meses; ca_trabajo no se purga --
+    from app.mercado.equipo import purgar_eventos
+
+    eventos_borrados = purgar_eventos(session, ahora_utc())
+
     _log.info(
         "purgar_terminales(dias=%d): licitaciones=%d items=%d ca=%d productos=%d job_runs=%d",
         dias,
@@ -132,6 +140,7 @@ def purgar_terminales(
         "ca_purgadas": ca_purgadas,
         "productos_borrados": prods_borrados,
         "job_runs_borrados": job_runs_borrados,
+        "eventos_equipo_borrados": eventos_borrados,
     }
 
 

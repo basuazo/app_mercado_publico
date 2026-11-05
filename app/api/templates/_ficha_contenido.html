@@ -319,6 +319,19 @@
         {% endif %}
       </div>
     </div>
+
+    {% if con_equipo %}
+    {# F-equipo: estado compartido y conversación del equipo (los mismos componentes que la mesa). #}
+    <section class="border rounded p-3 mt-4" aria-labelledby="ficha-equipo-titulo">
+      <h3 class="fs-6 mb-2" id="ficha-equipo-titulo">Equipo</h3>
+      <div hx-get="/equipo/ca/{{ codigo }}/bloque?origen=ficha" hx-trigger="load" hx-swap="outerHTML">
+        <p class="small text-muted mb-0">Cargando…</p>
+      </div>
+      <div class="mt-3" hx-get="/equipo/ca/{{ codigo }}/hilo" hx-trigger="load" hx-swap="outerHTML">
+        <p class="small text-muted mb-0">Cargando la conversación…</p>
+      </div>
+    </section>
+    {% endif %}
   </div>
 
   <div class="modal-footer justify-content-start text-muted small">Fuente: Dirección ChileCompra</div>

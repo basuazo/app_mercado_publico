@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB as _PG_JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -63,6 +64,10 @@ class Usuario(Base):
     empresa_id: Mapped[int | None] = mapped_column(
         BigInt, ForeignKey("empresas.id", ondelete="SET NULL"), nullable=True
     )
+    # F-equipo: nombre visible (si falta, la parte del correo antes de la @) y hasta cuándo
+    # leyó la actividad del equipo (todo evento posterior es «no leído» para él).
+    nombre: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    actividad_leida_hasta: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
@@ -1211,3 +1216,129 @@ Index("ix_producto_alias_producto_id", ProductoAlias.producto_id)
 Index("ix_ca_lineas_producto_id", CaLinea.producto_id)
 Index("ix_ca_lineas_estado", CaLinea.estado)
 Index("ix_ca_lineas_texto_norm", CaLinea.texto_norm)
+
+
+# ---------------------------------------------------------------------------
+# F-equipo: trabajo en equipo sobre las CA (estado compartido, registro, comentarios).
+# Todo pertenece a una empresa (regla 26). `oportunidades_seguidas` y `alertas` son de la app
+# anterior (por usuario): no se reutilizan.
+# ---------------------------------------------------------------------------
+
+
+class CaTrabajo(Base):
+    """Estado compartido de una CA para una empresa. Sin fila = `nueva`.
+
+    `version` sube con cada cambio: quien cambia manda la que vio, y si no coincide el cambio no
+    se aplica (nunca se pisa en silencio el de otro). `resultado` lo calcula
+    `app.mercado.equipo` cuando una `enviada` ya cerró y sus ofertas están leídas.
+    """
+
+    __tablename__ = "ca_trabajo"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "ca_codigo", name="uq_ca_trabajo_empresa_ca"),
+        Index("ix_ca_trabajo_empresa_estado", "empresa_id", "estado"),
+        Index("ix_ca_trabajo_empresa_responsable", "empresa_id", "responsable_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo"), nullable=False
+    )
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)
+    responsable_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    motivo_descarte: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    resultado: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    resultado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class CaEvento(Base):
+    """Registro de actividad del equipo: solo se agrega, nunca se edita.
+
+    `usuario_id` NULL = evento de sistema (`cierre_24h`, `cierre_4h`, `resultado`): idempotentes
+    por el índice único parcial (empresa, CA, tipo) WHERE usuario_id IS NULL.
+    `destinatario_id` (columna, no solo en `datos`): la persona asignada (`asignada`) o mencionada
+    (`mencion`); así la consulta de no leídos es SQL simple, sin leer JSON.
+    """
+
+    __tablename__ = "ca_eventos"
+    __table_args__ = (
+        Index("ix_ca_eventos_empresa_ca", "empresa_id", "ca_codigo"),
+        Index(
+            "uq_ca_eventos_sistema",
+            "empresa_id",
+            "ca_codigo",
+            "tipo",
+            unique=True,
+            postgresql_where=text("usuario_id IS NULL"),
+            sqlite_where=text("usuario_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    ca_codigo: Mapped[str] = mapped_column(String(50), nullable=False)
+    # CASCADE y no SET NULL: un evento de usuario nunca debe volverse «de sistema».
+    usuario_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=True
+    )
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    destinatario_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=True
+    )
+    datos: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+class CaComentario(Base):
+    """Un mensaje del hilo de una CA (por empresa). Eliminar es lógico: el registro queda."""
+
+    __tablename__ = "ca_comentarios"
+    __table_args__ = (
+        Index("ix_ca_comentarios_empresa_ca_creado", "empresa_id", "ca_codigo", "creado_en"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    ca_codigo: Mapped[str] = mapped_column(String(50), nullable=False)
+    usuario_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False
+    )
+    texto: Mapped[str] = mapped_column(String(2000), nullable=False)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    editado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    eliminado: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+
+class PreferenciaAlarma(Base):
+    """Interruptor de una alarma de un usuario. Sin fila = activa."""
+
+    __tablename__ = "preferencias_alarma"
+    __table_args__ = (UniqueConstraint("usuario_id", "tipo", name="uq_preferencia_alarma"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    usuario_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False
+    )
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)
+    activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+# Registro de la empresa, lo más nuevo primero (campana, /actividad, no leídos).
+Index("ix_ca_eventos_empresa_creado", CaEvento.empresa_id, CaEvento.creado_en.desc())

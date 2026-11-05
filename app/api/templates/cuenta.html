@@ -58,6 +58,28 @@
     </div>
   </div>
 
+  {% if alarmas %}
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">Alarmas del equipo</div>
+      <div class="card-body">
+        <form method="post" action="/cuenta/alarmas">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% for tipo, etiqueta, activa in alarmas %}
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" name="pref" value="{{ tipo }}"
+                   id="pref-{{ tipo }}" {% if activa %}checked{% endif %}>
+            <label class="form-check-label" for="pref-{{ tipo }}">{{ etiqueta }}</label>
+          </div>
+          {% endfor %}
+          <p class="text-muted small mt-2">Las menciones (@tu nombre) siempre llegan. Las alarmas se ven en la campana, dentro de la app.</p>
+          <button type="submit" class="btn btn-primary">Guardar alarmas</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="col-12">
     <div class="card">
       <div class="card-header">Cambiar contraseña</div>
