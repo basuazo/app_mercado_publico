@@ -805,7 +805,10 @@ def proveedor_lista_precios(
     ue: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Lee la lista con el modelo y muestra la vista previa editable (no guarda nada)."""
+    """Lee la lista con el modelo y muestra la vista previa editable (no guarda nada).
+
+    Tras verificar el proveedor se suelta la conexión (`rollback`) mientras se lee el archivo y
+    responde el modelo (regla 15); después el proveedor se recarga con su empresa."""
     from app.clients.openrouter import LLMError, OpenRouterClient
     from app.mercado import anexos
 
@@ -818,6 +821,7 @@ def proveedor_lista_precios(
         mime = anexos.validar_archivo(data)
     except anexos.AnexoInvalido as exc:
         return _pagina_lista(request, user, prov, status_code=422, error=str(exc))
+    session.rollback()  # solo hubo lecturas; las páginas de error recargan `prov` al pintarse
     res = anexos.extraer_texto(data, mime, max_paginas_imagen=settings.llm_max_paginas_imagen)
     if res.error or not res.hay_contenido:
         return _pagina_lista(
@@ -837,6 +841,7 @@ def proveedor_lista_precios(
             request, user, prov,
             error=f"No se pudo leer la lista ({exc}). Carga los precios a mano o con la planilla.",
         )  # fmt: skip
+    prov = _proveedor_o_404(session, empresa_id, proveedor_id)  # recarga tras el rollback
     filas = [
         (ln.texto, ln.formato or "", "" if ln.precio is None else f"{ln.precio:g}")
         for ln in ext.lineas

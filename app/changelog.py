@@ -16,6 +16,16 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 4),
+        titulo="Anexos largos: se leen las primeras 40 páginas",
+        descripcion=(
+            "Al subir un anexo o una lista de precios en PDF con texto, se leen hasta 40 páginas. "
+            "Si el archivo trae más, el aviso indica cuántas se leyeron de cuántas, para que agregues "
+            "a mano las filas que falten. Así un consolidado de cientos de páginas ya no deja la "
+            "plataforma lenta ni la reinicia. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 4),
         titulo="Anexos de Compra Ágil convertidos en líneas, con revisión",
         descripcion=(
             "Cuando una Compra Ágil dice «según anexo», ahora puedes subir ese anexo (PDF, Excel, "

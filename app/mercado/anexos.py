@@ -43,6 +43,7 @@ _log = logging.getLogger(__name__)
 
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB por anexo
 MAX_TEXTO = 50_000  # ca_anexos.texto_extraido
+MAX_PAGINAS_TEXTO = 40  # páginas de un PDF con texto que se leen (tiempo y RAM de la web)
 MIN_CHARS_POR_PAGINA = 50  # bajo esto, el PDF se trata como escaneado
 RESOLUCION_RENDER = 150  # dpi máximos de una página renderizada
 MAX_LADO_PX = 2000  # lado mayor de la imagen de una página (RAM de Render y tokens de imagen)
@@ -140,7 +141,10 @@ class ResultadoTexto:
     imagenes: list[tuple[bytes, str]] = field(default_factory=list)
     paginas: int | None = None
     escaneado: bool = False
-    paginas_omitidas: int = 0  # páginas de un escaneado que no se enviaron (tope)
+    # Páginas que no se leyeron por un tope: de un escaneado, las que no van como imagen; de un
+    # PDF con texto, las que pasan de `MAX_PAGINAS_TEXTO` o de `MAX_TEXTO`.
+    paginas_omitidas: int = 0
+    paginas_leidas: int | None = None  # con tope: cuántas se leyeron (el aviso lo dice)
     error: str | None = None
 
     @property
@@ -226,16 +230,22 @@ def _texto_pdf(
         )
     with pdf:
         try:
-            paginas = list(pdf.pages)
+            n = len(pdf.pages)  # objetos livianos: el layout de cada página se calcula al leerla
         except Exception as exc:
             return _pdf_con_pdfium(
                 data, max_paginas_imagen, f"No pude leer las páginas del PDF ({type(exc).__name__})"
             )
-        if not paginas:
+        if n == 0:
             return _pdf_con_pdfium(data, max_paginas_imagen, "El PDF no tiene páginas legibles")
         partes: list[str] = []
-        chars = 0
-        for i, pag in enumerate(paginas, start=1):
+        chars = largo = leidas = 0
+        # De a una página, liberando su caché apenas se lee; corta en `MAX_PAGINAS_TEXTO` o en
+        # cuanto el texto alcanza `MAX_TEXTO` (lo demás se recortaría igual). Render: 512 MB.
+        for i in range(min(n, MAX_PAGINAS_TEXTO)):
+            if largo >= MAX_TEXTO:
+                break
+            pag = pdf.pages[i]
+            leidas += 1
             try:
                 tablas = pag.find_tables()
                 resto = pag
@@ -243,23 +253,33 @@ def _texto_pdf(
                     resto = resto.outside_bbox(t.bbox)
                 texto = resto.extract_text() or ""
                 filas = [_fila(f) for t in tablas for f in t.extract()]
+                chars += len(pag.chars)
             except Exception as exc:
-                _log.warning("Anexo PDF: página %s ilegible (%s)", i, type(exc).__name__)
+                _log.warning("Anexo PDF: página %s ilegible (%s)", i + 1, type(exc).__name__)
                 continue
-            chars += len(pag.chars) if hasattr(pag, "chars") else len(texto)
+            finally:
+                pag.close()
             bloque = "\n".join(x for x in (texto.strip(), *[f for f in filas if f]) if x)
             if bloque:
-                partes.append(f"[página {i}]\n{bloque}")
-        n = len(paginas)
-        if chars / n >= MIN_CHARS_POR_PAGINA:
-            return ResultadoTexto(texto="\n\n".join(partes)[:MAX_TEXTO], paginas=n)
+                partes.append(f"[página {i + 1}]\n{bloque}")
+                largo += len(partes[-1]) + 2
+        if chars / leidas >= MIN_CHARS_POR_PAGINA:
+            return ResultadoTexto(
+                texto="\n\n".join(partes)[:MAX_TEXTO],
+                paginas=n,
+                paginas_leidas=leidas,
+                paginas_omitidas=n - leidas,
+            )
         # Sin capa de texto (escaneado): las primeras páginas van como imagen.
         imagenes: list[tuple[bytes, str]] = []
-        for pag in paginas[: max(0, max_paginas_imagen)]:
+        for i in range(min(n, max(0, max_paginas_imagen))):
+            pag = pdf.pages[i]
             try:
                 imagenes.append((render(pag), PNG))
             except Exception as exc:
                 _log.warning("Anexo PDF: no pude renderizar una página (%s)", type(exc).__name__)
+            finally:
+                pag.close()
         if not imagenes:
             return ResultadoTexto(
                 paginas=n, escaneado=True, error="PDF escaneado que no se pudo convertir a imagen"
@@ -269,6 +289,7 @@ def _texto_pdf(
             imagenes=imagenes,
             paginas=n,
             escaneado=True,
+            paginas_leidas=len(imagenes),
             paginas_omitidas=max(0, n - len(imagenes)),
         )
 
@@ -516,8 +537,9 @@ def anexo_rechazado(ca: CompraAgil, data: bytes, nombre: str, motivo: str) -> Ca
 
 def _aviso_paginas(res: ResultadoTexto) -> str:
     if res.paginas_omitidas:
+        leidas = res.paginas_leidas if res.paginas_leidas is not None else len(res.imagenes)
         return (
-            f" Solo se leyeron las primeras {len(res.imagenes)} páginas de {res.paginas}: "
+            f" Solo se leyeron las primeras {leidas} páginas de {res.paginas}: "
             "agrega a mano las filas de las demás."
         )
     return ""
@@ -538,11 +560,18 @@ def procesar_anexo_ca(
     problema (PDF roto, sin presupuesto, modelo caído) deja el anexo con su estado y la vista en
     manual: nunca lanza por eso (regla 6). Flush, sin commit.
 
-    El modelo se llama ANTES de escribir nada: la sesión no retiene una transacción de escritura
-    (ni una conexión de Neon con locks) durante el minuto que puede tardar la extracción."""
+    La sesión llega SIN escrituras pendientes (quien llama solo leyó la CA, la región, el
+    usuario): antes de leer el archivo y llamar al modelo se hace `rollback()`, que cierra la
+    transacción de lectura y devuelve la conexión al pool (regla 15: la extracción puede tardar
+    más de un minuto y `OpenRouterClient` usa sus propias sesiones). Después se recarga la CA y
+    recién ahí se escribe; si la CA ya no existe → :class:`AnexoInvalido`."""
     from app.clients.openrouter import LLMError, LLMPresupuestoAgotado
 
+    codigo = ca.codigo
     mime = validar_archivo(data)
+    if session.new or session.dirty or session.deleted:
+        raise RuntimeError("procesar_anexo_ca: la sesión trae cambios sin confirmar")
+    session.rollback()  # suelta la conexión mientras se lee el archivo y responde el modelo
     res = extraer_texto(data, mime, max_paginas_imagen=max_paginas_imagen, render=render)
 
     ext: ExtraccionAnexo | None = None
@@ -561,13 +590,18 @@ def procesar_anexo_ca(
             estado = "sin_presupuesto"
             aviso = "Se agotó el presupuesto del mes para la lectura automática: agrega las filas a mano."
         except LLMError as exc:
-            _log.warning("Anexo %s: la extracción falló (%s)", ca.codigo, exc)
+            _log.warning("Anexo %s: la extracción falló (%s)", codigo, exc)
             estado, aviso = "error", "La lectura automática falló: agrega las filas a mano."
         else:
             if ext.invalida:
                 estado = "error"
                 aviso = "El modelo no devolvió filas legibles: agrega las filas a mano."
 
+    # Recarga tras el rollback (el objeto quedó expirado): un SELECT en una transacción nueva.
+    recargada = session.get(CompraAgil, codigo)
+    if recargada is None:
+        raise AnexoInvalido("La compra ágil ya no está disponible")
+    ca = recargada
     anexo = CaAnexo(
         ca_codigo=ca.codigo,
         nombre_original=(nombre or "anexo")[:255],

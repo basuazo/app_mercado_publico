@@ -417,7 +417,8 @@ def bajar_anexos(
                         # Se registra igual: si no, la CA volvería a la cola en cada corrida.
                         session.rollback()
                         ca = session.get(CompraAgil, codigo)
-                        assert ca is not None
+                        if ca is None:  # se purgó mientras se leía el anexo
+                            break
                         session.add(anexos.anexo_rechazado(ca, data, doc.nombre, str(exc)))
                     session.commit()
                     procesados += 1

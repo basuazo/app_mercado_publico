@@ -17,7 +17,7 @@ import httpx
 import pytest
 import respx
 from fastapi.testclient import TestClient
-from sqlalchemy import LargeBinary, create_engine, inspect, select
+from sqlalchemy import LargeBinary, create_engine, event, inspect, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -28,7 +28,7 @@ from app.auth.session import COOKIE_NAME, create_session_token, decode_session_t
 from app.clients import openrouter as orc
 from app.clients.base import BaseClient, QuotaTracker, RateLimiter
 from app.clients.mp_v2 import _parse_ca_detalle
-from app.clients.types import DocumentoCA, LineaExtraida
+from app.clients.types import DocumentoCA, ExtraccionAnexo, LineaExtraida
 from app.core.logging import _SecretFilter
 from app.core.settings import Settings
 from app.mercado import anexos
@@ -374,6 +374,85 @@ def test_pdf_escaneado_render_real():
     assert r.escaneado and r.imagenes[0][0].startswith(b"\x89PNG")
 
 
+# --- Tope de páginas de un PDF con texto (F-plat-2-fix) -------------------------------
+
+
+def _pdf_con_texto(paginas: int, lineas: int = 3) -> bytes:
+    """PDF mínimo de `paginas` páginas con `lineas` renglones de texto (Helvetica) cada una."""
+    objetos: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"",  # /Pages: se completa abajo
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    kids = []
+    for p in range(paginas):
+        renglones = "".join(
+            f"1 0 0 1 40 {800 - 10 * k} Tm (Pagina {p + 1} renglon {k + 1} arroz grado 1 bolsa 1 kg"
+            f" cantidad 20 unidades) Tj\n"
+            for k in range(lineas)
+        )
+        flujo = f"BT /F1 8 Tf\n{renglones}ET".encode()
+        objetos.append(b"<< /Length %d >>\nstream\n" % len(flujo) + flujo + b"\nendstream")
+        objetos.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] "
+            b"/Resources << /Font << /F1 3 0 R >> >> /Contents %d 0 R >>" % (len(objetos))
+        )
+        kids.append(f"{len(objetos)} 0 R")
+    objetos[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {paginas} >>".encode()
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    offsets = []
+    for i, obj in enumerate(objetos, start=1):
+        offsets.append(out.tell())
+        out.write(b"%d 0 obj\n" % i + obj + b"\nendobj\n")
+    xref = out.tell()
+    out.write(b"xref\n0 %d\n0000000000 65535 f \n" % (len(objetos) + 1))
+    for o in offsets:
+        out.write(b"%010d 00000 n \n" % o)
+    out.write(
+        b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objetos) + 1, xref)
+    )
+    return out.getvalue()
+
+
+def test_pdf_con_texto_lee_hasta_40_paginas_y_lo_avisa():
+    r = anexos.extraer_texto(_pdf_con_texto(60), anexos.PDF)
+    assert r.error is None and not r.escaneado and not r.imagenes
+    assert (r.paginas, r.paginas_leidas, r.paginas_omitidas) == (60, 40, 20)
+    assert "[página 40]" in r.texto and "[página 41]" not in r.texto
+    assert "Solo se leyeron las primeras 40 páginas de 60" in anexos._aviso_paginas(r)
+    # Bajo el tope no hay aviso.
+    r5 = anexos.extraer_texto(_pdf_con_texto(5), anexos.PDF)
+    assert (r5.paginas, r5.paginas_omitidas) == (5, 0) and anexos._aviso_paginas(r5) == ""
+
+
+def test_pdf_con_mucho_texto_corta_en_max_texto_antes_de_40():
+    # ~80 renglones de ~70 caracteres ≈ 5.700 por página: 50.000 se alcanzan en la página 9.
+    r = anexos.extraer_texto(_pdf_con_texto(30, lineas=80), anexos.PDF)
+    assert r.paginas == 30 and r.paginas_leidas is not None
+    assert r.paginas_leidas < 15 and r.paginas_omitidas == 30 - r.paginas_leidas
+    assert len(r.texto) == anexos.MAX_TEXTO
+    assert f"[página {r.paginas_leidas + 1}]" not in r.texto
+
+
+def test_pdf_escaneado_de_3_paginas_sigue_yendo_por_imagen():
+    from PIL import Image
+
+    buf = io.BytesIO()
+    hojas = [Image.new("RGB", (200, 280), "white") for _ in range(3)]
+    hojas[0].save(buf, format="PDF", save_all=True, append_images=hojas[1:], resolution=50)
+    llamadas: list[Any] = []
+
+    def render(pagina: Any) -> bytes:
+        llamadas.append(pagina)
+        return b"\x89PNG-falso"
+
+    r = anexos.extraer_texto(buf.getvalue(), anexos.PDF, max_paginas_imagen=2, render=render)
+    assert r.escaneado and r.paginas == 3 and len(r.imagenes) == 2 and len(llamadas) == 2
+    assert (r.paginas_leidas, r.paginas_omitidas) == (2, 1)
+    assert "las primeras 2 páginas de 3" in anexos._aviso_paginas(r)
+
+
 # --- Guardas de memoria (Render: 512 MB) ---------------------------------------------
 
 
@@ -601,6 +680,61 @@ def test_respuesta_invalida_en_la_subida_es_error_y_no_borra_placeholder(session
     )
     assert res.anexo.extraccion_estado == "error"
     assert [ln.estado for ln in _lineas(session)] == ["ok", "pendiente"]
+
+
+# --- La conexión no queda tomada mientras responde el modelo (F-plat-2-fix) ------------
+
+
+class _ExtractorQueMira:
+    """Extractor falso que, al ser llamado, anota lo que devuelve `mirar()`."""
+
+    habilitado = True
+
+    def __init__(self, mirar: Any, lineas: list[dict[str, Any]] | None = None) -> None:
+        self.mirar = mirar
+        self.vistas: list[Any] = []
+        self.lineas = [LineaExtraida(**d) for d in (lineas or _DOS_LINEAS)]
+
+    def extraer_lineas(self, texto, imagenes=(), *, esquema="lineas"):  # noqa: ANN001
+        self.vistas.append(self.mirar())
+        return ExtraccionAnexo(lineas=list(self.lineas), modelo="falso")
+
+
+def _transacciones_abiertas(engine) -> list[int]:
+    """Contador de transacciones de conexión abiertas en `engine` (begin − commit − rollback)."""
+    abiertas = [0]
+
+    def _mas(_c: Any) -> None:
+        abiertas[0] += 1
+
+    def _menos(_c: Any) -> None:
+        abiertas[0] -= 1
+
+    event.listen(engine, "begin", _mas)
+    event.listen(engine, "commit", _menos)
+    event.listen(engine, "rollback", _menos)
+    return abiertas
+
+
+def test_el_modelo_se_llama_sin_transaccion_abierta(session):
+    ca = _con_placeholder(session)
+    session.execute(select(CompraAgil.codigo)).all()  # lecturas previas de quien llama
+    assert session.in_transaction()
+    ext = _ExtractorQueMira(session.in_transaction)
+    res = anexos.procesar_anexo_ca(
+        session, ca, _xlsx(), "p.xlsx", usuario_id=None, extractor=ext
+    )
+    session.commit()
+    assert ext.vistas == [False]
+    assert res.anexo.extraccion_estado == "hecha" and len(res.lineas) == 2
+    assert res.anexo.ca_codigo == ca.codigo and len([ln for ln in _lineas(session) if ln.anexo_id]) == 2
+
+
+def test_procesar_anexo_rechaza_una_sesion_con_cambios_pendientes(session):
+    ca = _con_placeholder(session)
+    ca.nombre = "cambiado sin confirmar"
+    with pytest.raises(RuntimeError, match="sin confirmar"):
+        anexos.procesar_anexo_ca(session, ca, _xlsx(), "p.xlsx", usuario_id=None, extractor=None)
 
 
 def test_anexo_resuelto_borra_placeholders_y_el_job_no_los_recrea(session):
@@ -1024,6 +1158,28 @@ def test_lista_de_precios_sin_modelo_avisa_flujo_manual(engine, mundo):
         files={"archivo": ("l.xlsx", _xlsx())}, cookies=c, headers=h,
     )  # fmt: skip
     assert r.status_code == 200 and "no está configurada" in r.text
+
+
+def test_rutas_sueltan_la_conexion_antes_del_modelo(client, settings, mundo, engine, monkeypatch):
+    from app.api.routes import catalogo as rutas_catalogo
+
+    abiertas = _transacciones_abiertas(engine)
+    ext = _ExtractorQueMira(lambda: abiertas[0])
+    monkeypatch.setattr(rutas_catalogo, "_extractor", lambda _request: ext)
+    monkeypatch.setattr(orc, "OpenRouterClient", lambda *_a, **_k: ext)
+    c, h = _sesion(settings, mundo["con"])
+    # Subida de anexo de CA (lee usuario, empresa, región y CA antes de la extracción).
+    r = _subir(client, c, h)
+    assert r.status_code == 200 and "Arroz grado 1" in r.text
+    # Lista de precios (lee usuario, empresa y proveedor antes).
+    r = client.post(
+        f"/proveedores/{mundo['prov']}/lista-precios",
+        files={"archivo": ("lista.png", b"\x89PNG\r\n\x1a\nfalso")}, cookies=c, headers=h,
+    )  # fmt: skip
+    assert r.status_code == 200 and "Vista previa" in r.text
+    assert ext.vistas == [0, 0]
+    with Session(engine) as s:
+        assert len([ln for ln in _lineas(s) if ln.anexo_id]) == 2
 
 
 def test_texto_de_linea_no_repite_el_formato():
