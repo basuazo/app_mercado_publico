@@ -39,7 +39,7 @@ from sqlalchemy import and_, delete, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.catalogos.canonico import Catalogo, sugerencia_unica
-from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
+from app.catalogos.mercado import FAMILIAS_ALIMENTOS, codigo_oc_normalizado, norm
 from app.core.avance import Etapas
 from app.core.lotes import insertar_por_lotes
 from app.core.tiempo import ahora_utc
@@ -223,8 +223,41 @@ class Directorio:
 
     ruts: dict[str, _Rut] = field(default_factory=lambda: defaultdict(_Rut))
     genericos: dict[str, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
-    oc_codigos: set[str] = field(default_factory=set)
-    oc_a_ca: dict[str, str] = field(default_factory=dict)
+    oc_codigos: set[str] = field(default_factory=set)  # normalizados (`codigo_oc_normalizado`)
+    oc_a_ca: dict[str, str] = field(default_factory=dict)  # OC normalizada → código de CA
+
+
+def oc_de_cas(session: Session, cas: Mapping[str, str | None]) -> dict[str, set[str]]:
+    """OC (normalizadas) de cada CA de `cas` (código → `compras_agiles.id_orden_compra`).
+
+    `id_orden_compra` solo lo llenaba el job viejo `ca` (apagado desde el 31-oct); la ingesta
+    vigente (`ingest/mercado.py`) guarda la OC en `ca_cotizaciones.id_oc`. Si `id_orden_compra`
+    es nulo, valen los `id_oc` de las ofertas seleccionadas (varias → todas). Una consulta por
+    lote. CA sin OC no aparece en el resultado.
+
+    Ojo [V, 5-nov-2026]: ambos campos traen el `ID` numérico de la OC en oc-da (p. ej.
+    `55672374`), no su `Codigo` (`2724-973-AG26`); `oc_lineas_ca` hoy guarda solo `Codigo`, así
+    que el cruce da cero hasta que se guarde también `ID` (fase aparte con migración)."""
+    out: dict[str, set[str]] = {}
+    faltan: list[str] = []
+    for codigo, id_oc in cas.items():
+        oc = codigo_oc_normalizado(id_oc)
+        if oc:
+            out[codigo] = {oc}
+        else:
+            faltan.append(codigo)
+    if faltan:
+        for ca, id_oc in session.execute(
+            select(CaCotizacion.ca_codigo, CaCotizacion.id_oc).where(
+                CaCotizacion.ca_codigo.in_(faltan),
+                CaCotizacion.seleccionado.is_(True),
+                CaCotizacion.id_oc.is_not(None),
+            )
+        ):
+            oc = codigo_oc_normalizado(id_oc)
+            if oc:
+                out.setdefault(ca, set()).add(oc)
+    return out
 
 
 def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medicion, Directorio]:
@@ -257,7 +290,8 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
         if med.lineas_oc % AVISO_CADA == 0:
             _log.info("demanda recorrido OC: %d líneas, %d RUT", med.lineas_oc, len(dir_.ruts))
         med.estados_oc[estado or ""] += 1
-        dir_.oc_codigos.add(codigo_oc)
+        oc_norm = codigo_oc_normalizado(codigo_oc)
+        dir_.oc_codigos.add(oc_norm)
         m = mes_oc(fecha, mes)
         if m and (med.primer_mes is None or m < med.primer_mes):
             med.primer_mes = m
@@ -265,7 +299,7 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
             continue
         med.lineas_oc_rut_en_ca += rut in ruts_ca
         med.unidades_por_rut[rut].add(un)
-        oc_clave.setdefault(codigo_oc, (rut, un))
+        oc_clave.setdefault(oc_norm, (rut, un))
         r = dir_.ruts[rut]
         if organismo:
             r.organismo[" ".join(organismo.split())[:300]] += 1
@@ -283,35 +317,47 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
             fila = r.proveedores[un].setdefault(rut_p, [0.0, None])
             fila[0] += float(total)
             fila[1] = fila[1] or (" ".join(prov.split())[:200] if prov else None)
-    for codigo, org_rut, org_nombre, unidad, region, comuna, id_oc in session.execute(
-        select(
-            CompraAgil.codigo, CompraAgil.organismo_rut, CompraAgil.organismo_nombre,
-            CompraAgil.unidad_compra, CompraAgil.region, CompraAgil.comuna_inferida,
-            CompraAgil.id_orden_compra,
-        )
-        .where(CompraAgil.region.in_(regiones))
-        .execution_options(yield_per=LOTE)
-    ):  # fmt: skip
-        rut = _rut(org_rut)
-        if not rut:
-            continue
-        r = dir_.ruts[rut]
-        if org_nombre and not r.organismo:
-            r.organismo[" ".join(org_nombre.split())[:300]] += 1
-        r.region = r.region if r.region is not None else region
-        if comuna and not r.comunas:
-            r.comunas[comuna] += 1
-        un = norm(unidad)
-        if un not in r.unidades:
-            nombres_unidad = r.unidades[un]
-            if unidad:
-                nombres_unidad[" ".join(unidad.split())[:300]] += 1
-        oc = (id_oc or "").strip()
-        if oc and oc in oc_clave:
-            dir_.oc_a_ca[oc] = codigo
+    ultimo = ""
+    while True:  # por lotes con keyset: `oc_de_cas` consulta entre lote y lote
+        cas = session.execute(
+            select(
+                CompraAgil.codigo, CompraAgil.organismo_rut, CompraAgil.organismo_nombre,
+                CompraAgil.unidad_compra, CompraAgil.region, CompraAgil.comuna_inferida,
+                CompraAgil.id_orden_compra,
+            )
+            .where(CompraAgil.region.in_(regiones), CompraAgil.codigo > ultimo)
+            .order_by(CompraAgil.codigo)
+            .limit(LOTE)
+        ).all()  # fmt: skip
+        if not cas:
+            break
+        ultimo = cas[-1][0]
+        ocs_lote = oc_de_cas(session, {fila[0]: fila[6] for fila in cas})
+        for codigo, org_rut, org_nombre, unidad, region, comuna, _ in cas:
+            rut = _rut(org_rut)
+            if not rut:
+                continue
+            r = dir_.ruts[rut]
+            if org_nombre and not r.organismo:
+                r.organismo[" ".join(org_nombre.split())[:300]] += 1
+            r.region = r.region if r.region is not None else region
+            if comuna and not r.comunas:
+                r.comunas[comuna] += 1
+            un = norm(unidad)
+            if un not in r.unidades:
+                nombres_unidad = r.unidades[un]
+                if unidad:
+                    nombres_unidad[" ".join(unidad.split())[:300]] += 1
+            cruzan = sorted(oc for oc in ocs_lote.get(codigo, ()) if oc in oc_clave)
+            if not cruzan:
+                continue
+            for oc in cruzan:
+                dir_.oc_a_ca[oc] = codigo
             med.cas_con_oc += 1
-            rut_oc, un_oc = oc_clave[oc]
-            med.cas_con_oc_misma_clave += clave_unidad(org_rut, unidad) == f"{rut_oc}|{un_oc}"
+            clave_ca = clave_unidad(org_rut, unidad)
+            med.cas_con_oc_misma_clave += any(
+                clave_ca == f"{oc_clave[oc][0]}|{oc_clave[oc][1]}" for oc in cruzan
+            )
     _log.info("demanda recorrido terminado: %d líneas de OC, %d RUT, %d CA con OC",
               med.lineas_oc, len(dir_.ruts), med.cas_con_oc)  # fmt: skip
     return med, dir_
@@ -513,7 +559,7 @@ def _sumar_oc(
         else:
             monto = 0.0
         c.monto += monto
-        ca = dir_.oc_a_ca.get(codigo_oc)
+        ca = dir_.oc_a_ca.get(codigo_oc_normalizado(codigo_oc))
         familia = familia_de_codigo(cod, generico)
         kw: dict[str, Any] = {"oc": codigo_oc, "ca": ca, "monto": monto, "proveedor": rut_p}
         acc.sumar(comprador, "familia", familia, region, None, cantidad=None, **kw)
@@ -566,10 +612,11 @@ def _sumar_ca_sin_oc(
             return
         ultimo = cas[-1][0]
         sin_oc: dict[str, tuple[str, int | None]] = {}
-        for codigo, org, unidad, region, estado, motivo, id_oc in cas:
+        ocs_lote = oc_de_cas(session, {fila[0]: fila[6] for fila in cas})
+        for codigo, org, unidad, region, estado, motivo, _ in cas:
             if (estado or "") in ESTADOS_DESIERTA or motivo:
                 c.cas_desiertas += 1
-            elif (id_oc or "").strip() in dir_.oc_codigos:
+            elif any(oc in dir_.oc_codigos for oc in ocs_lote.get(codigo, ())):
                 c.cas_con_oc += 1
             else:
                 comprador = clave_comprador(org, unidad, modo)
@@ -1086,6 +1133,10 @@ def run_demanda(
     etapas.fin("recorrido")
     modo = med.modo()
     resultado["medicion"] = med.como_dict()
+    if med.lineas_oc and not med.cas_con_oc:
+        avisos.append("cruce CA↔OC no disponible: ninguna CA cruzó con su OC (la API da el `ID` "
+                      "numérico de oc-da y oc_lineas_ca guarda solo `Codigo`); (c) queda en None "
+                      "y la clave en RUT")  # fmt: skip
     guardado = modo_guardado(session, regiones)
     cambio_clave = guardado is not None and guardado != modo
     if cambio_clave:

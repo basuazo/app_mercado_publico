@@ -154,10 +154,11 @@ def moneda_codigo(texto: str | None) -> str:
 
 
 def codigo_oc_normalizado(codigo: str | None) -> str:
-    """Código de OC comparable entre `ca_cotizaciones.id_oc` (API) y `oc_lineas_ca.codigo_oc` (oc-da).
+    """Código de OC normalizado (recorta espacios y pasa a mayúsculas).
 
-    Hoy solo recorta espacios y pasa a mayúsculas: el formato real de ambos [I] se contrasta
-    con datos reales tras la primera noche del backfill (F-merc-2 §6). Único lugar donde
-    cambiarlo si difieren.
+    Contrastado el 5-nov-2026 (F-plat-6-cruce) [V]: `ca_cotizaciones.id_oc` y
+    `compras_agiles.id_orden_compra` traen el `ID` numérico de oc-da (`55672374`), NO su `Codigo`
+    (`2724-973-AG26`, que es lo que guarda `oc_lineas_ca.codigo_oc`): no cruzan con ninguna
+    normalización; hace falta guardar `ID` en `oc_lineas_ca`.
     """
     return (codigo or "").strip().upper()

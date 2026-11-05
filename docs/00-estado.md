@@ -365,13 +365,17 @@ y Conejo: `19-adjuntos-ca-explicacion-tecnica.md`. ~~Sonda `--documentos`~~ hech
 en el navegador la URL real del adjunto de la ficha pública (sin eso §2.7 no se enciende). **Regla 9 reescrita el 5-nov**
 (descarga directa del adjunto público como última alternativa; `prompt-F-plat-anexos-2.md` §2.7). Handoff de la sesión
 en el proyecto de Cowork (`claude/02-handoff-proxima-sesion.md`).
-**Primero, antes de la ventana D: F-plat-6-cruce** (`prompt-F-plat-6-cruce.md`, Sonnet, sin ticket ni migración). Hallazgo
-del log de `mercado-indices` del 5-nov 20:06 [V]: `cas_con_oc = 0` y `cas_sin_oc = 4231`; ninguna CA cruza con su OC
-porque `demanda.py` usa `compras_agiles.id_orden_compra`, que solo llenaba el job viejo `ca` (apagado desde el 31-oct),
-mientras `mercado.py` guarda la OC en `ca_cotizaciones.id_oc`. Sin el cruce no se puede medir la clave del comprador
-(queda en RUT) y la regla de doble conteo trataría todo como «sin OC» en cuanto haya líneas `ok`. Paso previo humano:
-`scripts/mercado/sonda_cruce_ca_oc.py` (solo lectura) para ver si `id_oc` calza con `oc_lineas_ca.codigo_oc` tal cual,
-normalizado o nunca; el arreglo depende de eso (prompt §2).
+**F-plat-6-cruce hecha (5-nov, sin push).** Hallazgo del log de `mercado-indices` del 5-nov 20:06 [V]: `cas_con_oc = 0`,
+`cas_sin_oc = 4231`. `demanda.py` ahora toma la OC de una CA de `compras_agiles.id_orden_compra` o, si es nula, del
+`id_oc` de sus ofertas seleccionadas (`oc_de_cas`). **Pero el cruce sigue en cero, y por otra causa** [V]: la sonda
+`scripts/mercado/sonda_cruce_ca_oc.py` contra prod dio 1.366 `id_oc` y 1.620 `id_orden_compra` distintos, **0 calzan** con
+`oc_lineas_ca.codigo_oc` (ni tal cual ni normalizados), porque la API trae el **`ID` numérico** de la OC (`55672374`) y
+`oc_lineas_ca` guarda solo el **`Codigo`** (`2724-973-AG26`). El `oc-da` crudo SÍ trae la columna `ID` (79 columnas,
+cabecera de `oc-da/2026-10.zip` leída el 5-nov): 10 de los 40 ID de la sonda están en ese ZIP y los 10 apuntan a una OC
+`AG` del mismo comprador de su CA (los otros 30 serían de sep/nov, no buscados). Mientras tanto (c) queda en `None`, la
+clave en RUT y el job avisa `cruce CA↔OC no disponible`. **Siguiente: F-plat-6-cruce-2** (migración): columna
+`oc_lineas_ca.id_oc` (= `ID` de oc-da) con índice, `mercado_oc.py` la lee, recarga `--desde 2024-10`, y `oc_de_cas` se
+compara contra ella en vez de `codigo_oc`.
 **Hallazgo al auditar `prompt-F-plat-capas.md` (5-nov) [V]:** `proveedor_productos.producto_id`/`formato_id` (F-plat-1) no los
 escribe ningún código de producción (`guardar_producto`, formulario, `importar.py`): con datos reales `mejor_costo(producto_id)`,
 los candidatos de «mi oferta» (F-plat-5) y `tiene_costos` de la adjudicación devuelven vacío. Lo arregla F-plat-capas §1.3

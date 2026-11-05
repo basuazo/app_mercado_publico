@@ -103,8 +103,10 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   si no `TipoMonedaOC`. Textos largos (especificación, unidad, organismo, proveedor, producto) son Text. Región del comprador y del proveedor = texto en `oc-da`, convertido a código con
   `region_codigo` (`app/catalogos/regiones.py`). Solo CLP suma en `precio_base`, `precio_referencia` y
   `resumen_mercado` (el formato de `TipoMonedaOC` es [I] hasta la primera carga: vacío/NA = CLP). Datos públicos y
-  comunes: no pertenecen a una empresa (regla 26 no aplica). Cruce con F-merc-1: `ca_cotizaciones.id_oc` =
-  `oc_lineas_ca.codigo_oc` vía `codigo_oc_normalizado` [I] hasta contrastarlo con datos reales; no se infieren ganadores.
+  comunes: no pertenecen a una empresa (regla 26 no aplica). ~~Cruce con F-merc-1: `ca_cotizaciones.id_oc` =
+  `oc_lineas_ca.codigo_oc` vía `codigo_oc_normalizado` [I]~~ — **falso [V, 5-nov-2026, F-plat-6-cruce]**: `id_oc` (y
+  `compras_agiles.id_orden_compra`) es el `ID` numérico de oc-da, no su `Codigo`; 0 de 1.366 calzan. El cruce va por
+  `ID` (F-plat-6-cruce-2, con migración). No se infieren ganadores.
 - **F-merc-2 en producción (4-nov-2026):** cargada con `--desde 2024-10`: 26 meses, **108.051 líneas** en
   `oc_lineas_ca` (**50,5 MB**) y **54.674 filas** en `precio_referencia` (**6,6 MB**). Total **57 MB**, sobre los
   35–45 MB estimados arriba. Juez exacto: alimentos de Ñuble 2025-10→2026-09 = **$681.979.119**, **1.516 OC** y
@@ -221,6 +223,11 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   evaluados, pero no en los 6 anteriores, así que se descartó por sobreajuste.
 - **Umbrales de «pedir precio firme»: 200 kg, 300 L, 500 u en 3 meses** (F-plat-6, default del prompt; `DEMANDA_UMBRALES`
   en JSON). A revisar por Boris con las 20 primeras recomendaciones reales (prompt §5.3).
+- **Cruce CA ↔ OC por el `ID` de oc-da, no por el código** (F-plat-6-cruce, 5-nov). La OC de una CA = `id_orden_compra` o,
+  si es nulo, los `id_oc` de sus ofertas seleccionadas (`demanda.oc_de_cas`). Ambos son el `ID` numérico de oc-da [V: sonda
+  en prod, 0 de 1.366 calzan con `codigo_oc`; 10 de 10 encontrados en `oc-da/2026-10.zip` calzan por `ID`]. Hasta guardar
+  `ID` en `oc_lineas_ca` (F-plat-6-cruce-2) no hay cruce: (c) = `None`, clave = RUT, aviso en el job. No se cruza por
+  nombre ni por monto.
 
 ## Revisión CBS (5-nov, Boris · Mario · Gonzalo; aprobado por Boris esa noche)
 - **Flujo operativo objetivo y fases nuevas:** `18-revision-cbs-y-flujos-operativos.md` (manda sobre `17-plan` §7).

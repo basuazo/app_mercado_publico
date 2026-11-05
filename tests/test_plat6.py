@@ -276,6 +276,77 @@ def test_sin_doble_conteo_oc_ca_sin_oc_y_desierta(s):
     assert r["lineas_ca_ok_sumadas"] == 1
 
 
+def _cot(s: Session, ca: str, id_oc: str | None, *, seleccionado: bool) -> None:
+    s.add(CaCotizacion(ca_codigo=ca, llamado=1, rut_proveedor="76111111-1", id_oc=id_oc,
+                       seleccionado=seleccionado, id_cotizacion=str(next(_ids))))  # fmt: skip
+    s.flush()
+
+
+def test_oc_de_cas_usa_id_orden_compra_o_la_oferta_seleccionada(s):
+    """F-plat-6-cruce: la ingesta vigente guarda la OC en `ca_cotizaciones.id_oc`."""
+    _ca(s, "CON-IOC", "2026-10", id_oc=" oc1 ")
+    _cot(s, "CON-IOC", "OTRA", seleccionado=True)  # id_orden_compra manda
+    _ca(s, "POR-COT", "2026-10")
+    _cot(s, "POR-COT", "OC2", seleccionado=True)
+    _cot(s, "POR-COT", "OC-NO", seleccionado=False)  # no seleccionada: no cuenta
+    _ca(s, "DOS-SEL", "2026-10")
+    _cot(s, "DOS-SEL", "OC3", seleccionado=True)
+    _cot(s, "DOS-SEL", "oc4", seleccionado=True)
+    _ca(s, "NADA", "2026-10")
+    _cot(s, "NADA", None, seleccionado=True)
+    s.commit()
+    cas = {"CON-IOC": " oc1 ", "POR-COT": None, "DOS-SEL": None, "NADA": None}
+    assert dm.oc_de_cas(s, cas) == {
+        "CON-IOC": {"OC1"}, "POR-COT": {"OC2"}, "DOS-SEL": {"OC3", "OC4"},
+    }  # fmt: skip
+
+
+def test_cruce_por_la_oc_de_la_oferta_seleccionada_sin_doble_conteo(s):
+    """Mecanismo del cruce y del doble conteo. En prod la clave aún no calza (id_oc es el `ID`
+    numérico de oc-da y oc_lineas_ca guarda `Codigo`): este test fija lo que debe pasar cuando
+    ambos lados traen la misma clave."""
+    pid = _producto(s)
+
+    def _linea(ca: str, cantidad: float) -> None:
+        s.add(CaLinea(ca_codigo=ca, n=1, producto_id=pid, cantidad=cantidad,
+                      cantidad_base=cantidad, codigo_unspsc=LECHE, estado="ok",
+                      texto_origen="leche"))  # fmt: skip
+
+    # OC solo en ca_cotizaciones.id_oc (minúsculas y espacios: se normaliza) → cruza.
+    _oc(s, "1234-5-AG26", "2026-10", cantidad=10)
+    _ca(s, "POR-COT", "2026-10")
+    _cot(s, "POR-COT", " 1234-5-ag26", seleccionado=True)
+    _linea("POR-COT", 10)  # no suma: ya contó la OC
+    # OC en compras_agiles.id_orden_compra (job viejo) → cruza.
+    _oc(s, "1234-6-AG26", "2026-10", cantidad=20)
+    _ca(s, "POR-IOC", "2026-10", id_oc="1234-6-AG26")
+    _linea("POR-IOC", 20)
+    # Sin ninguna OC → sin OC: suman sus líneas ok.
+    _ca(s, "NADA", "2026-10")
+    _linea("NADA", 4)
+    s.commit()
+    med, dir_ = dm.recorrer(s, [16], HOY)
+    assert med.cas_con_oc == 2 and med.pct_misma_clave == 1.0
+    assert dir_.oc_a_ca == {"1234-5-AG26": "POR-COT", "1234-6-AG26": "POR-IOC"}
+    r = dm.recalcular_series(s, [16], "2026-10", "2026-10", dm.MODO_UNIDAD, dir_, ahora=AHORA)
+    assert (r["cas_con_oc"], r["cas_sin_oc"], r["lineas_ca_ok_sumadas"]) == (2, 1, 1)
+    (un,) = _filas(s, nivel="unspsc")
+    assert un.cantidad_base == 34  # 10 + 20 de las OC + 4 de la CA sin OC; nunca 64
+    assert un.n_oc == 2 and un.n_ca == 3
+
+
+def test_sin_cruce_avisa_y_c_queda_en_none(s):
+    # Lo que hay en prod [V, 5-nov]: id_oc = `ID` numérico de oc-da; oc_lineas_ca solo tiene `Codigo`.
+    _historia(s, meses=6)
+    _ca(s, "SIN", "2026-10")
+    _cot(s, "SIN", "55672374", seleccionado=True)
+    s.commit()
+    r = dm.run_demanda(s, [16], mes_hoy=HOY, ahora=AHORA)
+    assert r["medicion"]["c_cas_con_oc"] == 0
+    assert r["medicion"]["c_pct_misma_clave_unidad"] is None
+    assert any("cruce CA↔OC no disponible" in a for a in r["avisos"])
+
+
 def test_borrado_acotado_a_las_regiones_que_recalcula(s):
     _oc(s, "OC16", "2026-10")
     _oc(s, "OC5", "2026-10", region=5, rut_u="61000000-0")
