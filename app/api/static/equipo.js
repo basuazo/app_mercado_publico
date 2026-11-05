@@ -4,12 +4,13 @@
   "use strict";
 
   // --- 409 (otro cambió la CA antes) y 422 (falta el motivo / texto inválido) se pintan igual:
-  // la respuesta trae el bloque con el mensaje y el estado actual.
+  // la respuesta trae el bloque con el mensaje y el estado actual. F-plat-5: también la sección
+  // «Precio y mi oferta» de la ficha ([data-oferta]: conflicto de versión o precio inválido).
   document.addEventListener("htmx:beforeSwap", function (evt) {
     var d = evt.detail;
     var s = d.xhr && d.xhr.status;
     if ((s === 409 || s === 422) && d.target && d.target.closest &&
-        d.target.closest("[data-equipo], .hilo")) {
+        d.target.closest("[data-equipo], .hilo, [data-oferta]")) {
       d.shouldSwap = true;
       d.isError = false;
     }

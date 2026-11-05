@@ -1,0 +1,71 @@
+{#- Precio, costo, margen y P(ganar) de una tarjeta de la mesa (F-plat-5). Solo lee la caché
+    (`it.precio` = evaluaciones_cache.datos, la escribe el job `mercado-mesa`): nunca evalúa. Sin
+    costo no se inventa margen. Contexto: it. -#}
+{% set p = it.precio %}
+<div class="mesa-precio border-top mt-3 pt-2 small" data-precio>
+  {% if not p %}
+  <p class="text-muted mb-0">Sin evaluación de precio todavía.</p>
+  {% else %}
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
+    {% if p.modelo == 'base' %}
+    <span class="badge text-bg-light border fw-normal" title="Ranking simple: el más barato suele ganar. Todavía no hay un modelo logístico que lo supere.">Modelo: línea base</span>
+    {% elif p.modelo == 'logistico' %}
+    <span class="badge text-bg-light border fw-normal">Modelo logístico</span>
+    {% else %}
+    <span class="badge text-bg-warning fw-normal">Sin modelo de adjudicación</span>
+    {% endif %}
+    {% if it.con_prediccion %}<span class="badge text-bg-info fw-normal">Con predicción (modo sombra)</span>{% endif %}
+    <span class="text-muted">Evaluada {{ it.evaluada_hace }}</span>
+  </div>
+
+  {% if not p.n_ok %}
+  <p class="mb-0">Sin detalle de líneas revisadas: no hay precio sugerido ni margen.</p>
+  {% else %}
+  <dl class="row mb-0 g-0">
+    <dt class="col-5 col-md-3 fw-normal text-muted">Precio sugerido</dt>
+    <dd class="col-7 col-md-9 mb-1">
+      {% if p.precio_sugerido is not none %}
+      <strong class="num">{{ p.precio_sugerido | clp }}</strong>
+      {% if p.intervalo_80 %}<span class="text-muted">· ganador entre <span class="num">{{ p.intervalo_80[0] | clp }}</span> y <span class="num">{{ p.intervalo_80[1] | clp }}</span> (80 %)</span>{% endif %}
+      {% else %}<span class="text-muted">sin referencia de precio suficiente</span>{% endif %}
+    </dd>
+
+    <dt class="col-5 col-md-3 fw-normal text-muted">Costo + logística</dt>
+    <dd class="col-7 col-md-9 mb-1">
+      {% if p.costo_total is not none %}
+      <span class="num">{{ p.costo_total | clp }}</span>
+      <span class="text-muted">(productos <span class="num">{{ p.costo_productos | clp }}</span> + logística <span class="num">{{ p.logistica | clp }}</span>{% if not p.tarifa %} sin tarifa{% endif %} + financiero <span class="num">{{ p.costo_financiero | clp }}</span>)</span>
+      {% elif p.n_sin_costo %}
+      <span class="text-warning-emphasis">Falta costo de {{ p.n_sin_costo }} producto{{ '' if p.n_sin_costo == 1 else 's' }}</span>
+      {% else %}
+      <span class="text-muted">Sin costo (hay líneas sin revisar)</span>
+      {% endif %}
+    </dd>
+
+    <dt class="col-5 col-md-3 fw-normal text-muted">Margen</dt>
+    <dd class="col-7 col-md-9 mb-1">
+      {% if p.margen_pct is not none and p.precio_sugerido is not none %}
+      <span class="num">{{ (p.precio_sugerido - p.costo_total) | clp }}</span> · <span class="num">{{ p.margen_pct | pct(1) }}</span>
+      {% if p.margen_esperado is not none %}<span class="text-muted">· esperado (× P(ganar)) <span class="num">{{ p.margen_esperado | clp }}</span></span>{% endif %}
+      {% else %}<span class="text-muted">Sin calcular: falta costo</span>{% endif %}
+    </dd>
+
+    <dt class="col-5 col-md-3 fw-normal text-muted">P(ganar)</dt>
+    <dd class="col-7 col-md-9 mb-1">
+      {% if p.p_ganar %}
+      {% for pt in p.curva %}
+      <span class="me-2">{{ {'agresivo': 'Agresivo', 'sugerido': 'Sugerido', 'comodo': 'Cómodo'}[pt.nombre] }}
+        <span class="num">{{ pt.precio | clp }}</span> → <strong class="num">{{ pt.p | pct }}</strong></span>
+      {% endfor %}
+      {% else %}<span class="text-muted">Sin estimación (falta modelo, referencia o detalle completo)</span>{% endif %}
+    </dd>
+
+    <dt class="col-5 col-md-3 fw-normal text-muted">Cobertura de costos</dt>
+    <dd class="col-7 col-md-9 mb-0">
+      <span class="num">{{ p.cobertura | pct }}</span>
+      <span class="text-muted">del monto estimado tiene costo de tus proveedores</span>
+    </dd>
+  </dl>
+  {% endif %}
+  {% endif %}
+</div>

@@ -34,6 +34,7 @@ from app.ingest.orchestrator import (
     run_mercado_catalogo,
     run_mercado_competencia,
     run_mercado_indices,
+    run_mercado_mesa,
     run_mercado_oc,
     run_plan_anual,
     run_resumen,
@@ -67,6 +68,7 @@ _JOBS = (
     "mercado-catalogo",
     "mercado-indices",
     "mercado-competencia",
+    "mercado-mesa",
 )
 
 _log = get_logger(__name__)
@@ -220,6 +222,9 @@ def cmd_run_once(
             "mercado-competencia",
             lambda: run_mercado_competencia(settings, engine, completo=completo),
         ),
+        # F-plat-5: solo base de datos. Va en `mercado.yml` después de `mercado-ca` y
+        # `mercado-catalogo`: caché de evaluaciones, predicciones del modo sombra y su cierre.
+        "mercado-mesa": _locked("mercado-mesa", lambda: run_mercado_mesa(settings, engine)),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y
         # valida por sí mismo la ventana 22:00–07:00 de America/Santiago.

@@ -1,9 +1,10 @@
-"""Mesa del día v0 (F-mesa-v0): `/mesa`, con las Compras Ágiles vigentes del territorio.
+"""Mesa del día (F-mesa-v0; F-plat-5): `/mesa`, con las Compras Ágiles vigentes del territorio.
 
 Ownership (regla 26): solo usuarios con empresa activa; sin empresa, `/mesa` muestra el aviso
 (`_sin_empresa`) y los parciales HTMX responden 403. El territorio es la unión de regiones
 activas (regla 25); una CA de otra región es indistinguible de una inexistente (404).
-F-plat-5 crece sobre esta misma pantalla.
+F-plat-5: la tarjeta suma precio sugerido, costo, margen y P(ganar) leídos de
+`evaluaciones_cache` (la escribe el job `mercado-mesa`); la lista NUNCA evalúa en el request.
 """
 
 from __future__ import annotations
@@ -27,28 +28,50 @@ from app.mercado.comprador import historial_comprador
 from app.mercado.mesa_dia import (
     CIERRES,
     DETALLES,
+    ORDENES,
     PAGINA,
     FiltrosMesa,
     buscar_codigos,
+    evaluaciones_de,
     familias_de_ca,
     familias_por_ca,
+    filtrar_precio,
     tarjetas,
+    valor_orden,
 )
+from app.mercado.mesa_dia import con_prediccion as predichas_de
 from app.mercado.territorio import regiones_activas
 from app.models.enums import EstadoOportunidad
 from app.models.tables import CompraAgil, Empresa, Usuario
 
 router = APIRouter()
 
+MARGEN_MIN_MAX = 100.0
 
-def _filtros(
-    familia: str, cierre: str, detalle: str, anexos: str, monto_min: str, q: str
+
+def _filtros(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
+    familia: str,
+    cierre: str,
+    detalle: str,
+    anexos: str,
+    monto_min: str,
+    q: str,
+    con_costo: str = "",
+    margen_min: str = "",
+    con_prediccion: str = "",
+    orden: str = "",
 ) -> FiltrosMesa:
     """Parámetros GET → filtros; un valor inválido se ignora (nunca rompe la pantalla)."""
     try:
         monto = int(monto_min.replace(".", "").strip()) if monto_min.strip() else None
     except ValueError:
         monto = None
+    try:
+        margen = float(margen_min.replace(",", ".").strip()) if margen_min.strip() else None
+    except ValueError:
+        margen = None
+    if margen is not None and not -MARGEN_MIN_MAX <= margen <= MARGEN_MIN_MAX:
+        margen = None
     return FiltrosMesa(
         familia=familia.strip(),
         cierre=cierre if cierre in CIERRES else "",
@@ -56,12 +79,23 @@ def _filtros(
         con_anexos=anexos == "1",
         monto_min=monto if monto and monto > 0 else None,
         q=q.strip()[:200],
+        con_costo=con_costo == "1",
+        margen_min=margen / 100 if margen is not None else None,
+        con_prediccion=con_prediccion == "1",
+        orden=orden if orden in ORDENES else "",
     )
 
 
 def _comunas(session: Session, empresa_id: int) -> list[str]:
     empresa = session.get(Empresa, empresa_id)
     return [c for c in (empresa.comunas_prioritarias if empresa else []) or [] if c]
+
+
+def _margen_texto(f: FiltrosMesa) -> str:
+    if f.margen_min is None:
+        return ""
+    v = f.margen_min * 100
+    return str(int(v)) if v == int(v) else f"{v:g}"
 
 
 @router.get("/mesa", response_class=HTMLResponse)
@@ -75,6 +109,10 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     q: str = "",
     equipo: str = "",
     descartadas: str = "",
+    con_costo: str = "",
+    margen_min: str = "",
+    con_prediccion: str = "",
+    orden: str = "",
     pagina: int = 1,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -87,9 +125,17 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     ahora = ahora_utc()
     regiones = regiones_activas(session, request.app.state.settings)
     comunas = _comunas(session, empresa_id)
-    filtros = _filtros(familia, cierre, detalle, anexos, monto_min, q)
+    filtros = _filtros(
+        familia, cierre, detalle, anexos, monto_min, q, con_costo, margen_min, con_prediccion, orden
+    )
     familias = familias_por_ca(session, regiones, ahora)
-    codigos = buscar_codigos(session, regiones, comunas, filtros, ahora, familias)
+    cache = evaluaciones_de(session, empresa_id)
+    predichas = predichas_de(session, empresa_id)
+    codigos = buscar_codigos(
+        session, regiones, comunas, filtros, ahora, familias,
+        valor=None if filtros.orden == "cierre" else valor_orden(cache),
+    )  # fmt: skip
+    codigos = filtrar_precio(codigos, filtros, cache, predichas)
     # F-equipo: filtro «Equipo»; las descartadas se ocultan salvo que se pidan.
     codigos = eq.filtrar_equipo(session, empresa_id, user.id, codigos, equipo, ver_descartadas)
     total = len(codigos)
@@ -100,6 +146,10 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     )
     for it in items:
         it["url_publica"] = _url_ficha("compras_agiles", it["codigo"])
+        ev = cache.get(it["codigo"])
+        it["precio"] = ev.datos if ev else None
+        it["evaluada_hace"] = eq.hace(ev.evaluada_en, ahora) if ev else ""
+        it["con_prediccion"] = it["codigo"] in predichas
     estado_equipo = eq.equipo_de(session, empresa_id, user, [it["codigo"] for it in items])
     opciones_familia = sorted({f for fs in familias.values() for f in fs})
     qs = {
@@ -111,6 +161,10 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         "q": filtros.q,
         "equipo": equipo,
         "descartadas": "1" if ver_descartadas else "",
+        "con_costo": "1" if filtros.con_costo else "",
+        "margen_min": _margen_texto(filtros),
+        "con_prediccion": "1" if filtros.con_prediccion else "",
+        "orden": filtros.orden,
     }
     empresa = session.get(Empresa, empresa_id)
     return _TEMPLATES.TemplateResponse(
@@ -124,6 +178,7 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             pagina=pagina,
             total_paginas=total_paginas,
             filtros=filtros,
+            margen_min_texto=_margen_texto(filtros),
             opciones_familia=opciones_familia,
             comunas_prioritarias=comunas,
             qs_base=urlencode({k: v for k, v in qs.items() if v}),
@@ -136,6 +191,7 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             miembros=[(m.id, eq.nombre_visible(m)) for m in eq.miembros(session, empresa_id)],
             estados=eq.ETIQUETA_ESTADO,
             empresa_sin_rut=eq.rut_empresa(empresa) is None,
+            hay_cache=bool(cache),
         ),
     )
 
@@ -151,6 +207,10 @@ async def mesa_conteo(  # noqa: PLR0913
     q: str = "",
     equipo: str = "",
     descartadas: str = "",
+    con_costo: str = "",
+    margen_min: str = "",
+    con_prediccion: str = "",
+    orden: str = "",
     sesion: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -158,9 +218,17 @@ async def mesa_conteo(  # noqa: PLR0913
     user, empresa_id = sesion
     ahora = ahora_utc()
     regiones = regiones_activas(session, request.app.state.settings)
-    codigos = buscar_codigos(
-        session, regiones, [], _filtros(familia, cierre, detalle, anexos, monto_min, q), ahora
+    filtros = _filtros(
+        familia, cierre, detalle, anexos, monto_min, q, con_costo, margen_min, con_prediccion, orden
     )
+    codigos = buscar_codigos(session, regiones, [], filtros, ahora)
+    if filtros.con_costo or filtros.margen_min is not None or filtros.con_prediccion:
+        codigos = filtrar_precio(
+            codigos,
+            filtros,
+            evaluaciones_de(session, empresa_id),
+            predichas_de(session, empresa_id),
+        )
     codigos = eq.filtrar_equipo(
         session,
         empresa_id,
@@ -169,9 +237,7 @@ async def mesa_conteo(  # noqa: PLR0913
         equipo if equipo in eq.FILTROS_EQUIPO else "",
         descartadas == "1",
     )
-    return _TEMPLATES.TemplateResponse(
-        request, "_explorador_conteo.html", {"total": len(codigos)}
-    )
+    return _TEMPLATES.TemplateResponse(request, "_explorador_conteo.html", {"total": len(codigos)})
 
 
 @router.get("/mesa/ca/{codigo}/comprador", response_class=HTMLResponse)

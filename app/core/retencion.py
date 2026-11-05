@@ -26,8 +26,10 @@ from app.models.tables import (
     JobRun,
     Licitacion,
     LicitacionItem,
+    OfertaPropia,
     OportunidadMatch,
     OportunidadSeguida,
+    Prediccion,
 )
 
 _log = get_logger(__name__)
@@ -66,6 +68,9 @@ def purgar_terminales(
         ),
         # F-equipo: una CA que algún equipo trabajó no se purga (como F-plat-5 §12).
         select(CaTrabajo.ca_codigo),
+        # F-plat-5: tampoco una con predicción (el juez del modo sombra) u oferta propia.
+        select(Prediccion.ca_codigo),
+        select(OfertaPropia.ca_codigo),
     )
 
     # -- Licitaciones terminales antiguas --

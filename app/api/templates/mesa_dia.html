@@ -2,7 +2,8 @@
 {% from "_macros.html" import encabezado, vacio %}
 {% block title %}Mesa — Rastrillo{% endblock %}
 {% block content %}
-{{ encabezado("Mesa", "Las Compras Ágiles vigentes de tu territorio, las que cierran antes primero.") }}
+{{ encabezado("Mesa", "Las Compras Ágiles vigentes de tu territorio: qué cotizar, a qué precio y con qué margen.") }}
+<p class="small mb-3"><a href="/mesa/resultados">Resultados del modo sombra</a> · cuánto acierta la plataforma (precio ganador, P(ganar), margen).</p>
 
 {# Un único <form method="get">: los controles se aplican juntos; el conteo en vivo (HTMX) solo
    muestra un número y no cambia la lista. #}
@@ -55,6 +56,30 @@
       <input type="number" min="0" step="1" class="form-control form-control-sm" id="mesa-monto" name="monto_min"
              value="{{ filtros.monto_min or '' }}">
     </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-margen">Margen mínimo (%)</label>
+      <input type="number" step="1" min="-100" max="100" class="form-control form-control-sm" id="mesa-margen"
+             name="margen_min" value="{{ margen_min_texto }}" placeholder="Ej.: 10">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-orden">Orden</label>
+      <select class="form-select form-select-sm" id="mesa-orden" name="orden">
+        <option value="" {% if not filtros.orden %}selected{% endif %}>Margen esperado</option>
+        <option value="cierre" {% if filtros.orden == 'cierre' %}selected{% endif %}>Cierre</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-auto">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="con_costo" value="1" id="mesa-con-costo"
+               {% if filtros.con_costo %}checked{% endif %}>
+        <label class="form-check-label small" for="mesa-con-costo">Con costo</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="con_prediccion" value="1" id="mesa-con-prediccion"
+               {% if filtros.con_prediccion %}checked{% endif %}>
+        <label class="form-check-label small" for="mesa-con-prediccion">Con predicción</label>
+      </div>
+    </div>
     <div class="col-12 col-md-auto">
       <div class="form-check">
         <input class="form-check-input" type="checkbox" name="anexos" value="1" id="mesa-anexos"
@@ -77,7 +102,14 @@
 
 {% if comunas_prioritarias %}
 <p class="text-muted small mb-2">Primero, las que nombran en su dirección de entrega alguna de tus comunas prioritarias
-  ({{ comunas_prioritarias | join(", ") }}).</p>
+  ({{ comunas_prioritarias | join(", ") }}).{% if filtros.orden != 'cierre' %} Dentro de cada grupo, mayor margen esperado primero; las sin evaluar, al final.{% endif %}</p>
+{% elif filtros.orden != 'cierre' %}
+<p class="text-muted small mb-2">Mayor margen esperado primero; las sin evaluar, al final, por cierre.</p>
+{% endif %}
+{% if not hay_cache %}
+<div class="alert alert-secondary small" role="status">Todavía no hay evaluaciones de precio para tu empresa: las calcula el
+  proceso de la mesa cada 15 minutos, de día. Sin costos de proveedores no hay margen
+  (<a href="/proveedores/importar">importar planilla</a>).</div>
 {% endif %}
 
 <div id="mesa-lista">
@@ -117,8 +149,9 @@
       <span class="badge text-bg-light border fw-normal">{{ it.n_anexos }} anexo{{ '' if it.n_anexos == 1 else 's' }}</span>
       <span class="badge text-bg-light border fw-normal">Entrega: {% if it.plazo_dias is not none %}{{ it.plazo_dias }} día{{ '' if it.plazo_dias == 1 else 's' }}{% else %}plazo no informado{% endif %}</span>
     </div>
+    {% include "_mesa_precio.html" %}
     <div class="d-flex flex-wrap gap-2 mt-2">
-      <a class="btn btn-sm btn-outline-primary" href="/oportunidad/compras_agiles/{{ it.codigo }}">Líneas y anexo</a>
+      <a class="btn btn-sm btn-outline-primary" href="/oportunidad/compras_agiles/{{ it.codigo }}">Precio, mi oferta y líneas</a>
       {% if mostrar_publica %}
       <a class="btn btn-sm btn-outline-secondary" href="{{ it.url_publica }}" target="_blank" rel="noopener">Ficha pública</a>
       {% endif %}
@@ -128,6 +161,12 @@
              hx-target="#mesa-hist-{{ it.codigo }}" hx-swap="innerHTML">
       <summary class="small">Historial del comprador (12 meses)</summary>
       <div id="mesa-hist-{{ it.codigo }}" class="small mt-2"><span class="text-muted">Cargando…</span></div>
+    </details>
+    <details class="mt-1"
+             hx-get="/mesa/ca/{{ it.codigo }}/competidores" hx-trigger="toggle once"
+             hx-target="#mesa-comp-{{ it.codigo }}" hx-swap="innerHTML">
+      <summary class="small">Quiénes le han ofertado a este comprador en esta familia (12 meses)</summary>
+      <div id="mesa-comp-{{ it.codigo }}" class="small mt-2"><span class="text-muted">Cargando…</span></div>
     </details>
     {% with e = estado_equipo[it.codigo], origen = 'mesa' %}{% include "_equipo_ca.html" %}{% endwith %}
   </div>

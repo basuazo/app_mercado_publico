@@ -22,6 +22,7 @@ from app.api.routes import competencia as competencia_router
 from app.api.routes import equipo as equipo_router
 from app.api.routes import mesa as mesa_router
 from app.api.routes import mesa_dia as mesa_dia_router
+from app.api.routes import mesa_precio as mesa_precio_router
 from app.api.routes import pages as pages_router
 from app.core.db import normalizar_url_driver as _normalizar_url_driver
 from app.core.settings import Settings
@@ -127,6 +128,7 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     app.include_router(pages_router.router)
     app.include_router(mesa_router.router)
     app.include_router(mesa_dia_router.router)
+    app.include_router(mesa_precio_router.router)
     app.include_router(competencia_router.router)
     app.include_router(equipo_router.router)
     app.include_router(catalogo_router.router)

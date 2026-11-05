@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado %}
+{% block title %}Resultados — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado("Resultados del modo sombra", "Cuánto acierta la plataforma: precio ganador, P(ganar) y margen, en las Compras Ágiles ya cerradas.") }}
+<p class="small mb-3"><a href="/mesa">← Volver a la mesa</a>
+  {% if inicio %}· Modo sombra desde el {{ inicio | fecha_chile }}{% endif %}
+  · Últimas 8 semanas (desde el {{ r.desde | fecha_chile }}), por fecha de cierre de la CA.</p>
+
+<form method="get" action="/mesa/resultados" class="d-flex gap-2 align-items-end mb-3" aria-label="Filtrar por semana">
+  <div>
+    <label class="form-label small mb-1" for="res-semana">Semana</label>
+    <select class="form-select form-select-sm" id="res-semana" name="semana">
+      <option value="">Todas</option>
+      {% for s in r.semanas %}<option value="{{ s }}" {% if r.semana == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn btn-sm btn-primary" type="submit">Aplicar</button>
+</form>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-2"><div class="card card-body py-2">
+    <div class="small text-muted">Predicciones cerradas</div>
+    <div class="fs-5 num">{{ r.n }}</div>
+    <div class="small text-muted">{{ r.n_cerradas }} con ganador · {{ r.n_sin_adjudicacion }} sin adjudicación</div>
+  </div></div>
+  <div class="col-6 col-lg-2"><div class="card card-body py-2">
+    <div class="small text-muted">Ganador dentro del intervalo 80 %</div>
+    <div class="fs-5 num">{{ r.pct_intervalo | pct }}</div>
+    <div class="small text-muted">{{ r.aciertos_intervalo }} de {{ r.n_intervalo }} (n = {{ r.n_intervalo }}; meta ≈ 80 %)</div>
+  </div></div>
+  <div class="col-6 col-lg-2"><div class="card card-body py-2">
+    <div class="small text-muted">Error mediano del precio</div>
+    <div class="fs-5 num">{{ r.error_mediano | pct(1) }}</div>
+    <div class="small text-muted">|sugerido − ganador| / ganador · n = {{ r.n_error }}</div>
+  </div></div>
+  <div class="col-6 col-lg-2"><div class="card card-body py-2">
+    <div class="small text-muted">Brier de P(ganar) donde ofertamos</div>
+    <div class="fs-5 num">{% if r.brier is not none %}{{ '%.3f' | format(r.brier) | replace('.', ',') }}{% else %}—{% endif %}</div>
+    <div class="small text-muted">menor es mejor · n = {{ r.n_brier }}</div>
+  </div></div>
+  <div class="col-6 col-lg-2"><div class="card card-body py-2">
+    <div class="small text-muted">Ofertas propias</div>
+    <div class="fs-5 num">{{ r.n_ofertas }}</div>
+    <div class="small text-muted">{{ r.n_ganadas }} ganada{{ '' if r.n_ganadas == 1 else 's' }}</div>
+  </div></div>
+  <div class="col-6 col-lg-2"><div class="card card-body py-2">
+    <div class="small text-muted">Margen realizado</div>
+    <div class="fs-5 num">{{ r.margen_realizado | clp if r.margen_realizado is not none else '—' }}</div>
+    <div class="small text-muted">n = {{ r.n_margen }}</div>
+  </div></div>
+</div>
+
+{% if not r.filas %}
+<div class="alert alert-secondary" role="status">
+  <strong>Todavía no hay predicciones cerradas{% if r.semana %} en la semana {{ r.semana }}{% endif %}.</strong>
+  Se crean solas cuando una CA vigente tiene al menos la mitad de su monto con costo de tus proveedores
+  (<a href="/proveedores/importar">importar planilla</a>) y faltan 2 horas o más para su cierre; se cierran cuando
+  la CA cierra y sus ofertas ya están leídas.
+</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle small">
+    <thead>
+      <tr>
+        <th scope="col">CA</th>
+        <th scope="col">Cierre</th>
+        <th scope="col" class="text-end">Predicho</th>
+        <th scope="col">Intervalo 80 %</th>
+        <th scope="col" class="text-end">Ganador real</th>
+        <th scope="col" class="text-end">Error</th>
+        <th scope="col" class="text-end">P(ganar)</th>
+        <th scope="col">Nuestro resultado</th>
+        <th scope="col" class="text-end">Mi oferta</th>
+        <th scope="col" class="text-end">Margen realizado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in r.filas %}
+      <tr>
+        <td><a href="/oportunidad/compras_agiles/{{ i.codigo }}">{{ i.nombre | truncate(60) }}</a><div class="text-muted num">{{ i.codigo }}</div></td>
+        <td>{{ i.cierre | fecha_chile }}</td>
+        <td class="text-end num">{{ i.predicho | clp }}</td>
+        <td>
+          {% if i.intervalo %}<span class="num">{{ i.intervalo[0] | clp }}</span>–<span class="num">{{ i.intervalo[1] | clp }}</span>
+          {% if i.en_intervalo is true %}<span class="badge text-bg-success fw-normal">dentro</span>{% elif i.en_intervalo is false %}<span class="badge text-bg-secondary fw-normal">fuera</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="text-end num">
+          {% if i.estado == 'sin_adjudicacion' %}<span class="text-muted">sin adjudicación</span>
+          {% else %}{{ i.ganador | clp }}{% if i.multi_ganador %} <span class="badge text-bg-light border fw-normal" title="Suma de {{ i.multi_ganador }} ofertas seleccionadas">{{ i.multi_ganador }} ganadores</span>{% endif %}{% endif %}
+        </td>
+        <td class="text-end num">{{ i.error | pct_firmado if i.error is not none else '—' }}</td>
+        <td class="text-end num">{{ i.p_ganar | pct }}</td>
+        <td>{{ etiqueta_resultado.get(i.resultado_propio, '—') if i.resultado_propio else 'No ofertamos' }}</td>
+        <td class="text-end num">{{ i.oferta_total | clp if i.oferta_total is not none else '—' }}</td>
+        <td class="text-end num">{{ i.margen_realizado | clp if i.margen_realizado is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+<p class="text-muted small">«No ofertamos» = la CA no se marcó como enviada en la mesa. Fuente: Dirección ChileCompra</p>
+{% endblock %}

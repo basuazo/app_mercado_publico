@@ -18,6 +18,34 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-5 (5-nov, commit local sin push hasta auditar; migración `b3e7c1d9f4a2`, cuelga de `a8d4f2c6e9b1`)
+Precio, margen y P(ganar) en la mesa; mi oferta; modo sombra (`prompt-F-plat-5.md`, reescrito el 5-nov).
+**Modo sombra: inicio = el día del deploy con costos cargados (previsto 6-nov-2026); fin = +4 semanas (previsto
+4-dic-2026).** La fecha real de inicio la muestra `/mesa/resultados` («Modo sombra desde…» = primera predicción creada);
+si el deploy se corre, correr el fin igual.
+**Esquema:** `evaluaciones_cache` (PK CA × empresa, `datos` JSONB para la tarjeta; solo vigentes), `predicciones`
+(inmutables, UNIQUE CA × empresa SIN `modelo_id`; al cerrar solo se llenan `estado`, `resultado_*`, `cerrada_en` y
+`detalle.multi_ganador`/`motivo_cierre`), `ofertas_propias` (contenido + `version`; sin estado: el flujo es `ca_trabajo`).
+**Código:** `app/mercado/sombra.py` (job, cierre y métricas), `app/mercado/oferta.py` (armar, simular, guardar, enviar,
+XLSX), `app/api/routes/mesa_precio.py`; en `adjudicacion.py`, `costo_ca` y `margen` quedaron como única definición (las
+usan `evaluar_ca`, la simulación y el margen realizado). **Job `mercado-mesa`** (sin API) en `mercado.yml` tras
+`mercado-ca mercado-catalogo`: reescribe la caché, crea predicciones (cobertura ≥ 0,5, modelo activo, ≥ 2 h al cierre;
+`ON CONFLICT DO NOTHING`), cierra las abiertas (CA desierta/cancelada/revocada, terminal sin seleccionada o 30 días sin
+selección → `sin_adjudicacion`) y llena precio real y margen realizado de las ofertas propias ganadas.
+**UI:** tarjeta de `/mesa` con precio, intervalo, costo + logística, margen, P(ganar) en 3 puntos, cobertura y etiqueta
+del modelo; desplegable «Quiénes le han ofertado» (historial con `competidores_de`, no «probables»); orden por margen
+esperado (comunas prioritarias primero; «Cierre» como opción); filtros «Con costo», «Margen mínimo», «Con predicción».
+Ficha: sección «Precio y mi oferta» (evaluación en vivo, proveedor por línea, simulación HTMX sin persistir, Guardar →
+`cotizando`, Marcar enviada → `enviada`, Exportar XLSX, predicción congelada). `/mesa/resultados`.
+**Decisión anotada:** el orden usa `margen_esperado` de F-plat-4, que YA es (precio − costo) × P(ganar); el prompt decía
+«margen_esperado × p_ganar_sugerido», que contaría P dos veces.
+**Fuera de esta fase:** `/estrategia` con P(ganar) y margen por comprador × familia → **F-plat-5b** (cuando haya costos y
+algún mes evaluable); envío automático de ofertas, correo, IA.
+**Pendiente de Boris:** (1) `alembic upgrade head` en la base de tests local y `python -m pytest -rs` completo
+(`tests/test_plat5_pg.py` usa Postgres); (2) importar la planilla de proveedores con costos puestos en bodega; (3) deploy
+con migración (prompt §5); (4) medir `duracion_s` de `mercado-mesa` con ~400 vigentes: si pasa de 2 min, workflow propio
+cada hora.
+
 ## F-equipo (5-nov, commit local sin push hasta auditar; migración `a8d4f2c6e9b1`, cuelga de `f6b2d9a4c1e8`)
 Trabajo en equipo sobre las CA, alarmas dentro de la app y sin correo (`prompt-F-equipo.md`).
 **Esquema:** `ca_trabajo` (estado compartido por empresa × CA: `nueva` = sin fila, `priorizada`, `cotizando`, `lista`,

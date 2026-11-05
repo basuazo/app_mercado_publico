@@ -1,0 +1,185 @@
+{#- «Precio y mi oferta» de la ficha interna (F-plat-5). Evaluación EN VIVO (`evaluacion_ca`,
+    empresa de la sesión). Guardar, enviar y conflictos reemplazan esta sección entera
+    (hx-target="closest [data-oferta]"); un 409/422 también se pinta (static/equipo.js).
+    Contexto: ver `mesa_precio._contexto`. Sin |safe. -#}
+{% macro curva(svg, titulo) -%}
+{% if svg %}
+<svg viewBox="0 0 {{ svg.ancho }} {{ svg.alto }}" width="100%" style="max-width: {{ svg.ancho }}px" role="img"
+     aria-label="{{ titulo }}: {% for pt in svg.puntos %}{{ pt.etiqueta }} {{ pt.precio | clp }} con P(ganar) {{ pt.p | pct }}{{ '; ' if not loop.last }}{% endfor %}">
+  <line x1="{{ svg.x0 }}" y1="{{ svg.y1 }}" x2="{{ svg.x1 }}" y2="{{ svg.y1 }}" stroke="currentColor" stroke-opacity=".3"/>
+  <line x1="{{ svg.x0 }}" y1="{{ svg.y0 }}" x2="{{ svg.x0 }}" y2="{{ svg.y1 }}" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="{{ svg.x0 - 4 }}" y="{{ svg.y0 + 4 }}" font-size="9" text-anchor="end" fill="currentColor">100 %</text>
+  <text x="{{ svg.x0 - 4 }}" y="{{ svg.y1 }}" font-size="9" text-anchor="end" fill="currentColor">0 %</text>
+  <polyline points="{{ svg.linea }}" fill="none" stroke="var(--bs-primary)" stroke-width="2"/>
+  {% for pt in svg.puntos %}
+  <circle cx="{{ pt.x }}" cy="{{ pt.y }}" r="4" fill="var(--bs-primary)"/>
+  <text x="{{ pt.x }}" y="{{ pt.y - 8 }}" font-size="9" text-anchor="middle" fill="currentColor">{{ pt.p | pct }}</text>
+  <text x="{{ pt.x }}" y="{{ svg.y1 + 12 }}" font-size="9" text-anchor="middle" fill="currentColor">{{ pt.etiqueta }}</text>
+  <text x="{{ pt.x }}" y="{{ svg.y1 + 23 }}" font-size="8" text-anchor="middle" fill="currentColor">{{ pt.precio | clp }}</text>
+  {% endfor %}
+</svg>
+{% endif %}
+{%- endmacro %}
+<section class="border rounded p-3 mt-4" data-oferta id="precio-oferta-{{ codigo }}" aria-labelledby="precio-oferta-titulo-{{ codigo }}">
+  <h3 class="fs-6 mb-2" id="precio-oferta-titulo-{{ codigo }}">Precio y mi oferta</h3>
+
+  {% if conflicto %}<div class="alert alert-warning py-1 px-2 small" role="alert">{{ conflicto }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger py-1 px-2 small" role="alert">{{ error }}</div>{% endif %}
+  {% if mensaje %}<div class="alert alert-success py-1 px-2 small" role="status">{{ mensaje }}</div>{% endif %}
+
+  {% if not ev or not lineas %}
+  <p class="small mb-0">Sin detalle de líneas: no se puede sugerir precio ni armar la oferta acá.
+    Revisa las líneas en la pestaña «Líneas» o sube el anexo.</p>
+  {% else %}
+  <div class="d-flex flex-wrap gap-2 align-items-center small mb-2">
+    {% if ev.modelo == 'base' %}
+    <span class="badge text-bg-light border fw-normal">Modelo: línea base (ranking simple; todavía no hay modelo logístico)</span>
+    {% elif ev.modelo == 'logistico' %}<span class="badge text-bg-light border fw-normal">Modelo logístico</span>
+    {% else %}<span class="badge text-bg-warning fw-normal">Sin modelo de adjudicación</span>{% endif %}
+    <span class="text-muted">Estado del equipo: {{ estado_equipo }}</span>
+    {% if guardada %}<span class="text-muted">· oferta guardada {{ guardada_hace }}{% if guardada_por %} por {{ guardada_por }}{% endif %}</span>{% endif %}
+  </div>
+
+  <h4 class="fs-6 mt-2">Precio y margen sugeridos</h4>
+  <div class="row g-3 small">
+    <div class="col-12 col-lg-6">
+      <dl class="row mb-0 g-0">
+        <dt class="col-6 fw-normal text-muted">Precio sugerido (neto)</dt>
+        <dd class="col-6 mb-1">{% if ev.precio_sugerido is not none %}<strong class="num">{{ ev.precio_sugerido | clp }}</strong>{% else %}<span class="text-muted">sin referencia</span>{% endif %}</dd>
+        <dt class="col-6 fw-normal text-muted">Ganador probable (80 %)</dt>
+        <dd class="col-6 mb-1">{% if ev.intervalo_80 %}<span class="num">{{ ev.intervalo_80[0] | clp }}</span>–<span class="num">{{ ev.intervalo_80[1] | clp }}</span>{% else %}—{% endif %}</dd>
+        <dt class="col-6 fw-normal text-muted">Costo productos</dt>
+        <dd class="col-6 mb-1">{% if ev.costo_productos is not none %}<span class="num">{{ ev.costo_productos | clp }}</span>{% else %}<span class="text-muted">falta costo</span>{% endif %}</dd>
+        <dt class="col-6 fw-normal text-muted">Logística</dt>
+        <dd class="col-6 mb-1">{% if ev.logistica %}<span class="num">{{ ev.logistica.costo | clp }}</span> <span class="text-muted">{{ ev.logistica.tarifa or 'sin tarifa' }}{% if ev.comuna %} · {{ ev.comuna }}{% endif %}</span>{% else %}—{% endif %}</dd>
+        <dt class="col-6 fw-normal text-muted">Costo financiero</dt>
+        <dd class="col-6 mb-1">{% if ev.costo_financiero is not none %}<span class="num">{{ ev.costo_financiero | clp }}</span>{% else %}—{% endif %}</dd>
+        <dt class="col-6 fw-normal text-muted">Margen al sugerido</dt>
+        <dd class="col-6 mb-1">{% if ev.margen_pct is not none %}<span class="num">{{ ev.margen_pct | pct(1) }}</span> · esperado <span class="num">{{ ev.margen_esperado | clp }}</span>{% else %}<span class="text-muted">sin calcular</span>{% endif %}</dd>
+        <dt class="col-6 fw-normal text-muted">Cobertura de costos</dt>
+        <dd class="col-6 mb-1"><span class="num">{{ ev.cobertura | pct }}</span></dd>
+      </dl>
+      {% for a in ev.avisos %}<p class="text-warning-emphasis mb-0">{{ a }}</p>{% endfor %}
+    </div>
+    <div class="col-12 col-lg-6">
+      <p class="mb-1 text-muted">P(ganar) según el precio</p>
+      {% if svg %}{{ curva(svg, "Curva de P(ganar)") }}{% else %}<p class="text-muted">Sin curva: falta modelo, referencia o detalle completo.</p>{% endif %}
+    </div>
+  </div>
+
+  {% if pred %}
+  <details class="mt-2 small">
+    <summary>Así se vio al predecir ({{ pred.creada_en | fecha_chile }}, modelo {{ 'línea base' if pred.modelo_tipo == 'base' else pred.modelo_tipo }})</summary>
+    <div class="mt-2">
+      Precio sugerido <span class="num">{{ pred.precio_sugerido | clp }}</span>
+      {% if pred.intervalo_80_min is not none %}· intervalo <span class="num">{{ pred.intervalo_80_min | clp }}</span>–<span class="num">{{ pred.intervalo_80_max | clp }}</span>{% endif %}
+      · P(ganar) <span class="num">{{ pred.p_ganar_sugerido | pct }}</span>
+      · margen esperado {% if pred.margen_esperado is not none %}<span class="num">{{ pred.margen_esperado | clp }}</span>{% else %}—{% endif %}
+      · cobertura <span class="num">{{ pred.cobertura | pct }}</span>.
+      {% if pred.estado == 'cerrada' %}
+      Ganó <span class="num">{{ pred.resultado_precio_ganador | clp }}</span>
+      ({{ 'dentro' if pred.resultado_en_intervalo else 'fuera' }} del intervalo).
+      {% elif pred.estado == 'sin_adjudicacion' %}Terminó sin adjudicación.
+      {% else %}Esperando el resultado.{% endif %}
+      {{ curva(pred_svg, "Curva al predecir") }}
+    </div>
+  </details>
+  {% endif %}
+
+  <h4 class="fs-6 mt-3">Mi oferta</h4>
+  <form method="post" action="/mesa/ca/{{ codigo }}/oferta"
+        hx-post="/mesa/ca/{{ codigo }}/simular" hx-trigger="input changed delay:600ms, change"
+        hx-target="#oferta-sim-{{ codigo }}" hx-swap="innerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ version }}">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle small">
+        <thead>
+          <tr>
+            <th scope="col">Línea</th>
+            <th scope="col" class="text-end">Cantidad</th>
+            <th scope="col">Referencia (por unidad base)</th>
+            <th scope="col">Costo (proveedor)</th>
+            <th scope="col" class="text-end">Precio unitario neto</th>
+            <th scope="col" class="text-end">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lo in lineas %}
+          {% set e = por_n.get(lo.n) %}
+          <tr>
+            <td>{{ lo.texto | truncate(80) }}{% if lo.producto %}<div class="text-muted">{{ lo.producto }}</div>{% endif %}
+              {% if lo.estado != 'ok' %}<span class="badge text-bg-warning fw-normal">{{ lo.estado }}</span>{% endif %}</td>
+            <td class="text-end num">{{ lo.cantidad | numero }}</td>
+            <td>
+              {% if e and e.referencia and e.referencia.mediana_ganador %}
+              <span class="num">{{ e.referencia.mediana_ganador | clp }}</span>/{{ lo.unidad_base }}
+              <div class="text-muted">{{ e.referencia.ambito }} · n = {{ e.referencia.n }}{% if e.intervalo_80 %} · <span class="num">{{ e.intervalo_80[0] | clp }}</span>–<span class="num">{{ e.intervalo_80[1] | clp }}</span>{% endif %}</div>
+              {% else %}<span class="text-muted">sin referencia</span>{% endif %}
+            </td>
+            <td>
+              {% if lo.candidatos %}
+              <label class="visually-hidden" for="prov-{{ codigo }}-{{ lo.linea_id }}">Proveedor de la línea {{ lo.n }}</label>
+              <select class="form-select form-select-sm" name="prov_{{ lo.linea_id }}" id="prov-{{ codigo }}-{{ lo.linea_id }}">
+                <option value="">Mejor costo</option>
+                {% for c in lo.candidatos %}
+                <option value="{{ c.producto_id }}" {% if c.producto_id == lo.proveedor_producto_id %}selected{% endif %}>{{ c.proveedor }} · {{ c.formato_texto or c.producto_texto }} · {{ c.precio_por_unidad_base | clp }}/{{ c.unidad_base }}</option>
+                {% endfor %}
+              </select>
+              {% if lo.costo_total is not none %}<div class="text-muted">costo línea <span class="num">{{ lo.costo_total | clp }}</span></div>{% endif %}
+              {% else %}<span class="text-muted">sin costo</span>{% endif %}
+            </td>
+            <td class="text-end">
+              <label class="visually-hidden" for="precio-{{ codigo }}-{{ lo.linea_id }}">Precio unitario de la línea {{ lo.n }}</label>
+              <input class="form-control form-control-sm text-end num" inputmode="decimal" style="min-width: 7rem"
+                     name="precio_{{ lo.linea_id }}" id="precio-{{ codigo }}-{{ lo.linea_id }}"
+                     value="{{ '%.2f' | format(lo.precio_unitario) if lo.precio_unitario is not none else '' }}">
+              {% if lo.precio_sugerido_unitario is not none %}<div class="text-muted">sugerido <span class="num">{{ lo.precio_sugerido_unitario | clp }}</span></div>{% endif %}
+            </td>
+            <td class="text-end num">{{ lo.total | clp if lo.total is not none else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="plazo-{{ codigo }}">Plazo de entrega (días)</label>
+        <input class="form-control form-control-sm" type="number" min="0" max="365" name="plazo" id="plazo-{{ codigo }}" value="{{ plazo if plazo is not none else '' }}">
+      </div>
+      <div class="col-12 col-md-9">
+        <label class="form-label small mb-1" for="notas-{{ codigo }}">Notas</label>
+        <input class="form-control form-control-sm" name="notas" id="notas-{{ codigo }}" maxlength="2000" value="{{ notas }}">
+      </div>
+    </div>
+
+    <div id="oferta-sim-{{ codigo }}" class="border rounded p-2 mb-2" aria-live="polite">
+      {% with error = none %}{% include "_oferta_simulacion.html" %}{% endwith %}
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <button type="submit" class="btn btn-sm btn-primary" data-accion="oferta-guardar"
+              hx-post="/mesa/ca/{{ codigo }}/oferta" hx-target="closest [data-oferta]" hx-swap="outerHTML">Guardar</button>
+      {% if not enviada %}
+      <button type="button" class="btn btn-sm btn-outline-primary" data-accion="oferta-enviada"
+              hx-post="/mesa/ca/{{ codigo }}/enviar" hx-target="closest [data-oferta]" hx-swap="outerHTML"
+              {% if empresa_sin_rut %}disabled aria-describedby="sin-rut-{{ codigo }}"{% endif %}>Marcar enviada</button>
+      {% else %}<span class="badge text-bg-success fw-normal">Enviada</span>{% endif %}
+      {% if guardada %}
+      <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="/mesa/ca/{{ codigo }}/exportar"
+              data-accion="oferta-exportar">Exportar XLSX</button>
+      {% else %}<span class="small text-muted">Guarda la oferta para exportarla.</span>{% endif %}
+      {% if mostrar_publica %}
+      <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ url_publica }}" target="_blank" rel="noopener noreferrer">Subirla en Mercado Público ↗</a>
+      {% endif %}
+    </div>
+    {% if empresa_sin_rut %}
+    <p class="small mt-2 mb-0" id="sin-rut-{{ codigo }}">Para marcarla enviada (y saber después si ganamos), tu empresa necesita su RUT:
+      <a href="/admin/empresas">Empresas</a>.</p>
+    {% endif %}
+    <p class="small text-muted mt-2 mb-0">La oferta se sube a mano en el portal; «Exportar» deja una planilla para transcribirla.
+      El precio sugerido y la P(ganar) son estimaciones medidas en modo sombra.</p>
+  </form>
+  {% endif %}
+  <p class="small text-muted mt-2 mb-0">Fuente: Dirección ChileCompra</p>
+</section>

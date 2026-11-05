@@ -320,6 +320,13 @@
       </div>
     </div>
 
+    {% if con_equipo and fuente == 'compras_agiles' %}
+    {# F-plat-5: precio, margen y mi oferta (evaluación en vivo, cargada al abrir la ficha). #}
+    <div class="mt-4" hx-get="/mesa/ca/{{ codigo }}/precio" hx-trigger="load" hx-swap="outerHTML">
+      <p class="small text-muted mb-0">Calculando precio y margen…</p>
+    </div>
+    {% endif %}
+
     {% if con_equipo %}
     {# F-equipo: estado compartido y conversación del equipo (los mismos componentes que la mesa). #}
     <section class="border rounded p-3 mt-4" aria-labelledby="ficha-equipo-titulo">

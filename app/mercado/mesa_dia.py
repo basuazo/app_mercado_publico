@@ -1,4 +1,4 @@
-"""Mesa del día v0 (F-mesa-v0): Compras Ágiles vigentes del territorio, sin predicción.
+"""Mesa del día (F-mesa-v0; F-plat-5 suma precio, margen y P(ganar) leídos de la caché).
 
 - Vigente = `estado = 'publicada'` y `fecha_cierre` futura, en las regiones activas (regla 25).
   Las fechas se guardan naive en UTC (`app.core.tiempo`); los cortes de "hoy / mañana / esta
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -25,7 +26,7 @@ from app.catalogos.mercado import norm
 from app.core.tiempo import TZ_CHILE, borde_del_dia_utc_naive
 from app.mercado.adjudicacion import familia_de_codigo
 from app.models.enums import EstadoOportunidad
-from app.models.tables import CaLinea, CaProducto, CompraAgil
+from app.models.tables import CaLinea, CaProducto, CompraAgil, EvaluacionCache, Prediccion
 
 PAGINA = 50
 CIERRES = ("hoy", "manana", "semana")
@@ -57,6 +58,14 @@ class FiltrosMesa:
     con_anexos: bool = False
     monto_min: int | None = None
     q: str = ""
+    # F-plat-5 (se aplican en Python sobre la caché de evaluaciones, nunca evaluando acá).
+    con_costo: bool = False
+    margen_min: float | None = None  # fracción: 0.1 = 10 %
+    con_prediccion: bool = False
+    orden: str = ""  # "" = valor (margen esperado) | "cierre"
+
+
+ORDENES = ("", "cierre")
 
 
 def hoy_en_chile(ahora: datetime) -> date:
@@ -69,7 +78,8 @@ def fin_de_dia(d: date) -> datetime:
     return borde_del_dia_utc_naive(d, fin_de_dia=True)
 
 
-def _condiciones_vigente(regiones: list[int], ahora: datetime) -> list[Any]:
+def condiciones_vigente(regiones: list[int], ahora: datetime) -> list[Any]:
+    """Única definición de «vigente» (la mesa, «Hoy» y el job `mercado-mesa` de F-plat-5)."""
     return [
         CompraAgil.region.in_(regiones),
         CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
@@ -79,7 +89,7 @@ def _condiciones_vigente(regiones: list[int], ahora: datetime) -> list[Any]:
 
 def contar_vigentes(session: Session, regiones: list[int], ahora: datetime) -> tuple[int, int]:
     """(vigentes, de ellas las que cierran hoy en Chile). Una definición para «Hoy» y la mesa."""
-    cond = _condiciones_vigente(regiones, ahora)
+    cond = condiciones_vigente(regiones, ahora)
     total = session.execute(select(func.count()).select_from(CompraAgil).where(*cond)).scalar_one()
     hoy = session.execute(
         select(func.count())
@@ -129,7 +139,7 @@ def familias_por_ca(
     for codigo, cod, nombre in session.execute(
         select(CaProducto.ca_codigo, CaProducto.codigo_producto, CaProducto.nombre)
         .join(CompraAgil, CompraAgil.codigo == CaProducto.ca_codigo)
-        .where(*_condiciones_vigente(regiones, ahora))
+        .where(*condiciones_vigente(regiones, ahora))
     ):
         productos[codigo].append((cod, nombre))
     out: dict[str, list[str]] = {}
@@ -178,12 +188,15 @@ def buscar_codigos(
     filtros: FiltrosMesa,
     ahora: datetime,
     familias: dict[str, list[str]] | None = None,
+    valor: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Códigos de las CA vigentes que pasan los filtros, en el orden de la mesa: primero las de
-    comunas prioritarias (si hay), luego cierre ascendente. Solo tuplas livianas."""
+    comunas prioritarias (si hay); dentro de cada grupo, si viene `valor` (F-plat-5: margen
+    esperado de la caché), de mayor a menor y las sin evaluación al final; luego cierre
+    ascendente. Solo tuplas livianas."""
     consulta: Select[Any] = (
         select(CompraAgil.codigo, CompraAgil.direccion_entrega)
-        .where(*_condiciones_vigente(regiones, ahora), *_condiciones_filtros(filtros, ahora))
+        .where(*condiciones_vigente(regiones, ahora), *_condiciones_filtros(filtros, ahora))
         .order_by(CompraAgil.fecha_cierre, CompraAgil.codigo)
     )
     filas = session.execute(consulta).all()
@@ -191,10 +204,80 @@ def buscar_codigos(
         if familias is None:
             familias = familias_por_ca(session, regiones, ahora)
         filas = [f for f in filas if filtros.familia in familias.get(f[0], [])]
-    if comunas:
+    if comunas or valor is not None:
         # sort estable: dentro de cada grupo se conserva el orden por cierre.
-        filas = sorted(filas, key=lambda f: comuna_en_direccion(f[1], comunas) is None)
+        v = valor or {}
+        filas = sorted(
+            filas,
+            key=lambda f: (
+                bool(comunas) and comuna_en_direccion(f[1], comunas) is None,
+                f[0] not in v,
+                -v.get(f[0], 0.0),
+            ),
+        )
     return [f[0] for f in filas]
+
+
+# ---------------------------------------------------------------------------
+# F-plat-5: precio y margen desde la caché (`evaluaciones_cache`, job `mercado-mesa`)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Evaluada:
+    evaluada_en: datetime
+    datos: dict[str, Any]
+
+
+def evaluaciones_de(
+    session: Session, empresa_id: int, codigos: list[str] | None = None
+) -> dict[str, Evaluada]:
+    """Caché de evaluaciones de la empresa (regla 26). La mesa SOLO lee esto."""
+    consulta = select(
+        EvaluacionCache.ca_codigo, EvaluacionCache.evaluada_en, EvaluacionCache.datos
+    ).where(EvaluacionCache.empresa_id == empresa_id)
+    if codigos is not None:
+        if not codigos:
+            return {}
+        consulta = consulta.where(EvaluacionCache.ca_codigo.in_(codigos))
+    return {c: Evaluada(en, d or {}) for c, en, d in session.execute(consulta)}
+
+
+def con_prediccion(session: Session, empresa_id: int) -> set[str]:
+    return set(
+        session.execute(
+            select(Prediccion.ca_codigo).where(Prediccion.empresa_id == empresa_id)
+        ).scalars()
+    )
+
+
+def valor_orden(cache: Mapping[str, Evaluada]) -> dict[str, float]:
+    """Margen esperado de la caché (ya es (precio − costo) × P(ganar), F-plat-4)."""
+    out: dict[str, float] = {}
+    for c, e in cache.items():
+        m = e.datos.get("margen_esperado")
+        if isinstance(m, int | float):
+            out[c] = float(m)
+    return out
+
+
+def filtrar_precio(
+    codigos: list[str], f: FiltrosMesa, cache: Mapping[str, Evaluada], predichas: set[str]
+) -> list[str]:
+    """Filtros «con costo», «margen ≥ X %» y «con predicción», conservando el orden."""
+    out: list[str] = []
+    for c in codigos:
+        d = cache[c].datos if c in cache else {}
+        if f.con_costo and d.get("costo_total") is None:
+            continue
+        if f.margen_min is not None:
+            m = d.get("margen_pct")
+            if not isinstance(m, int | float) or m < f.margen_min:
+                continue
+        if f.con_prediccion and c not in predichas:
+            continue
+        out.append(c)
+    return out
 
 
 def cuenta_regresiva(cierre: datetime | None, ahora: datetime) -> str:

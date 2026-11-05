@@ -16,6 +16,24 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 5),
+        titulo="Precio, margen y mi oferta en la mesa",
+        descripcion=(
+            "Cada tarjeta de la mesa muestra ahora el precio sugerido con el rango en que suele "
+            "quedar el ganador, tu costo más la logística, el margen en pesos y en porcentaje, y "
+            "la probabilidad de ganar a tres precios (agresivo, sugerido y cómodo). Si falta el "
+            "costo de algún producto, la tarjeta lo dice y no inventa margen. Por defecto la mesa "
+            "ordena por margen esperado (tus comunas primero) y suma los filtros «Con costo», "
+            "«Margen mínimo» y «Con predicción». Al abrir una Compra Ágil, la sección «Precio y mi "
+            "oferta» detalla cada línea con su referencia, su costo y el proveedor que elijas; "
+            "ajustas los precios y ves el margen y la probabilidad al instante, guardas la oferta "
+            "(la CA pasa a «Cotizando»), la exportas a Excel para subirla al portal y la marcas "
+            "enviada. Durante cuatro semanas la plataforma mide en silencio cuánto acierta: lo ves "
+            "en «Resultados del modo sombra». Mientras no haya un modelo mejor, la probabilidad "
+            "usa una línea base y la tarjeta lo dice. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 5),
         titulo="Trabajo en equipo, comentarios y alarmas",
         descripcion=(
             "Cada Compra Ágil de la mesa tiene ahora un estado compartido por todo el equipo: "

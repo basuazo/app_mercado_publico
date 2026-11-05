@@ -96,6 +96,14 @@ los últimos 6 meses y el Brier con/sin variables de competencia del último mes
 lock, no por la duración. Avisos como `::warning::`: cuadratura de `n_ganadas` fuera de ±0,5 %, top 1 bajo la meta
 del 60 %, ningún mes con datos suficientes, tablas > 20 MB (regla 11).
 
+**`mercado-mesa` (F-plat-5).** Va en `mercado.yml`, después de `mercado-ca` y `mercado-catalogo` (`jobs: "mercado-ca
+mercado-catalogo mercado-mesa"`), así que corre cada 15 min con el mismo lock. Sin API. Para cada empresa activa evalúa
+las CA vigentes de sus regiones (`evaluar_ca`, por lotes de 50), reescribe `evaluaciones_cache`, crea las predicciones
+del modo sombra y cierra las que ya tienen resultado. **Sin medir todavía** con volumen real: mirar `duracion_s` en
+`job_runs` las primeras corridas con ~400 vigentes y 1 empresa. Si pasa de **2 min**, sacarlo a un workflow propio
+cada hora (`mercado-mesa.yml`, `jobs: "mercado-mesa"`) y quitarlo de `mercado.yml`. Sin modelo activo sale un
+`::warning::` y no crea predicciones (la caché se escribe igual).
+
 Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push
 (pasos en `00-estado.md`). Usan el mismo advisory lock que el resto: de noche `mercado-nocturno` lo
 tiene hasta ~06:45 y `mercado` sale `omitido` tras 5 min de espera (normal; se pone al día de mañana).

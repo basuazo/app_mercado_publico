@@ -1,0 +1,20 @@
+{#- Quiénes le han ofertado a este comprador en esta familia (F-plat-5). Es HISTORIAL, no una
+    predicción: el top 1 «esperado» ofertó solo en 8–11 % de las CA (medido el 5-nov). -#}
+{% from "_competencia_macros.html" import tasa, nosotros_badge %}
+<p class="text-muted mb-2">{{ d.nombre }} · {{ familia }} · {{ d.n_con_ofertas }} CA con ofertas en 12 meses.
+  Es historial: no dice quién ofertará esta vez.</p>
+{% if competidores %}
+<ul class="list-unstyled mb-1">
+  {% for c in competidores %}
+  <li class="mb-1">
+    <a href="/competencia/{{ c.rut | urlencode }}">{{ c.nombre }}</a>{{ nosotros_badge(c.es_nosotros) }}
+    · ofertó en <span class="num">{{ c.n_ca }}</span>{% if c.participacion is not none %} (<span class="num">{{ c.participacion | pct }}</span>){% endif %}
+    · ganó {{ tasa(c.tasa) }}
+  </li>
+  {% endfor %}
+</ul>
+{% if n_mas %}<p class="text-muted mb-0">Y {{ n_mas }} más en <a href="/competencia?comprador={{ d.clave | urlencode }}&familia={{ familia | urlencode }}">Competencia</a>.</p>{% endif %}
+{% else %}
+<p class="text-muted mb-0">Sin ofertas registradas a este comprador en esta familia en 12 meses.</p>
+{% endif %}
+<p class="text-muted mb-0 mt-1">Fuente: Dirección ChileCompra</p>

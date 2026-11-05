@@ -940,6 +940,40 @@ def logistica(tarifas: Tarifas, comuna: str | None, kg: float) -> Logistica:
     return Logistica(0.0, kg, None, None)
 
 
+@dataclass(frozen=True)
+class CostoCA:
+    productos: float
+    logistica: Logistica
+    financiero: float
+    total: float
+
+
+def costo_ca(
+    costo_productos: float,
+    kg: float,
+    tarifas: Tarifas,
+    comuna: str | None,
+    costo_financiero_mensual: float = COSTO_FINANCIERO_DEFAULT,
+) -> CostoCA:
+    """Costo total de entregar una CA: productos + logística (tarifa de la comuna o su provincia)
+    + financiero (30 días × tasa mensual sobre productos + logística). Única definición: la usan
+    `evaluar_ca`, la simulación de mi oferta y el margen realizado (F-plat-5)."""
+    log = logistica(tarifas, comuna, kg)
+    financiero = (costo_productos + log.costo) * costo_financiero_mensual
+    return CostoCA(costo_productos, log, financiero, costo_productos + log.costo + financiero)
+
+
+def margen(
+    precio: float, costo_total: float | None, p: float | None
+) -> tuple[float | None, float | None]:
+    """(margen esperado = (precio − costo) × p, margen % = (precio − costo) / precio). Sin costo
+    o sin p → None, nunca 0. Única definición (F-plat-4; F-plat-5 la reutiliza al simular)."""
+    if costo_total is None or precio <= 0:
+        return None, None
+    pct = (precio - costo_total) / precio
+    return ((precio - costo_total) * p if p is not None else None), pct
+
+
 # ---------------------------------------------------------------------------
 # evaluar_ca
 # ---------------------------------------------------------------------------
@@ -1066,12 +1100,13 @@ def evaluar_ca(
     log = costo_prod = financiero = costo_total = None
     if todas_con_costo:
         kg = sum(e.cantidad_base or 0.0 for e in oks if e.unidad_base == "kg")
-        log = logistica(cargar_tarifas(session, empresa_id), ca.comuna_inferida, kg)
+        cc = costo_ca(
+            sum(e.costo_total or 0.0 for e in oks), kg, cargar_tarifas(session, empresa_id),
+            ca.comuna_inferida, costo_financiero_mensual,
+        )  # fmt: skip
+        log, costo_prod, financiero, costo_total = cc.logistica, cc.productos, cc.financiero, cc.total
         if log.tarifa is None:
             avisos.append("Sin tarifa de logística para la comuna ni su provincia: logística 0")
-        costo_prod = sum(e.costo_total or 0.0 for e in oks)
-        financiero = (costo_prod + log.costo) * costo_financiero_mensual
-        costo_total = costo_prod + log.costo + financiero
     elif any(e.costo is not None for e in oks):
         avisos.append("Hay líneas sin costo: el margen queda sin calcular")
     else:
@@ -1086,16 +1121,15 @@ def evaluar_ca(
     por_nombre = {p.nombre: p for p in puntos}
     sug = por_nombre.get("sugerido")
     precio_sugerido = sug.precio if sug else (precios.mediana_ganador if precios else None)
-    margen = margen_pct = None
-    if costo_total is not None and sug is not None and sug.precio > 0:
-        margen = (sug.precio - costo_total) * sug.p
-        margen_pct = (sug.precio - costo_total) / sug.precio
+    m_esperado, margen_pct = (
+        margen(sug.precio, costo_total, sug.p) if sug is not None else (None, None)
+    )
     return EvaluacionCA(
         ca_codigo=ca.codigo, empresa_id=empresa_id, comuna=ca.comuna_inferida,
         comuna_fuente=ca.comuna_fuente, mes_referencia=mes, lineas=evaluadas, logistica=log,
         costo_productos=costo_prod, costo_financiero=financiero, costo_total=costo_total,
         precio_sugerido=precio_sugerido, intervalo_80=precios.intervalo_80 if precios else None,
-        curva=puntos, p_ganar={p.nombre: p.p for p in puntos}, margen_esperado=margen,
+        curva=puntos, p_ganar={p.nombre: p.p for p in puntos}, margen_esperado=m_esperado,
         margen_pct=margen_pct, cobertura=cobertura, completa=completas is not None,
         modelo=activo.modelo.tipo if activo else None, avisos=avisos,
     )  # fmt: skip

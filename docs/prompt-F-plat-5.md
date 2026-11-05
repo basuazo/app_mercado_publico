@@ -1,159 +1,135 @@
-# Prompt de implementación — F-plat-5 (Mesa del día, ficha ampliada, ofertas propias y modo sombra) · 3-nov-2026
+# Prompt de implementación — F-plat-5 (precio, margen y P(ganar) en la mesa; mi oferta; modo sombra) · 5-nov-2026
 
-> Para Claude Code. **Modelo: Sonnet** (UI HTMX sobre funciones ya existentes; contrato claro). Una fase = un
-> commit, **sin push**. **Con migración.** Va después de F-merc-1, F-merc-2, F-plat-1, F-plat-2, F-plat-3,
-> F-plat-4. Origen: `docs/17-plan-pivote-plataforma-ca.md` §2 C6; `16-pivote` §2 peldaño 2.
+> Para Claude Code. **Modelo: Opus** (predicciones inmutables para el juez de 4 semanas, esquema nuevo, ownership).
+> Una fase = un commit, **sin push**. **Con migración**: `down_revision = "a8d4f2c6e9b1"` (cabeza tras F-equipo [V];
+> confirmar con `alembic heads`).
+> **Reescrito y revisado contra el código el 5-nov-2026 (HEAD `cfc5f54`).** Reemplaza al prompt del 3-nov y sus
+> revisiones del 4 y 5-nov (en el historial de git). Lo marcado [V] está verificado; si algo no calza, gana el código:
+> anotarlo en el commit y no inventar. Origen: `17-plan` §2 C6 y §7; `16-pivote` §2 peldaño 2.
 
-> **Revisado contra el código el 4-nov-2026 (HEAD `a9c0cfe`).** Lo marcado [V] está verificado en el código. La
-> sección "Revisión 4-nov" manda sobre el resto del prompt donde choquen. Si algo no calza con lo que dejen F-plat-1, 2
-> o 4, gana el código: anotarlo en el commit y no inventar.
+## Objetivo
+Que el equipo, en la mesa, vea **qué cotizar, a qué precio y con qué margen**, arme su oferta, la registre, y que la
+plataforma **mida en sombra** cuánto acierta (precio ganador, P(ganar), margen) durante 4 semanas. Es el juez del
+peldaño 2.
 
-## Revisión F-equipo (5-nov) — manda sobre todo lo demás
-F-equipo ya define el estado compartido de cada CA (`ca_trabajo`, `ca_eventos`, `ca_comentarios`; `app/mercado/equipo.py`).
-1. **`ca_descartes_mesa` no se crea:** descartar es `ca_trabajo.estado = 'descartada'` con motivo
-   (`equipo.cambiar_estado`, que escribe su evento).
-2. **«Marcar enviada»** cambia `ca_trabajo` a `enviada` con `equipo.cambiar_estado` (y su evento); `ofertas_propias` guarda
-   solo el contenido de la oferta (líneas, precios, total), no el estado del flujo.
-3. **El cierre de §1.4 reutiliza F-equipo §1.3:** `equipo.resultado_de` / `equipo.generar_alarmas` (resultado ganada,
-   perdida, no_registrada, sin_dato, desierta, con `elegir_por_rut` y `rut_competidor`). No se define dos veces.
-4. **La mesa respeta el filtro «Equipo»** (`equipo.filtrar_equipo`) y oculta las descartadas por defecto; las tarjetas
-   nuevas conservan el bloque `_equipo_ca.html` y el panel del hilo.
-
-## Revisión 4-nov noche (Cowork) — manda sobre todo lo demás
-1. **`/mesa` ya existe** (F-mesa-v0, `app/api/routes/mesa_dia.py`) con vigentes, filtros, banderas e historial del
-   comprador, y `clave_comprador` en `app/mercado/comprador.py`. Esta fase **amplía** esa pantalla (precio sugerido,
-   margen, P(ganar), ofertas propias, sombra); no la reescribe.
-2. **Competencia:** los "competidores probables" de la tarjeta y la pestaña Comprador usan `competidores_de` y
-   `perfil_competidor` de F-plat-comp (`app/mercado/competencia.py`); no se recalcula desde las ofertas crudas.
-3. **Vista de estrategia:** `/estrategia` (F-plat-comp) se completa acá con P(ganar) al precio sugerido y margen
-   esperado por comprador × familia, usando los costos de la empresa. Es la pantalla de "a quién apuntamos, en qué
-   rubro y a qué precio".
-4. Prerrequisitos nuevos: F-mesa-v0 y F-plat-comp, además de F-plat-4.
-
-## Revisión 4-nov (Cowork) — leer primero
-1. **Prerrequisito nuevo: F-merc-3 (detalle de CA vigentes).** Hoy nadie baja el detalle de las CA abiertas [V]:
-   `cola_mercado_ca` (`app/ingest/mercado.py`) solo toma terminales o `publicada` con el cierre ya pasado, y el job
-   `ca` está apagado desde el 31-oct (`decisiones.md`). Sin F-merc-3, las vigentes no tienen `ca_productos`, ni
-   `ca_lineas`, ni `n_documentos`, y la mesa queda vacía. Ver `docs/prompt-F-merc-3.md`.
-2. **Router:** `app/api/routes/mesa.py` ya existe y es de F-plat-3 (empresas y proveedores, ~1.000 líneas [V]). Las
-   rutas `/mesa*` van en un archivo nuevo (`app/api/routes/mesa_dia.py`), reutilizando `_sin_empresa` y el patrón de
-   ownership de `mesa.py`.
-3. **Caché de evaluaciones, decidido:** tabla `evaluaciones_cache` (PK `(ca_codigo, empresa_id)`, `evaluada_en`,
-   `modelo_id`, `datos` JSONB). Va **separada** de `predicciones`, porque las predicciones son inmutables y solo se
-   crean con `cobertura ≥ 0,5`; mezclarlas rompería el modo sombra. La mesa lee la caché y muestra "evaluada hace X
-   min"; la ficha (`/mesa/ca/{codigo}`) recalcula en vivo.
-4. **Dónde se calcula: no dentro de `mercado-ca`.** Ese job usa API, tiene `timeout_min: 20` en `mercado.yml` y 10
-   min de detalles [V]. Va en un job nuevo, `mercado-mesa`, sin API, con `_locked("mercado-mesa", ...)`, en el mismo
-   workflow después de `mercado-catalogo` (F-plat-1). Ese job (a) recalcula `evaluaciones_cache` de las vigentes en
-   alcance de cada empresa activa, (b) crea las predicciones que falten y (c) cierra las que ya tienen ganador.
-   Medir cuánto tarda y ajustar `timeout_min` del workflow en el mismo commit.
-5. **`modelo_id`:** es FK a `modelo_adjudicacion.id` (F-plat-4). Si F-plat-4 no guardó la línea base como fila de esa
-   tabla, usar `modelo_id` nullable + `metodo` (`logistico|linea_base`), con `UNIQUE (ca_codigo, empresa_id,
-   metodo)`.
-6. **`predicciones.estado`** (`abierta|cerrada|sin_adjudicacion`) entra **en esta migración**, para que F-plat-7
-   (§1.3) no necesite una.
-7. **Ganador [V]:** en la base no hay un campo `proveedor_seleccionado` en el detalle. Ese nombre es un valor de
-   `compras_agiles.estado`; el ganador es la oferta con `ca_cotizaciones.seleccionado = true`. El cierre (§1.4) lo
-   hace `mercado-mesa` mirando la base, sin API:
-   - precio ganador = `valor_neto` de la oferta seleccionada;
-   - precio ganador por línea = `ca_cotizacion_productos`, unidos por `(ca_codigo, codigo_producto)` como en F-plat-4;
-   - si hay más de una oferta seleccionada [I: adjudicación parcial], se suman y se marca `detalle.multi_ganador`.
-8. **RUT de la empresa:** `empresas.rut` es nullable [V].
-   - "Marcar enviada" exige que la empresa tenga RUT; si no lo tiene, mostrar un aviso con enlace a `/admin/empresas`.
-   - Comparar con `normalizar_rut` (`app/matching/engine.py`) en los dos lados. Existe otra función, `rut()`, en
-     `app/catalogos/mercado.py`: usar una sola.
-   - Si la oferta marcada `enviada` no aparece entre las `ca_cotizaciones` de la CA ya cerrada → estado visible
-     `no_registrada` (RUT mal escrito u oferta no subida), no `perdida`.
-9. **Margen realizado** = total − costo − logística − costo financiero: el mismo cálculo que `evaluar_ca` de F-plat-4,
-   que incluye el costo financiero. No definirlo dos veces.
-10. **Competidores probables por unidad compradora:** `compras_agiles` no tiene `rut_unidad` [V]; tiene
-    `organismo_rut` y `unidad_compra` (texto). Definir una vez `clave_comprador(ca)` en `app/mercado/`, como
-    `(organismo_rut, norm(unidad_compra))`. F-plat-6 la reutiliza.
-11. **Banderas:** "sin detalle" = `compras_agiles.detalle_lineas` (F-plat-1). "Anexo pendiente" =
-    `ca_anexos.extraccion_estado` (F-plat-2).
-12. **Retención:** una CA con `ofertas_propias` o `predicciones` no se purga, aunque su región deje de estar activa.
-    Hacerlo con exclusión explícita en `purgar_terminales` (`app/core/retencion.py`) más un test, o con FK
-    `ON DELETE RESTRICT`. Elegir una de las dos y justificarla.
-13. **Horario:** `mercado-indices` corre a las **07:45** (F-plat-4), no "de noche". El paso 1 de Boris (§4) queda
-    corregido abajo.
-14. La API de envío de ofertas sigue [I]. Boris pide el adjunto de la guía v3.0; no se escribe que no existe sin
-    haberlo visto (regla 20).
-
-## 0. Antes de escribir código
-- Leer `CLAUDE.md` (8, 17, 18), `17-plan` §2 C6 y R-p2/R-p3, `app/api/routes/pages.py` (feed `/`, ficha
-  modal, `/compras-agiles` explorador, `_card_oportunidad.html`, `_modal_ficha.html`), `app/api/query.py`
-  (`evaluacion_ca`, F-plat-4), `app/mercado/*`, `templates/base.html` (menú "Mesa" de F-plat-3).
-- **No hay API para enviar ofertas** [I: confirmar en la guía v3.0 antes de escribir la exportación; si la
-  hay, anotarlo [V] y dejar el envío automático como fase futura, no en esta]. La oferta se sube en el portal
-  a mano; la plataforma prepara y registra.
+## 0. Lo que ya existe (no rehacer) [V]
+- **Mesa** (F-mesa-v0): `/mesa` en `app/api/routes/mesa_dia.py` y `app/mercado/mesa_dia.py` (vigentes del
+  territorio, filtros con conteo HTMX, comunas prioritarias primero, historial del comprador). Esta fase la **amplía**.
+- **Evaluación** (F-plat-4, sin UI todavía): `adjudicacion.evaluar_ca(session, ca_codigo, empresa_id, ...)` →
+  `EvaluacionCA` (líneas con referencia e intervalo 80 %, costo con proveedor, logística, costo financiero,
+  `precio_sugerido`, `intervalo_80`, `curva`, `p_ganar` {agresivo, sugerido, comodo}, `margen_esperado`, `margen_pct`,
+  `cobertura`, `completa`, `modelo`, `avisos`). Envoltorio para rutas: `app/api/query.py: evaluacion_ca` (la empresa
+  sale de la sesión, nunca del cliente). `adjudicacion.curva_p_ganar` para simular. **No definir margen ni P(ganar)
+  de nuevo.**
+- **Modelo:** `modelo_adjudicacion` guarda una fila por entrenamiento, `tipo` = `logistico | base`, una `activa`. Hoy
+  la activa es **base** y hay 0 meses evaluables (corrida del 5-nov).
+- **Equipo** (F-equipo, `app/mercado/equipo.py`): `ca_trabajo` (estado compartido, versión), `cambiar_estado`,
+  `filtrar_equipo`, `equipo_de`, `resultado_de` (ganada / perdida / no_registrada / sin_dato / desierta con
+  `eleccion.elegir_por_rut` y `comprador.rut_competidor`), `generar_alarmas`; bloque `_equipo_ca.html` y panel del hilo
+  en tarjetas y ficha. **El flujo (priorizar, cotizar, enviar, descartar) es de F-equipo**: no crear
+  `ca_descartes_mesa` ni otro estado.
+- **Competencia** (F-plat-comp, `app/mercado/competencia.py`): `competidores_de(clave_comprador, familia, regiones,
+  nosotros=...)`, `perfil_competidor`. Clave de comprador: `comprador.clave_unidad`; familia: `familia_de_ca`.
+- **Ficha interna:** `/oportunidad/compras_agiles/{codigo}` (`_ficha_contenido.html`, ya con líneas, anexo y bloque
+  Equipo). **No crear una segunda ficha** (`/mesa/ca/{codigo}` del prompt viejo queda descartado): se amplía esta.
+- **Retención:** `purgar_terminales` (`app/core/retencion.py`) ya excluye CA con `ca_trabajo` [V]; extender igual.
+- `openpyxl` ya está en `requirements.lock` [V]. No hay librería de gráficos: SVG/CSS inline como en `/competencia`.
 
 ## 1. Cambios
 
-### 1.1 Esquema
-- `predicciones`: `id`, `ca_codigo` FK, `empresa_id`, `creada_en`, `cierre_ca`, `modelo_id` FK,
-  `precio_sugerido`, `intervalo_80_min/max`, `p_ganar_sugerido`, `margen_esperado`, `cobertura`, `detalle` JSONB
-  (por línea), `resultado_precio_ganador` nullable, `resultado_gano_prediccion` nullable (si la empresa
-  ofertó), `cerrada_en`. **Se escribe antes del cierre y no se edita** (modo sombra). `UNIQUE (ca_codigo,
-  empresa_id, modelo_id)`.
-- `ofertas_propias`: `id`, `ca_codigo`, `empresa_id`, `usuario_id`, `estado` (`borrador|enviada|ganada|
-  perdida|desierta|no_enviada`), `lineas` JSONB (`[{linea_id, precio_unitario, proveedor_producto_id}]`),
-  `total_neto`, `plazo_entrega_dias`, `enviada_en`, `resultado_en`, `precio_ganador_real`, `margen_realizado`,
-  `notas`. `UNIQUE (ca_codigo, empresa_id)`.
-- `ca_descartes_mesa`: `ca_codigo`, `empresa_id`, `usuario_id`, `motivo`, `en`. (Separado de los descartes
-  de perfiles de la app antigua.)
+### 1.1 Esquema (solo `app/models`)
+- **`evaluaciones_cache`**: PK `(ca_codigo, empresa_id)`, `evaluada_en`, `modelo_id` (FK nullable), `datos` JSONB (lo
+  que la tarjeta necesita: precio sugerido, intervalo, costo, logística, margen, margen %, P(ganar) 3 puntos,
+  cobertura, completa, avisos). Se reescribe; la mesa la lee y muestra «evaluada hace X min».
+- **`predicciones`** (inmutables, el juez): `id`, `ca_codigo` FK, `empresa_id` FK, `creada_en`, `cierre_ca`,
+  `modelo_id` FK (la fila activa al crearla), `modelo_tipo` (`logistico|base`), `precio_sugerido`,
+  `intervalo_80_min/max`, `p_ganar_sugerido`, `margen_esperado`, `cobertura`, `detalle` JSONB (por línea),
+  `estado` (`abierta|cerrada|sin_adjudicacion`), `resultado_precio_ganador`, `resultado_en_intervalo` (bool),
+  `resultado_propio` (copia del resultado de F-equipo si ofertamos), `cerrada_en`.
+  **`UNIQUE (ca_codigo, empresa_id)`** — una sola predicción por CA y empresa. Ojo: `modelo_adjudicacion` crea una
+  fila nueva en cada entrenamiento diario, así que un UNIQUE que incluyera `modelo_id` permitiría una predicción nueva
+  cada día y rompería el modo sombra. Los campos de la predicción no se editan nunca; solo se llenan los `resultado_*`,
+  `estado` y `cerrada_en`.
+- **`ofertas_propias`**: `id`, `ca_codigo`, `empresa_id`, `usuario_id` (último que guardó), `lineas` JSONB
+  (`[{linea_id, precio_unitario, proveedor_producto_id}]`), `total_neto`, `plazo_entrega_dias`, `notas`,
+  `guardada_en`, `version` (mismo patrón de conflicto que `ca_trabajo`), `precio_ganador_real`, `margen_realizado`.
+  `UNIQUE (ca_codigo, empresa_id)`. **Sin columna de estado**: el estado del flujo vive en `ca_trabajo`.
+- Retención: una CA con `predicciones` u `ofertas_propias` no se purga (misma exclusión que `ca_trabajo`, con test).
 
-### 1.2 `/mesa` (usuarios con empresa)
-- Query: CA de `regiones_activas` con `estado` publicada y `fecha_cierre` futura, en familias del alcance
-  (`app/catalogos/mercado.py`), no descartadas por la empresa. Para cada una, `evaluacion_ca` (cacheada por
-  CA en la corrida de `mercado-ca`, tabla `evaluaciones_cache` o columna JSONB en `predicciones`: elegir y
-  justificar; la mesa **no** recalcula el modelo en cada request).
-- Orden por defecto: `margen_esperado × p_ganar` desc, con las **comunas priorizadas** de la empresa primero
-  (R-p2); luego cierre asc. Filtros: familia, comuna, cierra hoy/mañana/esta semana, "sin detalle",
-  "anexo pendiente", "con costo", "margen ≥ X %".
-- Tarjeta: comprador y unidad, comuna de entrega, cierre (hora Chile y cuenta regresiva), n líneas y estado
-  del detalle (bandera), precio sugerido con intervalo, costo, logística, margen, P(ganar) en 3 puntos,
-  competidores probables (top 3 proveedores por unidad compradora × familia en 12 meses, con tasa de
-  victoria), botones Cotizar / Descartar / Marcar sin detalle. Conteo por filtro vía HTMX como en
-  `/compras-agiles/conteo`.
-- Pie: "Fuente: Dirección ChileCompra" (regla 8).
+### 1.2 Job `mercado-mesa` (sin API; `_locked("mercado-mesa", ...)`)
+Para cada empresa activa y cada CA vigente de sus regiones (por lotes; regla 12):
+(a) reescribe `evaluaciones_cache` con `evaluar_ca`;
+(b) si `cobertura ≥ 0,5`, no existe predicción y faltan ≥ 2 h para el cierre → crea la predicción (inserción
+idempotente: `ON CONFLICT DO NOTHING`);
+(c) cierra predicciones `abierta` cuyo cierre pasó y cuyas ofertas ya están leídas: `resultado_precio_ganador`
+(`valor_neto` de la oferta seleccionada con `elegir_por_rut`; varias seleccionadas → suma y `detalle.multi_ganador`),
+`resultado_en_intervalo`, y `resultado_propio` = `equipo.resultado_de` si la CA estuvo en `enviada`. CA desierta o
+sin seleccionada al terminar → `sin_adjudicacion`. Con oferta propia ganada: `precio_ganador_real` y
+`margen_realizado` (= total − costo de las líneas guardadas − logística − financiero; reutilizar las funciones de
+costo y logística de `adjudicacion`, no reescribirlas).
+Dónde corre: en `mercado.yml` después de `mercado-ca` y `mercado-catalogo` (cada 15 min de día). Medir la duración
+con ~400 vigentes y 1 empresa; si pasa de 2 min, proponer bajarlo a cada hora en un workflow propio. Documentar en
+`operacion-disparos.md`.
 
-### 1.3 Ficha ampliada (`/mesa/ca/{codigo}`)
-- Pestañas: **Líneas** (F-plat-1 y F-plat-2: edición, anexo), **Precio y margen** (por línea: referencia con
-  ámbito y n, costo con proveedor elegido editable entre los de la empresa, logística, margen; total y
-  curva P(ganar)), **Comprador** (histórico 24 meses: qué compró de la familia, a quién, precio, n ofertas;
-  desde `oc_lineas_ca` y `ca_cotizaciones`), **Mi oferta**.
-- **Mi oferta**: parte de los precios sugeridos; el usuario ajusta por línea y ve margen y P(ganar)
-  recalculados (endpoint HTMX `POST /mesa/ca/{codigo}/simular`, sin persistir). "Guardar borrador",
-  "Marcar enviada" (fecha), "Exportar" → XLSX (openpyxl) con líneas, cantidades, precio unitario, total y
-  plazo, lista para transcribir al portal.
-- Enlace a la ficha pública de la CA (`_url_ficha("compras_agiles", codigo)`; la ficha interna es `/oportunidad/compras_agiles/{codigo}` [V, F-plat-nav]) para subir la oferta y bajar anexos.
+### 1.3 Tarjeta de `/mesa` (amplía la de F-mesa-v0)
+- Suma: precio sugerido con intervalo 80 %, costo + logística, margen ($ y %), P(ganar) en 3 puntos, cobertura, y
+  la etiqueta del modelo («línea base» mientras no haya logístico: decirlo en la tarjeta, sin esconderlo).
+- Sin costo o sin líneas `ok` → la tarjeta lo dice («falta costo de 3 productos», «sin detalle») y no inventa margen.
+- **Competidores:** con lo medido el 5-nov (el top 1 «esperado» ofertó solo en 8–11 % de las CA), la tarjeta **no**
+  dice «competidores probables». Muestra «quiénes le han ofertado a este comprador en esta familia (12 meses)» con
+  `competidores_de`, como historial, con su `n` y tasa de victoria, enlazando a `/competencia/{rut}`.
+- Orden nuevo por defecto: comunas prioritarias primero; luego `margen_esperado × p_ganar_sugerido` desc (sin
+  evaluación → al final de su grupo); luego cierre asc. Mantener el orden «por cierre» como opción.
+- Filtros nuevos: «con costo», «margen ≥ X %», «con predicción». Se suman a los de F-mesa-v0 y al filtro «Equipo»
+  (que oculta descartadas por defecto). Conteo HTMX como hoy.
+- La mesa **solo lee** `evaluaciones_cache` y `predicciones` (nunca llama `evaluar_ca` en el request de la lista).
 
-### 1.4 Modo sombra y cierre automático
-- En `mercado-ca`, para cada CA vigente en alcance con `cobertura ≥ 0,5`: si no hay `prediccion` de la
-  empresa y faltan ≥ 2 h para el cierre, se crea. Para cada empresa activa.
-- Al llegar el detalle con `proveedor_seleccionado` (F-merc-1), se cierra la predicción: `resultado_precio_
-  ganador`, y si hay `oferta_propia` enviada, su `estado` pasa a `ganada|perdida` comparando RUT de la
-  empresa con el ganador (campo `empresas.rut`), `precio_ganador_real` y `margen_realizado` (si ganó:
-  total − costo de las líneas al momento de la oferta − logística).
-- `/mesa/resultados`: tabla de predicciones cerradas de la empresa (últimas 8 semanas): predicho vs. real,
-  acierto del intervalo, ofertas propias y resultado; totales arriba (acierto %, ganadas, margen realizado).
-  Es la vista del juez del peldaño 2.
+### 1.4 Ficha (`/oportunidad/compras_agiles/{codigo}`): sección «Precio y mi oferta»
+- **Precio y margen** (en vivo con `evaluacion_ca`): por línea, referencia con ámbito y `n`, intervalo, costo con
+  proveedor elegido (selector entre los `proveedor_productos` de la empresa), logística, margen; total y curva
+  P(ganar) en SVG. Si hay predicción, mostrarla aparte, congelada («así se vio al predecir»).
+- **Mi oferta:** parte de los precios sugeridos; el usuario ajusta por línea y ve margen y P(ganar) recalculados
+  (`POST .../simular`, HTMX, sin persistir). «Guardar» (crea o actualiza `ofertas_propias`; si la CA está en
+  `nueva`/`priorizada`, pasa a `cotizando` con `equipo.cambiar_estado`). «Marcar enviada» → `ca_trabajo` = `enviada`
+  vía `equipo.cambiar_estado` (exige empresa con RUT; si no, aviso con enlace a `/admin/empresas`). «Exportar» → XLSX
+  (líneas, cantidades, precio unitario, total, plazo) para transcribir al portal, con «Fuente: Dirección ChileCompra».
+- Enlace a la ficha pública (`_url_ficha("compras_agiles", codigo)`) para subir la oferta.
+- No hay API para enviar ofertas [I]: la oferta se sube a mano en el portal. No afirmar que no existe (regla 20).
 
-### 1.5 Permisos y límites
-Ownership por `empresa_id` en predicciones, ofertas, descartes (regla 17; tests GET/POST cruzados → 404).
-CSRF en mutaciones. Un usuario sin empresa no ve `/mesa`.
+### 1.5 `/mesa/resultados` (el juez del peldaño 2)
+Predicciones cerradas de la empresa (últimas 8 semanas, filtro por semana): predicho vs. ganador real, acierto del
+intervalo 80 %, error mediano de precio, Brier de `p_ganar_sugerido` donde ofertamos, ofertas propias y su resultado,
+margen realizado. Totales arriba con `n` siempre visible. Debe funcionar con 0 filas (mensaje claro).
 
-## 2. Tests
-Query de la mesa (alcance, territorio, descartes, orden con comunas priorizadas); simulación recalcula sin
-persistir; exportación XLSX con las columnas; predicción inmutable (segundo intento no la cambia); cierre
-automático con fixture de detalle con ganador = RUT de la empresa y ≠; ownership. `ruff`, `mypy app`,
-`pytest -rs` sin saltados.
+### 1.6 Fuera de esta fase (anotar en `00-estado.md`)
+- `/estrategia` con P(ganar) y margen por comprador × familia → **F-plat-5b**, cuando haya costos cargados y algún mes
+  evaluable (hoy no hay ninguno; con la línea base sería decorativo).
+- Envío automático de ofertas, correo, IA.
 
-## 3. Cierre
-Changelog ("Mesa del día: qué cotizar, a qué precio y con qué margen"). `00-estado.md`: arranca el modo
-sombra de 4 semanas con fecha. Commit: `F-plat-5: mesa del día, ofertas propias y modo sombra`.
+## 2. Seguridad
+Ownership por `empresa_id` en `evaluaciones_cache`, `predicciones` y `ofertas_propias` (reglas 17 y 26; GET/POST
+cruzados → 404). La empresa sale de la sesión. CSRF en guardar, enviar y exportar (POST). Sin `|safe`.
 
-## 4. Pasos de Boris
-1. Migración (de día, con `GH mercado` en pausa, como en F-plat-3). `mercado` cada 15 min ya está activo; `mercado-indices` va a las 07:45 (F-plat-4).
-2. Usar `/mesa` 4 semanas: cotizar de verdad al menos 10 CA de alimentos; registrar enviadas y resultados.
-3. Al cierre de las 4 semanas: pegar `/mesa/resultados` → decide el paso al peldaño 3 (`16-pivote` §2).
+## 3. Tests
+Predicción inmutable (segunda corrida del job y entrenamiento de un modelo nuevo no crean otra ni la cambian);
+no se crea con cobertura < 0,5 ni a < 2 h del cierre; cierre: ganador con multi-ganador, en/fuera del intervalo,
+`sin_adjudicacion`, resultado propio reutilizando `equipo.resultado_de`; margen realizado con las funciones de F-plat-4;
+simulación sin persistir; guardar oferta con conflicto de versión; «Guardar» mueve `priorizada → cotizando` y
+«Marcar enviada» → `enviada` con sus eventos; empresa sin RUT; XLSX con columnas y fuente; la mesa no llama
+`evaluar_ca` en la lista (listener o monkeypatch); orden y filtros nuevos; tarjeta sin costo; ownership cruzado;
+retención; `/mesa/resultados` con 0 y con n filas. `ruff check .`, `python -m mypy app`, `python -m pytest -rs`
+completo contra Postgres local (lo corre Boris), sin saltados.
+
+## 4. Cierre
+Changelog («Precio, margen y mi oferta en la mesa»). `00-estado.md`: **fecha de inicio del modo sombra** y fecha de
+fin (+4 semanas). Commit: `F-plat-5: precio, margen y P(ganar) en la mesa, mi oferta y modo sombra`.
+
+## 5. Pasos de Boris
+1. **Antes:** importar la planilla de proveedores **con costos puestos en bodega (flete incluido)** en
+   `/proveedores/importar`. Sin costos, casi ninguna CA llega a `cobertura ≥ 0,5` y no se crean predicciones.
+   Y completar en `/tarifas` el costo fijo por viaje de las 3 provincias (y de las comunas que convenga): vienen en $0
+   desde F-plat-3 y, en $0, la logística no resta nada y el margen sale inflado sin aviso.
+2. Deploy de día con `GH mercado` y `GH mercado-indices` pausados y Actions vacío; en Render, `Running upgrade
+   a8d4f2c6e9b1 -> …`; reactivar.
+3. Usar la mesa 4 semanas: cotizar de verdad al menos 10 CA de alimentos y marcarlas enviadas.
+4. Al cumplir 4 semanas: pegar `/mesa/resultados` → decide el paso al peldaño 3 (`16-pivote` §2).

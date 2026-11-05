@@ -1342,3 +1342,98 @@ class PreferenciaAlarma(Base):
 
 # Registro de la empresa, lo más nuevo primero (campana, /actividad, no leídos).
 Index("ix_ca_eventos_empresa_creado", CaEvento.empresa_id, CaEvento.creado_en.desc())
+
+
+# ---------------------------------------------------------------------------
+# F-plat-5: precio y margen en la mesa, mi oferta y modo sombra. Todo pertenece a una empresa
+# (regla 26). El estado del flujo (cotizando, enviada…) vive en `ca_trabajo` (F-equipo).
+# ---------------------------------------------------------------------------
+
+
+class EvaluacionCache(Base):
+    """Última evaluación de una CA vigente para una empresa (job `mercado-mesa`). La mesa solo
+    lee esta tabla: nunca evalúa en el request de la lista. Se reescribe en cada corrida."""
+
+    __tablename__ = "evaluaciones_cache"
+
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo", ondelete="CASCADE"), primary_key=True
+    )
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), primary_key=True
+    )
+    evaluada_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    modelo_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("modelo_adjudicacion.id", ondelete="SET NULL"), nullable=True
+    )
+    datos: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class Prediccion(Base):
+    """Predicción INMUTABLE de una CA para una empresa: el juez de 4 semanas del modo sombra.
+
+    Una sola por CA y empresa (el UNIQUE no incluye `modelo_id`: el modelo se reentrena a
+    diario). Los campos de la predicción no se editan nunca; al cerrar solo se llenan
+    `estado`, `resultado_*` y `cerrada_en` (y `detalle.multi_ganador` si hubo varios)."""
+
+    __tablename__ = "predicciones"
+    __table_args__ = (
+        UniqueConstraint("ca_codigo", "empresa_id", name="uq_prediccion_ca_empresa"),
+        Index("ix_predicciones_empresa_estado", "empresa_id", "estado"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo"), nullable=False
+    )
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    creada_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    cierre_ca: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    modelo_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("modelo_adjudicacion.id", ondelete="SET NULL"), nullable=True
+    )
+    modelo_tipo: Mapped[str] = mapped_column(String(12), nullable=False)
+    precio_sugerido: Mapped[float] = mapped_column(Float, nullable=False)
+    intervalo_80_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intervalo_80_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    p_ganar_sugerido: Mapped[float | None] = mapped_column(Float, nullable=True)
+    margen_esperado: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cobertura: Mapped[float | None] = mapped_column(Float, nullable=True)
+    detalle: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False, default="abierta")
+    resultado_precio_ganador: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resultado_en_intervalo: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    resultado_propio: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    cerrada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OfertaPropia(Base):
+    """El contenido de la oferta de la empresa a una CA (líneas, precios, total). Sin estado:
+    el flujo vive en `ca_trabajo`. `version` sube con cada guardado (conflicto como F-equipo)."""
+
+    __tablename__ = "ofertas_propias"
+    __table_args__ = (
+        UniqueConstraint("ca_codigo", "empresa_id", name="uq_oferta_propia_ca_empresa"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo"), nullable=False
+    )
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    usuario_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    # [{linea_id, precio_unitario, proveedor_producto_id}]
+    lineas: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    total_neto: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    plazo_entrega_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guardada_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    precio_ganador_real: Mapped[float | None] = mapped_column(Float, nullable=True)
+    margen_realizado: Mapped[float | None] = mapped_column(Float, nullable=True)

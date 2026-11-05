@@ -296,6 +296,16 @@ def run_mercado_competencia(
         return run_competencia_mercado(session, regiones, completo=completo)
 
 
+def run_mercado_mesa(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Job `mercado-mesa` (F-plat-5): evaluaciones en caché de las CA vigentes, predicciones del
+    modo sombra y su cierre. Solo base de datos: sin ticket, sin cuota, sin red. Corre en
+    `mercado.yml` después de `mercado-ca` y `mercado-catalogo`."""
+    from app.mercado.sombra import run_mesa
+
+    with Session(engine) as session:
+        return run_mesa(session, tasa=settings.costo_financiero_mensual)
+
+
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
     """Job `vocabulario-rubros` (F-ca-explorar): regenera `rubro_vocabulario` desde
     `licitacion_items`. Solo base de datos: sin ticket, sin cuota, sin red."""

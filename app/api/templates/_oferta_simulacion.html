@@ -1,0 +1,25 @@
+{#- Resultado de la simulación de mi oferta (F-plat-5): no persiste nada. Contexto: sim, error. -#}
+{% if error %}
+<div class="alert alert-danger py-1 px-2 small mb-0" role="alert">{{ error }}</div>
+{% elif sim %}
+<dl class="row small mb-0 g-0" data-simulacion>
+  <dt class="col-6 col-md-4 fw-normal text-muted">Total de mi oferta (neto)</dt>
+  <dd class="col-6 col-md-8 mb-1"><strong class="num">{{ sim.total | clp }}</strong></dd>
+  <dt class="col-6 col-md-4 fw-normal text-muted">Costo total</dt>
+  <dd class="col-6 col-md-8 mb-1">
+    {% if sim.costo_total is not none %}<span class="num">{{ sim.costo_total | clp }}</span>
+    <span class="text-muted">(productos <span class="num">{{ sim.costo_productos | clp }}</span> + logística <span class="num">{{ sim.logistica | clp }}</span> + financiero <span class="num">{{ sim.financiero | clp }}</span>)</span>
+    {% else %}<span class="text-muted">Sin calcular</span>{% endif %}
+  </dd>
+  <dt class="col-6 col-md-4 fw-normal text-muted">Margen</dt>
+  <dd class="col-6 col-md-8 mb-1">
+    {% if sim.margen_pct is not none %}<span class="num">{{ (sim.total - sim.costo_total) | clp }}</span> · <span class="num">{{ sim.margen_pct | pct(1) }}</span>
+    {% else %}<span class="text-muted">Sin calcular: falta costo</span>{% endif %}
+  </dd>
+  <dt class="col-6 col-md-4 fw-normal text-muted">P(ganar) a este precio</dt>
+  <dd class="col-6 col-md-8 mb-1">{% if sim.p_ganar is not none %}<strong class="num">{{ sim.p_ganar | pct }}</strong>{% else %}<span class="text-muted">Sin estimación</span>{% endif %}</dd>
+  <dt class="col-6 col-md-4 fw-normal text-muted">Margen esperado (× P(ganar))</dt>
+  <dd class="col-6 col-md-8 mb-1">{% if sim.margen_esperado is not none %}<span class="num">{{ sim.margen_esperado | clp }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</dd>
+</dl>
+{% for a in sim.avisos %}<p class="small text-warning-emphasis mb-0">{{ a }}</p>{% endfor %}
+{% endif %}
