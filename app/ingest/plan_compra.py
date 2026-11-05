@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, insert, or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.clients.plan_compra import (
@@ -27,6 +27,7 @@ from app.clients.plan_compra import (
     parse_pac_csv,
 )
 from app.core.logging import get_logger
+from app.core.lotes import insertar_por_lotes
 from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE, ahora_utc
@@ -475,12 +476,12 @@ def sync_plan_anual_completo(
                 continue
             buffer.append(fila)
             if len(buffer) >= _LOTE_INSERT:
-                session.execute(insert(PlanCompraLinea), buffer)
+                insertar_por_lotes(session, PlanCompraLinea, buffer)
                 session.commit()
                 total += len(buffer)
                 buffer = []
         if buffer:
-            session.execute(insert(PlanCompraLinea), buffer)
+            insertar_por_lotes(session, PlanCompraLinea, buffer)
             session.commit()
             total += len(buffer)
     except Exception:

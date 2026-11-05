@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import statistics
+import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from app.core.avance import Etapas
 from app.core.tiempo import ahora_utc
 from app.mercado.competencia import mediana_ponderada, regiones_empresa
 from app.mercado.demanda import (
@@ -480,12 +482,16 @@ def run_mercado_demanda(
     resultado = run_demanda(session, regiones, completo=completo, mes_hoy=mes_hoy, ahora=ahora)
     if resultado.get("sin_regiones"):
         return resultado
+    t0 = time.monotonic()
+    etapas = Etapas(resultado, "demanda")
     ver = veredicto(session)
     recs: dict[str, Any] = {}
     for (eid,) in session.execute(select(Empresa.id).where(Empresa.activa.is_(True))).all():
         recs[str(eid)] = recomendar(session, eid, mes_hoy=mes_hoy, umbrales=umbrales, ver=ver,
                                     ahora=ahora)  # fmt: skip
+        etapas.fin("recomendaciones", f"empresa {eid}: {recs[str(eid)].get('generadas', 0)} generadas")
     resultado["recomendaciones"] = recs
+    resultado["duracion_s"] = round(resultado.get("duracion_s", 0.0) + time.monotonic() - t0, 1)
     _log.info("mercado-demanda: %s", resultado)
     return resultado
 

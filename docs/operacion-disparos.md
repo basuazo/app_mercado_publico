@@ -83,7 +83,15 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 choca con el disparo de `mercado` de la misma hora: el workflow espera el lock hasta 10 min. Medir la duración de
 las primeras corridas (`duracion_s` en el resultado y en `job_runs`): si pasa de ~10 min, los `mercado` que caigan
 en medio salen `omitido` (aceptado una vez al día; se ponen al día desde el cursor). Las metas no cumplidas salen
-como `::warning::` sin poner el job en rojo. La carga completa (`--completo`) se corre desde el PC.
+como `::warning::` sin poner el job en rojo.
+
+**Carga completa desde Actions (F-plat-6-fix).** GitHub → Actions → `mercado-indices` → Run workflow → marcar
+`completo` → Run. De día y sin migración pendiente. Pasa `--completo` a `mercado-indices`, `mercado-competencia` y
+`mercado-demanda` (`mercado-catalogo --inicial` no se mezcla con esto), y el timeout sube de 60 a 180 min.
+cron-job.org dispara sin inputs, así que `completo` queda en false y la corrida diaria no cambia. El log trae una
+línea INFO por etapa y por mes, y el resultado trae `segundos_por_etapa`. Desde el PC es mucho más lento, porque
+cada sentencia es un viaje Chile → Neon us-east: el 5-nov, `mercado-demanda --completo` no terminó en 24 min. Desde
+entonces las inserciones van en un `INSERT ... VALUES` multi-fila por lote, no en un executemany.
 
 **`mercado-competencia` (F-plat-comp).** Mismo workflow, después de `mercado-indices` (`jobs: "mercado-indices
 mercado-competencia"`; 1 min de pausa entre jobs y otra espera del lock de hasta 10 min, porque el `mercado` de
@@ -111,12 +119,12 @@ compradores e ítems), recálculo de `demanda_series` del mes en curso y los 2 a
 cambia la clave del comprador: todos los meses), backtest de 6 meses (`evaluacion_modelo`, modelo `demanda`),
 `pronosticos` a 3 meses y `recomendaciones` de cada empresa activa. **Medido el 5-nov en Neon dev desde el PC** (solo
 OC, 108 mil líneas de Ñuble; dev no tiene CA): pasada liviana ~45 s, series de 25 meses unos minutos (latencia de red
-de Neon desde el PC), backtest 11 s en Python puro. **Pendiente medir con la corrida real** (`duracion_s`,
-`segundos_series`, `segundos_backtest` en `job_runs`): si la suma de las 07:45 (`mercado-indices` + competencia +
+de Neon desde el PC), backtest 11 s en Python puro. **Pendiente medir con la corrida real** (`duracion_s` y
+`segundos_por_etapa` en `job_runs`): si la suma de las 07:45 (`mercado-indices` + competencia +
 demanda) pasa de ~25 min, proponer un workflow propio `mercado-demanda.yml` a otra hora. Avisos como `::warning::`:
 el v1 no cumple la meta o no le gana a la línea base (la UI muestra la base), cantidad en base que no calza en ≥ 99 %
-de las líneas, cambio de clave del comprador, tablas > 40 MB (regla 11). La carga completa (`--completo`) se corre
-desde el PC.
+de las líneas, cambio de clave del comprador, tablas > 40 MB (regla 11). La carga completa se lanza desde Actions
+(ver arriba).
 
 Los dos `GH mercado*` (F-merc-1) se crean recién cuando Boris aplique la migración en Neon y haga push
 (pasos en `00-estado.md`). Usan el mismo advisory lock que el resto: de noche `mercado-nocturno` lo

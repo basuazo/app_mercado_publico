@@ -214,18 +214,18 @@ def cmd_run_once(
             "mercado-catalogo", lambda: run_mercado_catalogo(settings, engine, inicial=inicial)
         ),
         # F-plat-4: solo base de datos. `--completo` recalcula todo el índice y evalúa 6 meses
-        # (desde el PC con DATABASE_URL de producción); el disparo diario va a las 07:45 Chile.
+        # (desde Actions: mercado-indices con `completo`, F-plat-6-fix); el diario va a las 07:45.
         "mercado-indices": _locked(
             "mercado-indices", lambda: run_mercado_indices(settings, engine, completo=completo)
         ),
         # F-plat-comp: solo base de datos. Va después de `mercado-indices` en su workflow;
-        # `--completo` recalcula todos los meses (desde el PC con DATABASE_URL de producción).
+        # `--completo` recalcula todos los meses (desde Actions: mercado-indices con `completo`).
         "mercado-competencia": _locked(
             "mercado-competencia",
             lambda: run_mercado_competencia(settings, engine, completo=completo),
         ),
         # F-plat-6: solo base de datos. Va después de `mercado-competencia` en su workflow;
-        # `--completo` recalcula todas las series (desde el PC con DATABASE_URL de producción).
+        # `--completo` recalcula todas las series (desde Actions: mercado-indices con `completo`).
         "mercado-demanda": _locked(
             "mercado-demanda",
             lambda: run_mercado_demanda(settings, engine, completo=completo),

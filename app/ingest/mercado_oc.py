@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from sqlalchemy import Engine, delete, func, insert, select, tuple_
+from sqlalchemy import Engine, delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -35,6 +35,7 @@ from app.catalogos.mercado import grupo_de, moneda_codigo, normalizar, num, rut
 from app.catalogos.regiones import region_codigo
 from app.clients.datos_abiertos import descargar_zip, head_last_modified, iterar_oc_da, url_oc_da
 from app.core.logging import get_logger
+from app.core.lotes import insertar_por_lotes
 from app.core.settings import Settings
 from app.ingest.datos_abiertos import _guardar_estado, _leer_cursor, _mes_actual_chile
 from app.mercado.territorio import regiones_activas_engine
@@ -265,8 +266,7 @@ def cargar_mes(
         for k, v in precios.items()
         if len(v) >= _MIN_PRECIOS
     ]
-    for i in range(0, len(refs), _LOTE):
-        session.execute(insert(PrecioReferencia), refs[i : i + _LOTE])
+    insertar_por_lotes(session, PrecioReferencia, refs)
     c["referencias"] = len(refs)
     return c
 

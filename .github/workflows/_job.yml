@@ -39,6 +39,14 @@ on:
         type: number
         required: false
         default: 30
+      completo:
+        # F-plat-6-fix: carga completa desde Actions. Solo la reciben los jobs de la lista
+        # `JOBS_CON_COMPLETO` del step; los demás lo ignoran. `mercado-catalogo --inicial` NO
+        # se mezcla con esto.
+        description: "Agrega --completo a mercado-indices, mercado-competencia y mercado-demanda"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -148,6 +156,7 @@ jobs:
           MERCADO_BACKFILL_MAX_PAUSAS: ${{ vars.MERCADO_BACKFILL_MAX_PAUSAS }}
           JOBS: ${{ inputs.jobs }}
           ESPERAR_LOCK_MIN: ${{ inputs.esperar_lock_min }}
+          COMPLETO: ${{ inputs.completo }}
         # Sin -e a propósito: el default de Actions es `bash -e`, que cortaría el
         # loop en el primer job que falle (ver comentario del loop).
         shell: bash --noprofile --norc {0}
@@ -168,6 +177,8 @@ jobs:
           # SIN set -e: si un job falla, los siguientes corren igual (paridad con
           # `_secuencia` del endpoint: un 504 en `ca` no debe dejar sin `match` ni
           # `alerts` lo que ya se ingestó). Al final, rojo si alguno falló.
+          # Jobs que aceptan `--completo` (input `completo`, F-plat-6-fix).
+          JOBS_CON_COMPLETO="mercado-indices mercado-competencia mercado-demanda"
           fallidos=""
           primero=1
           for j in $JOBS; do
@@ -176,7 +187,11 @@ jobs:
             if [ "$primero" -eq 0 ]; then sleep 60; fi
             primero=0
             echo "::group::$j"
-            python -m app.ingest run-once --job="$j" --esperar-lock-min="$ESPERAR_LOCK_MIN"
+            extra=""
+            if [ "$COMPLETO" = "true" ]; then
+              case " $JOBS_CON_COMPLETO " in *" $j "*) extra="--completo" ;; esac
+            fi
+            python -m app.ingest run-once --job="$j" --esperar-lock-min="$ESPERAR_LOCK_MIN" $extra
             codigo=$?
             echo "::endgroup::"
             if [ "$codigo" -ne 0 ]; then

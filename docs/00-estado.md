@@ -18,6 +18,20 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-6-fix (5-nov, commit local sin push; sin migración)
+`mercado-demanda --completo` desde el PC no terminó en 24 min: el executemany de psycopg hacía un viaje Chile →
+Neon por fila. Cambios:
+- Las inserciones masivas van por `app/core/lotes.insertar_por_lotes`, un `INSERT ... VALUES` multi-fila por lote
+  (≤ 1.000 filas y ≤ 30.000 parámetros). Se aplica en demanda, competencia, índice, referencias de OC, Plan Anual
+  y vocabulario de rubro.
+- Las comunas de `mercado-indices` se actualizan con un `UPDATE ... CASE` por cada 500 CA.
+- Los jobs dejan un log INFO por etapa y por mes, y el resultado trae `segundos_por_etapa` (demanda y competencia).
+- La carga completa se lanza desde Actions: `mercado-indices` → Run workflow → `completo` (timeout de 180 min).
+
+**Pendiente de Boris:**
+1. Push.
+2. Lanzar la carga completa desde Actions y pegar `medicion`, `backtest`, `segundos_por_etapa` y `duracion_s`.
+
 ## F-plat-6 (5-nov, commit local sin push hasta auditar; migración `c8f3a1e6d2b4`, cuelga de `b3e7c1d9f4a2`)
 Demanda por comprador, pronóstico y abastecimiento (`prompt-F-plat-6.md`, reescrito el 5-nov).
 **Esquema:** `demanda_series` (comprador × nivel × ítem × mes; región; n_oc, n_ca, cantidad en base, monto, precio

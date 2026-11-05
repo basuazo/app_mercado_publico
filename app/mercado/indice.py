@@ -29,10 +29,11 @@ from datetime import UTC, datetime
 from operator import itemgetter
 from typing import Any
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import case, delete, select, update
 from sqlalchemy.orm import Session
 
 from app.catalogos.territorio_nuble import comuna_canonica, comuna_en_texto, provincia_de
+from app.core.lotes import insertar_por_lotes
 from app.core.tiempo import TZ_CHILE
 from app.mercado.eleccion import elegir_por_rut
 from app.models.tables import (
@@ -49,6 +50,7 @@ from app.models.tables import (
 _log = logging.getLogger(__name__)
 
 LOTE = 2000
+LOTE_UPDATE = 500  # CA por UPDATE con CASE: 5 parámetros por CA, y el CASE se evalúa por fila
 MIN_N = 5  # caída jerárquica cuando n < 5
 VENTANA_MESES = 3  # meses ANTERIORES al de la CA que forman la referencia
 _Z80 = 1.2816  # cuantil 0,90 de la normal
@@ -228,25 +230,46 @@ def inferir_comunas(
         ).all()
         if not filas:
             break
+        cambios: dict[str, tuple[str | None, str | None]] = {}
         for codigo, org_rut, org_nombre, direccion, actual, fuente_actual in filas:
             comuna, fuente = comuna_de_ca(org_rut, org_nombre, direccion, comunas_oc)
             stats["cas_revisadas"] += 1
             stats[f"comuna_{fuente}" if fuente else "sin_comuna"] += 1
             if (comuna, fuente) != (actual, fuente_actual):
-                session.execute(
-                    update(CompraAgil)
-                    .where(CompraAgil.codigo == codigo)
-                    .values(
-                        comuna_inferida=comuna,
-                        comuna_fuente=fuente,
-                        actualizado_en=CompraAgil.actualizado_en,
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-                stats["cambiadas"] += 1
+                cambios[codigo] = (comuna, fuente)
+        _actualizar_comunas(session, cambios)
+        stats["cambiadas"] += len(cambios)
         session.commit()
         ultimo = filas[-1][0]
+        _log.info("inferir_comunas: %d CA revisadas, %d cambiadas", stats["cas_revisadas"],
+                  stats["cambiadas"])  # fmt: skip
     return stats
+
+
+def _actualizar_comunas(session: Session, cambios: dict[str, tuple[str | None, str | None]]) -> None:
+    """Un `UPDATE ... SET x = CASE codigo WHEN ... END WHERE codigo IN (...)` por lote, no uno por
+    CA (F-plat-6-fix: 7.969 UPDATE sueltos tardaron 19 min desde el PC). `actualizado_en` fijo."""
+    if not cambios:
+        return
+    codigos = list(cambios)
+    for i in range(0, len(codigos), LOTE_UPDATE):
+        tramo = codigos[i : i + LOTE_UPDATE]
+        session.execute(
+            update(CompraAgil)
+            .where(CompraAgil.codigo.in_(tramo))
+            .values(
+                comuna_inferida=case(
+                    {c: cambios[c][0] for c in tramo}, value=CompraAgil.codigo,
+                    else_=CompraAgil.comuna_inferida,
+                ),
+                comuna_fuente=case(
+                    {c: cambios[c][1] for c in tramo}, value=CompraAgil.codigo,
+                    else_=CompraAgil.comuna_fuente,
+                ),
+                actualizado_en=CompraAgil.actualizado_en,
+            )
+            .execution_options(synchronize_session=False)
+        )  # fmt: skip
 
 
 # ---------------------------------------------------------------------------
@@ -472,9 +495,9 @@ def recalcular_indice(
                           "p25_ganador": g25, "mediana_ganador": g50, "p75_ganador": g75,
                           "n_ofertas": no, "p25_ofertas": o25, "mediana_ofertas": o50,
                           "p75_ofertas": o75, "fuente_ganador": fuente})  # fmt: skip
-        for i in range(0, len(filas), LOTE):
-            session.execute(insert(PrecioIndice), filas[i : i + LOTE])
+        insertar_por_lotes(session, PrecioIndice, filas)
         session.commit()
+        _log.info("precio_indice %s: %d filas", mes, len(filas))
         total["meses"] += 1
         total["filas"] += len(filas)
     total.update(conteo.como_dict())

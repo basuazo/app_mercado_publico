@@ -12,7 +12,10 @@ sin PyYAML.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -113,6 +116,12 @@ _PROGRAMADOS = {
 }
 
 
+_INPUT_COMPLETO = re.compile(
+    r"[ \t]+inputs:[ \t]*\n[ \t]+completo:[ \t]*\n[ \t]+description:.*\n[ \t]+type: boolean[ \t]*\n"
+    r"[ \t]+required: false[ \t]*\n[ \t]+default: false[ \t]*\n"
+)
+
+
 def _llamadores() -> list[Path]:
     """Los workflows que disparan algo: todos menos el reutilizable."""
     return [p for p in _archivos() if p.name != "_job.yml"]
@@ -147,6 +156,9 @@ def test_todos_se_disparan_por_dispatch_sin_inputs(workflow: Path) -> None:
     """cron-job.org llama a la API solo con {"ref": "main"}: un input obligatorio
     haría fallar el disparo, y uno opcional quedaría siempre en su default."""
     on = _bloque_on(_texto(workflow))
+    if workflow.name == "mercado-indices.yml":
+        # F-plat-6-fix: único input permitido, opcional y en false por defecto (ver abajo).
+        on = _INPUT_COMPLETO.sub("", on)
     assert re.fullmatch(r"\s*workflow_dispatch:\s*", on), f"{workflow.name}: {on!r}"
 
 
@@ -162,7 +174,12 @@ def test_cada_workflow_tiene_su_propio_grupo_de_concurrencia(workflow: Path) -> 
 @pytest.mark.parametrize("workflow", _llamadores(), ids=lambda p: p.name)
 def test_el_timeout_cubre_la_espera_del_lock(workflow: Path) -> None:
     texto = _texto(workflow)
-    timeout = re.search(r"^\s*timeout_min:\s*(\d+)\s*$", texto, re.MULTILINE)
+    # Un timeout condicional (`${{ inputs.completo && 180 || 60 }}`) se mide por su default.
+    timeout = re.search(
+        r"^\s*timeout_min:\s*(?:\$\{\{ inputs\.completo && \d+ \|\| )?(\d+)(?: \}\})?\s*$",
+        texto,
+        re.MULTILINE,
+    )
     espera = re.search(r"^\s*esperar_lock_min:\s*(\d+)\s*$", texto, re.MULTILINE)
     assert timeout and espera, f"{workflow.name}: timeout_min y esperar_lock_min explícitos"
     assert int(timeout.group(1)) >= int(espera.group(1)) + 10, workflow.name
@@ -173,3 +190,79 @@ def test_el_job_reutilizable_pasa_la_espera_al_cli() -> None:
     assert re.search(r"^\s*esperar_lock_min:\s*$", texto, re.MULTILINE)
     assert "ESPERAR_LOCK_MIN: ${{ inputs.esperar_lock_min }}" in texto
     assert '--esperar-lock-min="$ESPERAR_LOCK_MIN"' in texto
+
+
+# ---------------------------------------------------------------------------
+# F-plat-6-fix: carga completa desde Actions
+# ---------------------------------------------------------------------------
+
+
+def test_mercado_indices_tiene_input_completo_opcional_en_false() -> None:
+    on = _bloque_on(_texto(_WORKFLOWS / "mercado-indices.yml"))
+    assert _INPUT_COMPLETO.search(on), on
+    # Fuera de ese input, el disparo sigue siendo un dispatch pelado.
+    assert re.fullmatch(r"\s*workflow_dispatch:\s*", _INPUT_COMPLETO.sub("", on))
+
+
+def test_mercado_indices_pasa_completo_y_sube_el_timeout_solo_si_viene() -> None:
+    texto = _texto(_WORKFLOWS / "mercado-indices.yml")
+    assert re.search(r"^\s*completo: \$\{\{ inputs\.completo == true \}\}\s*$", texto, re.M)
+    t = re.search(r"timeout_min: \$\{\{ inputs\.completo && (\d+) \|\| (\d+) \}\}", texto)
+    assert t and int(t.group(1)) == 180 and int(t.group(2)) == 60
+
+
+def test_job_reutilizable_completo_es_opcional_y_falso_por_defecto() -> None:
+    texto = _texto(_WORKFLOWS / "_job.yml")
+    m = re.search(r"^      completo:[ \t]*\n((?:        .*\n)+)", texto, re.MULTILINE)
+    assert m, "falta el input `completo` en _job.yml"
+    bloque = m.group(1)
+    assert "type: boolean" in bloque
+    assert "required: false" in bloque
+    assert "default: false" in bloque
+    assert "COMPLETO: ${{ inputs.completo }}" in texto
+
+
+def _jobs_con_completo() -> set[str]:
+    m = re.search(r'^\s*JOBS_CON_COMPLETO="([^"]*)"', _texto(_WORKFLOWS / "_job.yml"), re.M)
+    assert m
+    return set(m.group(1).split())
+
+
+def test_completo_solo_para_los_jobs_que_lo_aceptan() -> None:
+    """`mercado-catalogo --inicial` no se mezcla; todos existen en el CLI."""
+    jobs = _jobs_con_completo()
+    assert jobs == {"mercado-indices", "mercado-competencia", "mercado-demanda"}
+    assert jobs <= set(_JOBS)
+
+
+def _simular(completo: str, jobs: str) -> list[str]:
+    """Corre con bash el armado de argumentos del step, con `python -m app.ingest` → `echo`."""
+    bash = shutil.which("bash")
+    assert bash, "se necesita bash para simular el step"
+    texto = _texto(_WORKFLOWS / "_job.yml")
+    lista = re.search(r'^\s*(JOBS_CON_COMPLETO="[^"]*")', texto, re.M)
+    armado = re.search(r'^(\s*extra=""\n(?:.*\n){3}\s*python -m app\.ingest run-once.*)$', texto, re.M)
+    assert lista and armado
+    cuerpo = armado.group(1).replace("python -m app.ingest", "echo")
+    script = f"{lista.group(1)}\nfor j in $JOBS; do\n{cuerpo}\ndone\n"
+    out = subprocess.run(
+        [bash, "-c", script],
+        env={**os.environ, "COMPLETO": completo, "JOBS": jobs, "ESPERAR_LOCK_MIN": "10"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout.splitlines()
+
+
+def test_disparo_de_cron_job_org_no_cambia() -> None:
+    """Sin inputs, `completo` llega como "false": ningún job recibe `--completo`."""
+    lineas = _simular("false", "mercado-indices mercado-competencia mercado-demanda")
+    assert len(lineas) == 3 and all("--completo" not in x for x in lineas)
+
+
+def test_con_completo_solo_lo_reciben_los_tres_jobs() -> None:
+    lineas = _simular("true", "mercado-indices mercado-competencia mercado-demanda mercado-catalogo")
+    con = {x.split("--job=")[1].split()[0] for x in lineas if x.rstrip().endswith("--completo")}
+    assert len(lineas) == 4
+    assert con == {"mercado-indices", "mercado-competencia", "mercado-demanda"}

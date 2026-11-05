@@ -9,11 +9,22 @@
 # después de `mercado-oc` (07:20). Documentado en docs/operacion-disparos.md. Sin `schedule`.
 # Choca con el `mercado` de las 07:45 (mismo advisory lock): espera el lock hasta 10 min. Si la
 # corrida pasa de ~10 min, los `mercado` que caigan en medio salen `omitido` (aceptado una vez al
-# día). La carga completa (`--completo`) se corre desde el PC con el CLI.
+# día).
+#
+# Carga completa (F-plat-6-fix): Actions → mercado-indices → Run workflow → marcar `completo` →
+# Run (de día, sin migración pendiente). Pasa `--completo` a los tres jobs y sube el timeout a
+# 180 min. cron-job.org dispara sin inputs: `completo` queda en false y la corrida diaria no
+# cambia. Desde el PC es mucho más lenta (un viaje Chile → Neon us-east por sentencia).
 name: mercado-indices
 
 on:
   workflow_dispatch:
+    inputs:
+      completo:
+        description: "Carga completa (--completo en los tres jobs; timeout 180 min)"
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: mp-${{ github.workflow }}
@@ -35,5 +46,7 @@ jobs:
       # pausa de 1 min + hasta 10 de espera del lock + una pasada liviana por las OC, 3 meses de
       # series, backtest de 6 meses en Python puro y recomendaciones. Medido en dev el 5-nov (solo
       # OC, 108 mil líneas): ~1 min de lectura + 11 s de backtest. Ajustar con la corrida real.
-      timeout_min: 60
+      # Con `completo`: 180 (los tres recálculos completos; medir en la primera corrida).
+      timeout_min: ${{ inputs.completo && 180 || 60 }}
       esperar_lock_min: 10
+      completo: ${{ inputs.completo == true }}

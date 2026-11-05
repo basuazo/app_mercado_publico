@@ -35,11 +35,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, delete, insert, or_, select, text
+from sqlalchemy import and_, delete, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.catalogos.canonico import Catalogo, sugerencia_unica
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
+from app.core.avance import Etapas
+from app.core.lotes import insertar_por_lotes
 from app.core.tiempo import ahora_utc
 from app.mercado.adjudicacion import familia_de_codigo
 from app.mercado.catalogo import cargar_catalogo
@@ -96,6 +98,7 @@ TOP_UNIDADES = 10
 TOLERANCIA_CANTIDAD = 0.01
 MAX_BYTES = 40_000_000  # regla 11: aviso si las tablas de demanda pasan de 40 MB
 TABLAS = ("demanda_series", "pronosticos", "demanda_nombres", "recomendaciones")
+AVISO_CADA = 50_000  # log de avance del recorrido de OC cada tantas líneas
 
 Clave = tuple[str, str, str]  # (comprador, nivel, item)
 
@@ -251,6 +254,8 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
         rut = _rut(rut_u)
         un = norm(unidad)
         med.lineas_oc += 1
+        if med.lineas_oc % AVISO_CADA == 0:
+            _log.info("demanda recorrido OC: %d líneas, %d RUT", med.lineas_oc, len(dir_.ruts))
         med.estados_oc[estado or ""] += 1
         dir_.oc_codigos.add(codigo_oc)
         m = mes_oc(fecha, mes)
@@ -307,6 +312,8 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
             med.cas_con_oc += 1
             rut_oc, un_oc = oc_clave[oc]
             med.cas_con_oc_misma_clave += clave_unidad(org_rut, unidad) == f"{rut_oc}|{un_oc}"
+    _log.info("demanda recorrido terminado: %d líneas de OC, %d RUT, %d CA con OC",
+              med.lineas_oc, len(dir_.ruts), med.cas_con_oc)  # fmt: skip
     return med, dir_
 
 
@@ -627,6 +634,7 @@ def recalcular_series(
     productos = productos if productos is not None else Productos(session)
     conteo = ConteoSeries()
     for mes in meses_entre(desde, hasta):
+        t_mes = time.monotonic()
         acc = _Mes(conteo)
         _sumar_oc(session, mes, regiones, modo, dir_, productos, acc)
         _sumar_ca_sin_oc(session, mes, regiones, modo, dir_, productos, acc, ahora)
@@ -635,11 +643,11 @@ def recalcular_series(
         session.execute(
             delete(DemandaSerie).where(DemandaSerie.mes == mes, DemandaSerie.region.in_(regiones))
         )
-        for i in range(0, len(filas), LOTE):
-            session.execute(insert(DemandaSerie), filas[i : i + LOTE])
+        insertar_por_lotes(session, DemandaSerie, filas)
         session.commit()
         conteo.meses.append(mes)
         conteo.filas += len(filas)
+        _log.info("demanda series %s: %d filas, %.1f s", mes, len(filas), time.monotonic() - t_mes)
     return conteo.como_dict()
 
 
@@ -706,8 +714,7 @@ def guardar_nombres(
         if k not in vistos:
             vistos.add(k)
             unicas.append(f)
-    for i in range(0, len(unicas), LOTE):
-        session.execute(insert(DemandaNombre), unicas[i : i + LOTE])
+    insertar_por_lotes(session, DemandaNombre, unicas)
     session.commit()
     return len(unicas)
 
@@ -871,8 +878,7 @@ def guardar_pronosticos(
     session.execute(
         delete(Pronostico).where(or_(Pronostico.region.in_(regiones), Pronostico.region.is_(None)))
     )
-    for i in range(0, len(filas), LOTE):
-        session.execute(insert(Pronostico), filas[i : i + LOTE])
+    insertar_por_lotes(session, Pronostico, filas)
     session.commit()
     return {**stats, "filas": len(filas)}
 
@@ -986,8 +992,9 @@ def guardar_backtest(
                     "n": c.pares_mape if nombre.startswith("mape") else c.elegibles,
                     "detalle": detalle, "empresa_id": None, "calculado_en": ahora,
                 })  # fmt: skip
-        session.execute(insert(EvaluacionModelo), filas)
+        insertar_por_lotes(session, EvaluacionModelo, filas)
         session.commit()
+        _log.info("demanda backtest %s guardado (%d métricas)", mes, len(filas))
 
 
 @dataclass(frozen=True)
@@ -1073,7 +1080,10 @@ def run_demanda(
     ahora = ahora or ahora_utc()
     hoy = mes_hoy or mes_de(ahora) or mes_actual()
     avisos: list[str] = []
+    etapas = Etapas(resultado, "demanda")
+    _log.info("demanda: iniciando (regiones=%s, completo=%s)", regiones, completo)
     med, dir_ = recorrer(session, regiones, hoy)
+    etapas.fin("recorrido")
     modo = med.modo()
     resultado["medicion"] = med.como_dict()
     guardado = modo_guardado(session, regiones)
@@ -1085,23 +1095,24 @@ def run_demanda(
     else:
         desde = sumar_meses(hoy, -(MESES_DIARIO - 1))
     productos = Productos(session)
-    t1 = time.monotonic()
+    _log.info("demanda: clave %s, series de %s a %s", modo, desde, hoy)
     resultado["series"] = recalcular_series(
         session, regiones, desde, hoy, modo, dir_, ahora=ahora, productos=productos
     )
-    resultado["segundos_series"] = round(time.monotonic() - t1, 1)
+    etapas.fin("series")
     e = resultado["series"]["e_pct_cantidad_coincide"]
     if e is not None and e < 0.99:
         avisos.append(f"cantidad en base: total/precio_base coincide solo en {e:.1%} de las líneas")
     resultado["nombres"] = guardar_nombres(session, regiones, dir_, modo, productos)
+    etapas.fin("nombres", f"{resultado['nombres']} filas")
     series = cargar_series(session, regiones)
+    etapas.fin("carga_series", f"{len(series)} series")
     con_datos = {m for s in series.values() for m, v in s.valores.items() if v > 0}
     meses_bt = [m for m in (sumar_meses(hoy, -k) for k in range(MESES_BACKTEST, 0, -1))
                 if m in con_datos]  # fmt: skip
-    t2 = time.monotonic()
     bt = backtest(series, meses_bt)
     guardar_backtest(session, bt, ahora)
-    resultado["segundos_backtest"] = round(time.monotonic() - t2, 1)
+    etapas.fin("backtest", f"{len(meses_bt)} meses")
     ver = veredicto(session)
     resultado["backtest"] = {
         n: {"meses": list(v.meses), "elegibles": v.elegibles,
@@ -1117,6 +1128,7 @@ def run_demanda(
         elif v.elegibles and not v.gana:
             avisos.append(f"demanda ({n}): el v1 no le gana a la línea base; la UI muestra la base")
     resultado["pronosticos"] = guardar_pronosticos(session, series, regiones, hoy, ahora)
+    etapas.fin("pronosticos", f"{resultado['pronosticos']['filas']} filas")
     resultado["bytes"] = medir_bytes(session)
     if resultado["bytes"]:
         total = sum(t["bytes"] for t in resultado["bytes"].values())

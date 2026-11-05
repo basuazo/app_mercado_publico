@@ -34,9 +34,11 @@ from datetime import datetime
 from operator import attrgetter
 from typing import Any
 
-from sqlalchemy import delete, func, insert, or_, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.core.avance import Etapas
+from app.core.lotes import insertar_por_lotes
 from app.core.tiempo import ahora_utc
 from app.mercado.adjudicacion import (
     MESES_ENTRENAMIENTO,
@@ -401,6 +403,7 @@ def recalcular_competencia(
     total: dict[str, Any] = {"meses": [], "filas_rut": 0, "filas_comprador": 0, "procesos": 0,
                              "cuadratura": []}  # fmt: skip
     for mes in meses_entre(desde_mes, hasta_mes):
+        t_mes = time.monotonic()
         agg = Agregado()
         for lote in _filas_desde_ca(session, regiones, mes, ahora, conteo):
             for p in lote:
@@ -409,11 +412,11 @@ def recalcular_competencia(
         filas_rut, filas_comp = agg.filas(mes, ubicaciones)
         session.execute(delete(CompetenciaMes).where(CompetenciaMes.mes == mes))
         session.execute(delete(CompetenciaCompradorMes).where(CompetenciaCompradorMes.mes == mes))
-        for i in range(0, len(filas_rut), LOTE):
-            session.execute(insert(CompetenciaMes), filas_rut[i : i + LOTE])
-        for i in range(0, len(filas_comp), LOTE):
-            session.execute(insert(CompetenciaCompradorMes), filas_comp[i : i + LOTE])
+        insertar_por_lotes(session, CompetenciaMes, filas_rut)
+        insertar_por_lotes(session, CompetenciaCompradorMes, filas_comp)
         session.commit()
+        _log.info("competencia %s: %d filas por RUT, %d por comprador, %.1f s", mes,
+                  len(filas_rut), len(filas_comp), time.monotonic() - t_mes)  # fmt: skip
         ganadas = sum(f["n_ganadas"] for f in filas_rut)
         directo = cas_con_seleccionada(session, mes, regiones, ahora)
         desvio = abs(ganadas - directo) / directo if directo else (0.0 if not ganadas else 1.0)
@@ -687,7 +690,7 @@ def juez_competidores(
             _fila_eval(mes, "precision_top3", inter / n_pred if n_pred else None, n_pred, det),
             _fila_eval(mes, "recall_top3", inter / n_act if n_act else None, n_act, det),
         ]
-        session.execute(insert(EvaluacionModelo), filas)
+        insertar_por_lotes(session, EvaluacionModelo, filas)
         session.commit()
         resumen.append({"mes": mes, "top1_oferta": None if tasa is None else round(tasa, 4),
                         "precision_top3": filas[1]["valor"], "recall_top3": filas[2]["valor"],
@@ -726,8 +729,9 @@ def aporte_al_modelo(
         filas_train = [f for c in cas_de_entrenamiento(cas, mes) for f in c.filas]
         test = [f for c in cas if c.mes == mes and c.n_ofertas >= 2 for f in c.filas]
         if not ok or not filas_train or not test:
-            session.execute(insert(EvaluacionModelo), [_fila_eval(mes, "aporte_sin_datos", None,
-                                                                  info["cas_2mas"], info)])  # fmt: skip
+            insertar_por_lotes(session, EvaluacionModelo, [
+                _fila_eval(mes, "aporte_sin_datos", None, info["cas_2mas"], info)
+            ])  # fmt: skip
             session.commit()
             evaluados.append({"mes": mes, "estado": "sin_datos_suficientes", **info})
             continue
@@ -735,7 +739,7 @@ def aporte_al_modelo(
         con = entrenar_logistico(filas_train, variables=VARIABLES_CON_COMPETENCIA)
         b_sin, n = brier((sin.p(f.contexto), f.gano) for f in test)
         b_con, _ = brier((con.p(f.contexto), f.gano) for f in test)
-        session.execute(insert(EvaluacionModelo), [
+        insertar_por_lotes(session, EvaluacionModelo, [
             _fila_eval(mes, "brier_2mas_sin", b_sin, n, info),
             _fila_eval(mes, "brier_2mas_con", b_con, n, info),
         ])  # fmt: skip
@@ -790,11 +794,13 @@ def run_competencia_mercado(
         desde = meses[0] if meses else sumar_meses(hoy, -1)
     else:
         desde = sumar_meses(hoy, -1)
-    t1 = time.monotonic()
+    etapas = Etapas(resultado, "competencia")
+    _log.info("competencia: iniciando (regiones=%s, completo=%s, desde %s)", regiones, completo,
+              desde)  # fmt: skip
     resultado["recalculo"] = recalcular_competencia(
         session, desde, regiones, hasta_mes=hoy, ahora=ahora
     )
-    resultado["segundos_recalculo"] = round(time.monotonic() - t1, 1)
+    resultado["segundos_recalculo"] = etapas.fin("recalculo")
     avisos: list[str] = resultado.setdefault("avisos", [])
     for c in resultado["recalculo"]["cuadratura"]:
         if not c["cumple"]:
@@ -813,9 +819,11 @@ def run_competencia_mercado(
         min(meses_juez[0], meses_aporte[0]), -(MESES_ENTRENAMIENTO + VENTANA_HISTORIAL)
     )
     historial = HistorialCompetencia.cargar(session, desde_hist, hoy, regiones=regiones)
+    etapas.fin("historial")
     resultado["juez_competidores"] = juez_competidores(
         session, regiones, meses_juez, historial, ahora, hoy
     )
+    etapas.fin("juez_competidores", f"{len(meses_juez)} meses")
     for j in resultado["juez_competidores"]:
         if j["cumple"] is False and not j["datos_insuficientes"]:
             avisos.append(f"{j['mes']}: el top 1 esperado ofertó en {j['top1_oferta']:.1%} de las "
@@ -827,6 +835,7 @@ def run_competencia_mercado(
             "predicción de competidores: ningún mes con ≥ 50 CA de ≥ 2 oferentes e historial"
         )
     resultado["aporte_modelo"] = aporte_al_modelo(session, regiones, meses_aporte, historial)
+    etapas.fin("aporte_modelo", f"{len(meses_aporte)} meses")
     if resultado["aporte_modelo"]["mejora"]:
         avisos.append("las variables de competencia mejoran el Brier walk-forward: activarlas en el "
                       "modelo requiere llenar `extra['competencia']` en p_ganar (pendiente)")  # fmt: skip

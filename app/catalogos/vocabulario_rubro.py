@@ -30,10 +30,11 @@ from collections.abc import Collection
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, insert, text
+from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.core.lotes import insertar_por_lotes
 from app.core.tiempo import ahora_utc
 from app.models.tables import RubroVocabulario
 
@@ -202,7 +203,7 @@ def construir_vocabulario(
         borrar = borrar.where(RubroVocabulario.prefijo.in_(familias))
     session.execute(borrar)
     if nuevas:
-        session.execute(insert(RubroVocabulario), nuevas)
+        insertar_por_lotes(session, RubroVocabulario, nuevas)
     session.commit()
 
     resultado = {

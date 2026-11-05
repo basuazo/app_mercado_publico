@@ -407,6 +407,8 @@ def test_job_completo(s):
     _historia(s)
     r = comp.run_competencia_mercado(s, [16], completo=True, mes_hoy="2026-11", ahora=AHORA)
     assert r["recalculo"]["meses"][0] == "2026-09"
+    assert set(r["segundos_por_etapa"]) == {"recalculo", "historial", "juez_competidores",
+                                            "aporte_modelo"}  # fmt: skip
     assert all(c["cumple"] for c in r["recalculo"]["cuadratura"])
     assert [j["mes"] for j in r["juez_competidores"]][-1] == "2026-11"
     assert r["aporte_modelo"]["estado"].startswith("Brier con/sin: pendiente")

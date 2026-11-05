@@ -472,6 +472,10 @@ def test_job_de_punta_a_punta_e_idempotente(s):
     assert r["series"]["meses"][0] == "2024-11"  # primera corrida: todo
     assert r["backtest"]["unspsc"]["elegibles"] > 0
     assert r["pronosticos"]["filas"] > 0
+    # F-plat-6-fix: tiempo por etapa en el resultado (y un log INFO por etapa).
+    assert set(r["segundos_por_etapa"]) == {"recorrido", "series", "nombres", "carga_series",
+                                            "backtest", "pronosticos", "recomendaciones"}  # fmt: skip
+    assert r["duracion_s"] >= sum(r["segundos_por_etapa"].values()) - 0.5
     n_series = s.execute(select(func.count()).select_from(DemandaSerie)).scalar_one()
     n_pron = s.execute(select(func.count()).select_from(Pronostico)).scalar_one()
     n_rec = s.execute(select(func.count()).select_from(Recomendacion)).scalar_one()
