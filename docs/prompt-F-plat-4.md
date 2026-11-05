@@ -7,6 +7,30 @@
 > Si algo no calza con el código (sobre todo con lo que deje F-plat-1), gana el código: anotarlo en el commit y
 > no inventar.
 
+## Revisión 5-nov (Cowork, contra `02e17f5` = F-plat-2) — manda sobre el resto donde choque
+1. **Base:** la migración cuelga de `c5f1a8d3e7b9` (F-plat-2, head local). Si para entonces está commiteado
+   F-plat-2-fix, va después de ese commit (no trae migración).
+2. **Líneas que vienen de anexo** (`ca_lineas.origen = 'anexo'`, `anexo_id` no nulo): sus ofertas se cotizaron contra el
+   único producto "según anexo" de la CA, así que comparten `codigo_producto` y el cruce de §1.1 las descarta (ya
+   previsto: "se descarta y se cuenta"). Reportar ese conteo aparte (`descartadas_anexo`) en el commit y en
+   `evaluacion_modelo`: dice cuánto monto queda fuera del índice por línea. El modelo de adjudicación (§1.2) sí usa esas
+   CA, porque trabaja con el `valor_neto` total de la oferta.
+3. **§1.2, `log_ratio` para una CA nueva:** donde dice "la mediana se estima con `precio_referencia` (ofertas) de la
+   unidad compradora/comuna" debe decir **`precio_indice`** (`mediana_ofertas` con la caída jerárquica de
+   `referencia_precio`). `precio_referencia` (F-merc-2) es nacional por `clave` y `mes` y no tiene ofertas [V,
+   `app/models/tables.py`].
+4. **Provincias:** `app/mercado/proveedores.py` ya define `PROVINCIAS_NUBLE` [V] (sin el mapa de comunas). El mapa nuevo
+   de `app/catalogos/territorio_nuble.py` usa esas mismas tres claves (importarlas, no repetir los nombres) y la tarifa
+   de `tarifas_logistica` por provincia se resuelve con él.
+5. **Horario y lock:** `GH mercado` corre cada 15 min todo el día con el mismo advisory lock [V, `mercado.yml`:
+   `esperar_lock_min: 5`]. `mercado-indices` a las 07:45 choca con el disparo de las 07:45: en su workflow,
+   `esperar_lock_min: 10`, y medir la duración. Si pasa de ~10 min, los `mercado` que caigan en medio salen `omitido`
+   (aceptable una vez al día; anotarlo en `operacion-disparos.md`).
+6. **Costos sin flete:** la primera planilla real (Aralia, 5-nov) trae precios de un proveedor **sin flete** (9–87 % del
+   costo, según la nota de la hoja `condiciones`). No es tarea de esta fase corregirlo, pero `evaluar_ca` debe mostrar la
+   `fuente` y la `vigente_desde` del costo usado, para que el margen se pueda auditar.
+7. **F-plat-comp** corre en paralelo y se audita después: el punto de extensión de variables de §0 es obligatorio.
+
 ## 0. Antes de escribir código
 - Hechos [V] que el modelo tiene que respetar: en CA de un producto con ≥ 2 ofertas gana el más barato el
   59 % (ago-2026 API) / 78–81 % (`COT_` meses previos); brecha mediana ganador–segundo 2,7–5,5 %; ruido
