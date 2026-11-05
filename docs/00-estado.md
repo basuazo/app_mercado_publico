@@ -18,6 +18,20 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-mesa-v0 (5-nov, commit local sin push hasta auditar; sin migración)
+`/mesa` (`prompt-F-mesa-v0.md`): CA vigentes (`publicada` + cierre futuro) de `regiones_activas`, 50 por página,
+orden por cierre y, si la empresa tiene `comunas_prioritarias`, primero las que nombran alguna en `direccion_entrega`
+(sin tildes, por palabra completa; es [I]). Filtros GET con conteo HTMX (`/mesa/conteo`): familia, cierre
+hoy/mañana/esta semana (hasta el domingo; días de Chile), detalle, anexos, monto mínimo, texto (ILIKE escapado; no hay
+FTS para el nombre de la CA). Historial del comprador (`/mesa/ca/{codigo}/comprador`, HTMX al abrir, 12 meses: n.º de CA,
+monto adjudicado, mediana de oferentes = RUT distintos, top 3 de proveedores). Sin raw_json en ninguna query.
+**Código:** `app/api/routes/mesa_dia.py` (rutas), `app/mercado/mesa_dia.py` (consulta, filtros, tarjetas),
+`app/mercado/comprador.py` (**`clave_unidad`: única definición**, movida desde `adjudicacion.py`, que la importa;
+`historial_comprador`). «Hoy»: tarjeta «CA vigentes» (total y cierran hoy) con enlace a `/mesa`; menú «Mesa» tras «Inicio».
+**Rendimiento:** medido solo en SQLite con datos sintéticos (250 vigentes, 3.000 CA en el año): `/mesa` ≈ 21 ms,
+historial ≈ 9 ms. **Pendiente: medir en Postgres** (el historial filtra `organismo_rut` con `upper(replace(...))`,
+sin índice; si pasa de 300 ms, proponer índice = migración).
+
 ## F-plat-4 (5-nov, commit local sin push hasta auditar; migración `e4a7c2f9d1b3`, cuelga de `c5f1a8d3e7b9`)
 Precio esperado, P(ganar) y evaluación walk-forward (`prompt-F-plat-4.md`, con su Revisión 5-nov). Solo backend: la UI es F-plat-5.
 **Esquema:** `precio_indice` (producto × `comuna:|provincia:|region:` × mes; el país se lee de `precio_referencia`),

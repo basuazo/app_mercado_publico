@@ -122,7 +122,7 @@ def test_portada_admin_sin_empresa_muestra_hoy_con_aviso(client, engine, setting
     cookies, _ = _sesion(settings, uid)
     r = client.get("/", cookies=cookies)
     assert r.status_code == 200
-    assert "Compras Ágiles abiertas" in r.text
+    assert "CA vigentes" in r.text
     assert "todavía no tiene una empresa" in r.text
 
 

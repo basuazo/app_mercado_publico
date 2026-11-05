@@ -11,9 +11,10 @@
 <div class="row g-3">
   <div class="col-12 col-md-4">
     <div class="card h-100"><div class="card-body">
-      <p class="tarjeta-numero__etiqueta">Compras Ágiles abiertas</p>
+      <p class="tarjeta-numero__etiqueta">CA vigentes</p>
       <p class="tarjeta-numero__valor" data-hoy="ca-abiertas">{{ ca_abiertas }}</p>
-      <p class="tarjeta-numero__nota">En las regiones activas, con cierre futuro.</p>
+      <p class="tarjeta-numero__nota"><span class="num" data-hoy="ca-cierran-hoy">{{ ca_cierran_hoy }}</span> cierran hoy · en las regiones activas, con cierre futuro.</p>
+      {% if not sin_empresa %}<a href="/mesa" class="tarjeta-numero__ver">Ver la mesa →</a>{% endif %}
     </div></div>
   </div>
   <div class="col-12 col-md-4">

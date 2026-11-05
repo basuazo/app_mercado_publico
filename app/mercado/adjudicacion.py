@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, G_ALIM, grupo_de, norm
 from app.catalogos.territorio_nuble import REGION_NUBLE, comuna_canonica, provincia_de
+from app.mercado.comprador import clave_unidad  # única definición (F-mesa-v0)
 from app.mercado.indice import (
     LOTE,
     IndiceMemoria,
@@ -401,10 +402,6 @@ def familia_de_ca(productos: Iterable[tuple[str | None, str | None]]) -> str:
     if not cuenta:
         return "otra"
     return sorted(cuenta.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-
-
-def clave_unidad(organismo_rut: str | None, unidad_compra: str | None) -> str:
-    return f"{_rut(organismo_rut)}|{norm(unidad_compra)}"
 
 
 def mapa_regiones_proveedor(session: Session) -> dict[str, int]:

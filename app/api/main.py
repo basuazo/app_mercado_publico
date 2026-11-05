@@ -19,6 +19,7 @@ from app.api.routes import api as api_router
 from app.api.routes import auth as auth_router
 from app.api.routes import catalogo as catalogo_router
 from app.api.routes import mesa as mesa_router
+from app.api.routes import mesa_dia as mesa_dia_router
 from app.api.routes import pages as pages_router
 from app.core.db import normalizar_url_driver as _normalizar_url_driver
 from app.core.settings import Settings
@@ -123,6 +124,7 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(pages_router.router)
     app.include_router(mesa_router.router)
+    app.include_router(mesa_dia_router.router)
     app.include_router(catalogo_router.router)
     app.include_router(api_router.router)
 

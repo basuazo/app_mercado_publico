@@ -16,6 +16,21 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 5),
+        titulo="Mesa: las Compras Ágiles vigentes de tu territorio",
+        descripcion=(
+            "Nueva entrada «Mesa» en el menú: todas las Compras Ágiles que siguen abiertas en las "
+            "regiones de tu empresa, las que cierran antes primero y, si tu empresa tiene comunas "
+            "prioritarias, primero las que nombran alguna en su dirección de entrega (es una "
+            "inferencia por texto). Filtra por familia, cierre (hoy, mañana, esta semana), detalle "
+            "de líneas, anexos, monto mínimo o texto, con el conteo en vivo. Cada tarjeta muestra "
+            "comprador, cierre en hora de Chile con cuenta regresiva, monto, líneas, anexos y plazo "
+            "de entrega, con enlaces a la ficha (líneas y anexo) y a la ficha pública, y un "
+            "desplegable con el historial del comprador de los últimos 12 meses. «Hoy» suma la "
+            "tarjeta «CA vigentes». Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 5),
         titulo="Precio esperado y probabilidad de adjudicación por Compra Ágil",
         descripcion=(
             "La plataforma ya calcula, para cada producto del catálogo, el precio al que se gana y "

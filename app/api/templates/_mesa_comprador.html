@@ -1,0 +1,24 @@
+{# Historial descriptivo del comprador (F-mesa-v0). El análisis de competencia es de F-plat-comp. #}
+{% if h.n_ca == 0 %}
+<p class="mb-0 text-muted">Este comprador no tiene Compras Ágiles cerradas en los últimos 12 meses en nuestros datos.</p>
+{% else %}
+<ul class="mb-1 ps-3">
+  <li><strong class="num">{{ h.n_ca | numero }}</strong> Compra{{ '' if h.n_ca == 1 else 's' }} Ágil{{ '' if h.n_ca == 1 else 'es' }} cerrada{{ '' if h.n_ca == 1 else 's' }}</li>
+  <li>Monto adjudicado: <strong class="num">{{ h.monto_adjudicado | clp }}</strong></li>
+  <li>Oferentes por CA (mediana, RUT distintos):
+    {% if h.mediana_oferentes is none %}<span class="text-muted">sin ofertas leídas todavía</span>
+    {% else %}<strong class="num">{{ ('%g' % h.mediana_oferentes) | replace('.', ',') }}</strong>
+    <span class="text-muted">(sobre {{ h.n_con_ofertas }} CA)</span>{% endif %}</li>
+</ul>
+{% if h.top_proveedores %}
+<p class="mb-1 fw-semibold">Proveedores que más le ganaron</p>
+<ol class="mb-1 ps-3">
+  {% for rut, nombre, n in h.top_proveedores %}
+  <li>{{ nombre }} <span class="text-muted">({{ rut }})</span> — {{ n }} adjudicaci{{ 'ón' if n == 1 else 'ones' }}</li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="mb-1 text-muted">Sin adjudicaciones conocidas en el período.</p>
+{% endif %}
+{% endif %}
+<p class="mb-0 text-muted">Últimos 12 meses · Fuente: Dirección ChileCompra</p>

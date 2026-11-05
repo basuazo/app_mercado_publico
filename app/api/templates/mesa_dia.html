@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado, vacio %}
+{% block title %}Mesa — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado("Mesa", "Las Compras Ágiles vigentes de tu territorio, las que cierran antes primero.") }}
+
+{# Un único <form method="get">: los controles se aplican juntos; el conteo en vivo (HTMX) solo
+   muestra un número y no cambia la lista. #}
+<form method="get" action="/mesa" class="card card-body mb-3" role="search" aria-label="Filtros de la mesa"
+      hx-get="/mesa/conteo" hx-trigger="change, keyup changed delay:400ms"
+      hx-target="#mesa-conteo" hx-swap="innerHTML">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label small mb-1" for="mesa-q">Texto en el nombre</label>
+      <input type="search" class="form-control form-control-sm" id="mesa-q" name="q" value="{{ filtros.q }}"
+             maxlength="200" placeholder="Ej.: leche, arroz">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-familia">Familia</label>
+      <select class="form-select form-select-sm" id="mesa-familia" name="familia">
+        <option value="">Todas</option>
+        {% for f in opciones_familia %}
+        <option value="{{ f }}" {% if filtros.familia == f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-cierre">Cierre</label>
+      <select class="form-select form-select-sm" id="mesa-cierre" name="cierre">
+        <option value="">Cualquiera</option>
+        <option value="hoy" {% if filtros.cierre == 'hoy' %}selected{% endif %}>Hoy</option>
+        <option value="manana" {% if filtros.cierre == 'manana' %}selected{% endif %}>Mañana</option>
+        <option value="semana" {% if filtros.cierre == 'semana' %}selected{% endif %}>Esta semana</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-detalle">Detalle de líneas</label>
+      <select class="form-select form-select-sm" id="mesa-detalle" name="detalle">
+        <option value="">Todos</option>
+        <option value="completo" {% if filtros.detalle == 'completo' %}selected{% endif %}>Completo</option>
+        <option value="incompleto" {% if filtros.detalle == 'incompleto' %}selected{% endif %}>Incompleto</option>
+        <option value="sin_detalle" {% if filtros.detalle == 'sin_detalle' %}selected{% endif %}>Sin detalle</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small mb-1" for="mesa-monto">Monto mínimo (CLP)</label>
+      <input type="number" min="0" step="1" class="form-control form-control-sm" id="mesa-monto" name="monto_min"
+             value="{{ filtros.monto_min or '' }}">
+    </div>
+    <div class="col-12 col-md-auto">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="anexos" value="1" id="mesa-anexos"
+               {% if filtros.con_anexos %}checked{% endif %}>
+        <label class="form-check-label small" for="mesa-anexos">Con anexos</label>
+      </div>
+    </div>
+    <div class="col-12 col-md-auto ms-md-auto d-flex align-items-center gap-3">
+      <span id="mesa-conteo" class="small" aria-live="polite"><strong class="num">{{ total | numero }}</strong> CA</span>
+      <button class="btn btn-primary btn-sm" type="submit">Aplicar</button>
+      <a class="btn btn-outline-secondary btn-sm" href="/mesa">Limpiar</a>
+    </div>
+  </div>
+</form>
+
+{% if comunas_prioritarias %}
+<p class="text-muted small mb-2">Primero, las que nombran en su dirección de entrega alguna de tus comunas prioritarias
+  ({{ comunas_prioritarias | join(", ") }}).</p>
+{% endif %}
+
+<div id="mesa-lista">
+  {% for it in items %}
+  <div class="tarjeta-op tarjeta-op--{{ it.urgencia }}" id="mesa-ca-{{ it.codigo }}">
+    <div class="d-flex align-items-start gap-3">
+      <div class="flex-grow-1 min-w-0">
+        <a class="tarjeta-op__titulo" href="/oportunidad/compras_agiles/{{ it.codigo }}">{{ it.nombre }}</a>
+        <div class="tarjeta-op__meta mt-1">
+          {{ it.organismo or "Organismo no informado" }}{% if it.unidad %} · {{ it.unidad }}{% endif %} ·
+          <span class="num">{{ it.codigo }}</span>
+          {% if it.comuna_detectada %}
+          · <span class="badge text-bg-light border fw-normal"
+                  title="Inferida: la comuna aparece escrita en la dirección de entrega">Comuna detectada en la dirección: {{ it.comuna_detectada }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="text-end">
+        {% if it.monto is none %}
+        <div class="tarjeta-op__monto tarjeta-op__monto--ausente">{{ None | clp }}</div>
+        {% else %}
+        <div class="tarjeta-op__monto num">{{ it.monto | clp }}</div>
+        {% endif %}
+        <div class="tarjeta-op__monto-glosa">disponible</div>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-3 align-items-center">
+      <span class="badge-cierre badge-cierre--{{ it.urgencia }}">{{ it.cuenta_regresiva }} · {{ it.cierre }} (hora de Chile)</span>
+      <span class="badge text-bg-secondary fw-normal">{{ it.familia }}</span>
+      {% if it.detalle == 'completo' %}
+      <span class="badge text-bg-success fw-normal">{{ it.n_lineas }} línea{{ '' if it.n_lineas == 1 else 's' }} · detalle completo</span>
+      {% elif it.detalle == 'incompleto' %}
+      <span class="badge text-bg-warning fw-normal">{{ it.n_lineas }} línea{{ '' if it.n_lineas == 1 else 's' }} · detalle incompleto</span>
+      {% else %}
+      <span class="badge text-bg-danger fw-normal">Sin detalle de líneas</span>
+      {% endif %}
+      <span class="badge text-bg-light border fw-normal">{{ it.n_anexos }} anexo{{ '' if it.n_anexos == 1 else 's' }}</span>
+      <span class="badge text-bg-light border fw-normal">Entrega: {% if it.plazo_dias is not none %}{{ it.plazo_dias }} día{{ '' if it.plazo_dias == 1 else 's' }}{% else %}plazo no informado{% endif %}</span>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <a class="btn btn-sm btn-outline-primary" href="/oportunidad/compras_agiles/{{ it.codigo }}">Líneas y anexo</a>
+      {% if mostrar_publica %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ it.url_publica }}" target="_blank" rel="noopener">Ficha pública</a>
+      {% endif %}
+    </div>
+    <details class="mt-2"
+             hx-get="/mesa/ca/{{ it.codigo }}/comprador" hx-trigger="toggle once"
+             hx-target="#mesa-hist-{{ it.codigo }}" hx-swap="innerHTML">
+      <summary class="small">Historial del comprador (12 meses)</summary>
+      <div id="mesa-hist-{{ it.codigo }}" class="small mt-2"><span class="text-muted">Cargando…</span></div>
+    </details>
+  </div>
+  {% else %}
+  {{ vacio("No hay Compras Ágiles vigentes con estos filtros.", "/mesa", "Limpiar filtros") }}
+  {% endfor %}
+</div>
+
+{% if total_paginas > 1 %}
+<nav class="d-flex justify-content-between align-items-center gap-2 mt-3" aria-label="Paginación de la mesa">
+  {% if pagina > 1 %}
+  <a class="btn btn-outline-secondary btn-sm" href="/mesa?{{ qs_base }}{{ '&' if qs_base }}pagina={{ pagina - 1 }}">Anteriores</a>
+  {% else %}<span></span>{% endif %}
+  <span class="small text-muted">Página {{ pagina }} de {{ total_paginas }}</span>
+  {% if pagina < total_paginas %}
+  <a class="btn btn-outline-secondary btn-sm" href="/mesa?{{ qs_base }}{{ '&' if qs_base }}pagina={{ pagina + 1 }}">Siguientes</a>
+  {% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

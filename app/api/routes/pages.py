@@ -471,6 +471,7 @@ async def portada(
     """Portada «Hoy» (F-plat-nav): un conteo por pieza de la plataforma. F-plat-5 la cambia por la mesa."""
     from sqlalchemy import func
 
+    from app.mercado.mesa_dia import contar_vigentes
     from app.mercado.territorio import regiones_activas
     from app.models.tables import CaLinea, Proveedor, ProveedorProducto
 
@@ -480,15 +481,7 @@ async def portada(
             request, "proveedores_sin_empresa.html", _ctx(request, user)
         )
     regiones = regiones_activas(session, request.app.state.settings)
-    ca_abiertas = session.execute(
-        select(func.count())
-        .select_from(CompraAgil)
-        .where(
-            CompraAgil.region.in_(regiones),
-            CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
-            CompraAgil.fecha_cierre > ahora_utc(),
-        )
-    ).scalar_one()
+    ca_abiertas, ca_cierran_hoy = contar_vigentes(session, regiones, ahora_utc())
     lineas_por_revisar = session.execute(
         select(func.count())
         .select_from(CaLinea)
@@ -515,6 +508,7 @@ async def portada(
             sin_empresa=empresa_id is None,
             mostrar_novedades=_hay_novedades_pendientes(user),
             ca_abiertas=ca_abiertas,
+            ca_cierran_hoy=ca_cierran_hoy,
             lineas_por_revisar=lineas_por_revisar,
             n_proveedores=n_proveedores,
             n_productos=n_productos,
