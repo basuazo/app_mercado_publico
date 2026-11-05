@@ -294,6 +294,9 @@ Plan de fases en `14-auditoria-integral.md` §8 y paso a paso en §9. En corto:
    (~110 requests/h con `CA_TAMANO_PAGINA=10`).
 6. Probar H1 del 429 (límite por IP de los runners): cuando `ca` reciba un 429/429, correr
    `python scripts/smoke_test.py` desde el PC en ese minuto.
+7. F-tasa-respuesta (5-nov-2026): tras el deploy, mirar si siguen los 429 diurnos de `mercado-ca`. Si
+   desaparecen, la causa inferida (espera medida desde el inicio de la petición, no desde el fin de la
+   respuesta) queda verificada; si siguen, es otra.
 
 ## Backlog chico
 **`ca` pide `estado=proveedor_seleccionado` en el listado y ese filtro devuelve 0 [V 31-oct]; revisar al

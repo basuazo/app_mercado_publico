@@ -241,6 +241,17 @@ class RateLimiter:
             self._no_antes_de = hasta
         _log.warning("RateLimiter: enfriamiento de %.1f s (%s)", segundos, causa)
 
+    def tras_respuesta(self) -> None:
+        """Ninguna petición sale antes de 1/rps desde que terminó la respuesta anterior.
+
+        El bucket mide desde el INICIO de cada petición: durante una respuesta
+        lenta recarga su token y la siguiente salía apenas volvía la respuesta
+        (F-tasa-respuesta, logs del 5-nov-2026; causa INFERIDA). No es un
+        enfriamiento, no loguea, y nunca acorta uno más largo en curso.
+        """
+        with self._lock:
+            self._no_antes_de = max(self._no_antes_de, time.monotonic() + 1.0 / self._rps)
+
     def acquire(self) -> None:
         with self._lock:
             now = time.monotonic()
@@ -668,6 +679,10 @@ class BaseClient:
                 try:
                     response = self._http.request(method, url, **kwargs)  # type: ignore[arg-type]
                 finally:
+                    # Espera mínima desde el FIN de la respuesta, con cualquier
+                    # desenlace (F-tasa-respuesta). Los enfriar() de más abajo
+                    # son más largos y mandan.
+                    self._rate_limiter.tras_respuesta()
                     # Cuenta CADA request emitida, sea cual sea su desenlace:
                     # 429, 504, timeout y cada reintento por separado. El
                     # presupuesto de 9.000 es sobre lo que nosotros emitimos, no
