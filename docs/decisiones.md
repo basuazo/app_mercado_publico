@@ -186,3 +186,12 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   con "proceso/oferta/comprador" genéricos para portarlos a licitaciones.
 - **Mesa v0 sí** (Boris, 4-nov noche): CA vigentes de Ñuble sin predicción, antes de F-plat-4, para que el equipo use la
   plataforma con CA vivas. Orden: F-plat-2 → mesa v0 → F-plat-4 ∥ F-plat-comp → F-plat-5 ampliada ∥ F-plat-6 → F-plat-7.
+- **Extracción de anexos con LLM: en pausa, sin modelo fijado** (Boris, 5-nov). Evaluación de 9 modelos baratos de
+  OpenRouter sobre los 30 anexos (`data/mercado/anexos_eval/resultados/informe_2026-11-05_0140.txt`, US$0,69 en total):
+  ninguno cumple el criterio (≥ 95 % total, ≥ 90 % escaneados). El mejor fue `google/gemma-4-26b-a4b-it` (67,6 % total,
+  68,6 % escaneados, US$0,0075 los 30); `z-ai/glm-5.3-flash` 58,5 %; `anthropic/claude-haiku-5.5` 55,2 %.
+  `LLM_MODELO_EXTRACCION` queda vacío: la carga de anexos funciona en modo manual (F-plat-2 ya lo soporta). La fase de IA
+  se retoma al final del plan. Antes de probar modelos más caros, diagnosticar si el error está en el modelo o en el
+  juez/prompt: varios modelos leen **peor los PDF con texto que los escaneados** (Qwen3.6 y Qwen3.7: 0 % en texto), lo
+  que apunta [I] al formato del texto que se le pasa (tablas con `|`) o a convenciones de la verdad (multiplicadores,
+  consolidado) que el prompt no explica.

@@ -27,7 +27,8 @@ llevará a licitaciones: la lógica no debe depender de nada propio de CA (ver �
     `motivo_desierta`, `monto_disponible_clp`.
   - `oc_lineas_ca`: `region_proveedor`, `comuna_proveedor` por RUT → ubicación conocida del competidor.
   - `empresas.rut` (nullable) → "nosotros" entre los oferentes.
-- Reutilizar, no duplicar: `clave_comprador` (`app/mercado/comprador.py`, F-mesa-v0), `grupo_de` /
+- Reutilizar, no duplicar: la clave de comprador (`clave_unidad` de F-plat-4, movida a `app/mercado/comprador.py` en
+  F-mesa-v0), el registro de variables de `app/mercado/adjudicacion.py` (punto de extensión de F-plat-4), `grupo_de` /
   `familia_alimento` (`app/catalogos/mercado.py`). **RUT:** hay tres normalizadores [V] (`app/matching/engine.py:
   normalizar_rut`, `app/mercado/proveedores.py: normalizar_rut`, `app/catalogos/mercado.py: rut`): usar el de
   `app/mercado/proveedores.py` y anotar en el commit si los otros difieren en algún caso.

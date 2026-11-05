@@ -3,7 +3,7 @@
 > Para Claude Code. **Modelo: Sonnet** (UI HTMX sobre tablas existentes, contrato claro). Una fase = un commit,
 > **sin push**. **Sin migración** (si resulta imprescindible una, parar y proponerla). Va después de F-plat-2.
 > Origen: `docs/17-plan-pivote-plataforma-ca.md` §7 (decisión de Boris, 4-nov noche, en `decisiones.md`).
-> **Revisado contra el código el 4-nov-2026 (HEAD `67160e9`, con F-plat-2 sin commitear en el árbol).** Lo marcado
+> **Revisado contra el código el 4-nov-2026 (HEAD `67160e9`; ajustado el 5-nov a F-plat-4 `4fd52bc`).** Lo marcado
 > [V] está verificado. Si F-plat-2 cambió algo de lo que se cita, gana el código: anotarlo en el commit.
 
 ## Objetivo
@@ -45,8 +45,10 @@ se haga acá se descarta después.
   monto disponible, n líneas y bandera de detalle, n.º de anexos, plazo de entrega pedido. Enlaces: ficha interna
   (líneas y anexo) y ficha pública.
 - **Historial del comprador** (desplegable en la tarjeta, HTMX, se calcula al abrir): con
-  `clave_comprador(ca) = (organismo_rut, norm(unidad_compra))`, definida **en esta fase** en
-  `app/mercado/comprador.py` (F-plat-5 rev. §10 y F-plat-6 la reutilizan): últimos 12 meses → n.º de CA, monto
+  la clave de comprador **que ya existe**: `clave_unidad(organismo_rut, unidad_compra)` en
+  `app/mercado/adjudicacion.py` (F-plat-4, `4fd52bc` [V]). Moverla a `app/mercado/comprador.py` (con el mismo
+  nombre o como `clave_comprador`, dejando el import en `adjudicacion.py`) para que F-plat-5, F-plat-6 y
+  F-plat-comp usen **una sola** definición; no crear otra: últimos 12 meses → n.º de CA, monto
   adjudicado, mediana de oferentes (RUT distintos, regla de `decisiones.md` F-merc-1c), y los 3 proveedores que más
   le ganaron con su n.º de adjudicaciones. Es descriptivo; el análisis de competencia es F-plat-comp.
 - Pie: "Fuente: Dirección ChileCompra" (regla 8).
@@ -62,8 +64,8 @@ se haga acá se descarta después.
 
 ## 2. Tests
 Ownership (sin empresa → aviso; región fuera del territorio no aparece); solo vigentes (cerrada, cierre pasado,
-desierta no aparecen) con fechas en hora de Chile; filtros y conteo; orden por comunas prioritarias; `clave_comprador`
-(RUT y unidad normalizados; unidad nula); historial con "n.º de oferentes = RUT distintos"; sin `raw_json` en la query;
+desierta no aparecen) con fechas en hora de Chile; filtros y conteo; orden por comunas prioritarias; clave de comprador
+(una sola definición; RUT y unidad normalizados; unidad nula); historial con "n.º de oferentes = RUT distintos"; sin `raw_json` en la query;
 pie de fuente. `ruff`, `mypy app`, `pytest -rs` sin saltados, contra Postgres local.
 
 ## 3. Cierre
