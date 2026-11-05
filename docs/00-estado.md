@@ -351,6 +351,27 @@ El puente `backfill_cot_nuble.py` deja de hacer falta cuando corra `mercado-noct
 comparten cuota y pausa).
 
 ## Siguiente
+**Revisión CBS (5-nov, reunión Boris · Mario · Gonzalo) → `18-revision-cbs-y-flujos-operativos.md`, aprobado por
+Boris la misma noche (decisiones en su §5 y en `decisiones.md`).** Manda sobre `17-plan` §7 donde choque. Deja el flujo
+operativo objetivo (mesa → lote → ofertas → portal → venta → caja) y cuatro fases nuevas, en este orden:
+**F-plat-capas** (`prompt-F-plat-capas.md`, Sonnet: menú Demanda MP · Catálogo Proveedores · Inventario; inventario con
+planilla) ∥ **F-plat-anexos-2** (`prompt-F-plat-anexos-2.md`, Opus: carga masiva por código, endpoint con token, anexo >
+ficha > API, cola vigentes-primero, modelo de respaldo) → **F-plat-lote** (`prompt-F-plat-lote.md`, Opus: cotizar varias
+CA, solicitud de precios a proveedores, precios vencidos a los 15 días, «En trabajo») → **F-plat-seguimiento**
+(`prompt-F-plat-seguimiento.md`, Sonnet: checklist, cotización formal DOCX, ventas y caja) ∥ F-plat-7. Los porcentajes
+de P(ganar) se siguen mostrando (F-plat-5c descartada, en `archivo/`). Explicación técnica de los adjuntos para Gonzalo
+y Conejo: `19-adjuntos-ca-explicacion-tecnica.md`. Pendiente previo que sigue primero: `python scripts/smoke_test.py
+--documentos` (R8; la sonda espera la pausa de 429 persistida: correrla fuera de la pausa). **Regla 9 reescrita el 5-nov**
+(descarga directa del adjunto público como última alternativa; `prompt-F-plat-anexos-2.md` §2.7). Handoff de la sesión
+en el proyecto de Cowork (`claude/02-handoff-proxima-sesion.md`).
+**Primero, antes de la ventana D: F-plat-6-cruce** (`prompt-F-plat-6-cruce.md`, Sonnet, sin ticket ni migración). Hallazgo
+del log de `mercado-indices` del 5-nov 20:06 [V]: `cas_con_oc = 0` y `cas_sin_oc = 4231`; ninguna CA cruza con su OC
+porque `demanda.py` usa `compras_agiles.id_orden_compra`, que solo llenaba el job viejo `ca` (apagado desde el 31-oct),
+mientras `mercado.py` guarda la OC en `ca_cotizaciones.id_oc`. Sin el cruce no se puede medir la clave del comprador
+(queda en RUT) y la regla de doble conteo trataría todo como «sin OC» en cuanto haya líneas `ok`. Paso previo humano:
+`scripts/mercado/sonda_cruce_ca_oc.py` (solo lectura) para ver si `id_oc` calza con `oc_lineas_ca.codigo_oc` tal cual,
+normalizado o nunca; el arreglo depende de eso (prompt §2).
+
 **Plan confirmado (3-nov):** `17-plan-pivote-plataforma-ca.md` (plataforma de intermediación de CA: líneas 1:1,
 anexos, proveedores y costos, P(ganar), mesa del día, demanda) con prompts `prompt-F-plat-1..7.md` y reglas 24–26
 en `CLAUDE.md`. Orden: **F-merc-1 (Opus, ahora)** → F-merc-2 (Sonnet) → F-plat-3 (Sonnet) → F-plat-1 (Opus) →

@@ -52,7 +52,15 @@ Render solo sirve la web; correo por API REST de Brevo.
    los *_llamado es falsa (verificado 22-sep-2026): ignorarla.
 7. Compra Ágil NO filtra por organismo: filtrar por region y luego localmente.
 8. Toda publicación de datos lleva "Fuente: Dirección ChileCompra".
-9. Prohibido scrapear HTML de mercadopublico.cl; solo la API oficial.
+9. Prohibido scrapear HTML de mercadopublico.cl para listar o leer procesos, ofertas u OC: eso viene
+   de la API oficial o de datos abiertos. Única excepción (5-nov-2026, Boris; términos de ChileCompra
+   leídos: los documentos de los procesos son información pública y el bloqueo es por BOT que
+   comprometa disponibilidad): descargar el ADJUNTO PÚBLICO de una CA en alcance por su URL directa,
+   y solo como ÚLTIMA ALTERNATIVA, en este orden: (1) la API, si la sonda `--documentos` confirma una
+   ruta; (2) subida manual o carga masiva en la plataforma; (3) descarga directa. La descarga directa va
+   uno a uno, ≤ 1 req/s, tope diario propio (`MERCADO_ANEXOS_MAX`), solo CA vigentes `sin_detalle`
+   con `n_documentos > 0`, cliente identificado, sin eludir ninguna protección (un 403/429 corta la
+   corrida y persiste una pausa como la del 429 de la API), sin parsear HTML. Fuente siempre citada.
 
 ## Free tier — reglas duras
 10. Cero estado en memoria o disco local que importe: el proceso es DESECHABLE

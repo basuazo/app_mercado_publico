@@ -355,3 +355,15 @@ solo para CA.
 
 **Orden nuevo.** F-plat-2 (en curso) → [mesa v0, si Boris la quiere] → **F-plat-4 ∥ F-plat-comp** → F-plat-5
 ampliada (mesa + estrategia + competencia, sombra 4 semanas) ∥ F-plat-6 → F-plat-7 → F-retiro.
+
+## 8. Revisión CBS 5-nov (reunión con Mario y Gonzalo) — ver `18-revision-cbs-y-flujos-operativos.md`
+
+Manda sobre §7 donde choque. En corto: piloto chico y de calidad (Chillán, pocas CA al día); dos cuellos de
+botella (anexos y precios de proveedores); catálogo en tres capas (mi oferta / proveedores / demanda); flujo por
+lotes desde la mesa con solicitud de precios a proveedores; seguimiento administrativo y caja; IA barata con modelo
+de respaldo; rediseño visual después (P(ganar) se sigue mostrando: Boris lo decidió esa noche). Fases nuevas:
+F-plat-capas, F-plat-anexos-2, F-plat-lote, F-plat-seguimiento (orden y dependencias en `18-…` §3).
+Antes de ellas, **F-plat-6-cruce** (`prompt-F-plat-6-cruce.md`, Sonnet): la demanda de F-plat-6 no cruza ninguna CA con su
+OC en producción (`cas_con_oc = 0`, 5-nov) porque lee `compras_agiles.id_orden_compra` y la ingesta vigente guarda la OC
+en `ca_cotizaciones.id_oc`; sin ese cruce la clave del comprador no se puede medir. Sonda de solo lectura primero.
+

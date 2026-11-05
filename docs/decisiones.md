@@ -221,3 +221,26 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   evaluados, pero no en los 6 anteriores, así que se descartó por sobreajuste.
 - **Umbrales de «pedir precio firme»: 200 kg, 300 L, 500 u en 3 meses** (F-plat-6, default del prompt; `DEMANDA_UMBRALES`
   en JSON). A revisar por Boris con las 20 primeras recomendaciones reales (prompt §5.3).
+
+## Revisión CBS (5-nov, Boris · Mario · Gonzalo; aprobado por Boris esa noche)
+- **Flujo operativo objetivo y fases nuevas:** `18-revision-cbs-y-flujos-operativos.md` (manda sobre `17-plan` §7).
+  Piloto chico y de calidad (Chillán, 1–5 CA/día); foco en dos cuellos de botella: anexos y precios de proveedores.
+- **Catálogo en tres capas:** **Demanda MP** (`/catalogo`, lo que el mercado demanda), **Catálogo Proveedores**
+  (`/proveedores`) e **Inventario** (`/inventario`, nuestras existencias; planilla simple ahora, integraciones con
+  APIs de proveedores después). La llave común es `producto_canonico × producto_formato`.
+- **Precio de proveedor vencido a los 15 días** (`empresas.dias_vigencia_precio`, default 15): `mejor_costo`
+  excluye vencidos salvo que no quede otro, y toda la UI lo marca.
+- **Plazo de pago del comprador para la caja:** 30 días por defecto, ajustable.
+- **P(ganar) se muestra desde el primer día** (como ya está, etiquetada «modo sombra»); no se oculta. F-plat-5c
+  descartada (`archivo/prompt-F-plat-5c-descartado.md`).
+- **Anexos:** la plataforma los recibe (subida, carga masiva por código, endpoint con token); cómo se obtienen es
+  decisión aparte con los términos del portal a la vista; regla 9 vigente. Sonda `--documentos` primero (R8).
+- Prompts aprobados: `prompt-F-plat-capas.md`, `prompt-F-plat-anexos-2.md`, `prompt-F-plat-lote.md`,
+  `prompt-F-plat-seguimiento.md`.
+- **Regla 9 reescrita (5-nov, Boris):** scrapear listados/fichas sigue prohibido (la API lo cubre). Descargar el
+  adjunto público de una CA en alcance por URL directa queda permitido **como última alternativa** (API → subida
+  manual/carga masiva → descarga directa), a ritmo humano y cortando ante 403/429. Base [V, leída el 5-nov]: las
+  Políticas y Condiciones de Uso de ChileCompra (09-02-2026) declaran pública la información y los documentos de los
+  procesos y reservan el bloqueo a «BOT que comprometan la disponibilidad»; no prohíben el acceso automatizado como
+  tal. Las condiciones de la API solo se leyeron en parte [I: revisar el texto completo en chilecompra.cl/api/].
+
