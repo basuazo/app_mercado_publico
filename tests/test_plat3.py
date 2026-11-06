@@ -154,7 +154,7 @@ def test_retencion_no_purga_ca_de_region_agregada_por_una_empresa(engine, settin
     run_retencion(engine, settings)
     with Session(engine) as s:
         assert s.get(CompraAgil, "R8").raw_json == {"x": 1}  # type: ignore[union-attr]
-        assert s.get(CompraAgil, "R13").raw_json is None  # type: ignore[union-attr]
+        assert s.get(CompraAgil, "R13") is None  # fuera del territorio: se borra (F-plat-purga-legado)
 
 
 # ---------------------------------------------------------------------------
@@ -779,7 +779,7 @@ def test_retencion_protege_el_setting_aunque_las_empresas_no_incluyan_la_region(
     with Session(engine) as s:
         assert s.get(CompraAgil, "R16").raw_json == {"x": 1}  # type: ignore[union-attr]
         assert s.get(CompraAgil, "R8").raw_json == {"x": 1}  # type: ignore[union-attr]
-        assert s.get(CompraAgil, "R13").raw_json is None  # type: ignore[union-attr]
+        assert s.get(CompraAgil, "R13") is None  # fuera del territorio: se borra (F-plat-purga-legado)
 
 
 def test_precio_con_fecha_anterior_no_pisa_el_actual(engine):

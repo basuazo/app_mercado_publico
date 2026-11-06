@@ -1272,7 +1272,8 @@ def test_retencion_no_purga_ca_de_mercado_regiones(settings, engine):
     assert r["ca_purgadas"] == 1
     with Session(engine) as s:
         assert s.get(CompraAgil, "NUBLE").raw_json == {"x": 1}  # type: ignore[union-attr]
-        assert s.get(CompraAgil, "RM").raw_json is None  # type: ignore[union-attr]
+        # F-plat-purga-legado: fuera del territorio y terminal, ya no se vacía: se borra.
+        assert s.get(CompraAgil, "RM") is None
         assert s.execute(select(CaProducto.ca_codigo)).scalars().all() == ["NUBLE"]
     assert _contar(engine, CaCotizacion) == 1
 

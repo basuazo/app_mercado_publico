@@ -15,6 +15,20 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 11, 7),
+        titulo="Licitaciones archivadas y CA de otras regiones fuera de la base",
+        descripcion=(
+            "Para administradores. Para liberar espacio en la base (estaba al 75 % de su límite), "
+            "las licitaciones de la app anterior se respaldaron en un archivo local y se borraron "
+            "de la base, junto con sus matches, seguimientos y opiniones. También se borraron las "
+            "Compras Ágiles de otras regiones que ya cerraron y que nadie trabajó, cotizó ni "
+            "siguió. Ñuble y las regiones de las empresas activas no se tocan. Desde ahora la "
+            "limpieza diaria borra sola las Compras Ágiles de fuera del territorio 90 días después "
+            "de su cierre. En «Archivo», Oportunidades y Mi registro avisan que las licitaciones "
+            "están archivadas. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 11, 6),
         titulo="Impuestos específicos (ILA) en el catálogo: neto sin impuestos, bruto con todos",
         descripcion=(

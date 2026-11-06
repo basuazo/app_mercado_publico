@@ -322,3 +322,27 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 - **Si una categoría tiene impuesto específico, se maneja en el catálogo** (familia → producto canónico), no por
   proveedor ni por planilla. Familias donde la tasa depende del producto (azúcar) quedan «por clasificar», sin suponer
   tasa.
+
+## Purga del legado (F-plat-purga-legado, 6-nov, Boris)
+Contexto [V, Neon production, 6-nov]: la base pesaba 376 MB de 0,5 GB (75 %); `compras_agiles` 130 MB con 186.710 de
+195.178 filas fuera de Ñuble; `licitaciones` 59 MB (43.136, de 2008 a oct-2026); `licitacion_items` 28 MB. La
+retención nunca borraba filas, solo vaciaba `raw_json`.
+- **Licitaciones: se borran todas, con respaldo previo (6-nov).** La app antigua queda archivada; si vuelve, se
+  re-ingesta desde la API o se restaura el respaldo. Se van con ellas `licitacion_items`, `ofertas_competencia` y las
+  filas con `fuente = 'licitaciones'` de `oportunidades_match` (con sus `alertas`), `oportunidades_seguidas` y
+  `match_feedback`. Para las licitaciones esto reemplaza «la retención nunca borra lo que un usuario tocó» (09-oct).
+  Sin regla de retención nueva: su ingesta está apagada (regla 24).
+- **CA de otras regiones: se borran las no protegidas, con respaldo previo (6-nov).** Se borra una CA solo si está
+  fuera del territorio activo (o sin región), ya no está vigente (estado terminal, o cerró hace más de 90 días) y no
+  la protege nada: match con alerta pendiente, seguida, `ca_trabajo`, predicción, oferta propia, lote, requisito,
+  venta, cotización, línea, anexo, evaluación, ni (agregado al implementar) comentario o evento del equipo. Con ella
+  se van sus `ca_productos`, sus matches (con alertas) y su `match_feedback`. Ñuble y cualquier región activa no se
+  tocan. Criterio único en `app/core/retencion.py` (`filtro_ca_fuera_territorio`).
+- **La retención lo mantiene:** entrada `ca_fuera_territorio` de `retencion.PURGAS`, por fila, tope 20.000 CA por
+  corrida (conteo `ca_fuera_territorio_borrados`). Sin territorio conocido no borra nada.
+- **Mecánica:** `scripts/mantenimiento/purgar_legado.py` (lo corre Boris, de noche, con los crons GH en pausa):
+  `--medir`, `--respaldar DIR` (CSV.gz por tabla + manifiesto con sha256 + RESTAURAR.md, fuera del repo),
+  `--borrar --respaldo …` (se niega sin manifiesto, con más de 24 h, de otro host o territorio, o que no calce
+  ± 0,5 %; usa el mismo instante de corte del respaldo) y `--compactar` (`VACUUM FULL` tabla por tabla, solo
+  22:00–07:00 de Chile).
+- **Antes y después:** _pendiente — Boris anota acá el `--medir` previo y el posterior._
