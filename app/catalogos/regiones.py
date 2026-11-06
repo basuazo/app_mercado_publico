@@ -6,6 +6,8 @@ En oc-da la región viene como TEXTO ("Región del Ñuble", a veces con espacio 
 
 from __future__ import annotations
 
+import re
+
 from app.catalogos.mercado import norm
 from app.core.logging import get_logger
 
@@ -20,10 +22,12 @@ _REGIONES: tuple[tuple[str, int], ...] = (
 )  # fmt: skip
 _SIN_DATO = {"", "na", "n/a", "null", "sin informacion", "sin dato"}
 _AVISADOS: set[str] = set()
+_GUIONES = re.compile(r"[-‐-―−]")
 
 
 def region_codigo(texto: str | None) -> int | None:
-    t = norm(texto)
+    # Guiones (y rayas) como espacio: "Bío-Bío" → "bio bio". Solo acá, sin tocar `norm` global.
+    t = norm(_GUIONES.sub(" ", texto) if texto else texto)
     if t in _SIN_DATO:
         return None
     for fragmento, codigo in _REGIONES:
