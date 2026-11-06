@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import LoginRequired
 from app.api.routes import abastecimiento as abastecimiento_router
+from app.api.routes import anexos as anexos_router
 from app.api.routes import api as api_router
 from app.api.routes import auth as auth_router
 from app.api.routes import catalogo as catalogo_router
@@ -134,6 +135,7 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     app.include_router(competencia_router.router)
     app.include_router(abastecimiento_router.router)
     app.include_router(equipo_router.router)
+    app.include_router(anexos_router.router)  # antes que catalogo: /catalogo/anexos/carga
     app.include_router(catalogo_router.router)
     app.include_router(inventario_router.router)
     app.include_router(api_router.router)

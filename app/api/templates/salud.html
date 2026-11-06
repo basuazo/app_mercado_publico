@@ -121,6 +121,27 @@
 <div class="mb-4"></div>
 {% endif %}
 
+<!-- Anexos y lectura automática (F-plat-anexos-2) -->
+{% set ax = salud.anexos %}
+<h5>Anexos y lectura automática</h5>
+<p class="small mb-1">
+  Gasto del mes: <strong>{{ '%.2f' % ax.gasto_mes_usd }} USD</strong> de {{ '%.2f' % ax.presupuesto_usd }} ({{ ax.requests_mes | numero }} llamada(s)) ·
+  modelo: {{ ax.modelo or 'sin configurar' }} · respaldo: {{ ax.modelo_respaldo or 'sin respaldo' }}
+  {% if ax.respaldo_total %}· <span class="text-warning-emphasis">{{ ax.respaldo_total }} anexo(s) leído(s) por el respaldo este mes</span>{% endif %}
+</p>
+{% if ax.por_modelo %}
+<table class="table table-sm table-bordered w-auto">
+  <thead class="table-dark"><tr><th scope="col">Modelo que respondió (mes)</th><th scope="col">Anexos</th><th scope="col">Por respaldo</th></tr></thead>
+  <tbody>{% for m in ax.por_modelo %}<tr><td>{{ m.modelo }}</td><td class="num">{{ m.anexos }}</td><td class="num">{{ m.respaldo }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+<p class="small mb-1">Anexos del mes por fuente:
+  {% for f, n in ax.por_fuente.items() %}{{ f }} {{ n }}{% if not loop.last %} · {% endif %}{% else %}ninguno{% endfor %}</p>
+<p class="small mb-4">Descarga directa del adjunto público: {% if ax.directa.habilitada %}<span class="badge bg-warning text-dark">encendida</span>{% else %}<span class="badge bg-secondary">apagada</span>{% endif %}
+  · hoy {{ ax.directa.descargas_hoy }} de {{ ax.directa.tope_dia }}
+  · cortes por 403/429 en 7 días: <strong{% if ax.directa.cortes_7_dias > 2 %} class="text-danger"{% endif %}>{{ ax.directa.cortes_7_dias }}</strong>{% if ax.directa.cortes_7_dias > 2 %} (más de 2: apagar y volver al flujo manual){% endif %}
+  {% if ax.directa.pausa_hasta %}· en pausa hasta {{ ax.directa.pausa_hasta }} (UTC){% endif %}</p>
+
 <!-- Vocabulario por rubro (F-ca-explorar) -->
 <h5>Vocabulario por rubro</h5>
 <p class="small text-muted mb-4">

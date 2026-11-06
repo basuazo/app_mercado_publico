@@ -327,7 +327,7 @@ def tarjetas(
         ca: int(n)
         for ca, n in session.execute(
             select(CaLinea.ca_codigo, func.count())
-            .where(CaLinea.ca_codigo.in_(codigos))
+            .where(CaLinea.ca_codigo.in_(codigos), CaLinea.estado != "reemplazada")
             .group_by(CaLinea.ca_codigo)
         )
     }

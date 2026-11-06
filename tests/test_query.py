@@ -29,11 +29,12 @@ def test_url_ficha_licitacion_escapa_codigo() -> None:
     assert "idlicitacion=1300%2F31%20LE26%26x%3D1" in url
 
 
-def test_url_ficha_compra_agil_sin_cambios() -> None:
-    """Compra Ágil sigue apuntando al buscador genérico — fuera de alcance
-    de este fix (ver docs/10-enlace-ficha.md §5)."""
-    url = _url_ficha("compras_agiles", "CA-001")
-    assert url == "https://buscador.mercadopublico.cl/compra-agil"
+def test_url_ficha_compra_agil_lleva_el_codigo() -> None:
+    """F-plat-anexos-2 §2.5: la ficha de la CA, no el buscador genérico ([I]: ver
+    `URL_FICHA_CA`). El código va url-encoded."""
+    url = _url_ficha("compras_agiles", "1234-56-COT26")
+    assert url == "https://buscador.mercadopublico.cl/ficha?code=1234-56-COT26"
+    assert "code=CA%2F1%26x" in _url_ficha("compras_agiles", "CA/1&x")
 
 
 # ---------------------------------------------------------------------------

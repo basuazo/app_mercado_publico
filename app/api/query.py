@@ -50,6 +50,18 @@ from app.models.tables import (
 FUENTES_VALIDAS = ("licitaciones", "compras_agiles")
 
 
+# F-plat-anexos-2 §2.5: ficha pública de UNA Compra Ágil en el buscador. [I] NO verificada: el
+# buscador es una SPA y responde 403 de CloudFront a clientes sin navegador (R8, 4-nov), así que
+# la forma `/ficha?code=` no se pudo comprobar desde acá. Boris la confirma con un clic en un
+# navegador real; si no abre la CA, se corrige SOLO esta constante (regla 23).
+URL_FICHA_CA = "https://buscador.mercadopublico.cl/ficha?code={codigo}"
+
+
+def url_ficha_ca(codigo: str) -> str:
+    """Enlace «Abrir en Mercado Público» de una Compra Ágil (ver `URL_FICHA_CA`)."""
+    return URL_FICHA_CA.format(codigo=quote(codigo, safe=""))
+
+
 def _url_ficha(fuente: str, codigo: str) -> str:
     """URL de la ficha oficial en Mercado Público.
 
@@ -59,7 +71,7 @@ def _url_ficha(fuente: str, codigo: str) -> str:
     `CodigoExterno`); en cambio `idlicitacion=<CodigoExterno>` hace que el
     propio Mercado Público resuelva y redirija al `qs` correcto — verificado
     en `docs/10-enlace-ficha.md` (reproduce byte a byte el token real). Para
-    Compra Ágil se apunta al buscador público vigente. Ver
+    Compra Ágil, la ficha de la CA en el buscador (:func:`url_ficha_ca`, [I]). Ver
     `mostrar_ficha_oficial` para cuándo conviene exponer este enlace en la UI.
     """
     if fuente == "licitaciones":
@@ -67,7 +79,7 @@ def _url_ficha(fuente: str, codigo: str) -> str:
             "https://www.mercadopublico.cl/Procurement/Modules/RFB/"
             f"DetailsAcquisition.aspx?idlicitacion={quote(codigo, safe='')}"
         )
-    return "https://buscador.mercadopublico.cl/compra-agil"
+    return url_ficha_ca(codigo)
 
 
 def mostrar_ficha_oficial(estado: str | None) -> bool:

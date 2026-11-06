@@ -251,3 +251,24 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   procesos y reservan el bloqueo a «BOT que comprometan la disponibilidad»; no prohíben el acceso automatizado como
   tal. Las condiciones de la API solo se leyeron en parte [I: revisar el texto completo en chilecompra.cl/api/].
 
+## Anexos (F-plat-anexos-2, 6-nov)
+- **El anexo manda sobre la API:** las líneas `api` de una CA pasan a `reemplazada` (no se borran: son la evidencia)
+  al confirmar una línea de anexo, al «Anexo resuelto» o al agregar una línea manual con la casilla «la API no
+  describe bien esta CA». Las manuales nunca se tocan. Una `reemplazada` no cuenta para la bandera, la mesa, la oferta
+  ni el índice, y no se puede confirmar.
+- **Efecto en el índice de precios [V en el código]:** el índice atribuye ofertas por `codigo_unspsc` y descarta las
+  líneas de anexo (`indice.lineas_atribuibles`). Al reemplazar las `api`, la CA deja de aportar observaciones (no
+  «pasa a usar las del anexo», como suponía el prompt). Es lo correcto en el caso D: la oferta por una línea pobre
+  («alimentos varios») es el precio del lote entero y ensuciaría el índice de un producto.
+- **Varios documentos por CA conviven:** un anexo nuevo reemplaza los placeholders y las líneas sin confirmar de un
+  anexo anterior con el MISMO nombre (relectura); las de otro documento se quedan (Anexo 1 y Anexo 2 de un lote).
+- **Mismo archivo, una sola vez:** `UNIQUE (ca_codigo, sha256)`; un duplicado no llama al modelo.
+- **Carga masiva sin estado en el servidor (regla 10):** el navegador manda un archivo por request; un ZIP se reenvía
+  por tramos de ≤20 s con `desde` (lo ya cargado vuelve como duplicado sin leerse). El supuesto «Render corta a los
+  30 s» no se pudo verificar [I]; la subida individual de F-plat-2 ya tarda ~1 min en producción.
+- **Token externo:** solo el sha256 en `empresas.token_anexos_hash`; comparación con `hmac.compare_digest` contra
+  todas las empresas con token (3–10); 60 requests/min por token en `sync_state`; 401 idéntico para token inválido,
+  revocado o de empresa inactiva, antes de mirar la CA.
+- **Descarga directa (§2.7) apagada e inerte** hasta la captura de la URL del adjunto (R8). Si en una semana hay más
+  de 2 cortes por 403/429 (`/salud` los cuenta), se apaga y se vuelve al flujo manual.
+

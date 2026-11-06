@@ -50,6 +50,9 @@ _log = logging.getLogger(__name__)
 FUENTE_CURSOR = "mercado_catalogo"
 LOTE_CA = 500  # CA por lote: ~2.000 productos (regla 12: nunca todo en memoria)
 N_MANUAL_DESDE = 1000  # `n` de las líneas manuales: nunca choca con la posición de la API
+# F-plat-anexos-2: línea de la API que un anexo (o una persona) reemplazó. Se conserva como
+# evidencia de lo que dijo la API; no cuenta para la bandera, la mesa, el índice ni la oferta.
+REEMPLAZADA = "reemplazada"
 BASE_NOMBRE = {"kg": "kilo", "L": "litro", "u": "unidad"}
 UNIDADES_BASE = ("kg", "L", "u")
 _LARGO_NOMBRE = 200
@@ -212,6 +215,7 @@ def recalcular_detalle_lineas(session: Session, ca_codigos: Iterable[str]) -> No
       leyeron de un anexo esperan confirmación como `dudosa`: «líneas por revisar» (F-plat-2);
     - `completo`: todas las líneas `ok`.
 
+    Las `reemplazada` (F-plat-anexos-2) no cuentan: una CA con solo esas es `sin_detalle`.
     Una línea `pendiente` normal (las reglas no la reconocieron) NO es «sin detalle»: la CA sí
     trae sus líneas. F-plat-2 descarga anexos solo de las CA `sin_detalle`."""
     codigos = sorted(set(ca_codigos))
@@ -221,7 +225,7 @@ def recalcular_detalle_lineas(session: Session, ca_codigos: Iterable[str]) -> No
     anexo_sin_resolver: set[str] = set()
     for ca_codigo, estado, origen in session.execute(
         select(CaLinea.ca_codigo, CaLinea.estado, CaLinea.origen)
-        .where(CaLinea.ca_codigo.in_(codigos))
+        .where(CaLinea.ca_codigo.in_(codigos), CaLinea.estado != REEMPLAZADA)
         .distinct()
     ):
         estados[ca_codigo].add(estado)
@@ -310,6 +314,13 @@ def _procesar_lote(
             norm_t = normalizar_texto(texto)
             ln = existentes.get((ca.codigo, pos))
             if ln is not None and ln.origen == "manual":
+                continue
+            if ln is not None and ln.estado == REEMPLAZADA:
+                # El anexo manda (F-plat-anexos-2): se actualiza la evidencia, nunca el estado.
+                if ln.texto_origen != texto or ln.cantidad != prod.cantidad:
+                    ln.texto_origen, ln.texto_norm = texto, norm_t
+                    ln.cantidad = prod.cantidad
+                    stats["lineas_actualizadas"] += 1
                 continue
 
             reviewed = ln is not None and ln.revisado_por is not None
@@ -569,6 +580,81 @@ def _upsert_alias(
     session.flush()
 
 
+MUESTRA_HISTORICAS = 200  # §2.4: CA históricas que se listan en «líneas por revisar»
+POR_REVISAR = ("pendiente", "dudosa")
+
+
+def _ca_vigente(ahora: datetime) -> Any:
+    """Cierre futuro: la CA todavía se puede ofertar (la cola las pone primero)."""
+    return and_(CompraAgil.fecha_cierre.isnot(None), CompraAgil.fecha_cierre > ahora)
+
+
+def muestra_historicas(regiones: list[int], ahora: datetime) -> Any:
+    """Subconsulta con los códigos de las `MUESTRA_HISTORICAS` CA históricas (cierre pasado o
+    sin cierre) con líneas por revisar, de mayor a menor monto. Todas las líneas de `ca_lineas`
+    son de alimentos (F-plat-1 solo crea esas: es el «dentro de G_ALIM» del prompt)."""
+    return (
+        select(CompraAgil.codigo)
+        .join(CaLinea, CaLinea.ca_codigo == CompraAgil.codigo)
+        .where(
+            CompraAgil.region.in_(regiones),
+            CaLinea.estado.in_(POR_REVISAR),
+            ~_ca_vigente(ahora),
+        )
+        .group_by(CompraAgil.codigo, CompraAgil.monto_disponible_clp)
+        .order_by(CompraAgil.monto_disponible_clp.desc().nulls_last(), CompraAgil.codigo)
+        .limit(MUESTRA_HISTORICAS)
+    )
+
+
+def conteo_por_revisar(session: Session, regiones: list[int], ahora: datetime) -> dict[str, int]:
+    """«Líneas por revisar» partidas (F-plat-anexos-2 §2.4): líneas de CA vigentes, líneas de la
+    muestra de históricas, y cuántas CA históricas quedan fuera de la muestra."""
+    if not regiones:
+        return {"vigentes": 0, "historicas_muestra": 0, "historicas_resto_cas": 0}
+    base = (
+        select(func.count())
+        .select_from(CaLinea)
+        .join(CompraAgil, CompraAgil.codigo == CaLinea.ca_codigo)
+        .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(POR_REVISAR))
+    )
+    vigentes = session.execute(base.where(_ca_vigente(ahora))).scalar_one()
+    muestra = session.execute(
+        base.where(CaLinea.ca_codigo.in_(muestra_historicas(regiones, ahora)))
+    ).scalar_one()
+    cas_hist = session.execute(
+        select(func.count(func.distinct(CaLinea.ca_codigo)))
+        .join(CompraAgil, CompraAgil.codigo == CaLinea.ca_codigo)
+        .where(
+            CompraAgil.region.in_(regiones),
+            CaLinea.estado.in_(POR_REVISAR),
+            ~_ca_vigente(ahora),
+        )
+    ).scalar_one()
+    return {
+        "vigentes": int(vigentes),
+        "historicas_muestra": int(muestra),
+        "historicas_resto_cas": max(0, int(cas_hist) - MUESTRA_HISTORICAS),
+    }
+
+
+def reemplazar_lineas_api(session: Session, ca_codigo: str) -> int:
+    """El anexo manda sobre la API (acuerdo del 5-nov, F-plat-anexos-2 §2.1): las líneas
+    `origen = 'api'` de la CA pasan a `reemplazada`. No se borran (son la evidencia de lo que
+    dijo la API); las manuales y las de anexo no se tocan. Devuelve cuántas cambió. Sin commit."""
+    res = session.execute(
+        update(CaLinea)
+        .where(
+            CaLinea.ca_codigo == ca_codigo,
+            CaLinea.origen == "api",
+            CaLinea.estado != REEMPLAZADA,
+        )
+        .values(estado=REEMPLAZADA)
+        .execution_options(synchronize_session="fetch")
+    )
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
 def confirmar_linea(
     session: Session,
     linea: CaLinea,
@@ -584,7 +670,12 @@ def confirmar_linea(
 
     `cantidad` solo se acepta en las líneas leídas de un anexo (F-plat-2): en las de la API
     manda la API. Una línea de anexo confirmada sigue con `origen = 'anexo'`; el placeholder
-    confirmado pasa a `api` (la persona le dio producto al texto de la API)."""
+    confirmado pasa a `api` (la persona le dio producto al texto de la API).
+
+    Confirmar una línea leída de un anexo deja `reemplazada` las líneas de la API de la CA
+    (F-plat-anexos-2 §2.1: el anexo manda)."""
+    if linea.estado == REEMPLAZADA:
+        raise CatalogoError("Esa línea fue reemplazada por el anexo: no se confirma")
     producto = _producto_activo(session, producto_id)
     formato = _formato_valido(session, producto.id, formato_id)
     if cantidad is not None:
@@ -602,6 +693,8 @@ def confirmar_linea(
         linea.origen = "api"
     linea.revisado_por, linea.revisado_en = usuario_id, ahora
     session.flush()
+    if linea.anexo_id is not None:
+        reemplazar_lineas_api(session, linea.ca_codigo)
     clave = linea.texto_norm or normalizar_texto(linea.texto_origen)
     _upsert_alias(session, clave, producto.id, linea.formato_id, usuario_id)
     reaplicadas = reaplicar_alias(session, clave, exceptuar_id=linea.id)
@@ -662,8 +755,12 @@ def agregar_linea_manual(
     formato_id: int | None,
     cantidad: float | None,
     usuario_id: int,
+    reemplaza_api: bool = False,
 ) -> CaLinea:
-    """ "Agregar líneas a mano" (hasta que F-plat-2 lea los anexos): `origen=manual`, `ok`."""
+    """ "Agregar líneas a mano": `origen=manual`, `ok`.
+
+    `reemplaza_api` (casilla «la API no describe bien esta CA», F-plat-anexos-2 §2.1 caso B: el
+    detalle está en la ficha): las líneas de la API pasan a `reemplazada`."""
     producto = _producto_activo(session, producto_id)
     formato = _formato_valido(session, producto.id, formato_id)
     if cantidad is not None and cantidad <= 0:
@@ -689,6 +786,8 @@ def agregar_linea_manual(
     )
     session.add(ln)
     session.flush()
+    if reemplaza_api:
+        reemplazar_lineas_api(session, ca.codigo)
     recalcular_detalle_lineas(session, [ca.codigo])
     return ln
 

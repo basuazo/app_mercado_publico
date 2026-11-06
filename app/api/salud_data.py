@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import Integer, cast, func, select, text
 from sqlalchemy.orm import Session
 
 from app.api.query import resumen_evaluacion_modelo
@@ -66,8 +66,12 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
     email_sync = next((f for f in fuentes if f.fuente == "alerts_email"), None)
     correos_hoy = email_sync.requests_usadas_hoy if email_sync else 0
 
+    # `anexos_*` (F-plat-anexos-2) no son requests de la API: descargas directas, límite del
+    # endpoint externo, pausas y cortes; van en su propia sección.
     total_api_hoy = sum(
-        f.requests_usadas_hoy for f in fuentes if f.fuente != "alerts_email"
+        f.requests_usadas_hoy
+        for f in fuentes
+        if f.fuente != "alerts_email" and not f.fuente.startswith("anexos_")
     )
 
     tam = tamano_bd(session)
@@ -76,7 +80,7 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
     errores = [
         {"fuente": f.fuente, "nota": f.notas}
         for f in fuentes
-        if f.notas
+        if f.notas and not f.fuente.startswith("anexos_")
     ][-10:]
 
     return {
@@ -101,6 +105,65 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
         "tablas_mercado": _tablas_mercado_salud(session),
         # F-plat-4: metas del peldaño 2 en verde/rojo (no se aflojan: se reportan tal cual).
         "modelo_adjudicacion": resumen_evaluacion_modelo(session),
+        "anexos": _anexos_salud(session, settings),
+    }
+
+
+def _anexos_salud(session: Session, settings: Settings) -> dict[str, Any]:
+    """Anexos y lectura automática (F-plat-anexos-2 §2.6–§2.7): gasto del mes, anexos leídos por
+    modelo y cuántos cayeron al respaldo, por fuente, y el estado de la descarga directa."""
+    from datetime import UTC
+
+    from app.core.tiempo import ahora_utc
+    from app.ingest import anexos_directo as ad
+    from app.models.tables import CaAnexo, LlmUso
+
+    ahora = ahora_utc()
+    local = ahora.replace(tzinfo=UTC).astimezone(TZ_CHILE)
+    inicio_mes = (
+        local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+        .replace(tzinfo=None)
+    )
+    uso = session.get(LlmUso, local.strftime("%Y-%m"))
+    por_modelo = [
+        {"modelo": m or "(sin modelo)", "anexos": int(n), "respaldo": int(r or 0)}
+        for m, n, r in session.execute(
+            select(
+                CaAnexo.extraccion_modelo,
+                func.count(),
+                func.sum(cast(CaAnexo.extraccion_respaldo, Integer)),
+            )
+            .where(CaAnexo.subido_en >= inicio_mes, CaAnexo.extraccion_modelo.isnot(None))
+            .group_by(CaAnexo.extraccion_modelo)
+            .order_by(func.count().desc())
+        ).tuples()
+    ]
+    por_fuente = {
+        f: int(n)
+        for f, n in session.execute(
+            select(CaAnexo.fuente, func.count())
+            .where(CaAnexo.subido_en >= inicio_mes)
+            .group_by(CaAnexo.fuente)
+        ).tuples()
+    }
+    pausa = ad.pausa_hasta(session)
+    return {
+        "gasto_mes_usd": float(uso.costo_usd) if uso else 0.0,
+        "requests_mes": int(uso.requests) if uso else 0,
+        "presupuesto_usd": settings.llm_presupuesto_mes_usd,
+        "modelo": settings.llm_modelo_extraccion or None,
+        "modelo_respaldo": settings.llm_modelo_respaldo or None,
+        "por_modelo": por_modelo,
+        "respaldo_total": sum(m["respaldo"] for m in por_modelo),
+        "por_fuente": por_fuente,
+        "directa": {
+            "habilitada": settings.anexos_descarga_directa,
+            "descargas_hoy": ad.descargas_del_dia(session, ahora),
+            "tope_dia": settings.mercado_anexos_max_dia,
+            "cortes_7_dias": ad.cortes_recientes(session, ahora),
+            "pausa_hasta": pausa.isoformat() if pausa is not None and pausa > ahora else None,
+        },
     }
 
 

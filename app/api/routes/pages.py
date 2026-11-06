@@ -473,7 +473,7 @@ async def portada(
 
     from app.mercado.mesa_dia import contar_vigentes
     from app.mercado.territorio import regiones_activas
-    from app.models.tables import CaLinea, Proveedor, ProveedorProducto
+    from app.models.tables import Proveedor, ProveedorProducto
 
     empresa_id = empresa_activa_id(session, user)
     if empresa_id is None and user.rol != RolUsuario.ADMIN:
@@ -482,12 +482,11 @@ async def portada(
         )
     regiones = regiones_activas(session, request.app.state.settings)
     ca_abiertas, ca_cierran_hoy = contar_vigentes(session, regiones, ahora_utc())
-    lineas_por_revisar = session.execute(
-        select(func.count())
-        .select_from(CaLinea)
-        .join(CompraAgil, CompraAgil.codigo == CaLinea.ca_codigo)
-        .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(("pendiente", "dudosa")))
-    ).scalar_one()
+    from app.mercado.catalogo import conteo_por_revisar
+
+    # F-plat-anexos-2 §2.4: vigentes · muestra de históricas (las demás no se listan).
+    por_revisar = conteo_por_revisar(session, regiones, ahora_utc())
+    lineas_por_revisar = por_revisar["vigentes"] + por_revisar["historicas_muestra"]
     n_proveedores = n_productos = 0
     n_inventario = n_bajo_minimo = 0
     equipo_hoy: dict[str, Any] | None = None
@@ -523,6 +522,7 @@ async def portada(
             ca_abiertas=ca_abiertas,
             ca_cierran_hoy=ca_cierran_hoy,
             lineas_por_revisar=lineas_por_revisar,
+            por_revisar=por_revisar,
             n_proveedores=n_proveedores,
             n_productos=n_productos,
             n_inventario=n_inventario,

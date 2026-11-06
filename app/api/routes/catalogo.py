@@ -18,9 +18,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_csrf, get_db, html_require_empresa
+from app.api.query import url_ficha_ca
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.catalogos.canonico import normalizar_texto
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
+from app.core.tiempo import ahora_utc
 from app.mercado import anexos
 from app.mercado import catalogo as cat
 from app.mercado.territorio import regiones_activas
@@ -39,6 +41,7 @@ router = APIRouter()
 
 POR_PAGINA = 25
 _TABS = ("pendientes", "productos", "alias")
+_BLOQUES = ("vigentes", "historicas")
 ETIQUETA_BANDERA = {
     "completo": ("Completo", "success"),
     "incompleto": ("Líneas por revisar", "warning"),
@@ -117,6 +120,7 @@ def _vista_linea(
     return {
         "ln": ln,
         "ca": ca,
+        "url_ficha": url_ficha_ca(ca.codigo),
         "producto_nombre": nombre,
         # El selector parte con el producto sugerido o confirmado; el resto se busca por HTMX.
         "productos": [{"id": ln.producto_id, "nombre": nombre}] if nombre else [],
@@ -147,6 +151,7 @@ def _html_fila(
 async def catalogo_get(
     request: Request,
     tab: str = "pendientes",
+    bloque: str = "",
     q: str = "",
     pagina: int = 1,
     mensaje: str = "",
@@ -170,25 +175,42 @@ async def catalogo_get(
         ).tuples()
     }
     if tab == "pendientes":
+        # F-plat-anexos-2 §2.4: vigentes primero (por cierre), luego una MUESTRA de históricas.
+        ahora = ahora_utc()
+        conteo = cat.conteo_por_revisar(session, regiones, ahora)
+        if bloque not in _BLOQUES:  # sin elegir: vigentes, salvo que no haya ninguna
+            bloque = (
+                "vigentes"
+                if conteo["vigentes"] or not conteo["historicas_muestra"]
+                else "historicas"
+            )
         base = (
             select(CaLinea, CompraAgil)
             .join(CompraAgil, CompraAgil.codigo == CaLinea.ca_codigo)
-            .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(("pendiente", "dudosa")))
+            .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(cat.POR_REVISAR))
         )
-        total = session.execute(
-            select(func.count()).select_from(base.order_by(None).subquery())
-        ).scalar_one()
-        filas = session.execute(
-            base.order_by(
-                CompraAgil.monto_disponible_clp.desc().nulls_last(), CaLinea.ca_codigo, CaLinea.n
+        if bloque == "vigentes":
+            base = base.where(cat._ca_vigente(ahora))
+            orden: tuple[Any, ...] = (CompraAgil.fecha_cierre.asc(), CaLinea.ca_codigo, CaLinea.n)
+            total = conteo["vigentes"]
+        else:
+            base = base.where(CaLinea.ca_codigo.in_(cat.muestra_historicas(regiones, ahora)))
+            orden = (
+                CompraAgil.monto_disponible_clp.desc().nulls_last(),
+                CaLinea.ca_codigo,
+                CaLinea.n,
             )
-            .limit(POR_PAGINA)
-            .offset((pagina - 1) * POR_PAGINA)
+            total = conteo["historicas_muestra"]
+        filas = session.execute(
+            base.order_by(*orden).limit(POR_PAGINA).offset((pagina - 1) * POR_PAGINA)
         ).all()
         nombres = _nombres_productos(session)
         datos = {
             "lineas": [_vista_linea(session, ln, ca, nombres) for ln, ca in filas],
             "total": total,
+            "bloque": bloque,
+            "conteo": conteo,
+            "muestra_historicas": cat.MUESTRA_HISTORICAS,
         }
     elif tab == "productos":
         nq = norm(q)
@@ -433,11 +455,14 @@ async def catalogo_ca(
     user, _ = ctx
     regiones = regiones_activas(session, request.app.state.settings)
     ca = _ca_o_404(session, codigo, regiones)
-    lineas = list(
+    todas = list(
         session.execute(
             select(CaLinea).where(CaLinea.ca_codigo == ca.codigo).order_by(CaLinea.n)
         ).scalars()
     )
+    # Las `reemplazada` (F-plat-anexos-2) no se editan: se muestran aparte, como evidencia.
+    lineas = [ln for ln in todas if ln.estado != cat.REEMPLAZADA]
+    reemplazadas = [ln for ln in todas if ln.estado == cat.REEMPLAZADA]
     nombres = _nombres_productos(session)
     vistas = [_vista_linea(session, ln, ca, nombres) for ln in lineas]
     return _TEMPLATES.TemplateResponse(
@@ -448,6 +473,9 @@ async def catalogo_ca(
             user,
             ca=ca,
             lineas=vistas,
+            reemplazadas=reemplazadas,
+            n_api=sum(1 for ln in lineas if ln.origen == "api"),
+            url_ficha=url_ficha_ca(ca.codigo),
             bandera=ETIQUETA_BANDERA.get(ca.detalle_lineas, ETIQUETA_BANDERA["sin_detalle"]),
             productos_todos=_productos_activos(session, "", 400),
             mensaje=mensaje,
@@ -511,7 +539,7 @@ def anexo_subir(
     check_csrf(request, csrf_token)
     if fuente != "compras_agiles":
         raise HTTPException(status_code=404, detail="Solo las Compras Ágiles tienen anexos")
-    user, _ = ctx
+    user, empresa_id = ctx
     settings = request.app.state.settings
     ca = _ca_o_404(session, codigo, regiones_activas(session, settings))
     data = archivo.file.read(anexos.MAX_BYTES + 1)
@@ -526,6 +554,7 @@ def anexo_subir(
             usuario_id=user.id,
             extractor=_extractor(request),
             max_paginas_imagen=settings.llm_max_paginas_imagen,
+            empresa_id=empresa_id,
         )
     except anexos.AnexoInvalido as exc:
         session.rollback()
@@ -584,6 +613,13 @@ async def anexo_confirmar_todas(
         ).scalars()
     )
     hechas = sin_producto = 0
+    n_api_antes = sum(
+        1
+        for ln in session.execute(
+            select(CaLinea).where(CaLinea.ca_codigo == ca.codigo, CaLinea.origen == "api")
+        ).scalars()
+        if ln.estado != cat.REEMPLAZADA
+    )
     for ln in lineas:
         if ln.producto_id is None:
             sin_producto += 1
@@ -601,6 +637,8 @@ async def anexo_confirmar_todas(
     texto = f"{hechas} línea(s) confirmada(s)." + (
         f" {sin_producto} sin producto: elígelo en cada fila." if sin_producto else ""
     )
+    if hechas and n_api_antes:
+        texto += f" El anexo reemplazó {n_api_antes} línea(s) de la API."
     return RedirectResponse(
         f"/catalogo/ca/{quote(ca.codigo)}?mensaje={quote(texto)}", status_code=303
     )
@@ -614,8 +652,9 @@ async def anexo_resuelto(
     ctx: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> Response:
-    """La persona ya tipeó las líneas: borra los placeholders «sin detalle (anexo)». Agregar una
-    línea manual NO lo hace sola, porque pueden faltar filas: lo decide la persona."""
+    """La persona ya tipeó las líneas: borra los placeholders «sin detalle (anexo)» y las
+    líneas de la API pasan a `reemplazada` (el anexo manda, F-plat-anexos-2). Agregar una línea
+    manual NO lo hace sola, porque pueden faltar filas: lo decide la persona."""
     check_csrf(request, csrf_token)
     ca = _ca_o_404(session, codigo, regiones_activas(session, request.app.state.settings))
     borradas = anexos.resolver_anexo(session, ca)
@@ -635,6 +674,7 @@ async def catalogo_linea_manual(
     producto_id: int = Form(...),
     formato_id: str = Form(""),
     cantidad: str = Form(""),
+    reemplaza_api: str = Form(""),
     csrf_token: str = Form(""),
     ctx: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
@@ -652,6 +692,7 @@ async def catalogo_linea_manual(
             formato_id=int(formato_id) if formato_id.strip().isdigit() else None,
             cantidad=_csv_float(cantidad),
             usuario_id=user.id,
+            reemplaza_api=bool(reemplaza_api),
         )
     except cat.CatalogoError as exc:
         session.rollback()

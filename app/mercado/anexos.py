@@ -12,6 +12,11 @@ Dos capas:
 
 El flujo manual nunca depende del modelo: sin clave, sin modelo o sin presupuesto, el anexo
 queda `sin_presupuesto` y la persona agrega las filas a mano.
+
+F-plat-anexos-2: cada anexo registra su `fuente` y la empresa que lo subió; el mismo archivo en
+la misma CA (sha256) se procesa una sola vez. Asociación por nombre para la carga masiva
+(:func:`codigo_de_nombre`) y lectura de un ZIP miembro a miembro con guardas
+(:func:`miembros_zip`, :func:`leer_miembro`).
 """
 
 from __future__ import annotations
@@ -19,12 +24,15 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import re
+import stat
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -59,6 +67,16 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MIMES_ACEPTADOS = (PDF, PNG, JPEG, DOCX, XLSX)
 ETIQUETA_MIME = {PDF: "PDF", PNG: "imagen PNG", JPEG: "imagen JPG", DOCX: "Word", XLSX: "Excel"}
+
+
+FUENTES = ("manual", "masiva", "api_externa", "api_mp", "descarga_directa")
+
+# Carga masiva (F-plat-anexos-2 §2.2): un ZIP de hasta 50 MB; se rechaza entero si un miembro
+# comprime más de 100:1 o el total expandido pasa de 200 MB (solo se lee el directorio).
+MAX_ZIP_BYTES = 50 * 1024 * 1024
+MAX_ZIP_LOTE_EXPANDIDO = 200 * 1024 * 1024
+MAX_MIEMBROS_ZIP = 200
+LARGO_NOMBRE = 200  # `nombre_original` de los archivos de la carga masiva y del endpoint
 
 
 class AnexoInvalido(ValueError):
@@ -127,6 +145,90 @@ def validar_archivo(data: bytes) -> str:
     if mime in (DOCX, XLSX):
         verificar_zip(data)
     return mime
+
+
+# ---------------------------------------------------------------------------
+# Carga masiva: asociación por nombre y ZIP miembro a miembro (F-plat-anexos-2 §2.2)
+# ---------------------------------------------------------------------------
+
+_PATRON_CODIGO = re.compile(r"\s*(\d+-\d+-COT\d+)", re.IGNORECASE)
+_PATRON_CODIGO_LIBRE = re.compile(r"^[A-Za-z0-9-]{3,50}$")
+
+
+def nombre_base(nombre: str) -> str:
+    """Último componente de la ruta (un miembro de ZIP trae carpetas), recortado a 200."""
+    base = (nombre or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return base[:LARGO_NOMBRE]
+
+
+def codigo_de_nombre(nombre: str) -> str | None:
+    """Código de la CA a la que va el archivo, por su nombre: lo que va antes de `__`
+    (`1234-56-COT26__Anexo 1.pdf`) o, sin `__`, el patrón de código de CA al inicio. None si no
+    hay uno reconocible (la vista lo muestra «no asociado»; nunca rompe el lote, regla 6)."""
+    base = nombre_base(nombre)
+    if "__" in base:
+        cand = base.split("__", 1)[0].strip()
+        return cand.upper() if _PATRON_CODIGO_LIBRE.fullmatch(cand) else None
+    m = _PATRON_CODIGO.match(base)
+    return m.group(1).upper() if m else None
+
+
+@dataclass(frozen=True)
+class MiembroZip:
+    indice: int  # posición en el directorio del ZIP
+    nombre: str  # nombre base (sin carpetas), recortado
+    tamano: int  # expandido
+    motivo: str | None = None  # por qué no se procesa (muy grande, enlace, ruta rara)
+
+
+def _es_symlink(info: zipfile.ZipInfo) -> bool:
+    return stat.S_ISLNK(info.external_attr >> 16)
+
+
+def miembros_zip(z: zipfile.ZipFile) -> list[MiembroZip]:
+    """Miembros procesables de un ZIP ya abierto. Lee SOLO el directorio central (no
+    descomprime): :class:`AnexoInvalido` si algún miembro comprime más de
+    `MAX_RAZON_COMPRESION` veces, si el total expandido pasa de `MAX_ZIP_LOTE_EXPANDIDO` o si
+    trae más de `MAX_MIEMBROS_ZIP` archivos. Las carpetas y los metadatos de macOS no cuentan;
+    los enlaces simbólicos, las rutas con `..` o absolutas y los de más de 10 MB quedan con
+    `motivo` (no se leen)."""
+    infos = z.infolist()
+    archivos = [(i, info) for i, info in enumerate(infos) if not info.is_dir()]
+    if len(archivos) > MAX_MIEMBROS_ZIP:
+        raise AnexoInvalido(f"El ZIP trae más de {MAX_MIEMBROS_ZIP} archivos")
+    if sum(info.file_size for _, info in archivos) > MAX_ZIP_LOTE_EXPANDIDO:
+        raise AnexoInvalido(
+            f"El ZIP se expande a más de {MAX_ZIP_LOTE_EXPANDIDO // (1024 * 1024)} MB al abrirlo"
+        )
+    for _, info in archivos:
+        if info.file_size and info.file_size > MAX_RAZON_COMPRESION * max(info.compress_size, 1):
+            raise AnexoInvalido("El ZIP tiene un contenido comprimido sospechoso")
+    out: list[MiembroZip] = []
+    for i, info in archivos:
+        ruta = info.filename.replace("\\", "/")
+        nombre = nombre_base(ruta)
+        if nombre.startswith(".") or ruta.startswith("__MACOSX/"):
+            continue  # metadatos del sistema (macOS), no anexos
+        motivo = None
+        if _es_symlink(info):
+            motivo = "Es un enlace, no un archivo"
+        elif ruta.startswith("/") or ".." in ruta.split("/") or re.match(r"^[A-Za-z]:", ruta):
+            motivo = "Ruta no permitida"
+        elif info.file_size > MAX_BYTES:
+            motivo = f"Supera {MAX_BYTES // (1024 * 1024)} MB"
+        out.append(MiembroZip(indice=i, nombre=nombre, tamano=info.file_size, motivo=motivo))
+    return out
+
+
+def leer_miembro(z: zipfile.ZipFile, miembro: MiembroZip) -> bytes:
+    """Bytes de UN miembro, con corte en `MAX_BYTES` + 1 (el directorio puede mentir sobre el
+    tamaño: se lee con tope igual). :class:`AnexoInvalido` si está dañado o protegido."""
+    info = z.infolist()[miembro.indice]
+    try:
+        with z.open(info) as f:
+            return f.read(MAX_BYTES + 1)
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, OSError, EOFError) as exc:
+        raise AnexoInvalido(f"No pude leer «{miembro.nombre}» del ZIP") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +501,7 @@ class ResultadoCarga:
     anexo: CaAnexo
     lineas: list[CaLinea]
     aviso: str
+    duplicado: bool = False  # el archivo ya estaba cargado en esa CA: no se volvió a procesar
 
 
 def texto_de_linea(ln: LineaExtraida) -> str:
@@ -430,8 +533,9 @@ def _es_placeholder(ln: CaLinea) -> bool:
 
 def resolver_anexo(session: Session, ca: CompraAgil) -> int:
     """«Anexo resuelto»: borra los placeholders «sin detalle (anexo)» de la CA y la marca para
-    que `mercado-catalogo` no los vuelva a crear. Devuelve cuántos borró. Sin commit."""
-    from app.mercado.catalogo import recalcular_detalle_lineas
+    que `mercado-catalogo` no los vuelva a crear; las líneas de la API pasan a `reemplazada`
+    (F-plat-anexos-2: el anexo manda). Devuelve cuántos placeholders borró. Sin commit."""
+    from app.mercado.catalogo import recalcular_detalle_lineas, reemplazar_lineas_api
 
     borradas = 0
     for ln in session.execute(select(CaLinea).where(CaLinea.ca_codigo == ca.codigo)).scalars():
@@ -439,6 +543,7 @@ def resolver_anexo(session: Session, ca: CompraAgil) -> int:
             session.delete(ln)
             borradas += 1
     session.flush()
+    reemplazar_lineas_api(session, ca.codigo)
     _marcar_resuelto(session, ca)
     recalcular_detalle_lineas(session, [ca.codigo])
     return borradas
@@ -462,8 +567,10 @@ def crear_lineas_de_anexo(
 ) -> list[CaLinea]:
     """Las líneas extraídas, todas `dudosa` (toda línea de anexo la confirma una persona).
 
-    Reemplaza los placeholders de la CA y las líneas de anexos anteriores aún sin confirmar;
-    no toca las `ok`, las de la API ni las manuales. Sin líneas extraídas no borra nada."""
+    Reemplaza los placeholders de la CA y las líneas aún sin confirmar de un anexo anterior con
+    el MISMO nombre (una relectura del mismo documento); las de otros documentos de la CA
+    conviven (Anexo 1 y Anexo 2 de una carga masiva, F-plat-anexos-2). No toca las `ok`, las de
+    la API ni las manuales. Sin líneas extraídas no borra nada."""
     from app.mercado.catalogo import (
         N_MANUAL_DESDE,
         _cantidad_base,
@@ -474,10 +581,19 @@ def crear_lineas_de_anexo(
     utiles = [ln for ln in extraidas if (ln.texto or "").strip()]
     if not utiles:
         return []
+    mismo_documento = set(
+        session.execute(
+            select(CaAnexo.id).where(
+                CaAnexo.ca_codigo == ca.codigo,
+                CaAnexo.nombre_original == anexo.nombre_original,
+                CaAnexo.id != anexo.id,
+            )
+        ).scalars()
+    )
     reemplazables = [
         ln
         for ln in session.execute(select(CaLinea).where(CaLinea.ca_codigo == ca.codigo)).scalars()
-        if _es_placeholder(ln) or (ln.anexo_id is not None and ln.estado != "ok")
+        if _es_placeholder(ln) or (ln.anexo_id in mismo_documento and ln.estado != "ok")
     ]
     habia_placeholder = any(_es_placeholder(ln) for ln in reemplazables)
     if reemplazables:
@@ -520,9 +636,18 @@ def crear_lineas_de_anexo(
     return nuevas
 
 
-def anexo_rechazado(ca: CompraAgil, data: bytes, nombre: str, motivo: str) -> CaAnexo:
+def anexo_rechazado(
+    ca: CompraAgil,
+    data: bytes,
+    nombre: str,
+    motivo: str,
+    *,
+    fuente: str = "api_mp",
+    empresa_id: int | None = None,
+) -> CaAnexo:
     """Fila `error` de un archivo que no se aceptó (§1.6): deja constancia y evita bajarlo de
-    nuevo en cada corrida. Sin el binario."""
+    nuevo en cada corrida. Sin el binario. Quien la agrega revisa antes el duplicado
+    (:func:`anexo_existente`): UNIQUE (ca_codigo, sha256)."""
     return CaAnexo(
         ca_codigo=ca.codigo,
         nombre_original=(nombre or "anexo")[:255],
@@ -532,7 +657,16 @@ def anexo_rechazado(ca: CompraAgil, data: bytes, nombre: str, motivo: str) -> Ca
         escaneado=False,
         extraccion_estado="error",
         extraccion_detalle=motivo[:500],
+        fuente=fuente,
+        empresa_id=empresa_id,
     )
+
+
+def anexo_existente(session: Session, ca_codigo: str, sha256: str) -> CaAnexo | None:
+    """El anexo con ese contenido ya cargado en esa CA, si lo hay (idempotencia, §1)."""
+    return session.execute(
+        select(CaAnexo).where(CaAnexo.ca_codigo == ca_codigo, CaAnexo.sha256 == sha256)
+    ).scalar_one_or_none()
 
 
 def _aviso_paginas(res: ResultadoTexto) -> str:
@@ -545,6 +679,15 @@ def _aviso_paginas(res: ResultadoTexto) -> str:
     return ""
 
 
+def _duplicado(previo: CaAnexo) -> ResultadoCarga:
+    return ResultadoCarga(
+        anexo=previo,
+        lineas=[],
+        aviso="Ese archivo ya estaba cargado en esta Compra Ágil: no se volvió a leer.",
+        duplicado=True,
+    )
+
+
 def procesar_anexo_ca(
     session: Session,
     ca: CompraAgil,
@@ -555,6 +698,8 @@ def procesar_anexo_ca(
     extractor: Extractor | None,
     max_paginas_imagen: int = 5,
     render: Callable[[Any], bytes] = _renderizar_pagina,
+    fuente: str = "manual",
+    empresa_id: int | None = None,
 ) -> ResultadoCarga:
     """Sube un anexo a una CA. :class:`AnexoInvalido` si el archivo no se acepta; cualquier otro
     problema (PDF roto, sin presupuesto, modelo caído) deja el anexo con su estado y la vista en
@@ -564,13 +709,22 @@ def procesar_anexo_ca(
     usuario): antes de leer el archivo y llamar al modelo se hace `rollback()`, que cierra la
     transacción de lectura y devuelve la conexión al pool (regla 15: la extracción puede tardar
     más de un minuto y `OpenRouterClient` usa sus propias sesiones). Después se recarga la CA y
-    recién ahí se escribe; si la CA ya no existe → :class:`AnexoInvalido`."""
+    recién ahí se escribe; si la CA ya no existe → :class:`AnexoInvalido`.
+
+    Idempotente (F-plat-anexos-2): si el mismo archivo (sha256) ya está en la CA, no se lee ni se
+    llama al modelo: devuelve ese anexo con `duplicado=True`."""
     from app.clients.openrouter import LLMError, LLMPresupuestoAgotado
 
+    if fuente not in FUENTES:
+        raise ValueError(f"fuente desconocida: {fuente}")
     codigo = ca.codigo
     mime = validar_archivo(data)
     if session.new or session.dirty or session.deleted:
         raise RuntimeError("procesar_anexo_ca: la sesión trae cambios sin confirmar")
+    sha = hashlib.sha256(data).hexdigest()
+    previo = anexo_existente(session, codigo, sha)
+    if previo is not None:
+        return _duplicado(previo)
     session.rollback()  # suelta la conexión mientras se lee el archivo y responde el modelo
     res = extraer_texto(data, mime, max_paginas_imagen=max_paginas_imagen, render=render)
 
@@ -607,18 +761,29 @@ def procesar_anexo_ca(
         nombre_original=(nombre or "anexo")[:255],
         mime=mime,
         tamano=len(data),
-        sha256=hashlib.sha256(data).hexdigest(),
+        sha256=sha,
         paginas=res.paginas,
         escaneado=res.escaneado,
         texto_extraido=res.texto or None,
         subido_por=usuario_id,
         extraccion_estado="pendiente",
+        fuente=fuente,
+        empresa_id=empresa_id,
     )
     if ext is not None:
         anexo.extraccion_modelo = ext.modelo[:200] or None
         anexo.extraccion_costo_usd = 0.0 if ext.desde_cache else ext.costo_usd
+        anexo.extraccion_respaldo = ext.respaldo
     session.add(anexo)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # Otra request subió el mismo archivo mientras este se leía: gana la primera.
+        session.rollback()
+        previo = anexo_existente(session, codigo, sha)
+        if previo is None:
+            raise
+        return _duplicado(previo)
 
     def _cerrar(estado: str, aviso: str, lineas: list[CaLinea] | None = None) -> ResultadoCarga:
         anexo.extraccion_estado = estado

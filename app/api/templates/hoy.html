@@ -21,6 +21,7 @@
     <div class="card h-100"><div class="card-body">
       <p class="tarjeta-numero__etiqueta">Líneas por revisar</p>
       <p class="tarjeta-numero__valor" data-hoy="lineas-por-revisar">{{ lineas_por_revisar }}</p>
+      {% if por_revisar %}<p class="tarjeta-numero__nota mb-1">vigentes: {{ por_revisar.vigentes }} · históricas (muestra): {{ por_revisar.historicas_muestra }}</p>{% endif %}
       {% if lineas_por_revisar %}
       <a href="/catalogo" class="tarjeta-numero__ver">Ver →</a>
       {% else %}

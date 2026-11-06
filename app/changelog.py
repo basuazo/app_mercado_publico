@@ -15,6 +15,24 @@ class ChangelogEntry:
 
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
+        fecha=date(2026, 11, 6),
+        titulo="Anexos: carga masiva por código, el anexo manda sobre la API, enlace a la ficha",
+        descripcion=(
+            "Nueva «Carga masiva de anexos» (en Demanda MP): sube varios archivos o un ZIP de una "
+            "vez; cada archivo se asocia a su Compra Ágil por el nombre (el código al inicio, por "
+            "ejemplo «1234-56-COT26__Anexo 1.pdf»). Antes de procesar ves qué archivo va a qué "
+            "Compra Ágil y cuáles ya estaban cargados; después, cada uno se lee de a uno y sus filas "
+            "esperan tu revisión. El mismo archivo nunca se lee dos veces. Cuando confirmas una fila "
+            "del anexo (o marcas «Anexo resuelto»), las líneas que traía la API para esa Compra Ágil "
+            "pasan a «reemplazadas»: el anexo manda. Si el detalle solo está en la ficha, al "
+            "agregar líneas a mano puedes marcar «la API no describe bien esta Compra Ágil». La "
+            "pestaña Pendientes muestra primero las líneas de Compras Ágiles vigentes (de la que "
+            "cierra antes) y aparte una muestra de las cerradas. Las tarjetas y la ficha enlazan a "
+            "la Compra Ágil en Mercado Público. El administrador puede generar un token para que "
+            "una automatización suba anexos. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 11, 5),
         titulo="Catálogo en tres capas: Demanda MP, Catálogo Proveedores e Inventario",
         descripcion=(

@@ -168,7 +168,10 @@ def _unidades(session: Session, lineas: list[CaLinea]) -> dict[int, tuple[str, s
 def lineas_de(session: Session, codigo: str) -> list[CaLinea]:
     return list(
         session.execute(
-            select(CaLinea).where(CaLinea.ca_codigo == codigo).order_by(CaLinea.n)
+            select(CaLinea)
+            # `reemplazada`: la línea de la API que reemplazó el anexo (F-plat-anexos-2).
+            .where(CaLinea.ca_codigo == codigo, CaLinea.estado != "reemplazada")
+            .order_by(CaLinea.n)
         ).scalars()
     )
 

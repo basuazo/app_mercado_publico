@@ -389,6 +389,8 @@ class ExtraccionAnexo:
     estimado: bool = False
     # La respuesta no parseó ni tras el reintento: `lineas` queda vacía (no es "anexo vacío").
     invalida: bool = False
+    # Respondió `llm_modelo_respaldo` porque el principal falló (F-plat-anexos-2 §2.6).
+    respaldo: bool = False
 
 
 @dataclass

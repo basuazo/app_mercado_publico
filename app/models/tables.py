@@ -226,6 +226,9 @@ class CompraAgil(Base):
     # dar por buenas las ofertas, que se leen tras el cierre.
     detalle_vigente_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     n_documentos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # F-plat-anexos-2: `[{id, nombre}]` de `documentos[]` del detalle (sin el binario). Lo lista
+    # `GET /api/anexos/pendientes` y lo usa la descarga directa del adjunto público.
+    documentos: Mapped[list[dict[str, str]] | None] = mapped_column(JSONB, nullable=True)
     # F-plat-1: bandera "CA sin detalle" (completo | incompleto | sin_detalle). La calcula
     # `app.mercado.catalogo.recalcular_detalle_lineas` a partir de `ca_lineas`.
     detalle_lineas: Mapped[str] = mapped_column(
@@ -762,6 +765,9 @@ class Empresa(Base):
     # Ordenan la mesa y la logística; NO filtran la ingesta (regla 7).
     comunas_prioritarias: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # F-plat-anexos-2: sha256 del token de `POST /api/anexos/{codigo}`. El token en claro se
+    # muestra una sola vez al generarlo y nunca se guarda ni se loguea (regla 1).
+    token_anexos_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -987,7 +993,9 @@ class CaLinea(Base):
     )
     codigo_unspsc: Mapped[str | None] = mapped_column(String(20), nullable=True)
     origen: Mapped[str] = mapped_column(String(10), nullable=False, default="api")
-    estado: Mapped[str] = mapped_column(String(10), nullable=False, default="pendiente")
+    # pendiente | dudosa | ok | reemplazada (F-plat-anexos-2: línea de la API que un anexo o una
+    # persona reemplazó; se conserva como evidencia y no cuenta para nada).
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="pendiente")
     # F-plat-2: anexo del que salió la línea (`origen = 'anexo'`, `n ≥ 1000`). NULL en las de
     # la API, en las manuales y en el placeholder «sin detalle (anexo)».
     anexo_id: Mapped[int | None] = mapped_column(
@@ -1018,6 +1026,12 @@ class CaAnexo(Base):
             "extraccion_estado IN ('pendiente', 'hecha', 'sin_presupuesto', 'error')",
             name="estado",
         ),
+        CheckConstraint(
+            "fuente IN ('manual', 'masiva', 'api_externa', 'api_mp', 'descarga_directa')",
+            name="fuente",
+        ),
+        # El mismo archivo en la misma CA se procesa una sola vez (F-plat-anexos-2).
+        UniqueConstraint("ca_codigo", "sha256"),
     )
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
@@ -1036,11 +1050,23 @@ class CaAnexo(Base):
         BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
     subido_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    # F-plat-anexos-2: por dónde llegó (manual | masiva | api_externa | api_mp | descarga_directa)
+    # y qué empresa lo subió. El texto y las líneas siguen siendo comunes a todas las empresas.
+    fuente: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="manual", server_default="manual"
+    )
+    empresa_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="SET NULL"), nullable=True
+    )
     # pendiente | hecha | sin_presupuesto | error
     extraccion_estado: Mapped[str] = mapped_column(String(16), nullable=False, default="pendiente")
     extraccion_modelo: Mapped[str | None] = mapped_column(String(200), nullable=True)
     extraccion_costo_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     extraccion_detalle: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # El modelo principal falló y respondió `LLM_MODELO_RESPALDO` (F-plat-anexos-2).
+    extraccion_respaldo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
 
 class LlmUso(Base):

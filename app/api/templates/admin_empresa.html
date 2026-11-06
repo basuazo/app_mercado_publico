@@ -53,4 +53,32 @@
     {% endif %}
   </div>
 </div>
+
+<div class="card mb-4">
+  <div class="card-header">Token de anexos (automatización externa)</div>
+  <div class="card-body">
+    <p class="small text-muted">Permite subir anexos con <code>POST /api/anexos/{código}</code> y listar las Compras Ágiles que los esperan con <code>GET /api/anexos/pendientes</code>, enviando la cabecera <code>X-Anexos-Token</code>. Se guarda solo su huella: si se pierde, genera otro (el anterior deja de servir).</p>
+    {% if token_anexos %}
+    <div class="alert alert-warning" role="alert">
+      <p class="mb-1"><strong>Copia el token ahora: no se vuelve a mostrar.</strong></p>
+      <code class="user-select-all d-block text-break">{{ token_anexos }}</code>
+    </div>
+    {% endif %}
+    <p class="mb-2">Estado: {% if empresa.token_anexos_hash %}<span class="badge bg-success">activo</span>{% else %}<span class="badge bg-secondary">sin token</span>{% endif %}</p>
+    <div class="d-flex gap-2">
+      <form method="post" action="/admin/empresas/{{ empresa.id }}/token-anexos" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="accion" value="generar">
+        <button class="btn btn-sm btn-primary">{{ 'Generar otro token' if empresa.token_anexos_hash else 'Generar token de anexos' }}</button>
+      </form>
+      {% if empresa.token_anexos_hash %}
+      <form method="post" action="/admin/empresas/{{ empresa.id }}/token-anexos" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="accion" value="revocar">
+        <button class="btn btn-sm btn-outline-danger">Revocar</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
 {% endblock %}

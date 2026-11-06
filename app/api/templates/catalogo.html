@@ -4,9 +4,10 @@
 {% set paginas = ((total + por_pagina - 1) // por_pagina) %}
 {% if paginas > 1 %}
 <nav aria-label="Páginas" class="d-flex gap-2 align-items-center mb-3">
-  {% if pagina > 1 %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo?tab={{ tab }}&q={{ q | urlencode }}&pagina={{ pagina - 1 }}">← Anterior</a>{% endif %}
+  {% set extra = '&bloque=' ~ bloque if bloque is defined else '' %}
+  {% if pagina > 1 %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo?tab={{ tab }}{{ extra }}&q={{ q | urlencode }}&pagina={{ pagina - 1 }}">← Anterior</a>{% endif %}
   <span class="small text-muted">Página {{ pagina }} de {{ paginas }}</span>
-  {% if pagina < paginas %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo?tab={{ tab }}&q={{ q | urlencode }}&pagina={{ pagina + 1 }}">Siguiente →</a>{% endif %}
+  {% if pagina < paginas %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo?tab={{ tab }}{{ extra }}&q={{ q | urlencode }}&pagina={{ pagina + 1 }}">Siguiente →</a>{% endif %}
 </nav>
 {% endif %}
 {% endmacro %}
@@ -32,7 +33,18 @@
 </ul>
 
 {% if tab == 'pendientes' %}
-  <p class="small text-muted">{{ total }} línea(s) por revisar, de mayor a menor monto de la Compra Ágil.</p>
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <ul class="nav nav-pills small">
+      <li class="nav-item"><a class="nav-link{% if bloque == 'vigentes' %} active{% endif %}" href="/catalogo?tab=pendientes&bloque=vigentes"{% if bloque == 'vigentes' %} aria-current="page"{% endif %}>Vigentes ({{ conteo.vigentes }})</a></li>
+      <li class="nav-item"><a class="nav-link{% if bloque == 'historicas' %} active{% endif %}" href="/catalogo?tab=pendientes&bloque=historicas"{% if bloque == 'historicas' %} aria-current="page"{% endif %}>Históricas, muestra ({{ conteo.historicas_muestra }})</a></li>
+    </ul>
+    <a class="btn btn-sm btn-outline-primary" href="/catalogo/anexos/carga">Carga masiva de anexos</a>
+  </div>
+  {% if bloque == 'vigentes' %}
+  <p class="small text-muted">{{ total }} línea(s) por revisar de Compras Ágiles que todavía se pueden ofertar, de la que cierra antes a la que cierra después.</p>
+  {% else %}
+  <p class="small text-muted">{{ total }} línea(s) de una muestra de {{ muestra_historicas }} Compras Ágiles ya cerradas, de mayor a menor monto: sirven al índice de precios.{% if conteo.historicas_resto_cas %} Hay {{ conteo.historicas_resto_cas }} Compra(s) Ágil(es) cerrada(s) más con líneas por revisar que no se listan.{% endif %}</p>
+  {% endif %}
   <div class="table-responsive">
     <table class="table table-sm align-middle">
       <thead class="table-dark"><tr><th scope="col">Compra Ágil</th><th scope="col">Texto solicitado</th><th scope="col">Producto y formato</th></tr></thead>

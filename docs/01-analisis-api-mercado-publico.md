@@ -193,6 +193,12 @@ La información necesaria está disponible vía API oficial y los términos exig
   El bundle JS del buscador no se pudo revisar: `buscador.mercadopublico.cl` responde 403 de
   CloudFront a clientes sin navegador [V, 4-nov]; hay que mirarlo con un navegador real (DevTools →
   Network al bajar un adjunto de una ficha) y probar esa ruta con `--ruta`.
+  **F-plat-anexos-2 (6-nov):** la plataforma recibe anexos por subida individual, por carga masiva por código
+  (`/catalogo/anexos/carga`) y por `POST /api/anexos/{codigo}` con token de empresa. Los `documentos[].{id, nombre}`
+  del detalle se guardan en `compras_agiles.documentos`. La descarga directa (§2.7, `app/clients/mp_documentos.py`)
+  está escrita y apagada: `URL_ADJUNTO` sigue en None hasta la captura en el navegador. La sonda de la URL del
+  adjunto sigue **pendiente**. La URL de la ficha de una CA (`buscador.mercadopublico.cl/ficha?code=…`) tampoco se
+  pudo verificar sin navegador (403 de CloudFront) **[I]**.
 
 ---
 

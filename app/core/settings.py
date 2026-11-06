@@ -231,6 +231,20 @@ class Settings(BaseSettings):
     mercado_anexos_max: int = Field(
         default=20, description="Tope de anexos descargados por corrida de `mercado-ca`"
     )
+    # F-plat-anexos-2 §2.6: si el modelo principal falla (4xx/5xx, timeout o JSON inválido tras
+    # el reintento), se intenta UNA vez con este. Vacío = sin respaldo.
+    llm_modelo_respaldo: str = Field(
+        default="", description="Modelo de OpenRouter de respaldo para leer anexos (vacío = sin)"
+    )
+    # F-plat-anexos-2 §2.7 (regla 9): última alternativa, apagada. Además de esta bandera hace
+    # falta la URL real del adjunto en `app/clients/mp_documentos.py` (captura de Boris, R8).
+    anexos_descarga_directa: bool = Field(
+        default=False,
+        description="Descargar el adjunto público de las CA vigentes sin detalle (regla 9)",
+    )
+    mercado_anexos_max_dia: int = Field(
+        default=60, description="Tope diario de adjuntos bajados por descarga directa"
+    )
     # F-plat-4: costo financiero del margen (30 días de capital de trabajo × esta tasa).
     costo_financiero_mensual: float = Field(
         default=0.015, ge=0, description="Tasa mensual del costo financiero (0,015 = 1,5 %)"

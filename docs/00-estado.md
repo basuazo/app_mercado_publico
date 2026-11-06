@@ -18,6 +18,24 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-anexos-2 (6-nov, commit local sin push; migración `e7c2a9f4b1d8`, cuelga de `a3c8e5d1b7f2`)
+Anexos (`prompt-F-plat-anexos-2.md`). **Esquema:** `ca_lineas.estado` a String(12) (`reemplazada`); `ca_anexos.fuente`
+(manual | masiva | api_externa | api_mp | descarga_directa), `empresa_id`, `extraccion_respaldo` y `UNIQUE (ca_codigo,
+sha256)` (la migración junta antes los duplicados que hubiera: las líneas pasan al de id menor);
+`empresas.token_anexos_hash`; `compras_agiles.documentos` (`[{id, nombre}]` del detalle).
+**§2.1 el anexo manda:** confirmar una línea de anexo (o «Anexo resuelto», o una línea manual con la casilla «la API no
+describe bien esta CA») deja `reemplazada` las líneas `api` de la CA; no cuentan para la bandera, la mesa, la oferta ni el
+índice, y `mercado-catalogo` no las revive. **§2.2** `/catalogo/anexos/carga` (archivos o ZIP; vista previa; un archivo
+por request, el ZIP por tramos de ≤20 s; idempotente por sha256). **§2.3** `POST /api/anexos/{codigo}` y `GET
+/api/anexos/pendientes` con `X-Anexos-Token` (hash + `compare_digest`, 60/min por token); token en `/admin/empresas/{id}`.
+**§2.4** Pendientes: vigentes por cierre y muestra de 200 históricas por monto; «Hoy» las separa. **§2.5**
+`url_ficha_ca` = `buscador.mercadopublico.cl/ficha?code=…` **[I]**. **§2.6** `LLM_MODELO_RESPALDO`; `/salud` → «Anexos y
+lectura automática». **§2.7** `app/clients/mp_documentos.py` + `app/ingest/anexos_directo.py`, apagado
+(`ANEXOS_DESCARGA_DIRECTA=false`) e inerte sin `URL_ADJUNTO` (captura pendiente, R8).
+**Pendiente de Boris:** revisar, `alembic upgrade head`, push; confirmar con un clic que `…/ficha?code=<código>` abre la CA
+(si no, corregir solo `URL_FICHA_CA` en `app/api/query.py`); generar el token de la empresa; capturar la URL del adjunto
+(R8) antes de pensar en encender §2.7; fijar `LLM_MODELO_RESPALDO`.
+
 ## F-plat-capas (5-nov, rama `F-plat-capas` desde `8dd16c8`, commit local sin push ni merge; migración `a3c8e5d1b7f2`, cuelga de `d9a4e2b7c1f6`)
 Catálogo en tres capas (`prompt-F-plat-capas.md`): **Demanda MP** (`/catalogo`, solo renombrada), **Catálogo Proveedores**
 (`/proveedores`) e **Inventario** (`/inventario`, nueva). Comparten la llave `producto_canonico × producto_formato`.

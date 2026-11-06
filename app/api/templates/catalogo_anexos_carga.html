@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Carga masiva de anexos — Rastrillo{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/catalogo">← {{ nav.DEMANDA_MP }}</a></p>
+<h2 class="mb-2">Carga masiva de anexos</h2>
+<p class="small text-muted">
+  Sube varios anexos de una vez. Cada archivo se asocia a su Compra Ágil por el <strong>nombre</strong>: debe empezar con el código,
+  idealmente seguido de dos guiones bajos (<code>1234-56-COT26__Anexo 1.pdf</code>). PDF, Excel (.xlsx), Word (.docx), PNG o JPG, hasta {{ max_mb }} MB cada uno;
+  o un ZIP de hasta {{ max_zip_mb }} MB con esos archivos adentro. Las filas leídas quedan «por revisar» en cada Compra Ágil: el anexo manda sobre lo que dice la API.
+</p>
+{% if not con_lectura %}<div class="alert alert-warning small">La lectura automática no está configurada: los archivos quedan registrados y las filas se agregan a mano.</div>{% endif %}
+
+<div id="carga-masiva" data-csrf="{{ csrf_token }}">
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="card h-100"><div class="card-body">
+        <label class="form-label" for="carga-archivos">Archivos</label>
+        <input class="form-control" type="file" id="carga-archivos" multiple accept=".pdf,.xlsx,.docx,.png,.jpg,.jpeg">
+        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="carga-revisar-archivos">Revisar archivos</button>
+      </div></div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card h-100"><div class="card-body">
+        <label class="form-label" for="carga-zip">ZIP</label>
+        <input class="form-control" type="file" id="carga-zip" accept=".zip,application/zip">
+        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="carga-revisar-zip">Revisar ZIP</button>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <button type="button" class="btn btn-primary" id="carga-procesar" hidden>Procesar</button>
+    <span id="carga-progreso" class="small text-muted" role="status" aria-live="polite"></span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-dark"><tr><th scope="col">Archivo</th><th scope="col">Código</th><th scope="col">Compra Ágil</th><th scope="col">Estado</th><th scope="col">Detalle</th></tr></thead>
+      <tbody id="carga-filas"><tr><td colspan="5" class="text-muted small">Elige archivos o un ZIP y pulsa «Revisar».</td></tr></tbody>
+    </table>
+  </div>
+  <p class="small text-muted">Fuente: Dirección ChileCompra.</p>
+</div>
+<script src="/static/anexos_carga.js?v={{ version_estaticos }}" defer></script>
+{% endblock %}

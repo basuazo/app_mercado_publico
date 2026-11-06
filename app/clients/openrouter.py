@@ -8,6 +8,9 @@ conoce la URL, el formato de chat (compatible con OpenAI) y los campos `usage`.
 - El contenido del anexo es DATO, no instrucción: va entre delimitadores y el prompt lo dice.
 - Una respuesta que no parsea se reintenta una vez citando el error; si vuelve a fallar,
   extracción vacía marcada `invalida` y log WARNING. Nunca rompe (regla 6).
+- Modelo de respaldo (F-plat-anexos-2 §2.6): si el principal falla (4xx/5xx, red, timeout, 429
+  agotado o JSON inválido tras el reintento), se intenta UNA vez con `llm_modelo_respaldo` y la
+  extracción queda marcada `respaldo`. El presupuesto del mes vale para los dos.
 """
 
 from __future__ import annotations
@@ -183,6 +186,8 @@ class OpenRouterClient:
     ) -> None:
         self._key = settings.openrouter_api_key.strip()
         self._modelo = settings.llm_modelo_extraccion.strip()
+        respaldo = settings.llm_modelo_respaldo.strip()
+        self._respaldo = respaldo if respaldo and respaldo != self._modelo else ""
         self._presupuesto = settings.llm_presupuesto_mes_usd
         self._max_tokens = settings.llm_max_tokens
         self._tarifa_in = settings.llm_costo_por_mtoken_in
@@ -199,6 +204,10 @@ class OpenRouterClient:
     @property
     def modelo(self) -> str:
         return self._modelo
+
+    @property
+    def modelo_respaldo(self) -> str:
+        return self._respaldo
 
     # --- presupuesto y caché (Postgres) ----------------------------------------
 
@@ -253,10 +262,10 @@ class OpenRouterClient:
             fila = s.execute(select(LlmCache).where(LlmCache.clave == clave)).scalar_one_or_none()
             return _de_json(fila.respuesta) if fila is not None else None
 
-    def _guardar_cache(self, clave: str, lineas: list[LineaExtraida]) -> None:
+    def _guardar_cache(self, clave: str, modelo: str, lineas: list[LineaExtraida]) -> None:
         with Session(self._engine) as s:
             if s.get(LlmCache, clave) is None:
-                s.add(LlmCache(clave=clave, modelo=self._modelo[:200], respuesta=_a_json(lineas)))
+                s.add(LlmCache(clave=clave, modelo=modelo[:200], respuesta=_a_json(lineas)))
                 s.commit()
 
     # --- request ---------------------------------------------------------------
@@ -318,15 +327,56 @@ class OpenRouterClient:
         """Líneas del anexo (`esquema="lineas"`) o de una lista de precios (`"precios"`).
 
         Caché primero (sin request ni presupuesto). Luego el presupuesto del mes:
-        :class:`LLMPresupuestoAgotado` si ya se gastó. Errores de canal → :class:`LLMError`."""
+        :class:`LLMPresupuestoAgotado` si ya se gastó. Errores de canal → :class:`LLMError`.
+        Si el principal falla o no devuelve JSON válido y hay respaldo, se intenta una vez con él
+        (§2.6); si el respaldo también falla, el error es el del respaldo."""
         if not self.habilitado:
             raise LLMError("OpenRouter no está configurado (falta la key o el modelo)")
         if esquema not in _ESQUEMAS:
             raise ValueError(f"esquema desconocido: {esquema}")
-        clave = clave_cache(self._modelo, esquema, texto, [b for b, _ in imagenes])
+        try:
+            res = self._extraer_con(self._modelo, texto, imagenes, esquema)
+        except LLMPresupuestoAgotado:
+            raise
+        except LLMError as exc:
+            if not self._respaldo:
+                raise
+            _log.warning("OpenRouter: el modelo principal falló (%s); intento con el respaldo", exc)
+            return self._con_respaldo(texto, imagenes, esquema, previo=None)
+        if res.invalida and self._respaldo:
+            _log.warning(
+                "OpenRouter: el modelo principal no devolvió JSON válido; intento con el respaldo"
+            )
+            return self._con_respaldo(texto, imagenes, esquema, previo=res)
+        return res
+
+    def _con_respaldo(
+        self,
+        texto: str | None,
+        imagenes: Sequence[tuple[bytes, str]],
+        esquema: str,
+        previo: ExtraccionAnexo | None,
+    ) -> ExtraccionAnexo:
+        res = self._extraer_con(self._respaldo, texto, imagenes, esquema)
+        res.respaldo = True
+        if previo is not None:  # lo que ya se pagó al principal también cuenta en el anexo
+            res.tokens_in += previo.tokens_in
+            res.tokens_out += previo.tokens_out
+            res.costo_usd += previo.costo_usd
+            res.estimado = res.estimado or previo.estimado
+        return res
+
+    def _extraer_con(
+        self,
+        modelo: str,
+        texto: str | None,
+        imagenes: Sequence[tuple[bytes, str]],
+        esquema: str,
+    ) -> ExtraccionAnexo:
+        clave = clave_cache(modelo, esquema, texto, [b for b, _ in imagenes])
         cacheadas = self._leer_cache(clave)
         if cacheadas is not None:
-            return ExtraccionAnexo(lineas=cacheadas, modelo=self._modelo, desde_cache=True)
+            return ExtraccionAnexo(lineas=cacheadas, modelo=modelo, desde_cache=True)
         if self.gasto_del_mes() >= self._presupuesto:
             raise LLMPresupuestoAgotado(
                 f"Presupuesto del mes agotado ({self._presupuesto:.2f} USD)"
@@ -346,10 +396,10 @@ class OpenRouterClient:
             {"role": "system", "content": _sistema(esquema)},
             {"role": "user", "content": contenido},
         ]
-        res = ExtraccionAnexo(modelo=self._modelo)
+        res = ExtraccionAnexo(modelo=modelo)
         for intento in range(2):
             cuerpo = {
-                "model": self._modelo,
+                "model": modelo,
                 "messages": mensajes,
                 "max_tokens": self._max_tokens,
                 "temperature": 0,
@@ -385,6 +435,6 @@ class OpenRouterClient:
                 _log.warning("OpenRouter: respuesta inválida tras el reintento (%s)", exc)
                 res.lineas, res.invalida = [], True
                 return res
-            self._guardar_cache(clave, res.lineas)
+            self._guardar_cache(clave, modelo, res.lineas)
             return res
         return res  # pragma: no cover - el bucle siempre retorna

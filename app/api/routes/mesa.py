@@ -223,6 +223,7 @@ def _pagina_empresa(
     status_code: int = 200,
     mensaje: str = "",
     error: str = "",
+    token_anexos: str | None = None,
 ) -> HTMLResponse:
     miembros = list(
         session.execute(
@@ -258,6 +259,7 @@ def _pagina_empresa(
             regiones_disponibles=REGIONES,
             mensaje=mensaje,
             error=error,
+            token_anexos=token_anexos,  # en claro SOLO en la respuesta que lo genera
         ),
         status_code=status_code,
     )

@@ -785,7 +785,10 @@ def _referencias(
 def _lineas_ca(session: Session, ca: CompraAgil) -> list[CaLinea]:
     return list(
         session.execute(
-            select(CaLinea).where(CaLinea.ca_codigo == ca.codigo).order_by(CaLinea.n)
+            select(CaLinea)
+            # `reemplazada`: la línea de la API que reemplazó el anexo (F-plat-anexos-2).
+            .where(CaLinea.ca_codigo == ca.codigo, CaLinea.estado != "reemplazada")
+            .order_by(CaLinea.n)
         ).scalars()
     )
 

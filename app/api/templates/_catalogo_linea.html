@@ -11,7 +11,8 @@
   <td class="small">
     <a href="/catalogo/ca/{{ ln.ca_codigo }}" class="num">{{ ln.ca_codigo }}</a>
     {% if v.ca.monto_disponible_clp %}<div class="text-muted">{{ v.ca.monto_disponible_clp | clp }}</div>{% endif %}
-    <span class="badge bg-{{ {'ok': 'success', 'dudosa': 'warning', 'pendiente': 'secondary'}[ln.estado] }}">{{ ln.estado }}</span>
+    {% if vista == 'pendientes' and v.url_ficha %}<div><a href="{{ v.url_ficha }}" target="_blank" rel="noopener">Abrir en Mercado Público ↗</a></div>{% endif %}
+    <span class="badge bg-{{ {'ok': 'success', 'dudosa': 'warning', 'pendiente': 'secondary'}.get(ln.estado, 'secondary') }}">{{ ln.estado }}</span>
     {% if ln.origen != 'api' %}<span class="badge bg-info text-dark">{{ ln.origen }}</span>{% endif %}
   </td>
   <td>

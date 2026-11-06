@@ -1,0 +1,33 @@
+{#
+  Filas de la carga masiva de anexos (F-plat-anexos-2 §2.2). Contexto: `filas` (FilaCarga),
+  `modo` ("vista" | "resultado" | "error"), `procesables` (estados que se procesan).
+  Cada fila lleva `data-indice` (posición del archivo o del miembro del ZIP) y `data-estado`:
+  el JS de la página procesa las `nueva` de a una y reemplaza la fila con el resultado.
+#}
+{% set etiqueta = {
+  'nueva': ('Nueva', 'primary'),
+  'duplicado': ('Ya cargado', 'secondary'),
+  'no asociado': ('No asociado', 'warning'),
+  'CA ya resuelta': ('CA ya resuelta', 'info'),
+  'no se acepta': ('No se acepta', 'danger'),
+  'hecha': ('Leído', 'success'),
+  'sin_presupuesto': ('Manual (sin lectura automática)', 'warning'),
+  'error': ('Manual (no se pudo leer)', 'danger'),
+  'pendiente': ('Pendiente', 'secondary'),
+} %}
+{% for f in filas %}
+{% set et = etiqueta.get(f.estado, (f.estado, 'secondary')) %}
+<tr data-indice="{{ f.indice if f.indice is not none else loop.index0 }}" data-estado="{{ f.estado }}" data-modo="{{ modo }}">
+  <td class="small text-break">{{ f.nombre }}<div class="text-muted num">{{ (f.tamano / 1024) | round(0) | int }} KB</div></td>
+  <td class="small">{% if f.codigo %}<span class="num">{{ f.codigo }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+  <td class="small">{% if f.ca_nombre %}<a href="/catalogo/ca/{{ f.codigo }}">{{ f.ca_nombre | truncate(80) }}</a>{% if f.comprador %}<div class="text-muted">{{ f.comprador | truncate(80) }}</div>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+  <td><span class="badge bg-{{ et[1] }}">{{ et[0] }}</span></td>
+  <td class="small">{{ f.detalle }}{% if modo == 'resultado' and f.n_lineas %} <a href="/catalogo/ca/{{ f.codigo }}">Revisar {{ f.n_lineas }} fila(s) →</a>{% endif %}</td>
+</tr>
+{% endfor %}
+{% if modo == 'vista' %}
+{% set n = filas | selectattr('estado', 'in', procesables) | list | length %}
+<tr id="carga-resumen" data-procesables="{{ n }}"><td colspan="5" class="small text-muted">
+  {{ n }} archivo(s) para procesar de {{ filas | length }}.{% if filas | length > n %} Los demás no se procesan: revisa el motivo en cada fila.{% endif %}
+</td></tr>
+{% endif %}

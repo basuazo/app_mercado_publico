@@ -21,6 +21,7 @@ Fuente: Dirección ChileCompra.
 from __future__ import annotations
 
 import calendar
+import hashlib
 import random
 import time
 from collections.abc import Callable
@@ -286,6 +287,8 @@ def guardar_detalle_mercado(
     for campo, valor in nuevos.items():
         if valor is not None:
             setattr(ca, campo, valor)
+    if det.n_documentos is not None:
+        ca.documentos = documentos_json(det)
     session.flush()
     resultado = _reemplazar_cotizaciones(
         session, det, con_productos=guarda_productos(det, solo_grupos)
@@ -295,6 +298,11 @@ def guardar_detalle_mercado(
     ca.detalle_fallos = 0
     ca.detalle_ultimo_fallo = None
     return resultado
+
+
+def documentos_json(det: CompraAgilDetalle) -> list[dict[str, str]]:
+    """`[{id, nombre}]` de los adjuntos del detalle (F-plat-anexos-2): sin el binario, máx. 50."""
+    return [{"id": d.id[:100], "nombre": (d.nombre or "")[:200]} for d in det.documentos[:50]]
 
 
 def guardar_detalle_vigente(session: Session, det: CompraAgilDetalle, ahora: datetime) -> None:
@@ -310,6 +318,7 @@ def guardar_detalle_vigente(session: Session, det: CompraAgilDetalle, ahora: dat
     assert ca is not None  # upsert_ca_detalle la crea si no existía
     if det.n_documentos is not None:
         ca.n_documentos = det.n_documentos
+        ca.documentos = documentos_json(det)
     ca.detalle_vigente_en = ahora
     ca.detalle_fallos = 0
     ca.detalle_ultimo_fallo = None
@@ -411,7 +420,7 @@ def bajar_anexos(
                     try:
                         anexos.procesar_anexo_ca(
                             session, ca, data, doc.nombre, usuario_id=None, extractor=extractor,
-                            max_paginas_imagen=settings.llm_max_paginas_imagen,
+                            max_paginas_imagen=settings.llm_max_paginas_imagen, fuente="api_mp",
                         )  # fmt: skip
                     except anexos.AnexoInvalido as exc:
                         # Se registra igual: si no, la CA volvería a la cola en cada corrida.
@@ -419,7 +428,9 @@ def bajar_anexos(
                         ca = session.get(CompraAgil, codigo)
                         if ca is None:  # se purgó mientras se leía el anexo
                             break
-                        session.add(anexos.anexo_rechazado(ca, data, doc.nombre, str(exc)))
+                        sha = hashlib.sha256(data).hexdigest()
+                        if anexos.anexo_existente(session, codigo, sha) is None:
+                            session.add(anexos.anexo_rechazado(ca, data, doc.nombre, str(exc)))
                     session.commit()
                     procesados += 1
         except MPAuthError:
@@ -722,6 +733,12 @@ def sync_mercado_ca(
         bajar_anexos(settings, engine, v2, regiones, resultado, documentos)
         if resultado.get("cortado_por") != corte_del_listado:
             return resultado
+    # F-plat-anexos-2 §2.7: descarga directa del adjunto público, última alternativa (regla 9).
+    # Sin ticket ni cuota de la API: su corte (403/429) no corta las cerradas.
+    if settings.anexos_descarga_directa:
+        from app.ingest.anexos_directo import bajar_anexos_directo
+
+        bajar_anexos_directo(settings, engine, regiones, resultado, documentos)
 
     with Session(engine) as session:
         cola = cola_mercado_ca(
