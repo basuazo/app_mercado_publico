@@ -31,7 +31,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from app.catalogos.mercado import grupo_de, moneda_codigo, normalizar, num, rut
+from app.catalogos.mercado import (
+    codigo_oc_normalizado,
+    grupo_de,
+    moneda_codigo,
+    normalizar,
+    num,
+    rut,
+)
 from app.catalogos.regiones import region_codigo
 from app.clients.datos_abiertos import descargar_zip, head_last_modified, iterar_oc_da, url_oc_da
 from app.core.logging import get_logger
@@ -133,6 +140,7 @@ def _fila(r: dict[str, str], mes: str, id_item: str, gr: str, rc: int | None) ->
     ).strip()
     return {
         "codigo_oc": (r.get("Codigo") or "").strip()[:50],  # String(50): nunca más largo en la práctica
+        "id_oc": codigo_oc_normalizado(r.get("ID"))[:20] or None,
         "id_item": id_item,
         "mes": mes,
         "fecha_creacion": _fecha(r.get("FechaCreacion", "")),
@@ -205,6 +213,7 @@ def cargar_mes(
         "movidas_de_otro_mes": 0,
         "conservadas_de_mes_posterior": 0,
         "moneda_distinta": 0,
+        "lineas_sin_id": 0,
     }
     conjunto = set(regiones)
 
@@ -248,7 +257,9 @@ def cargar_mes(
             c["repetidas_en_el_mes"] += 1
             continue
         vistas.add((codigo, id_item))
-        lote.append(_fila(r, mes, id_item, gr, rc))
+        fila = _fila(r, mes, id_item, gr, rc)
+        c["lineas_sin_id"] += fila["id_oc"] is None  # se carga igual (regla 6): solo no cruza
+        lote.append(fila)
         c["lineas_guardadas"] += 1
         if len(lote) >= _LOTE:
             _vaciar()
@@ -272,13 +283,18 @@ def cargar_mes(
 
 
 def sync_mercado_oc(
-    settings: Settings, engine: Engine, desde: str | None = None, hoy: date | None = None
+    settings: Settings,
+    engine: Engine,
+    desde: str | None = None,
+    hoy: date | None = None,
+    forzar: bool = False,
 ) -> dict[str, Any]:
     """Job `mercado-oc`: mes en curso y 2 anteriores (o `desde` AAAA-MM hasta hoy).
 
     Por mes: HEAD → si `Last-Modified` no cambió, nada; si cambió, descarga a un directorio
     temporal, recarga el mes en una transacción y guarda el cursor. Un mes que falla se
     registra y se sigue con el siguiente (R6). 403/404 del ZIP = no disponible todavía.
+    `forzar` ignora el cursor (recarga de F-plat-6-cruce-2 para llenar `id_oc`); sin él, nada cambia.
     """
     if hoy is None:
         anio_h, mes_h = _mes_actual_chile()
@@ -292,7 +308,11 @@ def sync_mercado_oc(
         cursor_nuevo = ultimo.isoformat() if ultimo is not None else None
         fuente = _fuente(anio, mes)
         with Session(engine) as session:
-            if cursor_nuevo is not None and cursor_nuevo == _leer_cursor(session, fuente):
+            if (
+                not forzar
+                and cursor_nuevo is not None
+                and cursor_nuevo == _leer_cursor(session, fuente)
+            ):
                 resultado["meses"][etiqueta] = "sin cambios"
                 continue
         extra: list[str] = []

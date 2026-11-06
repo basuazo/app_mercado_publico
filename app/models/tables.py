@@ -344,6 +344,9 @@ class OcLineaCa(Base):
 
     codigo_oc: Mapped[str] = mapped_column(String(50), primary_key=True)
     id_item: Mapped[str] = mapped_column(String(30), primary_key=True)
+    # `ID` numérico de la OC en oc-da (texto): es lo que traen `ca_cotizaciones.id_oc` y
+    # `compras_agiles.id_orden_compra` (F-plat-6-cruce-2). No único: una OC tiene varias líneas.
+    id_oc: Mapped[str | None] = mapped_column(String(20), nullable=True)
     mes: Mapped[str] = mapped_column(String(7), nullable=False)  # AAAA-MM del archivo
     fecha_creacion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     codigo_estado: Mapped[str | None] = mapped_column(String(10), nullable=True)
@@ -373,6 +376,7 @@ class OcLineaCa(Base):
     __table_args__ = (
         Index("ix_oc_lineas_ca_mes", "mes"),
         Index("ix_oc_lineas_ca_region_mes", "region_compra", "mes"),
+        Index("ix_oc_lineas_ca_id_oc", "id_oc"),
     )
 
 

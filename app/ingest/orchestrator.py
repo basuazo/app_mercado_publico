@@ -241,14 +241,14 @@ def run_mercado_backfill(
 
 
 def run_mercado_oc(
-    settings: Settings, engine: Engine, desde: str | None = None
+    settings: Settings, engine: Engine, desde: str | None = None, forzar: bool = False
 ) -> dict[str, Any]:
     """Job `mercado-oc` (F-merc-2): OC de CA de las regiones activas (F-plat-3) desde datos abiertos.
 
     Sin ticket ni cuota ni API: no pasa por `_make_clients`."""
     from app.ingest.mercado_oc import sync_mercado_oc
 
-    return sync_mercado_oc(settings, engine, desde=desde)
+    return sync_mercado_oc(settings, engine, desde=desde, forzar=forzar)
 
 
 def run_mercado_catalogo(

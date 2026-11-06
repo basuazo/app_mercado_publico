@@ -489,20 +489,24 @@ def test_retencion_no_purga_oc_lineas_ni_precio_referencia(
 
 
 def test_id_oc_de_cotizaciones_se_une_con_oc_lineas(engine: Engine, tmp_path: Path) -> None:
-    _cargar(engine, _zip(tmp_path / "m.zip", _filas_mes("2026-03")), "2026-03")
+    """`ca_cotizaciones.id_oc` es el `ID` numérico de oc-da, no el `Codigo` [V, 5-nov-2026]."""
+    filas = _filas_mes("2026-03")
+    for f in filas:
+        f["ID"] = "55672374" if f["Codigo"] == "A-03" else "99"
+    _cargar(engine, _zip(tmp_path / "m.zip", filas), "2026-03")
     with Session(engine) as s:
         s.add(CompraAgil(codigo="CA-1", nombre="x", estado="proveedor_seleccionado", region=16,
                          actualizado_en=ahora_utc() - timedelta(days=1)))  # fmt: skip
         s.flush()
-        s.add(CaCotizacion(ca_codigo="CA-1", llamado=1, rut_proveedor="1-9", id_oc=" a-03 "))
+        s.add(CaCotizacion(ca_codigo="CA-1", llamado=1, rut_proveedor="1-9", id_oc=" 55672374 "))
         s.commit()
         filas = s.execute(
             select(CaCotizacion.id_oc, func.count(OcLineaCa.id_item))
-            .join(OcLineaCa, OcLineaCa.codigo_oc == func.upper(func.trim(CaCotizacion.id_oc)))
+            .join(OcLineaCa, OcLineaCa.id_oc == func.upper(func.trim(CaCotizacion.id_oc)))
             .group_by(CaCotizacion.id_oc)
         ).all()
     assert codigo_oc_normalizado(" a-03 ") == "A-03"
-    assert filas == [(" a-03 ", 2)]
+    assert filas == [(" 55672374 ", 2)]
 
 
 def test_job_mercado_oc_en_el_cli_sin_api() -> None:
@@ -611,3 +615,77 @@ def test_moneda_por_item_manda_sobre_la_de_la_oc(engine: Engine, tmp_path: Path)
     assert monedas["2"] == ("UTM", None)
     assert monedas["3"][0] == "CLP" and monedas["3"][1] is not None
     assert monedas["4"][0] == "CLP" and monedas["4"][1] is not None
+
+
+# ---------------------------------------------------------------------------
+# F-plat-6-cruce-2: `ID` de la OC (id_oc) y recarga con --forzar
+# ---------------------------------------------------------------------------
+def _zip_id_primero(destino: Path, filas: list[dict[str, str]], bom: bool) -> Path:
+    """oc-da real: `ID` es la PRIMERA columna; con BOM UTF-8 (bytes EF BB BF) pegado a ella."""
+    cols = ["ID"] + [c for c in COLS_OC if c != "ID"]
+    buf = io.StringIO(newline="")
+    w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+    w.writerow(cols)
+    for f in filas:
+        w.writerow([f.get(c, "") for c in cols])
+    datos = buf.getvalue().encode("latin-1")
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("oc.csv", (b"\xef\xbb\xbf" if bom else b"") + datos)
+    return destino
+
+
+@pytest.mark.parametrize("bom", [False, True])
+def test_id_oc_se_guarda_con_y_sin_bom_y_cuenta_las_filas_sin_id(
+    engine: Engine, tmp_path: Path, bom: bool
+) -> None:
+    filas = [
+        _linea(Codigo="2724-973-AG26", IDItem="1", ID=" 55672374 "),
+        _linea(Codigo="2724-973-AG26", IDItem="2", ID="55672374"),
+        _linea(Codigo="2724-974-AG26", IDItem="1", ID=""),  # sin ID: se carga igual
+    ]
+    r = _cargar(engine, _zip_id_primero(tmp_path / "m.zip", filas, bom), "2026-03")
+    assert r["lineas_guardadas"] == 3 and r["lineas_sin_id"] == 1
+    with Session(engine) as s:
+        ids = dict(s.execute(select(OcLineaCa.codigo_oc, OcLineaCa.id_oc).distinct()).all())
+    assert ids == {"2724-973-AG26": "55672374", "2724-974-AG26": None}
+
+
+def test_nombre_columna_quita_el_bom_en_ambas_formas() -> None:
+    from app.clients.datos_abiertos import _nombre_columna
+
+    assert _nombre_columna("\u00ef\u00bb\u00bfID") == "ID"  # EF BB BF leído como Latin-1
+    assert _nombre_columna("\ufeffID") == "ID"  # ya decodificado
+    assert _nombre_columna(" Codigo ") == "Codigo"
+
+
+@respx.mock
+def test_forzar_ignora_el_cursor_y_sin_el_se_respeta(
+    engine: Engine, settings: Settings, tmp_path: Path
+) -> None:
+    cuerpo = _bytes_zip(tmp_path, "2026-03")
+    lm = {"Last-Modified": "Wed, 01 Apr 2026 03:00:00 GMT"}
+    respx.head(f"{_BASE}/oc-da/2026-3.zip").mock(return_value=httpx.Response(200, headers=lm))
+    get = respx.get(f"{_BASE}/oc-da/2026-3.zip").mock(return_value=httpx.Response(200, content=cuerpo))
+    hoy = date(2026, 3, 1)
+
+    sync_mercado_oc(settings, engine, desde="2026-03", hoy=hoy)
+    assert get.call_count == 1
+    r = sync_mercado_oc(settings, engine, desde="2026-03", hoy=hoy)
+    assert r["meses"]["2026-03"] == "sin cambios" and get.call_count == 1
+    r = sync_mercado_oc(settings, engine, desde="2026-03", hoy=hoy, forzar=True)
+    assert r["meses"]["2026-03"]["lineas_guardadas"] == 5 and get.call_count == 2
+    with Session(engine) as s:
+        assert s.execute(select(func.count()).select_from(OcLineaCa)).scalar_one() == 5
+
+
+@pytest.mark.parametrize(("extra", "esperado"), [([], False), (["--forzar"], True)])
+def test_forzar_llega_al_job_del_cli(
+    monkeypatch: pytest.MonkeyPatch, extra: list[str], esperado: bool
+) -> None:
+    import app.ingest.__main__ as cli
+
+    visto: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "cmd_run_once", lambda job, **kw: visto.update(job=job, **kw))
+    monkeypatch.setattr(sys, "argv", ["app.ingest", "run-once", "--job", "mercado-oc", *extra])
+    cli.main()
+    assert visto["job"] == "mercado-oc" and visto["forzar"] is esperado

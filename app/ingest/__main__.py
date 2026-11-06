@@ -151,6 +151,7 @@ def cmd_run_once(
     desde: str | None = None,
     inicial: bool = False,
     completo: bool = False,
+    forzar: bool = False,
 ) -> None:
     setup_logging()
     settings = get_settings()
@@ -207,7 +208,7 @@ def cmd_run_once(
         ),
         # F-merc-2: datos abiertos, sin ticket ni cuota; lock de siempre. `--desde AAAA-MM`
         # es la carga inicial (desde el PC; el disparo diario va a las 07:20 Chile).
-        "mercado-oc": _locked("mercado-oc", lambda: run_mercado_oc(settings, engine, desde=desde)),
+        "mercado-oc": _locked("mercado-oc", lambda: run_mercado_oc(settings, engine, desde=desde, forzar=forzar)),
         # F-plat-1: solo base de datos (sin ticket ni cuota). `--inicial` recorre todas las CA
         # (desde el PC con DATABASE_URL de producción); sin él, solo las que cambiaron.
         "mercado-catalogo": _locked(
@@ -363,6 +364,11 @@ def main() -> None:
         help="Mes inicial AAAA-MM (solo job=mercado-oc; default: mes actual y 2 anteriores)",
     )
     once.add_argument(
+        "--forzar",
+        action="store_true",
+        help="Ignora el cursor Last-Modified y recarga los meses (solo job=mercado-oc)",
+    )
+    once.add_argument(
         "--inicial",
         action="store_true",
         help="Recorre todas las CA, no solo las cambiadas (solo job=mercado-catalogo)",
@@ -400,6 +406,7 @@ def main() -> None:
             desde=args.desde,
             inicial=args.inicial,
             completo=args.completo,
+            forzar=args.forzar,
         )
     elif args.cmd == "run-scheduler":
         cmd_run_scheduler()

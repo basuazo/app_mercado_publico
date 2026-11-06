@@ -223,8 +223,8 @@ class Directorio:
 
     ruts: dict[str, _Rut] = field(default_factory=lambda: defaultdict(_Rut))
     genericos: dict[str, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
-    oc_codigos: set[str] = field(default_factory=set)  # normalizados (`codigo_oc_normalizado`)
-    oc_a_ca: dict[str, str] = field(default_factory=dict)  # OC normalizada → código de CA
+    oc_codigos: set[str] = field(default_factory=set)  # `ID` de oc-da normalizado (`id_oc`)
+    oc_a_ca: dict[str, str] = field(default_factory=dict)  # `ID` de la OC normalizado → código de CA
 
 
 def oc_de_cas(session: Session, cas: Mapping[str, str | None]) -> dict[str, set[str]]:
@@ -235,9 +235,8 @@ def oc_de_cas(session: Session, cas: Mapping[str, str | None]) -> dict[str, set[
     es nulo, valen los `id_oc` de las ofertas seleccionadas (varias → todas). Una consulta por
     lote. CA sin OC no aparece en el resultado.
 
-    Ojo [V, 5-nov-2026]: ambos campos traen el `ID` numérico de la OC en oc-da (p. ej.
-    `55672374`), no su `Codigo` (`2724-973-AG26`); `oc_lineas_ca` hoy guarda solo `Codigo`, así
-    que el cruce da cero hasta que se guarde también `ID` (fase aparte con migración)."""
+    Ambos campos traen el `ID` numérico de la OC en oc-da (p. ej. `55672374`) [V, 5-nov-2026],
+    no su `Codigo` (`2724-973-AG26`): se cruzan con `oc_lineas_ca.id_oc` (F-plat-6-cruce-2)."""
     out: dict[str, set[str]] = {}
     faltan: list[str] = []
     for codigo, id_oc in cas.items():
@@ -272,10 +271,10 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
     }
     oc_clave: dict[str, tuple[str, str]] = {}
     desde_prov = sumar_meses(mes_hoy, -(MESES_PROVEEDORES - 1))
-    for (codigo_oc, rut_u, unidad, organismo, comuna, region, rut_p, prov, cod, generico, total,
+    for (id_oc, rut_u, unidad, organismo, comuna, region, rut_p, prov, cod, generico, total,
          fecha, mes, estado, moneda) in session.execute(
         select(
-            OcLineaCa.codigo_oc, OcLineaCa.rut_unidad, OcLineaCa.unidad_compra,
+            OcLineaCa.id_oc, OcLineaCa.rut_unidad, OcLineaCa.unidad_compra,
             OcLineaCa.organismo, OcLineaCa.comuna_compra, OcLineaCa.region_compra,
             OcLineaCa.rut_proveedor, OcLineaCa.proveedor, OcLineaCa.codigo_producto,
             OcLineaCa.producto_generico, OcLineaCa.total_linea_neto, OcLineaCa.fecha_creacion,
@@ -290,8 +289,9 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
         if med.lineas_oc % AVISO_CADA == 0:
             _log.info("demanda recorrido OC: %d líneas, %d RUT", med.lineas_oc, len(dir_.ruts))
         med.estados_oc[estado or ""] += 1
-        oc_norm = codigo_oc_normalizado(codigo_oc)
-        dir_.oc_codigos.add(oc_norm)
+        oc_norm = codigo_oc_normalizado(id_oc)  # el `ID` de oc-da; sin él la línea no cruza
+        if oc_norm:
+            dir_.oc_codigos.add(oc_norm)
         m = mes_oc(fecha, mes)
         if m and (med.primer_mes is None or m < med.primer_mes):
             med.primer_mes = m
@@ -299,7 +299,8 @@ def recorrer(session: Session, regiones: list[int], mes_hoy: str) -> tuple[Medic
             continue
         med.lineas_oc_rut_en_ca += rut in ruts_ca
         med.unidades_por_rut[rut].add(un)
-        oc_clave.setdefault(oc_norm, (rut, un))
+        if oc_norm:
+            oc_clave.setdefault(oc_norm, (rut, un))
         r = dir_.ruts[rut]
         if organismo:
             r.organismo[" ".join(organismo.split())[:300]] += 1
@@ -531,13 +532,14 @@ def _sumar_oc(
         and_(OcLineaCa.fecha_creacion.is_(None), OcLineaCa.mes == mes),
     )
     for (codigo_oc, rut_u, unidad, region, rut_p, cod, generico, espec, cantidad, precio_neto,
-         total, precio_base, base, fecha, mes_arch, moneda) in session.execute(
+         total, precio_base, base, fecha, mes_arch, moneda, id_oc) in session.execute(
         select(
             OcLineaCa.codigo_oc, OcLineaCa.rut_unidad, OcLineaCa.unidad_compra,
             OcLineaCa.region_compra, OcLineaCa.rut_proveedor, OcLineaCa.codigo_producto,
             OcLineaCa.producto_generico, OcLineaCa.especificacion, OcLineaCa.cantidad,
             OcLineaCa.precio_neto, OcLineaCa.total_linea_neto, OcLineaCa.precio_base,
             OcLineaCa.base, OcLineaCa.fecha_creacion, OcLineaCa.mes, OcLineaCa.moneda,
+            OcLineaCa.id_oc,
         )
         .where(OcLineaCa.region_compra.in_(regiones), en_mes)
         .execution_options(yield_per=LOTE)
@@ -559,7 +561,7 @@ def _sumar_oc(
         else:
             monto = 0.0
         c.monto += monto
-        ca = dir_.oc_a_ca.get(codigo_oc_normalizado(codigo_oc))
+        ca = dir_.oc_a_ca.get(codigo_oc_normalizado(id_oc))
         familia = familia_de_codigo(cod, generico)
         kw: dict[str, Any] = {"oc": codigo_oc, "ca": ca, "monto": monto, "proveedor": rut_p}
         acc.sumar(comprador, "familia", familia, region, None, cantidad=None, **kw)
@@ -1134,9 +1136,9 @@ def run_demanda(
     modo = med.modo()
     resultado["medicion"] = med.como_dict()
     if med.lineas_oc and not med.cas_con_oc:
-        avisos.append("cruce CA↔OC no disponible: ninguna CA cruzó con su OC (la API da el `ID` "
-                      "numérico de oc-da y oc_lineas_ca guarda solo `Codigo`); (c) queda en None "
-                      "y la clave en RUT")  # fmt: skip
+        avisos.append("cruce CA↔OC no disponible: ninguna CA cruzó con su OC (se cruza el `ID` de "
+                      "la OC con `oc_lineas_ca.id_oc`: ¿falta la recarga `mercado-oc --forzar`?); "
+                      "(c) queda en None y la clave en RUT")  # fmt: skip
     guardado = modo_guardado(session, regiones)
     cambio_clave = guardado is not None and guardado != modo
     if cambio_clave:

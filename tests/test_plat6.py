@@ -76,10 +76,11 @@ def _oc(s: Session, codigo: str, mes: str, *, rut_u: str = ORG_OC, unidad: str =
         cod: str = LECHE, base: str | None = "L", cantidad: float = 10, precio: float = 1000,
         region: int = 16, espec: str = "leche entera", rut_p: str = "76111111-1",
         total: float | None = None, precio_base: float | None = None,
-        fecha: datetime | None = None) -> None:  # fmt: skip
+        fecha: datetime | None = None, id_oc: str | None = "") -> None:  # fmt: skip
+    """`id_oc` = el `ID` numérico de oc-da: "" (default) = igual al código; None = línea sin `ID`."""
     y, m = (int(x) for x in mes.split("-"))
     s.add(OcLineaCa(
-        codigo_oc=codigo, id_item=str(next(_ids)), mes=mes,
+        codigo_oc=codigo, id_oc=codigo if id_oc == "" else id_oc, id_item=str(next(_ids)), mes=mes,
         fecha_creacion=fecha or datetime(y, m, 10), rut_unidad=rut_u, unidad_compra=unidad,
         organismo="Municipalidad de Chillán", comuna_compra="Chillán", region_compra=region,
         rut_proveedor=rut_p, proveedor="Alfa SpA", codigo_producto=cod,
@@ -302,9 +303,8 @@ def test_oc_de_cas_usa_id_orden_compra_o_la_oferta_seleccionada(s):
 
 
 def test_cruce_por_la_oc_de_la_oferta_seleccionada_sin_doble_conteo(s):
-    """Mecanismo del cruce y del doble conteo. En prod la clave aún no calza (id_oc es el `ID`
-    numérico de oc-da y oc_lineas_ca guarda `Codigo`): este test fija lo que debe pasar cuando
-    ambos lados traen la misma clave."""
+    """Cruce y doble conteo por el `ID` de oc-da en ambos lados (F-plat-6-cruce-2): el `codigo_oc`
+    AG de la línea es distinto del `ID` que traen las CA."""
     pid = _producto(s)
 
     def _linea(ca: str, cantidad: float) -> None:
@@ -313,13 +313,13 @@ def test_cruce_por_la_oc_de_la_oferta_seleccionada_sin_doble_conteo(s):
                       texto_origen="leche"))  # fmt: skip
 
     # OC solo en ca_cotizaciones.id_oc (minúsculas y espacios: se normaliza) → cruza.
-    _oc(s, "1234-5-AG26", "2026-10", cantidad=10)
+    _oc(s, "1234-5-AG26", "2026-10", cantidad=10, id_oc="55672374")
     _ca(s, "POR-COT", "2026-10")
-    _cot(s, "POR-COT", " 1234-5-ag26", seleccionado=True)
+    _cot(s, "POR-COT", " 55672374 ", seleccionado=True)
     _linea("POR-COT", 10)  # no suma: ya contó la OC
     # OC en compras_agiles.id_orden_compra (job viejo) → cruza.
-    _oc(s, "1234-6-AG26", "2026-10", cantidad=20)
-    _ca(s, "POR-IOC", "2026-10", id_oc="1234-6-AG26")
+    _oc(s, "1234-6-AG26", "2026-10", cantidad=20, id_oc="55672375")
+    _ca(s, "POR-IOC", "2026-10", id_oc="55672375")
     _linea("POR-IOC", 20)
     # Sin ninguna OC → sin OC: suman sus líneas ok.
     _ca(s, "NADA", "2026-10")
@@ -327,7 +327,7 @@ def test_cruce_por_la_oc_de_la_oferta_seleccionada_sin_doble_conteo(s):
     s.commit()
     med, dir_ = dm.recorrer(s, [16], HOY)
     assert med.cas_con_oc == 2 and med.pct_misma_clave == 1.0
-    assert dir_.oc_a_ca == {"1234-5-AG26": "POR-COT", "1234-6-AG26": "POR-IOC"}
+    assert dir_.oc_a_ca == {"55672374": "POR-COT", "55672375": "POR-IOC"}
     r = dm.recalcular_series(s, [16], "2026-10", "2026-10", dm.MODO_UNIDAD, dir_, ahora=AHORA)
     assert (r["cas_con_oc"], r["cas_sin_oc"], r["lineas_ca_ok_sumadas"]) == (2, 1, 1)
     (un,) = _filas(s, nivel="unspsc")
@@ -336,7 +336,7 @@ def test_cruce_por_la_oc_de_la_oferta_seleccionada_sin_doble_conteo(s):
 
 
 def test_sin_cruce_avisa_y_c_queda_en_none(s):
-    # Lo que hay en prod [V, 5-nov]: id_oc = `ID` numérico de oc-da; oc_lineas_ca solo tiene `Codigo`.
+    # Líneas de OC sin `ID` (antes de la recarga, o fila sin la columna): no cruzan.
     _historia(s, meses=6)
     _ca(s, "SIN", "2026-10")
     _cot(s, "SIN", "55672374", seleccionado=True)
@@ -530,7 +530,8 @@ def test_veredicto_exige_meta_y_ganarle_a_la_base(s):
 
 def _historia(s: Session, meses: int = 24, region: int = 16, rut_u: str = ORG_OC) -> None:
     for i, m in enumerate(_meses("2024-11", meses)):
-        _oc(s, f"OC-{rut_u}-{i}", m, cantidad=100, precio=1000, region=region, rut_u=rut_u)
+        _oc(s, f"OC-{rut_u}-{i}", m, cantidad=100, precio=1000, region=region, rut_u=rut_u,
+            id_oc=None)  # fmt: skip
     s.commit()
 
 

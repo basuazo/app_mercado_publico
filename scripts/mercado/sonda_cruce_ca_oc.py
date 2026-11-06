@@ -29,9 +29,45 @@ from sqlalchemy import Engine, create_engine, func, select, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.catalogos.mercado import codigo_oc_normalizado  # noqa: E402
-from app.models.tables import CaCotizacion, CompraAgil, OcLineaCa  # noqa: E402
+from app.mercado.demanda import es_alimento  # noqa: E402
+from app.models.tables import (  # noqa: E402
+    CaCotizacion,
+    CaCotizacionProducto,
+    CompraAgil,
+    OcLineaCa,
+)
 
 N_EJEMPLOS = 20
+
+
+def _cruce_por_familia(s: Session) -> dict[str, tuple[int, int]]:
+    """F-plat-6-cruce-2 §5: de las CA con oferta seleccionada e `id_oc`, cuántas calzan con
+    `oc_lineas_ca.id_oc`, por familia de la CA. `oc_lineas_ca` solo guarda GRUPOS y regiones
+    activas: que el resto no calce no es error. Alimentos = algún producto de la oferta
+    seleccionada con UNSPSC de alimentos (`es_alimento`)."""
+    en_oc = {v for v in s.execute(select(OcLineaCa.id_oc).distinct()).scalars() if v}
+    ids: dict[str, set[str]] = {}
+    for ca, id_oc in s.execute(
+        select(CaCotizacion.ca_codigo, CaCotizacion.id_oc).where(
+            CaCotizacion.seleccionado.is_(True), CaCotizacion.id_oc.is_not(None)
+        )
+    ):
+        if codigo_oc_normalizado(id_oc):
+            ids.setdefault(ca, set()).add(codigo_oc_normalizado(id_oc))
+    alimentos: set[str] = set()
+    for ca, cod in s.execute(
+        select(CaCotizacion.ca_codigo, CaCotizacionProducto.codigo_producto)
+        .join(CaCotizacion, CaCotizacion.id == CaCotizacionProducto.cotizacion_id)
+        .where(CaCotizacion.seleccionado.is_(True), CaCotizacion.id_oc.is_not(None))
+    ):
+        if cod and es_alimento("unspsc", "".join(ch for ch in cod if ch.isdigit())):
+            alimentos.add(ca)
+    out = {"alimentos": (0, 0), "resto": (0, 0)}
+    for ca, oc in ids.items():
+        fam = "alimentos" if ca in alimentos else "resto"
+        total, calzan = out[fam]
+        out[fam] = (total + 1, calzan + bool(oc & en_oc))
+    return out
 
 
 def sondear(engine: Engine) -> dict[str, object]:
@@ -78,6 +114,7 @@ def sondear(engine: Engine) -> dict[str, object]:
             r["calzan_normalizado"] = sum(
                 1 for v in ids if codigo_oc_normalizado(v) in norm_codigos
             )
+            r["cruce_por_familia"] = _cruce_por_familia(s)
             ioc = {v for v in s.execute(
                 select(CompraAgil.id_orden_compra)
                 .where(CompraAgil.id_orden_compra.is_not(None)).distinct()
@@ -124,6 +161,9 @@ def imprimir(r: dict[str, object]) -> None:
         "id_orden_compra_distintos", "id_orden_compra_calzan_normalizado",
     ):  # fmt: skip
         print(f"{k}: {r[k]}")
+    for fam, (total, calzan) in r["cruce_por_familia"].items():  # type: ignore[attr-defined]
+        pct = f"{100 * calzan / total:.1f} %" if total else "sin datos"
+        print(f"cruce CA↔oc_lineas_ca.id_oc, {fam}: {calzan}/{total} ({pct})")
     print("Fuente: Dirección ChileCompra.")
 
 

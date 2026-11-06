@@ -12,7 +12,6 @@ sin PyYAML.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
@@ -244,10 +243,12 @@ def _simular(completo: str, jobs: str) -> list[str]:
     armado = re.search(r'^(\s*extra=""\n(?:.*\n){3}\s*python -m app\.ingest run-once.*)$', texto, re.M)
     assert lista and armado
     cuerpo = armado.group(1).replace("python -m app.ingest", "echo")
-    script = f"{lista.group(1)}\nfor j in $JOBS; do\n{cuerpo}\ndone\n"
+    # Las variables van DENTRO del script: en Windows `shutil.which("bash")` suele ser el bash de
+    # WSL, que no hereda `env=` (sin WSLENV) y el bucle no corre.
+    entrada = f'COMPLETO="{completo}"\nJOBS="{jobs}"\nESPERAR_LOCK_MIN=10\n'
+    script = f"{entrada}{lista.group(1)}\nfor j in $JOBS; do\n{cuerpo}\ndone\n"
     out = subprocess.run(
         [bash, "-c", script],
-        env={**os.environ, "COMPLETO": completo, "JOBS": jobs, "ESPERAR_LOCK_MIN": "10"},
         capture_output=True,
         text=True,
         check=True,

@@ -240,7 +240,18 @@ COLS_OC = (
     "ComunaProveedor", "RegionProveedor", "codigoProductoONU", "NombreroductoGenerico",
     "EspecificacionComprador", "EspecificacionProveedor", "cantidad", "UnidadMedida",
     "precioNeto", "totalLineaNeto", "TipoMonedaOC", "IDItem", "monedaItem",
+    "ID",  # F-plat-6-cruce-2: `ID` numérico de la OC (primera columna de la cabecera)
 )  # fmt: skip
+
+# BOM UTF-8 leído como Latin-1 (EF BB BF) o ya decodificado (U+FEFF): se pega a la PRIMERA columna.
+_BOMS = ("\u00ef\u00bb\u00bf", "\ufeff")
+
+
+def _nombre_columna(h: str) -> str:
+    h = h.strip()
+    for bom in _BOMS:
+        h = h.removeprefix(bom)
+    return h.strip()
 
 
 def iterar_oc_da(zip_path: str, columnas_extra: list[str] | None = None) -> Iterator[dict[str, str]]:
@@ -263,12 +274,14 @@ def iterar_oc_da(zip_path: str, columnas_extra: list[str] | None = None) -> Iter
             header = next(reader, None)
             if header is None:
                 return
-            pos = {h.strip(): i for i, h in enumerate(header)}
+            pos = {_nombre_columna(h): i for i, h in enumerate(header)}
             faltan = [c for c in COLS_OC if c not in pos]
             if faltan:
                 _log.warning("iterar_oc_da: columnas faltantes (quedan vacías): %s", faltan)
             if columnas_extra is not None:
-                columnas_extra.extend(h.strip() for h in header if h.strip() not in COLS_OC)
+                columnas_extra.extend(
+                    n for n in (_nombre_columna(h) for h in header) if n and n not in COLS_OC
+                )
             indices = [(c, pos.get(c)) for c in COLS_OC]
             for fila in reader:
                 n = len(fila)
