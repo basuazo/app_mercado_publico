@@ -59,6 +59,12 @@ strict = true
 ignore_missing_imports = true
 exclude = ["alembic/"]
 
+# numpy/pandas los arrastra el .venv local (no son del stack); sus stubs usan sintaxis 3.12+ y con
+# python_version = "3.11" mypy abortaba antes de revisar app/. Render/Actions corren 3.11.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*", "pandas", "pandas.*"]
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short"

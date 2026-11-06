@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -234,26 +235,43 @@ def test_completo_solo_para_los_jobs_que_lo_aceptan() -> None:
     assert jobs <= set(_JOBS)
 
 
+def _bash() -> str:
+    """Un bash que ejecute el script tal cual. En Windows `which("bash")` da el bash de WSL (otro
+    sistema de archivos y sin variables heredadas): se usa el Git Bash."""
+    if sys.platform != "win32":
+        bash = shutil.which("bash")
+        assert bash, "se necesita bash para simular el step"
+        return bash
+    candidatos: list[Path] = []
+    git = shutil.which("git")
+    if git:
+        candidatos.append(Path(git).resolve().parent.parent / "bin" / "bash.exe")
+    candidatos.append(Path("C:/Program Files/Git/bin/bash.exe"))
+    for c in candidatos:
+        if c.is_file():
+            return str(c)
+    pytest.fail("se necesita Git Bash (bin/bash.exe de Git for Windows) para simular el step")
+
+
 def _simular(completo: str, jobs: str) -> list[str]:
     """Corre con bash el armado de argumentos del step, con `python -m app.ingest` → `echo`."""
-    bash = shutil.which("bash")
-    assert bash, "se necesita bash para simular el step"
+    bash = _bash()
     texto = _texto(_WORKFLOWS / "_job.yml")
     lista = re.search(r'^\s*(JOBS_CON_COMPLETO="[^"]*")', texto, re.M)
     armado = re.search(r'^(\s*extra=""\n(?:.*\n){3}\s*python -m app\.ingest run-once.*)$', texto, re.M)
     assert lista and armado
     cuerpo = armado.group(1).replace("python -m app.ingest", "echo")
-    # Las variables van DENTRO del script: en Windows `shutil.which("bash")` suele ser el bash de
-    # WSL, que no hereda `env=` (sin WSLENV) y el bucle no corre.
+    # Las variables van DENTRO del script (no hereda `env=` con cualquier bash) y el script entra por
+    # stdin: la línea de comandos de Windows no lo altera.
     entrada = f'COMPLETO="{completo}"\nJOBS="{jobs}"\nESPERAR_LOCK_MIN=10\n'
     script = f"{entrada}{lista.group(1)}\nfor j in $JOBS; do\n{cuerpo}\ndone\n"
     out = subprocess.run(
-        [bash, "-c", script],
+        [bash, "-s"],
+        input=script.encode(),  # bytes: en modo texto, Windows cambiaría LF por CRLF
         capture_output=True,
-        text=True,
         check=True,
     )
-    return out.stdout.splitlines()
+    return out.stdout.decode().splitlines()
 
 
 def test_disparo_de_cron_job_org_no_cambia() -> None:
