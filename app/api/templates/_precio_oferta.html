@@ -109,7 +109,8 @@
           {% set e = por_n.get(lo.n) %}
           <tr>
             <td>{{ lo.texto | truncate(80) }}{% if lo.producto %}<div class="text-muted">{{ lo.producto }}</div>{% endif %}
-              {% if lo.estado != 'ok' %}<span class="badge text-bg-warning fw-normal">{{ lo.estado }}</span>{% endif %}</td>
+              {% if lo.estado != 'ok' %}<span class="badge text-bg-warning fw-normal">{{ lo.estado }}</span>{% endif %}
+              {% if lo.aviso %}<div class="text-warning-emphasis" role="status" data-aviso-stock>{{ lo.aviso }}</div>{% endif %}</td>
             <td class="text-end num">{{ lo.cantidad | numero }}</td>
             <td>
               {% if e and e.referencia and e.referencia.mediana_ganador %}

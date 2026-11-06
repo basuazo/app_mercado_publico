@@ -529,6 +529,15 @@ def test_stock_elegido_que_ya_no_alcanza_vuelve_al_mejor_costo(engine, mundo):
         op.ajustar_stock(s, mundo["emp"], ep.id, -2, "entrega", None, None)  # se acabó
         lo = next(x for x in of.armar(s, mundo["emp"], ca, None, None, entradas) if x.n == 1)
         assert lo.origen is None and lo.stock is None and lo.proveedor == "Mayorista"
+        assert lo.aviso == of.AVISO_SIN_STOCK and lo.costo_por_base == pytest.approx(800)
+        # también al re-armar desde lo guardado (`previas`)
+        o = OfertaPropia(ca_codigo="CA-1", empresa_id=mundo["emp"], version=1, total_neto=0,
+                         lineas=[{"linea_id": lid, "precio_unitario": 1500, "proveedor_producto_id": None,
+                                  "origen": "stock", "empresa_producto_id": ep.id}])  # fmt: skip
+        lo = next(x for x in of.armar(s, mundo["emp"], ca, None, o) if x.n == 1)
+        assert lo.aviso == of.AVISO_SIN_STOCK and lo.proveedor == "Mayorista"
+        sin_eleccion = next(x for x in of.armar(s, mundo["emp"], ca, None, None) if x.n == 1)
+        assert sin_eleccion.aviso is None
 
 
 def test_guardar_oferta_con_stock_propio_deja_el_origen_en_el_json(client, engine, settings, mundo):

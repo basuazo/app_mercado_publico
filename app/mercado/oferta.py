@@ -47,6 +47,7 @@ PLAZO_MAX_DIAS = 365
 PRECIO_MAX = 1e12
 FUENTE = "Fuente: Dirección ChileCompra"
 ORIGEN_STOCK = "stock"  # F-plat-capas: «Stock propio»; no tiene `proveedor_producto_id`
+AVISO_SIN_STOCK = "El stock propio ya no cubre esta línea: se usa el mejor costo"
 PREFIJO_STOCK = "stock:"  # valor del <select> de proveedor: `stock:<empresa_producto_id>`
 
 
@@ -102,6 +103,7 @@ class LineaOferta:
     stock: op.StockPropio | None = None
     origen: str | None = None
     empresa_producto_id: int | None = None
+    aviso: str | None = None  # p. ej. el stock propio elegido ya no cubre la línea
 
     @property
     def total(self) -> float | None:
@@ -263,6 +265,8 @@ def armar(
             precio_unitario=precio, proveedor_producto_id=pp_ok, candidatos=cands,
             stock=stock,
         )  # fmt: skip
+        if origen == ORIGEN_STOCK and stock is None:
+            lo.aviso = AVISO_SIN_STOCK
         if usa_stock and stock is not None:
             # Regla del costo (`oferta_propia.costo_de_reposicion`): el proveedor habitual del
             # producto o, si no hay, el último `costo_historial` de cualquier proveedor.
