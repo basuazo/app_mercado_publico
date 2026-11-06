@@ -1,0 +1,113 @@
+/* Rastrillo · Maquetas — esqueleto de la estación (menú, filas, campos). Solo tokens de Rastrillo. */
+.m-app { display: flex; flex-wrap: wrap; min-height: 100vh; }
+.m-app svg { flex: none; }
+.m-nav { flex: 1 1 216px; box-sizing: border-box; padding: 16px 12px; background: var(--superficie); border-right: 1px solid var(--borde);
+  display: flex; flex-direction: column; gap: 2px; }
+@media (min-width: 840px) { .m-nav { max-width: 232px; min-height: 100vh; } }
+.m-marca { display: flex; align-items: center; gap: 10px; padding: 4px 8px 12px; font: 600 16px/20px var(--font-sans); letter-spacing: -.02em; color: var(--tinta); }
+.m-marca__logo { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--tinta); color: var(--superficie); }
+.m-buscar { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; margin-bottom: 10px; padding: 0 8px 0 10px; box-sizing: border-box;
+  border: 1px solid var(--borde); border-radius: var(--radio-control); background: var(--fondo); color: var(--tinta-2); font: 400 13px/1 var(--font-sans); cursor: pointer; }
+.m-buscar:hover { border-color: var(--borde-control); color: var(--tinta); }
+.m-buscar .r-tecla { margin-left: auto; }
+.m-grupo { margin: 14px 10px 4px; font: 500 12px/16px var(--font-sans); color: var(--tinta-2); }
+.m-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radio-control);
+  color: var(--tinta-2); text-decoration: none; font: 500 14px/20px var(--font-sans); transition: background var(--dur-rapida) ease, color var(--dur-rapida) ease; }
+.m-item:hover { background: var(--superficie-2); color: var(--tinta); }
+.m-item[aria-current="page"] { background: var(--accion-suave); color: var(--accion); }
+.m-item .r-contador { margin-left: auto; }
+.m-item svg { width: 16px; height: 16px; }
+.m-item:focus-visible, .m-fila__abrir:focus-visible, .m-paso:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.m-pie { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--borde); display: flex; align-items: center; gap: 10px; }
+.m-avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--superficie-2); color: var(--tinta); font: 600 12px/1 var(--font-sans); }
+
+.m-main { flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 28px 32px 40px; display: flex; flex-direction: column; gap: 24px; }
+.m-titulo { margin: 0; font: 500 28px/32px var(--font-sans); letter-spacing: -.03em; color: var(--tinta); }
+.m-seccion { margin: 0; font: 600 17px/24px var(--font-sans); letter-spacing: -.01em; color: var(--tinta); }
+.m-sub { margin: 4px 0 0; font: 400 14px/20px var(--font-sans); color: var(--tinta-2); }
+.m-fuente { font: 400 12px/16px var(--font-sans); color: var(--tinta-2); }
+
+/* Filas de lista: la fila es una molécula; se abre con su botón de nombre. */
+.m-fila { position: relative; transition: background var(--dur-rapida) ease; }
+/* Toda la fila abre el panel: el botón del nombre se estira sobre ella; el checkbox queda encima. */
+.m-fila__abrir::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
+.m-fila .m-check { position: relative; z-index: 1; }
+.m-fila:hover { background: var(--superficie-2); }
+.m-fila__abrir { all: unset; cursor: pointer; display: block; min-width: 0; border-radius: 4px; }
+.m-fila__abrir:hover .m-fila__nombre { color: var(--accion); }
+.m-fila__nombre { font: 500 14px/20px var(--font-sans); color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur-rapida) ease; }
+.m-check { width: 16px; height: 16px; margin: 0; accent-color: var(--accion); cursor: pointer; }
+.m-num { font: 500 14px/20px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--tinta); text-align: right; }
+.m-cab { font: 500 12px/16px var(--font-sans); color: var(--tinta-2); }
+.m-campo { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; box-sizing: border-box; border: 1px solid var(--borde-control);
+  border-radius: var(--radio-control); background: var(--superficie); color: var(--tinta-2); }
+.m-campo input { all: unset; flex: 1; min-width: 0; font: 400 14px/20px var(--font-sans); color: var(--tinta); }
+.m-campo input::placeholder { color: var(--tinta-2); }
+.m-campo:focus-within { outline: 2px solid var(--foco); outline-offset: 2px; }
+.m-paso { all: unset; cursor: pointer; }
+
+/* Encabezado que ordena: se aprieta (hover visible); la columna activa muestra su flecha. */
+.m-orden { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; border-radius: 4px;
+  font: 500 12px/16px var(--font-sans); color: var(--tinta-2); white-space: nowrap; transition: color var(--dur-rapida) ease; }
+.m-orden:hover { color: var(--accion); }
+.m-orden[aria-pressed="true"] { color: var(--tinta); }
+.m-orden:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+
+/* Explicativo de una señal: informativo, aparece al pasar el mouse o con foco de teclado. No lleva acciones. */
+.m-ayuda { position: relative; z-index: 1; display: inline-flex; cursor: help; border-radius: var(--radio-control); }
+.m-ayuda:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.m-ayuda__texto { position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: 300px; box-sizing: border-box; padding: 10px 12px;
+  border-radius: var(--radio-control); background: var(--tinta); color: var(--superficie); box-shadow: var(--sombra-elevada);
+  font: 400 12px/17px var(--font-sans); white-space: normal; text-align: left;
+  opacity: 0; visibility: hidden; transform: translateY(-2px); pointer-events: none;
+  transition: opacity var(--dur-rapida) ease, transform var(--dur-rapida) ease, visibility var(--dur-rapida); }
+.m-ayuda__texto strong { display: block; margin-bottom: 2px; font-weight: 600; font-size: 12px; }
+.m-ayuda__resuelve { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid currentColor; border-top-color: rgba(127, 127, 127, .45); opacity: .8; }
+.m-ayuda:hover .m-ayuda__texto, .m-ayuda:focus-visible .m-ayuda__texto { opacity: 1; visibility: visible; transform: none; }
+.m-ayuda--der .m-ayuda__texto { left: auto; right: 0; }
+
+/* Lote: pestañas de CA, precio editable y opciones de producto por línea. */
+.m-tab { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 4px; align-content: start; min-width: 0; padding: 12px 14px;
+  border-radius: var(--radio-panel); background: var(--superficie); border: 1px solid var(--borde); box-shadow: var(--sombra-tarjeta);
+  transition: border-color var(--dur-rapida) ease, box-shadow var(--dur-rapida) ease; }
+.m-tab:hover { border-color: var(--borde-control); }
+.m-tab[aria-pressed="true"] { border-color: var(--accion); box-shadow: 0 0 0 1px var(--accion), var(--sombra-tarjeta); }
+.m-tab:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.m-precio { all: unset; box-sizing: border-box; width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--borde-control); border-radius: var(--radio-control);
+  background: var(--superficie); font: 500 14px/20px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--tinta); text-align: right; }
+.m-precio:focus { outline: 2px solid var(--foco); outline-offset: 1px; }
+.m-opcion { border-radius: var(--radio-control); transition: background var(--dur-rapida) ease; }
+.m-opcion:hover { background: var(--superficie); }
+/* Ventas: barra de estados de seguimiento (filtros con conteo y monto). */
+.m-grupo-estado { all: unset; cursor: pointer; display: flex; align-items: baseline; gap: 6px; padding: 2px 4px; border-radius: 4px;
+  font: 600 13px/18px var(--font-sans); color: var(--tinta); }
+.m-grupo-estado:hover, .m-grupo-estado[aria-pressed="true"] { color: var(--accion); }
+.m-grupo-estado:focus-visible, .m-estado-btn:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.m-estado-btn { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 2px; min-width: 0; padding: 10px 12px;
+  border-radius: var(--radio-control); background: var(--superficie); border: 1px solid var(--borde); box-shadow: var(--sombra-tarjeta);
+  transition: border-color var(--dur-rapida) ease, background var(--dur-rapida) ease; }
+.m-estado-btn:hover { border-color: var(--borde-control); }
+.m-estado-btn[aria-pressed="true"] { border-color: var(--accion); background: var(--accion-suave); }
+.m-oculto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+label.r-btn { position: relative; }
+label.r-btn:focus-within { outline: 2px solid var(--foco); outline-offset: 2px; }
+.m-fila .m-encima { position: relative; z-index: 1; }
+/* Modal: velo sobre la página; la tarjeta usa radio-modal y sombra-elevada. */
+.m-velo { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-start; justify-content: center; overflow: auto;
+  box-sizing: border-box; padding: 6vh 16px; background: rgba(9, 9, 11, 0.55); }
+.m-radio { width: 16px; height: 16px; margin: 0; accent-color: var(--accion); cursor: pointer; }
+
+/* Tabla ancha: solo se desliza en pantallas angostas (así los explicativos no se recortan en escritorio). */
+@media (max-width: 1180px) { .m-desliza { overflow-x: auto; } }
+.m-enlace { color: var(--accion); text-decoration: none; font-weight: 500; }
+.m-enlace:hover { color: var(--accion-hover); text-decoration: underline; }
+a.r-btn { box-sizing: border-box; }
+/* Densidad compacta (preferencia del usuario): filas y espacios más apretados, mismo contenido. */
+[data-densidad="compacta"] .m-main { gap: 14px !important; padding-top: 20px; }
+[data-densidad="compacta"] .m-fila { padding-top: 6px !important; padding-bottom: 6px !important; }
+[data-densidad="compacta"] .m-item { height: 30px; }
+[data-densidad="compacta"] .m-titulo { font-size: 24px; line-height: 28px; }
+/* Aviso con deshacer y presencia del equipo */
+.m-aviso { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-radius: var(--radio-control); background: var(--ok-fondo); color: var(--ok); font: 400 13px/18px var(--font-sans); }
+.m-presencia { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 4px; border-radius: var(--radio-pildora); background: var(--superficie-2); font: 400 12px/16px var(--font-sans); color: var(--tinta-2); }
+.m-presencia .m-avatar { width: 20px; height: 20px; font-size: 10px; box-shadow: 0 0 0 2px var(--ok); }

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Paleta de comandos</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<div style="display: block; font-family: var(--font-sans); color: var(--tinta);">
+<button class="m-buscar" type="button" aria-haspopup="dialog" onClick="{{abrir}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg><span>Buscar o ir a…</span><span class="r-tecla">⌘K</span></button>
+<sc-if value="{{abierta}}" hint-placeholder-val="{{false}}">
+<div class="m-velo" style="padding-top: 12vh;">
+<div class="r-tarjeta" role="dialog" aria-modal="true" aria-label="Paleta de comandos" style="width: 100%; max-width: 640px; border-radius: var(--radio-modal); box-shadow: var(--sombra-elevada); overflow: hidden; display: flex; flex-direction: column;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--borde);">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--tinta-2); flex: none;"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+<input type="text" role="combobox" aria-expanded="true" aria-controls="paleta-lista" aria-activedescendant="{{activo}}" aria-label="Buscar una CA, lote, producto o acción" placeholder="Busca una CA, un lote, un producto o escribe una acción…" value="{{q}}" onChange="{{escribir}}" onKeyDown="{{teclas}}" autoFocus="{{si}}" style="all: unset; flex: 1; min-width: 0; font: 400 16px/24px var(--font-sans); color: var(--tinta);">
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Cerrar (Esc)" onClick="{{cerrar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+</div>
+<ul id="paleta-lista" role="listbox" aria-label="Resultados" style="list-style: none; margin: 0; padding: 6px; max-height: 420px; overflow-y: auto;">
+<sc-for list="{{filas}}" as="f" hint-placeholder-count="10">
+<sc-if value="{{f.cabecera}}" hint-placeholder-val="{{false}}"><li role="presentation" style="padding: 10px 10px 4px; font: 500 12px/16px var(--font-sans); color: var(--tinta-2);">{{f.titulo}}</li></sc-if>
+<sc-if value="{{f.item}}" hint-placeholder-val="{{true}}">
+<li role="option" id="{{f.oid}}" aria-selected="{{f.sel}}">
+<a id="{{f.aid}}" href="{{f.href}}" onClick="{{f.ir}}" style="display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: var(--radio-control); text-decoration: none; color: var(--tinta); background: {{f.fondo}};">
+<span class="r-icono r-icono--sm {{f.claseIcono}}">
+<sc-if value="{{f.iIr}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></sc-if>
+<sc-if value="{{f.iAccion}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path></svg></sc-if>
+<sc-if value="{{f.iCa}}" hint-placeholder-val="{{true}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg></sc-if>
+<sc-if value="{{f.iLote}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg></sc-if>
+<sc-if value="{{f.iProducto}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path></svg></sc-if>
+</span>
+<span style="display: grid; min-width: 0;"><span style="font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{f.t}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{f.sub}}</span></span>
+<sc-if value="{{f.conTecla}}" hint-placeholder-val="{{false}}"><span class="r-tecla">{{f.tecla}}</span></sc-if>
+</a>
+</li>
+</sc-if>
+</sc-for>
+<sc-if value="{{vacio}}" hint-placeholder-val="{{false}}"><li style="padding: 24px 10px; text-align: center; font-size: 14px; color: var(--tinta-2);"><span>Nada coincide con «{{q}}».</span></li></sc-if>
+</ul>
+<div style="display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px; border-top: 1px solid var(--borde); font-size: 12px; color: var(--tinta-2);">
+<span style="display: inline-flex; align-items: center; gap: 4px;"><span class="r-tecla">↑</span><span class="r-tecla">↓</span><span>moverse</span></span>
+<span style="display: inline-flex; align-items: center; gap: 4px;"><span class="r-tecla">↵</span><span>abrir</span></span>
+<span style="display: inline-flex; align-items: center; gap: 4px;"><span class="r-tecla">Esc</span><span>cerrar</span></span>
+<span style="margin-left: auto;">Busca por nombre, comprador o código</span>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":208,"height":44}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { abierta: false, q: '', idx: 0 };
+  }
+  renderVals() {
+    const st = this.state;
+    const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const IR = [
+      { t: 'Hoy', sub: '10 pendientes', href: 'Main.dc.html', tecla: 'G H' },
+      { t: 'Mesa', sub: '27 CA vigentes en Ñuble', href: 'Mesa.dc.html', tecla: 'G M' },
+      { t: 'En trabajo', sub: '2 lotes abiertos · 2 CA recibidas sin lote', href: 'Lote.dc.html', tecla: 'G T' },
+      { t: 'Ventas', sub: '4 ofertas con algo pendiente', href: 'Ventas.dc.html', tecla: 'G V' },
+      { t: 'Documentos', sub: '1 vencido · 1 por vencer', href: 'Documentos.dc.html', tecla: 'G D' }
+    ].map((x) => ({ ...x, tipo: 'ir' }));
+    // Las demás pantallas aparecen solo al escribir, para no alargar la vista inicial.
+    const IR_MAS = [
+      { t: 'Actividad', sub: 'Lo que hizo el equipo', href: 'Actividad.dc.html' },
+      { t: 'Competencia', sub: 'Ranking del territorio y perfil de oferentes', href: 'Competencia.dc.html' },
+      { t: 'Estrategia', sub: 'Mapa de mercado comprador × familia', href: 'Estrategia.dc.html' },
+      { t: 'Abastecimiento', sub: 'Pronóstico de los próximos 3 meses', href: 'Abastecimiento.dc.html' },
+      { t: 'Demanda MP', sub: '6 líneas por revisar · 4 anexos', href: 'Demanda.dc.html' },
+      { t: 'Proveedores', sub: '3 listas desactualizadas', href: 'Proveedores.dc.html' },
+      { t: 'Inventario', sub: '4 bajo mínimo', href: 'Inventario.dc.html' },
+      { t: 'Logística', sub: 'Tarifas y costo de despacho', href: 'Logistica.dc.html' },
+      { t: 'Administración', sub: 'Empresa, usuarios y salud del sistema', href: 'Admin.dc.html' }
+    ].map((x) => ({ ...x, tipo: 'ir' }));
+    const ACCIONES = [
+      { t: 'Enviar las ofertas listas del Lote 14', sub: 'En trabajo › Enviar · 1 lista, 1 cierra hoy', href: 'Enviar.dc.html' },
+      { t: 'Planificar entrega pendiente', sub: 'Ventas · Útiles de aseo, Quirihue · antes del lun 9', href: 'Ventas.dc.html' },
+      { t: 'Reemplazar el F30 vencido', sub: 'Documentos · bloquea 1 oferta', href: 'Documentos.dc.html' },
+      { t: 'Nuevo lote', sub: 'En trabajo', href: 'Lote.dc.html', tecla: 'N' }
+    ].map((x) => ({ ...x, tipo: 'accion' }));
+    const CAS = [
+      ['Guantes de nitrilo y alcohol gel', 'Hospital de San Carlos', '1057510-1996-COT26', 'Cierra hoy 15:00 · Lote 14'],
+      ['Resmas carta y artículos de escritorio', 'DAEM Bulnes', '2389114-412-COT26', 'Cierra hoy 18:00 · Lote 14'],
+      ['Arroz, legumbres y aceite', 'Liceo Bicentenario de Coihueco', '3011207-88-COT26', 'Mañana 12:00 · Lote 15'],
+      ['Papel higiénico y toalla de manos', 'CESFAM Los Volcanes', '1874420-301-COT26', 'Mañana 16:00 · Enviada'],
+      ['Kit de aseo para salas cuna', 'Municipalidad de Chillán Viejo', '2765530-157-COT26', 'Lun 9 · Enviada'],
+      ['Pañales adulto talla M y L', 'Servicio de Salud Ñuble', '1209981-2044-COT26', 'Mar 10 · sin lote'],
+      ['Detergente industrial y cloro', 'Municipalidad de Quillón', '2550716-93-COT26', 'Mié 11 · sin lote'],
+      ['Café, té y azúcar para oficinas', 'Delegación Presidencial Ñuble', '6033012-21-COT26', 'Jue 12 · Lote 15'],
+      ['Insumos de oficina', 'Municipalidad de San Nicolás', '2210045-77-COT26', 'Ganada · Pendiente de OC']
+    ].map(([t, comprador, codigo, estado]) => ({
+      t, sub: comprador + ' · ' + codigo + ' · ' + estado, tipo: 'ca', clave: t + ' ' + comprador + ' ' + codigo,
+      href: estado.indexOf('Lote') >= 0 ? 'Lote.dc.html' : (estado.indexOf('Ganada') >= 0 || estado.indexOf('Enviada') >= 0 ? 'Ventas.dc.html' : 'Mesa.dc.html')
+    }));
+    const LOTES = [
+      { t: 'Lote 14 · Limpieza', sub: '4 CA · armando ofertas · conversación con 3 comentarios', href: 'Lote.dc.html' },
+      { t: 'Lote 15 · Alimentos', sub: '2 CA · falta leer un anexo', href: 'Lote.dc.html' }
+    ].map((x) => ({ ...x, tipo: 'lote' }));
+    const PRODUCTOS = [
+      { t: 'Alcohol gel 70 % 1 L', sub: 'Bodega: 40 · Comercial Itata $ 3.150, precio desactualizado (23 días)', href: 'Inventario.dc.html' },
+      { t: 'Guante nitrilo talla M, caja 100', sub: 'Bodega: 15 · Comercial Itata $ 4.290 (al día)', href: 'Inventario.dc.html' },
+      { t: 'Resma carta 75 g, 500 hojas', sub: 'Bodega: 30 · Librería Central Chillán $ 3.890, desactualizado (18 días)', href: 'Inventario.dc.html' }
+    ].map((x) => ({ ...x, tipo: 'producto' }));
+
+    const q = norm(st.q || '');
+    let grupos;
+    if (!q) {
+      grupos = [['Ir a', IR], ['Acciones sugeridas', ACCIONES], ['CA recientes', CAS.slice(0, 3)]];
+    } else {
+      const f = (x) => norm(x.clave || (x.t + ' ' + x.sub)).includes(q);
+      grupos = [['Ir a', IR.concat(IR_MAS).filter(f)], ['Acciones', ACCIONES.filter(f)], ['Compras Ágiles', CAS.filter(f).slice(0, 6)], ['Lotes', LOTES.filter(f)], ['Productos', PRODUCTOS.filter(f).slice(0, 4)]];
+    }
+    const items = [];
+    const filas = [];
+    grupos.forEach(([titulo, lista]) => {
+      if (!lista.length) return;
+      filas.push({ cabecera: true, item: false, titulo });
+      lista.forEach((x) => { const i = items.length; items.push(x); filas.push({ ...x, cabecera: false, item: true, i }); });
+    });
+    const idx = Math.min(st.idx, Math.max(0, items.length - 1));
+    const cerrar = () => this.setState({ abierta: false, q: '', idx: 0 });
+    return {
+      si: true,
+      abierta: st.abierta,
+      abrir: () => this.setState({ abierta: true, q: '', idx: 0 }),
+      cerrar,
+      q: st.q,
+      escribir: (ev) => this.setState({ q: ev.target.value, idx: 0 }),
+      activo: items.length ? 'pal-op-' + idx : '',
+      teclas: (ev) => {
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); this.setState({ idx: Math.min(items.length - 1, idx + 1) }); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); this.setState({ idx: Math.max(0, idx - 1) }); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); cerrar(); }
+        else if (ev.key === 'Enter') {
+          ev.preventDefault();
+          const a = document.getElementById('pal-a-' + idx);
+          if (a) a.click();
+        }
+      },
+      vacio: !items.length && !!q,
+      filas: filas.map((x) => x.cabecera ? x : ({
+        ...x, oid: 'pal-op-' + x.i, aid: 'pal-a-' + x.i, sel: x.i === idx ? 'true' : 'false',
+        fondo: x.i === idx ? 'var(--accion-suave)' : 'transparent',
+        claseIcono: x.tipo === 'ir' || x.tipo === 'accion' ? '' : 'r-icono--neutro',
+        iIr: x.tipo === 'ir', iAccion: x.tipo === 'accion', iCa: x.tipo === 'ca', iLote: x.tipo === 'lote', iProducto: x.tipo === 'producto',
+        conTecla: !!x.tecla, tecla: x.tecla || '',
+        ir: () => this.setState({ abierta: false, q: '', idx: 0 })
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

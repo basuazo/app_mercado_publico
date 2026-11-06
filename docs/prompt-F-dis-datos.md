@@ -1,14 +1,32 @@
-# Prompt — F-dis-datos (datos de «Hoy» y del panel lateral de la Mesa, sin tocar el diseño) · 6-nov-2026
+# Prompt — F-dis-datos (datos de «Hoy» y del panel lateral de la Mesa, sin tocar el diseño) · 6-nov-2026, ajustado el 7-nov
 
-> **EN ESPERA (6-nov, Boris):** depende de decisiones del rediseño en curso (cifras, «Te necesita», panel). No correr
-> hasta que Hoy y Mesa estén cerrados en el canvas; entonces ajustar §1–§3 a la versión final.
+> **LISTO PARA CORRER (7-nov) después de F-dis-1.** Hoy y Mesa quedaron cerrados en el canvas. Leer primero
+> `docs/diseno/README.md` y las maquetas `Main.dc.html` y `Mesa.dc.html` de `docs/diseno/maquetas/`.
+> **Ajustes del 7-nov (mandan sobre el texto de abajo):**
+> - **Prohibiciones:** ya no hay que evitar `base.html` ni `app.css` (F-dis-1 los dejó). Esta fase **sigue sin tocar**
+>   `hoy.html`, `mesa_dia.html` ni los parciales de la Mesa: los viste F-dis-hoy-mesa.
+> - **Vocabulario:** la señal de costo viejo dice **«Precio desactualizado · N días»** (el `tipo` interno puede seguir
+>   siendo `precio_vencido`). Para «Te necesita» y las señales, un precio está desactualizado con **más de 15 días**,
+>   salvo que la empresa tenga configurada otra vigencia: usar la de la empresa y citarla.
+> - **Impuestos (F-plat-impuestos):** `senales_por_ca` agrega el tipo `impuesto_por_clasificar` (nivel `atencion`,
+>   texto «Impuesto por clasificar») cuando alguna línea de la CA usa un producto en esa situación, con la función de
+>   `app.mercado.impuestos`. En el panel, los costos y el sugerido se muestran en **neto** y cada línea trae también su
+>   **bruto** (para el explicativo), calculado con `impuestos.bruto`.
+> - **Nuevo §1.5 «Desde tu última visita»:** `novedades(session, empresa_id, usuario_id, desde, ahora) -> list[Novedad]`
+>   con `texto`, `n` y `url`: CA nuevas del territorio con match desde `desde`; ofertas ganadas; menciones al usuario;
+>   ofertas enviadas por otros miembros del equipo; listas de precios de proveedores actualizadas. Sin filas con `n = 0`.
+>   `desde` sale de `usuario_vista(usuario, 'hoy').datos['visto_en']` (tabla de F-dis-1); si no existe, las últimas 24 h.
+>   `POST /hoy/visto` guarda `visto_en = ahora`. Tests: empresa ajena no aparece; sin `visto_en`; menciones solo propias.
+> - La vista previa `/hoy/previa` muestra también las novedades.
+> - **Modelo y paralelo:** Opus. Puede correr en paralelo con F-dis-paleta-campana (worktree propio). **No** en paralelo
+>   con F-dis-ventas: esta fase refactoriza `ventas.condiciones_seguimiento`.
 
 > Para Claude Code. **Modelo: Opus**, porque hay que definir las cifras por período en hora de Chile y
 > refactorizar las alarmas de seguimiento para que las comparta «Te necesita». Un commit, **sin push**.
 > **Sin migración** salvo que `EXPLAIN` muestre que falta un índice; en ese caso, justificarlo.
 > Va en paralelo con el rediseño de Boris (artifacts «Rastrillo» y «Rastrillo · Maquetas», handoff en el proyecto
-> `claude/09-handoff-diseno.md`). **Prohibido tocar** `app/api/static/app.css`, `base.html`, `hoy.html`, `mesa_dia.html`
-> y los parciales existentes. Solo se pueden **crear** templates nuevos, mínimos, sin estilo propio.
+> `claude/09-handoff-diseno.md`). **Prohibido tocar** `hoy.html`, `mesa_dia.html`
+> y los parciales existentes (ver ajustes del 7-nov). Solo se pueden **crear** templates nuevos, mínimos, sin estilo propio.
 
 ## Objetivo
 Las maquetas cambian la forma de trabajar. «Hoy» deja de ser una grilla de conteos y pasa a ser una **bandeja**: cifras

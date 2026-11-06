@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · Hoy</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+<div>
+<h1 class="m-titulo">Hoy</h1>
+<p class="m-sub">Viernes 6 de noviembre · Ñuble · actualizado 10:42</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+<div class="r-seg" role="group" aria-label="Período de las cifras">
+<sc-for list="{{periodos}}" as="p" hint-placeholder-count="3">
+<button type="button" aria-pressed="{{p.activo}}" onClick="{{p.elegir}}">{{p.nombre}}</button>
+</sc-for>
+</div>
+<a class="r-btn r-btn--primario" href="Mesa.dc.html">Ir a la mesa <svg class="r-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></a>
+</div>
+</header>
+
+<sc-if value="{{hayNovedades}}" hint-placeholder-val="{{true}}">
+<section aria-labelledby="t-novedades" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px 10px 16px; border-radius: var(--radio-panel); background: var(--accion-suave);">
+<span id="t-novedades" style="font-size: 13px; font-weight: 600; color: var(--tinta);"><span>Desde tu última visita (ayer 18:40)</span></span>
+<sc-for list="{{novedades}}" as="n" hint-placeholder-count="5">
+<a href="{{n.href}}" class="r-btn r-btn--secundario r-btn--sm" style="text-decoration: none;"><span>{{n.txt}}</span></a>
+</sc-for>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" style="margin-left: auto;" onClick="{{verNovedades}}"><span>Marcar como visto</span></button>
+</section>
+</sc-if>
+
+<section class="r-tarjeta" aria-label="Cifras del período" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 24px 32px; padding: 20px 24px;">
+<div class="r-dato r-dato--xl"><span class="r-etiqueta">{{c0.etiqueta}}</span><span class="r-dato__valor">{{c0.valor}}</span><span class="r-dato__nota">{{c0.nota}}</span></div>
+<div class="r-dato" style="align-content: end;"><span class="r-etiqueta">{{c1.etiqueta}}</span><span class="r-dato__valor">{{c1.valor}}</span><span class="r-dato__nota"><span class="r-delta--sube">{{c1.delta}}</span>{{c1.nota}}</span></div>
+<div class="r-dato" style="align-content: end;"><span class="r-etiqueta">{{c2.etiqueta}}</span><span class="r-dato__valor">{{c2.valor}}</span><span class="r-dato__nota" style="color: var(--atencion);">{{c2.nota}}</span></div>
+<div class="r-dato" style="align-content: end;"><span class="r-etiqueta">{{c3.etiqueta}}</span><span class="r-dato__valor">{{c3.valor}}</span><span class="r-dato__nota">{{c3.nota}}</span></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start;">
+
+<section class="r-tarjeta" aria-labelledby="t-necesita" style="flex: 2 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 12px;">
+<div style="display: flex; align-items: center; gap: 10px;">
+<h2 class="m-seccion" id="t-necesita">Te necesita</h2>
+<span class="r-contador r-contador--atencion">{{total}}</span>
+</div>
+<div class="r-seg" role="group" aria-label="Filtrar pendientes">
+<sc-for list="{{filtros}}" as="f" hint-placeholder-count="5">
+<button type="button" aria-pressed="{{f.activo}}" onClick="{{f.elegir}}">{{f.nombre}}</button>
+</sc-for>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; border-top: 1px solid var(--borde);">
+<sc-for list="{{pendientes}}" as="i" hint-placeholder-count="5">
+<div class="m-fila" style="display: grid; grid-template-columns: 200px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--borde);">
+<div>
+<span class="r-senal {{i.clase}}">
+<sc-if value="{{i.iAlarma}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2 2"></path><path d="M5 3 2 6"></path><path d="m22 6-3-3"></path><path d="M6.38 18.7 4 21"></path><path d="M17.64 18.67 20 21"></path></svg></sc-if>
+<sc-if value="{{i.iHistoria}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg></sc-if>
+<sc-if value="{{i.iCosto}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 18V6"></path></svg></sc-if>
+<sc-if value="{{i.iLista}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M12 11h4"></path><path d="M12 16h4"></path><path d="M8 11h.01"></path><path d="M8 16h.01"></path></svg></sc-if>
+<sc-if value="{{i.iAnexo}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"></path><path d="m9 18-1.5-1.5"></path><circle cx="5" cy="14" r="3"></circle></svg></sc-if>
+<sc-if value="{{i.iCamion}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg></sc-if>
+<sc-if value="{{i.iRecibo}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg></sc-if>
+<span>{{i.senal}}</span></span>
+</div>
+<div style="display: grid; gap: 2px; min-width: 0;">
+<span class="m-fila__nombre">{{i.titulo}}</span>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{i.detalle}}</span>
+</div>
+<a class="r-btn r-btn--secundario r-btn--sm" href="{{i.destino}}">{{i.accion}}</a>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 20px;">
+<span class="r-icono r-icono--sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path><path d="M4 17v2"></path><path d="M5 18H3"></path></svg></span>
+<span class="r-brillo" style="font-size: 13px; font-weight: 500;">Leyendo el anexo de 3011207-88-COT26 con IA…</span>
+</div>
+</section>
+
+<div style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+<section class="r-tarjeta" aria-labelledby="t-embudo" style="padding: 16px 20px 18px; display: flex; flex-direction: column; gap: 14px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+<h2 class="m-seccion" id="t-embudo">Embudo del equipo</h2>
+<span class="r-etiqueta">esta semana</span>
+</div>
+<sc-for list="{{embudo}}" as="e" hint-placeholder-count="4">
+<a href="{{e.href}}" class="m-fila" style="display: grid; gap: 6px; padding: 6px 8px; margin: 0 -8px; border-radius: 8px; text-decoration: none; color: var(--tinta);">
+<span style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 14px; font-weight: 500;">{{e.nombre}}</span><span class="m-num" style="font-size: 17px;">{{e.n}}</span></span>
+<span style="display: block; height: 6px; border-radius: 999px; background: var(--superficie-2);"><span style="display: block; height: 6px; border-radius: 999px; background: var(--accion); width: {{e.ancho}};"></span></span>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{e.nota}}</span>
+</a>
+</sc-for>
+</section>
+
+<section class="r-tarjeta" aria-labelledby="t-actividad" style="padding: 16px 20px 8px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+<h2 class="m-seccion" id="t-actividad">Actividad</h2>
+<a class="m-enlace" href="Actividad.dc.html" style="font-size: 13px;">Ver todo</a>
+</div>
+<sc-for list="{{actividad}}" as="a" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--borde);">
+<span class="m-avatar" aria-hidden="true" style="width: 26px; height: 26px; font-size: 11px;">{{a.ini}}</span>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta);">{{a.texto}}<sc-if value="{{a.ok}}" hint-placeholder-val="{{false}}"> <span class="r-estado r-estado--ok" style="margin-left: 4px;">Ganada</span></sc-if></span>
+<span style="font-size: 12px; line-height: 18px; color: var(--tinta-2); white-space: nowrap;">{{a.hora}}</span>
+</div>
+</sc-for>
+</section>
+</div>
+</div>
+
+<p class="m-fuente" style="margin: 0;">Fuente: Dirección ChileCompra · Compra Ágil, región de Ñuble.</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { periodo: 'hoy', filtro: 'todo', novedadesVistas: false };
+  }
+  renderVals() {
+    const CIFRAS = {
+      hoy: [
+        { etiqueta: 'En juego en la mesa priorizada', valor: '$ 6,2 M', nota: '9 CA priorizadas' },
+        { etiqueta: 'CA nuevas', valor: '27', delta: '+5', nota: 'vs. ayer' },
+        { etiqueta: 'Cierran hoy', valor: '2', nota: '1 sin oferta lista' },
+        { etiqueta: 'Ofertas enviadas', valor: '1', nota: 'de 3 previstas' }
+      ],
+      semana: [
+        { etiqueta: 'En juego esta semana', valor: '$ 18,7 M', nota: '31 CA priorizadas' },
+        { etiqueta: 'CA nuevas', valor: '112', delta: '+8 %', nota: 'vs. semana pasada' },
+        { etiqueta: 'Cierran esta semana', valor: '11', nota: '4 sin oferta lista' },
+        { etiqueta: 'Ofertas enviadas', valor: '6', nota: '2 adjudicadas' }
+      ],
+      mes: [
+        { etiqueta: 'Adjudicado en noviembre', valor: '$ 3,8 M', nota: '5 OC · margen 17,9 %' },
+        { etiqueta: 'CA nuevas', valor: '164', delta: '+12 %', nota: 'vs. octubre' },
+        { etiqueta: 'Cierran este mes', valor: '38', nota: '9 sin oferta lista' },
+        { etiqueta: 'Ofertas enviadas', valor: '14', nota: 'tasa de adjudicación 36 %' }
+      ]
+    };
+    const PENDIENTES = [
+      { tipo: 'cierres', clase: 'r-senal--urgente', iAlarma: true, senal: 'Cierra hoy 15:00', titulo: 'Guantes de nitrilo y alcohol gel', detalle: 'Hospital de San Carlos · 1057510-1996-COT26 · lote 14, falta precio de 2 productos', accion: 'Terminar oferta', destino: 'Lote.dc.html' },
+      { tipo: 'cierres', clase: 'r-senal--urgente', iAlarma: true, senal: 'Cierra hoy 18:00', titulo: 'Resmas carta y artículos de escritorio', detalle: 'DAEM Bulnes · 2389114-412-COT26 · oferta sin armar', accion: 'Abrir lote', destino: 'Lote.dc.html' },
+      { tipo: 'ventas', clase: 'r-senal--urgente', iAlarma: true, senal: 'Aceptar OC · mañana 12:00', titulo: 'Insumos de oficina', detalle: 'Municipalidad de San Nicolás · OC 2210045-1123-SE26 · Pendiente de OC', accion: 'Abrir en Ventas', destino: 'Ventas.dc.html' },
+      { tipo: 'ventas', clase: 'r-senal--atencion', iCamion: true, senal: 'Despacho sin programar', titulo: 'Útiles de aseo', detalle: 'Liceo Polivalente de Quirihue · entregar antes del lun 9 · Pendiente de despacho', accion: 'Planificar entrega', destino: 'Ventas.dc.html' },
+      { tipo: 'ventas', clase: 'r-senal--atencion', iRecibo: true, senal: 'Sin OC · bloquea la factura', titulo: 'Mascarillas y guantes', detalle: 'CESFAM de Coihueco · despachada el 4 nov · Pendiente de factura', accion: 'Registrar OC', destino: 'Ventas.dc.html' },
+      { tipo: 'precios', clase: 'r-senal--atencion', iHistoria: true, senal: 'Precio desactualizado · 23 días', titulo: 'Alcohol gel 1 L', detalle: 'Comercial Itata · último costo $ 3.150 · lo piden 2 CA del lote 14', accion: 'Pedir precio', destino: 'Lote.dc.html' },
+      { tipo: 'precios', clase: 'r-senal--atencion', iHistoria: true, senal: 'Precio desactualizado · 18 días', titulo: 'Resma carta 75 g, 500 hojas', detalle: 'Librería Central Chillán · último costo $ 3.890', accion: 'Pedir precio', destino: 'Lote.dc.html' },
+      { tipo: 'precios', clase: 'r-senal--atencion', iCosto: true, senal: 'Falta costo · 2 líneas', titulo: 'Guantes de nitrilo talla L · Toalla de manos interfoliada', detalle: 'Sin proveedor con precio en el catálogo', accion: 'Agregar costo', destino: 'Lote.dc.html' },
+      { tipo: 'lineas', clase: 'r-senal--atencion', iLista: true, senal: '12 líneas por revisar', titulo: 'Líneas leídas por IA de 4 anexos', detalle: 'Confirma producto, cantidad y unidad antes de cotizar', accion: 'Revisar líneas', destino: 'Mesa.dc.html' },
+      { tipo: 'anexos', clase: 'r-senal--atencion', iAnexo: true, senal: '3 anexos sin leer', titulo: 'CA vigentes con documentos adjuntos', detalle: 'Arroz, legumbres y aceite · Pañales adulto · Detergente industrial', accion: 'Ver anexos', destino: 'Mesa.dc.html' }
+    ];
+    const FILTROS = [['todo', 'Todo'], ['cierres', 'Cierres'], ['ventas', 'Ventas'], ['precios', 'Precios'], ['lineas', 'Líneas'], ['anexos', 'Anexos']];
+    const c = CIFRAS[this.state.periodo];
+    const visibles = PENDIENTES.filter((p) => this.state.filtro === 'todo' || p.tipo === this.state.filtro);
+    return {
+      tema: this.props.tema ?? 'claro', densidad: this.props.densidad ?? 'comoda',
+      hayNovedades: !this.state.novedadesVistas,
+      verNovedades: () => this.setState({ novedadesVistas: true }),
+      novedades: [['14 CA nuevas que calzan', 'Mesa.dc.html'], ['1 ganada · DAEM Bulnes', 'Ventas.dc.html'], ['2 menciones a ti', 'Lote.dc.html'], ['Gonzalo envió 1 oferta', 'Ventas.dc.html'], ['Ñuble Aseo actualizó 14 precios', 'Proveedores.dc.html']].map(([txt, href]) => ({ txt, href })),
+      periodos: [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes']].map(([id, nombre]) => ({
+        nombre, activo: this.state.periodo === id ? 'true' : 'false', elegir: () => this.setState({ periodo: id })
+      })),
+      c0: c[0], c1: c[1], c2: c[2], c3: c[3],
+      total: PENDIENTES.length,
+      filtros: FILTROS.map(([id, nombre]) => {
+        const n = id === 'todo' ? PENDIENTES.length : PENDIENTES.filter((p) => p.tipo === id).length;
+        return { nombre: nombre + ' ' + n, activo: this.state.filtro === id ? 'true' : 'false', elegir: () => this.setState({ filtro: id }) };
+      }),
+      pendientes: visibles.map((p) => ({ iAlarma: false, iHistoria: false, iCosto: false, iLista: false, iAnexo: false, iCamion: false, iRecibo: false, ...p })),
+      // Embudo completo: antes de enviar (Mesa, En trabajo) y después (estados de Ventas).
+      embudo: [
+        { nombre: 'Priorizadas', n: 9, ancho: '100%', nota: '$ 6,2 M en juego', href: 'Mesa.dc.html' },
+        { nombre: 'Cotizando', n: 4, ancho: '44%', nota: 'lote 14 · 3 precios por pedir', href: 'Lote.dc.html' },
+        { nombre: 'Listas para enviar', n: 2, ancho: '22%', nota: 'cierran hoy y mañana', href: 'Enviar.dc.html' },
+        { nombre: 'Enviadas · por resolver', n: 3, ancho: '33%', nota: 'Enviada 2 · En evaluación 1', href: 'Ventas.dc.html' },
+        { nombre: 'Adjudicadas en curso', n: 4, ancho: '44%', nota: 'Pendiente de OC 1 · despacho 1 · factura 1 · pago 1', href: 'Ventas.dc.html' },
+        { nombre: 'Completas', n: 1, ancho: '11%', nota: 'y 1 no ganada · últimos 30 días', href: 'Ventas.dc.html' }
+      ],
+      actividad: [
+        { ini: 'M', texto: 'Mario envió la oferta de Papel higiénico y toalla de manos', hora: '10:15' },
+        { ini: 'G', texto: 'Gonzalo actualizó 14 costos de Distribuidora Ñuble Aseo', hora: '9:52' },
+        { ini: 'IA', texto: 'La IA leyó 2 anexos; 3 líneas quedaron por revisar', hora: '9:30' },
+        { ini: 'B', texto: 'Ganamos Insumos de oficina, Municipalidad de San Nicolás · $ 612.000', hora: 'ayer', ok: true },
+        { ini: 'B', texto: 'Boris creó el lote 14 con 4 CA', hora: 'ayer' }
+      ].map((a) => ({ ok: false, ...a }))
+    };
+  }
+}
+</script>
+</body>
+</html>

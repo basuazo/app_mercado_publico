@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · Administración</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main" style="gap: 20px; max-width: 1100px;">
+<header>
+<h1 class="m-titulo">Administración</h1>
+<p class="m-sub"><span>Tus preferencias, los datos de la empresa, quién entra a Rastrillo y si todo está funcionando. Empresa, usuarios y salud solo los ven administradores.</span></p>
+</header>
+
+<div class="r-seg" role="group" aria-label="Sección" style="align-self: flex-start;">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><button type="button" aria-pressed="{{t.activo}}" onClick="{{t.elegir}}"><span>{{t.nombre}}</span></button></sc-for>
+</div>
+
+<sc-if value="{{enPrefs}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; align-items: start;">
+<div style="display: grid; gap: 20px;">
+<section class="r-tarjeta" aria-labelledby="t-apa" style="padding: 18px 20px; display: grid; gap: 14px;">
+<h2 class="m-seccion" id="t-apa" style="font-size: 15px;">Apariencia</h2>
+<div style="display: grid; gap: 6px;"><span class="r-etiqueta">Tema</span>
+<div class="r-seg" role="group" aria-label="Tema" style="justify-self: start;"><sc-for list="{{temas}}" as="t" hint-placeholder-count="3"><button type="button" aria-pressed="{{t.activo}}" onClick="{{t.elegir}}"><span>{{t.nombre}}</span></button></sc-for></div></div>
+<div style="display: grid; gap: 6px;"><span class="r-etiqueta">Densidad de las listas</span>
+<div class="r-seg" role="group" aria-label="Densidad" style="justify-self: start;"><sc-for list="{{densidades}}" as="t" hint-placeholder-count="2"><button type="button" aria-pressed="{{t.activo}}" onClick="{{t.elegir}}"><span>{{t.nombre}}</span></button></sc-for></div>
+<span style="font-size: 12px; color: var(--tinta-2);">Compacta muestra más filas por pantalla; el contenido es el mismo.</span></div>
+<label style="display: grid; gap: 6px;"><span class="r-etiqueta">Al entrar, abrir</span>
+<select class="m-precio" style="height: 34px; width: 220px; text-align: left; font-size: 13px;" value="{{inicio}}" onChange="{{elegirInicio}}"><option value="hoy">Hoy</option><option value="mesa">Mesa</option><option value="trabajo">En trabajo</option><option value="ventas">Ventas</option></select></label>
+</section>
+<section class="r-tarjeta" aria-labelledby="t-atajos" style="padding: 18px 20px; display: grid; gap: 10px;">
+<h2 class="m-seccion" id="t-atajos" style="font-size: 15px;">Atajos de teclado</h2>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; font-size: 13px; align-items: center;">
+<sc-for list="{{atajos}}" as="a" hint-placeholder-count="8"><span>{{a.que}}</span><span style="display: inline-flex; gap: 4px; justify-self: end;"><sc-for list="{{a.teclas}}" as="k" hint-placeholder-count="2"><span class="r-tecla">{{k.t}}</span></sc-for></span></sc-for>
+</div>
+<span style="font-size: 12px; color: var(--tinta-2);">También aparecen junto a cada acción en la paleta (⌘K).</span>
+</section>
+</div>
+<section class="r-tarjeta" aria-labelledby="t-avisos" style="display: flex; flex-direction: column;">
+<div style="padding: 18px 20px 10px; display: grid; gap: 4px;">
+<h2 class="m-seccion" id="t-avisos" style="font-size: 15px;">Qué te avisamos y por dónde</h2>
+<span style="font-size: 13px; color: var(--tinta-2);">La campana siempre registra todo; aquí eliges qué además te llega al correo o al WhatsApp.</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px 80px; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--borde);">
+<span class="m-cab">Aviso</span><span class="m-cab" style="text-align: center;">Campana</span><span class="m-cab" style="text-align: center;">Correo</span><span class="m-cab" style="text-align: center;">WhatsApp</span>
+</div>
+<sc-for list="{{avisos}}" as="a" hint-placeholder-count="7">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px 80px; gap: 8px; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--borde);">
+<span style="display: grid; gap: 1px;"><span style="font-size: 14px; font-weight: 500;">{{a.nombre}}</span><span style="font-size: 12px; color: var(--tinta-2);"><span>{{a.nota}}</span></span></span>
+<span style="text-align: center;"><input type="checkbox" class="m-check" checked disabled aria-label="Campana: siempre"></span>
+<span style="text-align: center;"><input type="checkbox" class="m-check" checked="{{a.correo}}" onChange="{{a.alternarCorreo}}" aria-label="{{a.nombre}} por correo"></span>
+<span style="text-align: center;"><input type="checkbox" class="m-check" checked="{{a.wsp}}" onChange="{{a.alternarWsp}}" aria-label="{{a.nombre}} por WhatsApp"></span>
+</div>
+</sc-for>
+<label style="display: flex; align-items: center; gap: 10px; padding: 14px 20px; font-size: 14px;"><input type="checkbox" class="m-check" checked="{{resumen}}" onChange="{{alternarResumen}}"><span><span>Resumen diario por correo a las 8:00 con lo de «Hoy»</span></span></label>
+<span style="padding: 0 20px 16px; font-size: 12px; color: var(--tinta-2);"><span>{{silencio}}</span></span>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{enEmpresa}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; align-items: start;">
+<section class="r-tarjeta" aria-labelledby="t-emp" style="padding: 18px 20px; display: grid; gap: 12px;">
+<h2 class="m-seccion" id="t-emp" style="font-size: 15px;">Datos de la empresa</h2>
+<sc-for list="{{campos}}" as="c" hint-placeholder-count="6">
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">{{c.nombre}}</span><input class="m-precio" type="text" style="text-align: left; height: 34px;" placeholder="{{c.ejemplo}}"></label>
+</sc-for>
+<span style="font-size: 12px; color: var(--tinta-2);">Aparecen en la cotización formal y en las solicitudes de precio a proveedores.</span>
+<div style="display: flex; gap: 8px;"><button class="r-btn r-btn--primario" type="button"><span>Guardar</span></button></div>
+</section>
+<div style="display: grid; gap: 20px;">
+<section class="r-tarjeta" aria-labelledby="t-logo" style="padding: 18px 20px; display: grid; gap: 10px;">
+<h2 class="m-seccion" id="t-logo" style="font-size: 15px;">Logo</h2>
+<div style="height: 96px; border-radius: var(--radio-control); border: 1px dashed var(--borde-control); display: grid; place-items: center; font-size: 13px; color: var(--tinta-2); text-align: center;"><span><span>PNG o SVG, fondo transparente</span><br><span>Sin logo, la cotización va sin recuadro</span></span></div>
+<label class="r-btn r-btn--secundario" style="justify-self: start;"><span>Subir logo</span><input class="m-oculto" type="file"></label>
+</section>
+<section class="r-tarjeta" aria-labelledby="t-terr" style="padding: 18px 20px; display: grid; gap: 10px;">
+<h2 class="m-seccion" id="t-terr" style="font-size: 15px;">Territorio</h2>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta-2);">La Mesa, Competencia y Estrategia muestran solo compradores de estas comunas.</span>
+<span style="display: flex; flex-wrap: wrap; gap: 6px;">
+<sc-for list="{{comunas}}" as="c" hint-placeholder-count="8"><button type="button" class="r-filtro" aria-pressed="{{c.activo}}" onClick="{{c.alternar}}"><span>{{c.nombre}}</span></button></sc-for>
+</span>
+<span style="font-size: 12px; color: var(--tinta-2);"><span>{{nComunas}} de 21 comunas de Ñuble</span></span>
+</section>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{enUsuarios}}" hint-placeholder-val="{{false}}">
+<section class="r-tarjeta" aria-labelledby="t-us" style="display: flex; flex-direction: column;">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--borde);">
+<h2 class="m-seccion" id="t-us" style="font-size: 15px;">Usuarios</h2>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button"><span>Invitar por correo</span></button>
+</div>
+<sc-for list="{{usuarios}}" as="u" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 32px minmax(0, 1fr) 180px 140px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde);">
+<span class="m-avatar" aria-hidden="true">{{u.inicial}}</span>
+<div style="display: grid; gap: 2px; min-width: 0;"><span style="font-size: 14px; font-weight: 500;">{{u.nombre}}</span><span style="font-size: 12px; color: var(--tinta-2);"><span>{{u.correo}}</span></span></div>
+<select class="m-precio" style="height: 30px; text-align: left; font-size: 13px;" aria-label="Rol" value="{{u.rol}}"><option value="admin">Administrador</option><option value="op">Operador</option><option value="lectura">Solo lectura</option></select>
+<span style="font-size: 12px; color: var(--tinta-2); text-align: right;"><span>{{u.ultimo}}</span></span>
+</div>
+</sc-for>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">Operador: arma y envía ofertas, gestiona ventas. Solo lectura: ve todo, no cambia nada. Administrador: además edita empresa, reglas y usuarios.</p>
+</section>
+</sc-if>
+
+<sc-if value="{{enSalud}}" hint-placeholder-val="{{false}}">
+<section class="r-tarjeta" aria-label="Estado del sistema" style="display: flex; flex-direction: column;">
+<sc-for list="{{salud}}" as="s" hint-placeholder-count="6">
+<div style="display: grid; grid-template-columns: 220px minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde);">
+<span style="font-size: 14px; font-weight: 500;">{{s.nombre}}</span>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta-2);"><span>{{s.detalle}}</span></span>
+<span class="{{s.clase}}" style="justify-self: end;"><span>{{s.estado}}</span></span>
+</div>
+</sc-for>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">Las claves (ticket de Mercado Público e IA) viven en el servidor y no se muestran aquí ni en los registros. Datos de procesos: Fuente: Dirección ChileCompra.</p>
+</section>
+</sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'prefs', temaElegido: null, densidadElegida: null, inicio: 'hoy', resumen: true, canales: { men: [1, 1], asig: [1, 0], cierre: [1, 1], res: [1, 0], oc: [1, 0], pago: [1, 0], doc: [1, 0] }, fuera: { 'Cobquecura': true, 'Ninhue': true, 'Portezuelo': true, 'Ránquil': true, 'Coelemu': true, 'Treguaco': true } };
+  }
+  renderVals() {
+    const st = this.state;
+    const COM = ['Chillán', 'Chillán Viejo', 'Bulnes', 'San Carlos', 'San Ignacio', 'Quillón', 'Yungay', 'Pinto', 'El Carmen', 'Pemuco', 'Coihueco', 'San Nicolás', 'Ñiquén', 'San Fabián', 'Quirihue', 'Cobquecura', 'Ninhue', 'Portezuelo', 'Ránquil', 'Coelemu', 'Treguaco'];
+    const sel = COM.filter((c) => !st.fuera[c]);
+    return {
+      tema: st.temaElegido === 'sistema' ? (this.props.tema ?? 'claro') : (st.temaElegido || this.props.tema || 'claro'),
+      densidad: st.densidadElegida || this.props.densidad || 'comoda',
+      temas: [['claro', 'Claro'], ['oscuro', 'Oscuro'], ['sistema', 'Según el sistema']].map(([id, nombre]) => ({ nombre, activo: (st.temaElegido || this.props.tema || 'claro') === id ? 'true' : 'false', elegir: () => this.setState({ temaElegido: id }) })),
+      densidades: [['comoda', 'Cómoda'], ['compacta', 'Compacta']].map(([id, nombre]) => ({ nombre, activo: (st.densidadElegida || this.props.densidad || 'comoda') === id ? 'true' : 'false', elegir: () => this.setState({ densidadElegida: id }) })),
+      inicio: st.inicio, elegirInicio: (ev) => this.setState({ inicio: ev.target.value }),
+      atajos: [['Abrir la paleta', ['⌘', 'K']], ['Ir a Hoy', ['G', 'H']], ['Ir a la Mesa', ['G', 'M']], ['Ir a En trabajo', ['G', 'T']], ['Ir a Ventas', ['G', 'V']], ['Buscar en la pantalla', ['/']], ['Fila siguiente / anterior', ['J', 'K']], ['Cerrar panel o modal', ['Esc']], ['Nuevo lote', ['N']]].map(([que, ks]) => ({ que, teclas: ks.map((t) => ({ t })) })),
+      avisos: [['men', 'Te mencionan', 'En una CA, un lote o una venta'], ['asig', 'Te asignan una CA', 'Desde la Mesa'], ['cierre', 'Cierra una oferta que estás armando', '2 horas antes del cierre'], ['res', 'Resultado de una oferta enviada', 'Ganada o no ganada'], ['oc', 'Llega una OC', 'Para planificar el despacho'], ['pago', 'Pago atrasado', 'Al pasar el vencimiento de la factura'], ['doc', 'Documento por vencer', '30 días antes']].map(([id, nombre, nota]) => ({
+        nombre, nota, correo: !!st.canales[id][0], wsp: !!st.canales[id][1],
+        alternarCorreo: () => this.setState({ canales: { ...st.canales, [id]: [st.canales[id][0] ? 0 : 1, st.canales[id][1]] } }),
+        alternarWsp: () => this.setState({ canales: { ...st.canales, [id]: [st.canales[id][0], st.canales[id][1] ? 0 : 1] } })
+      })),
+      resumen: st.resumen, alternarResumen: () => this.setState({ resumen: !st.resumen }),
+      silencio: 'Fuera de horario (20:00 a 8:00 y fines de semana) solo llegan los cierres próximos.',
+      tabs: [['prefs', 'Mis preferencias'], ['empresa', 'Empresa'], ['usuarios', 'Usuarios'], ['salud', 'Salud del sistema']].map(([id, nombre]) => ({ nombre, activo: st.tab === id ? 'true' : 'false', elegir: () => this.setState({ tab: id }) })),
+      enPrefs: st.tab === 'prefs', enEmpresa: st.tab === 'empresa', enUsuarios: st.tab === 'usuarios', enSalud: st.tab === 'salud',
+      campos: [['Razón social', '[Razón social]'], ['RUT', '[00.000.000-0]'], ['Giro', '[Giro]'], ['Dirección', '[Dirección], [Comuna]'], ['Correo de contacto', '[correo]'], ['Teléfono', '[teléfono]']].map(([nombre, ejemplo]) => ({ nombre, ejemplo })),
+      comunas: COM.map((nombre) => ({ nombre, activo: st.fuera[nombre] ? 'false' : 'true', alternar: () => this.setState({ fuera: { ...st.fuera, [nombre]: !st.fuera[nombre] } }) })),
+      nComunas: sel.length,
+      usuarios: [['Boris', 'boris@…', 'admin', 'Activo ahora'], ['Gonzalo', 'gonzalo@…', 'op', 'Hace 20 min'], ['Mario', 'mario@…', 'op', 'Ayer 18:40'], ['Contadora', 'contabilidad@…', 'lectura', 'Hace 6 días']].map(([nombre, correo, rol, ultimo]) => ({ nombre, inicial: nombre[0], correo, rol, ultimo })),
+      salud: [
+        ['API de Mercado Público', 'Última lectura de Compra Ágil hoy 09:30 · 214 CA nuevas · próxima a las 12:30', 'Funcionando', 'r-estado r-estado--ok'],
+        ['Cuota diaria de la API', '3.120 de 10.000 consultas usadas hoy', 'Holgada', 'r-estado r-estado--ok'],
+        ['Lectura de anexos (IA)', '38 anexos leídos este mes · 2 no se pudieron leer (imagen borrosa)', 'Con avisos', 'r-estado r-estado--curso'],
+        ['Resultados y OC', 'Último cruce de adjudicaciones y OC hoy 08:00', 'Funcionando', 'r-estado r-estado--ok'],
+        ['Envío de solicitudes', 'Correo y WhatsApp conectados · 6 solicitudes enviadas esta semana', 'Funcionando', 'r-estado r-estado--ok'],
+        ['Respaldo de la base de datos', 'Último respaldo hoy 03:00 · se guardan 30 días', 'Funcionando', 'r-estado r-estado--ok']
+      ].map(([nombre, detalle, estado, clase]) => ({ nombre, detalle, estado, clase }))
+    };
+  }
+}
+</script>
+</body>
+</html>

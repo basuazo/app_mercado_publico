@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Campana · actividad del equipo</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>body{margin:0}</style>
+</helmet>
+<span style="position: relative; display: inline-flex; font-family: var(--font-sans); color: var(--tinta);">
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Actividad del equipo: {{nNoLeidos}} sin leer" aria-expanded="{{abiertaTxt}}" onClick="{{alternar}}" style="position: relative;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg><sc-if value="{{hayNoLeidos}}" hint-placeholder-val="{{true}}"><span class="r-contador" aria-hidden="true" style="position: absolute; top: -7px; right: -7px;">{{nNoLeidos}}</span></sc-if></button>
+<sc-if value="{{abierta}}" hint-placeholder-val="{{false}}">
+<div class="r-tarjeta" role="region" aria-label="Actividad del equipo" style="position: absolute; top: 36px; left: -180px; z-index: 60; width: 360px; box-shadow: var(--sombra-elevada); border-radius: var(--radio-panel); font: 400 13px/18px var(--font-sans); letter-spacing: 0; text-align: left;">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--borde);">
+<strong style="font-size: 13px;">Actividad del equipo</strong>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{marcarLeido}}"><span>Marcar todo como leído</span></button>
+</div>
+<ul style="list-style: none; margin: 0; padding: 4px 0;">
+<sc-for list="{{items}}" as="it" hint-placeholder-count="5">
+<li>
+<a href="{{it.destino}}" class="m-fila" onClick="{{it.leer}}" style="display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 10px; padding: 9px 14px; text-decoration: none; background: {{it.fondo}};">
+<span style="width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: {{it.punto}};" aria-hidden="true"></span>
+<span style="display: grid; gap: 2px; min-width: 0;">
+<span style="color: var(--tinta); font-weight: {{it.peso}};">{{it.texto}}</span>
+<span style="display: flex; justify-content: space-between; gap: 8px; font-size: 12px;"><span style="color: var(--tinta-2);">{{it.cuando}}</span><span style="color: var(--accion); font-weight: 500; white-space: nowrap;">{{it.ir}} →</span></span>
+</span>
+</a>
+</li>
+</sc-for>
+</ul>
+<div style="display: flex; justify-content: space-between; padding: 8px 14px; border-top: 1px solid var(--borde); font-size: 12px;">
+<a class="m-enlace" href="Actividad.dc.html">Ver todo el registro</a><span style="color: var(--tinta-2);">Fuente: Dirección ChileCompra</span>
+</div>
+</div>
+</sc-if>
+</span>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":40,"height":40}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { abierta: false, leidos: [] };
+  }
+  renderVals() {
+    const st = this.state;
+    // Cada aviso lleva a donde se actúa: una mención en un lote abre En trabajo; una de Ventas, Ventas.
+    const ITEMS = [
+      { id: 1, texto: 'Gonzalo te mencionó en Lote 14 · Guantes de nitrilo y alcohol gel: «¿la ofertamos igual con la M sola?»', cuando: 'hoy 9:58', destino: 'Lote.dc.html', ir: 'Ir al lote', mencion: true, nuevo: true },
+      { id: 6, texto: 'Mario te mencionó en la conversación de Lote 14 · Limpieza: «la de guantes cierra a las 15:00, va primero»', cuando: 'hoy 9:35', destino: 'Lote.dc.html', ir: 'Ir al lote', mencion: true, nuevo: true },
+      { id: 2, texto: 'Mario comentó en Insumos de oficina: «La OC llegó por correo, la acepto a mediodía»', cuando: 'hoy 10:05', destino: 'Ventas.dc.html', ir: 'Ir a Ventas', nuevo: true },
+      { id: 3, texto: 'Cierra en 4 h: Guantes de nitrilo y alcohol gel (oferta en armado)', cuando: 'hoy 10:42 · aviso automático', destino: 'Lote.dc.html', ir: 'Terminar oferta', nuevo: true },
+      { id: 4, texto: 'Mario marcó lista la oferta de Papel higiénico y toalla de manos', cuando: 'hoy 10:15', destino: 'Enviar.dc.html', ir: 'Ir a enviar' },
+      { id: 5, texto: 'Gonzalo quedó como responsable de Guantes de nitrilo y alcohol gel', cuando: 'hoy 9:30', destino: 'Mesa.dc.html', ir: 'Ver en la Mesa' }
+    ];
+    const noLeido = (x) => x.nuevo && !st.leidos.includes(x.id) && !st.todoLeido;
+    const n = ITEMS.filter(noLeido).length;
+    return {
+      abierta: st.abierta, abiertaTxt: st.abierta ? 'true' : 'false',
+      alternar: () => this.setState({ abierta: !st.abierta }),
+      nNoLeidos: n, hayNoLeidos: n > 0,
+      marcarLeido: () => this.setState({ todoLeido: true }),
+      items: ITEMS.map((x) => ({
+        ...x, fondo: noLeido(x) ? 'var(--accion-suave)' : 'transparent',
+        punto: noLeido(x) ? (x.mencion ? 'var(--accion)' : 'var(--tinta-2)') : 'transparent',
+        peso: noLeido(x) ? '500' : '400',
+        leer: () => this.setState({ leidos: st.leidos.concat(x.id), abierta: false })
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

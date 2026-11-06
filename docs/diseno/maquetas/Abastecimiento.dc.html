@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · Abastecimiento</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main" style="gap: 20px;">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+<div>
+<h1 class="m-titulo">Abastecimiento</h1>
+<p class="m-sub"><span>Qué se va a comprar en los próximos 3 meses, según lo que tu territorio compró antes. Para negociar con proveedores y tener stock antes de que abran las CA.</span></p>
+<p class="m-fuente" style="margin: 6px 0 0; display: flex; align-items: center; gap: 6px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--ok);"></span><span>Pronóstico recalculado el lun 2 nov · Fuente: Dirección ChileCompra</span></p>
+</div>
+<button class="r-btn r-btn--terciario" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path></svg><span>Exportar planilla</span></button>
+</header>
+
+<section class="r-tarjeta" aria-label="Resumen" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 20px 32px; padding: 18px 24px;">
+<div class="r-dato"><span class="r-etiqueta">Demanda esperada · dic–feb</span><span class="r-dato__valor">$ 84,6 M</span><span class="r-dato__nota"><span>en tus 4 familias · −22 % vs sept–nov</span></span></div>
+<div class="r-dato"><span class="r-etiqueta">Cubierto por tu stock</span><span class="r-dato__valor">12 %</span><span class="r-dato__nota"><span>de las unidades esperadas</span></span></div>
+<div class="r-dato">
+<span class="r-etiqueta" style="display: inline-flex; align-items: center; gap: 4px;"><span>Acierto del pronóstico</span>
+<span class="m-ayuda" tabindex="0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg><span class="m-ayuda__texto" role="tooltip"><strong>Cómo se mide</strong>Se pronosticaron los últimos 6 meses con datos anteriores a cada mes y se comparó con lo que realmente se compró. La línea base repite el mismo mes del año anterior.</span></span>
+</span>
+<span class="r-dato__valor">82 %</span><span class="r-dato__nota"><span class="r-delta--sube">línea base 69 %</span></span></div>
+<div class="r-dato"><span class="r-etiqueta">Peaks por venir</span><span class="r-dato__valor" style="color: var(--atencion);">3</span><span class="r-dato__nota"><span>productos suben más de 40 % en marzo</span></span></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;">
+<div class="r-seg" role="group" aria-label="Familia">
+<sc-for list="{{familias}}" as="f" hint-placeholder-count="5"><button type="button" aria-pressed="{{f.activo}}" onClick="{{f.elegir}}"><span>{{f.nombre}}</span></button></sc-for>
+</div>
+<label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px;"><input type="checkbox" class="m-check" checked="{{soloFalta}}" onChange="{{alternarFalta}}"><span>Solo donde el stock no alcanza</span></label>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+<section class="r-tarjeta" aria-label="Productos" style="flex: 1 1 620px; min-width: 0; display: flex; flex-direction: column;">
+<div class="m-desliza"><div style="min-width: 660px;">
+<div style="display: grid; grid-template-columns: {{cols}}; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--borde);">
+<span class="m-cab">Producto</span><span class="m-cab">Próximos 3 meses</span><span class="m-cab" style="text-align: right;">Unidades</span><span class="m-cab" style="text-align: right;">Tu stock</span>
+<sc-if value="{{conPrecio}}" hint-placeholder-val="{{true}}"><span class="m-cab" style="text-align: right;">Precio mediano</span></sc-if>
+<span class="m-cab">Señal</span>
+</div>
+<sc-for list="{{filas}}" as="r" hint-placeholder-count="7">
+<div class="m-fila" style="display: grid; grid-template-columns: {{cols}}; gap: 12px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--borde); background: {{r.fondo}};">
+<div style="display: grid; gap: 2px; min-width: 0;">
+<button type="button" class="m-fila__abrir" onClick="{{r.abrir}}" aria-expanded="{{r.abiertoTxt}}"><span class="m-fila__nombre" style="display: block; color: {{r.colorNombre}};">{{r.nombre}}</span></button>
+<span style="font-size: 12px; color: var(--tinta-2);"><span>{{r.familia}} · {{r.frecuencia}}</span></span>
+</div>
+<span style="display: flex; align-items: flex-end; gap: 6px; height: 30px;" role="img" aria-label="{{r.barrasTxt}}">
+<sc-for list="{{r.barras}}" as="b" hint-placeholder-count="3"><span style="display: grid; justify-items: center; gap: 2px;"><span style="width: 22px; height: {{b.alto}}; border-radius: 3px 3px 0 0; background: var(--tinta-2); opacity: 0.55;"></span><span style="font-size: 10px; color: var(--tinta-2);">{{b.mes}}</span></span></sc-for>
+</span>
+<span class="m-num" style="text-align: right;">{{r.unidades}}</span>
+<span class="m-num" style="text-align: right; color: {{r.colorStock}};">{{r.stock}}</span>
+<sc-if value="{{conPrecio}}" hint-placeholder-val="{{true}}"><span class="m-num" style="text-align: right;">{{r.precio}}</span></sc-if>
+<span>
+<sc-if value="{{r.senal}}" hint-placeholder-val="{{true}}"><span class="m-ayuda m-ayuda--der" tabindex="0"><span class="r-senal r-senal--atencion" style="height: 24px; font-size: 12px;"><span>{{r.senal}}</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Qué pasa</strong>{{r.ayuda}}<span class="m-ayuda__resuelve">{{r.resuelve}}</span></span></span></sc-if>
+</span>
+</div>
+</sc-for>
+</div></div>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">Pronóstico a partir de las líneas de Compra Ágil adjudicadas en Ñuble (36 meses), normalizadas a unidad base. Fuente: Dirección ChileCompra.</p>
+</section>
+
+<sc-if value="{{hayPanel}}" hint-placeholder-val="{{true}}">
+<aside class="r-tarjeta" aria-labelledby="ab-titulo" style="flex: 0 1 400px; min-width: 300px; border-radius: var(--radio-modal); box-shadow: var(--sombra-elevada); display: flex; flex-direction: column;">
+<div style="display: flex; align-items: flex-start; gap: 8px; padding: 18px 20px 12px;">
+<div style="display: grid; gap: 4px; flex: 1; min-width: 0;">
+<span class="r-etiqueta"><span>{{p.familia}} · unidad base {{p.unidad}}</span></span>
+<h2 class="m-seccion" id="ab-titulo">{{p.nombre}}</h2>
+</div>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Cerrar detalle" onClick="{{cerrar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+</div>
+<div style="padding: 0 20px 14px; display: grid; gap: 6px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Estacionalidad · unidades por mes</h3>
+<span style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: end; gap: 4px; height: 76px;" role="img" aria-label="Unidades compradas por mes">
+<sc-for list="{{p.meses}}" as="m" hint-placeholder-count="12"><span style="display: grid; justify-items: center; gap: 2px;"><span style="width: 100%; height: {{m.alto}}; border-radius: 3px 3px 0 0; background: {{m.color}};"></span><span style="font-size: 10px; color: var(--tinta-2);">{{m.mes}}</span></span></sc-for>
+</span>
+<span style="font-size: 12px; color: var(--tinta-2);">Gris: lo comprado. Azul: pronóstico de los próximos 3 meses.</span>
+</div>
+<div style="padding: 0 20px 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px;">
+<div class="r-dato"><span class="r-etiqueta">Se compra</span><span class="r-dato__valor" style="font-size: 18px;">{{p.frecuencia}}</span></div>
+<div class="r-dato"><span class="r-etiqueta">Precio mediano</span><span class="r-dato__valor" style="font-size: 18px;">{{p.precio}}</span><span class="r-dato__nota"><span>{{p.rango}}</span></span></div>
+</div>
+<div style="padding: 0 20px 14px; display: grid; gap: 6px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Quién lo compra</h3>
+<sc-for list="{{p.compradores}}" as="c" hint-placeholder-count="3"><span style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px;"><span>{{c.nombre}}</span><span class="m-num" style="color: var(--tinta-2);">{{c.pct}}</span></span></sc-for>
+</div>
+<div style="padding: 0 20px 14px; display: grid; gap: 6px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Tus proveedores</h3>
+<sc-for list="{{p.proveedores}}" as="v" hint-placeholder-count="2"><span style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; font-size: 13px;"><span><span>{{v.nombre}}</span></span><span class="m-num"><span>{{v.precio}}</span></span><span style="grid-column: 1 / -1; font-size: 12px; color: {{v.colorNota}};"><span>{{v.nota}}</span></span></span></sc-for>
+</div>
+<div style="margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--borde);">
+<a class="r-btn r-btn--primario" href="Proveedores.dc.html"><span>Pedir precios por volumen</span></a>
+<a class="r-btn r-btn--terciario" href="Inventario.dc.html"><span>Ver en inventario</span></a>
+</div>
+</aside>
+</sc-if>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    // Recuerda los filtros de esta pantalla entre visitas (en la app: por usuario).
+    let g = {};
+    try { g = JSON.parse(window.localStorage.getItem('rastrillo.abastecimiento') || '{}'); } catch (e) {}
+    this.state = { familia: 'todas', soloFalta: false, abierto: 'gel', ...g };
+  }
+  componentDidUpdate() {
+    const st = this.state;
+    try { window.localStorage.setItem('rastrillo.abastecimiento', JSON.stringify({ familia: st.familia, soloFalta: st.soloFalta })); } catch (e) {}
+  }
+  renderVals() {
+    const st = this.state;
+    const FAM = [['todas', 'Todas'], ['ali', 'Alimentos'], ['lim', 'Limpieza e higiene'], ['ofi', 'Oficina'], ['med', 'Insumos médicos']];
+    const NF = Object.fromEntries(FAM);
+    const MES = ['dic', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov'];
+    // id, nombre, fam, unidad, frecuencia, precio, rango, prox3 [dic, ene, feb], stock, serie 12 (dic25..nov26), compradores, proveedores, señal
+    const R = [
+      ['gel', 'Alcohol gel 1 L', 'lim', 'L', 'cada 9 días', '$ 3.290', '$ 2.750 – $ 4.100', [420, 260, 310], 36, [380, 240, 290, 610, 520, 470, 450, 430, 480, 500, 460, 440], [['Servicio de Salud Ñuble', '34 %'], ['DAEM Bulnes', '21 %'], ['JUNJI Ñuble', '18 %']], [['Distribuidora Ñuble Aseo', '$ 2.610', 'subió 8 % este mes', 'var(--atencion)'], ['Aseo Industrial Biobío', '$ 2.480', 'lista de hace 34 días', 'var(--tinta-2)']], 'Peak en marzo', 'Con el regreso a clases, marzo sube 110 % sobre febrero. Tu stock cubre 4 días de demanda.', 'Se resuelve pidiendo precio por volumen antes de febrero.'],
+      ['leche', 'Leche descremada en polvo', 'ali', 'kg', 'cada 14 días', '$ 6.840', '$ 5.900 – $ 7.800', [310, 40, 60], 0, [300, 30, 50, 520, 480, 470, 460, 450, 470, 490, 470, 330], [['JUNJI Ñuble', '52 %'], ['DAEM Bulnes', '38 %']], [['Comercial Itata', '$ 6.120', 'formato 1 kg', 'var(--tinta-2)']], 'Cae en verano', 'Enero y febrero caen 85 %: jardines y escuelas en vacaciones. No conviene stockear ahora.', 'Se resuelve comprando para marzo desde mediados de febrero.'],
+      ['guante', 'Guante de nitrilo M (caja 100)', 'med', 'caja', 'cada 6 días', '$ 4.950', '$ 4.300 – $ 6.200', [190, 180, 185], 22, [170, 175, 168, 190, 185, 180, 200, 210, 195, 188, 182, 186], [['Hospital de San Carlos', '41 %'], ['Servicio de Salud Ñuble', '39 %']], [['Insumos Clínicos', '$ 4.210', 'al día', 'var(--tinta-2)']], '', '', ''],
+      ['papel', 'Papel higiénico 4 rollos', 'lim', 'paquete', 'cada 7 días', '$ 2.190', '$ 1.890 – $ 2.600', [900, 520, 640], 120, [860, 500, 600, 1250, 1100, 990, 980, 950, 1000, 1020, 960, 940], [['DAEM Bulnes', '29 %'], ['JUNJI Ñuble', '26 %'], ['Municipalidad de Chillán Viejo', '15 %']], [['Distribuidora Ñuble Aseo', '$ 1.640', 'al día', 'var(--tinta-2)'], ['Aseo Industrial Biobío', '$ 1.590', 'mínimo de compra $ 300.000', 'var(--tinta-2)']], 'Peak en marzo', 'Marzo sube 95 % sobre febrero. Con tu stock actual cubres 13 % de diciembre.', 'Se resuelve negociando precio por volumen con Aseo Industrial Biobío (mínimo $ 300.000).'],
+      ['resma', 'Resma carta 75 g', 'ofi', 'resma', 'cada 12 días', '$ 4.290', '$ 3.700 – $ 4.900', [210, 60, 80], 45, [190, 50, 70, 380, 300, 240, 220, 210, 230, 250, 230, 200], [['Municipalidad de Chillán Viejo', '37 %'], ['DAEM Bulnes', '33 %']], [['Librería Central Chillán', '$ 3.680', 'lista de hace 51 días', 'var(--atencion)']], 'Peak en marzo', 'Marzo sube 380 % sobre febrero (inicio del año escolar).', 'Se resuelve actualizando la lista de Librería Central Chillán y pidiendo precio por 300 resmas.'],
+      ['arroz', 'Arroz grado 2 · 1 kg', 'ali', 'kg', 'cada 10 días', '$ 1.390', '$ 1.190 – $ 1.650', [640, 90, 120], 0, [600, 80, 110, 980, 920, 900, 880, 870, 890, 910, 900, 700], [['JUNJI Ñuble', '48 %'], ['DAEM Bulnes', '44 %']], [['Comercial Itata', '$ 1.090', 'al día', 'var(--tinta-2)']], '', '', ''],
+      ['cloro', 'Cloro tradicional 5 L', 'lim', 'L', 'cada 8 días', '$ 1.120', '$ 950 – $ 1.400', [2100, 1500, 1700], 300, [2000, 1450, 1600, 2600, 2400, 2300, 2200, 2250, 2300, 2350, 2200, 2150], [['Servicio de Salud Ñuble', '31 %'], ['Hospital de San Carlos', '22 %']], [['Distribuidora Ñuble Aseo', '$ 860', 'al día', 'var(--tinta-2)']], '', '', '']
+    ];
+    let filas = R.filter((r) => st.familia === 'todas' || r[2] === st.familia);
+    if (st.soloFalta) filas = filas.filter((r) => r[8] < r[7][0]);
+    const ab = R.find((r) => r[0] === st.abierto);
+    const n = (x) => x.toLocaleString('es-CL');
+    return {
+      tema: this.props.tema ?? 'claro', densidad: this.props.densidad ?? 'comoda',
+      familias: FAM.map(([id, nombre]) => ({ nombre, activo: st.familia === id ? 'true' : 'false', elegir: () => this.setState({ familia: id }) })),
+      soloFalta: st.soloFalta, alternarFalta: () => this.setState({ soloFalta: !st.soloFalta }),
+      conPrecio: !ab,
+      cols: ab ? 'minmax(0, 1.5fr) 96px 80px 72px minmax(0, 1fr)' : 'minmax(0, 1.5fr) 104px 84px 76px 104px minmax(0, 1fr)',
+      filas: filas.map((r) => {
+        const esAb = st.abierto === r[0];
+        const mx = Math.max(...r[7]);
+        const tot = r[7].reduce((a, b) => a + b, 0);
+        return {
+          nombre: r[1], familia: NF[r[2]], frecuencia: 'se compra ' + r[4],
+          barras: r[7].map((v, i) => ({ alto: Math.max(3, Math.round(v / mx * 20)) + 'px', mes: MES[i] })),
+          barrasTxt: 'dic ' + n(r[7][0]) + ', ene ' + n(r[7][1]) + ', feb ' + n(r[7][2]),
+          unidades: n(tot) + ' ' + r[3], stock: r[8] ? n(r[8]) : '—', colorStock: r[8] < r[7][0] / 4 ? 'var(--atencion)' : 'var(--tinta)',
+          precio: r[5], senal: r[12], ayuda: r[13], resuelve: r[14],
+          abrir: () => this.setState({ abierto: esAb ? null : r[0] }), abiertoTxt: esAb ? 'true' : 'false',
+          fondo: esAb ? 'var(--superficie-2)' : 'transparent', colorNombre: esAb ? 'var(--accion)' : 'var(--tinta)'
+        };
+      }),
+      hayPanel: !!ab,
+      p: ab ? (() => {
+        const serie = ab[9].slice(3).concat(ab[7]);
+        const mx = Math.max(...serie);
+        const etiquetas = MES.slice(3).concat(MES.slice(0, 3));
+        return {
+          nombre: ab[1], familia: NF[ab[2]], unidad: ab[3], frecuencia: ab[4], precio: ab[5], rango: 'entre ' + ab[6],
+          meses: serie.map((v, i) => ({ alto: Math.max(3, Math.round(v / mx * 56)) + 'px', mes: etiquetas[i], color: i >= 9 ? 'var(--accion)' : 'var(--borde-control)' })),
+          compradores: ab[10].map(([nombre, pct]) => ({ nombre, pct })),
+          proveedores: ab[11].map(([nombre, precio, nota, colorNota]) => ({ nombre, precio, nota, colorNota }))
+        };
+      })() : {},
+      cerrar: () => this.setState({ abierto: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

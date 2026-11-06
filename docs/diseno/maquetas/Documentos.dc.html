@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · Documentos de la empresa</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main" style="gap: 20px;">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+<div>
+<h1 class="m-titulo">Documentos de la empresa</h1>
+<p class="m-sub"><span>Se adjuntan a las ofertas que los piden. Rastrillo avisa 30 días antes de que venzan.</span></p>
+</div>
+<label class="r-btn r-btn--secundario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg><span>Subir documento</span><input class="m-oculto" type="file"></label>
+</header>
+
+<section class="r-tarjeta" aria-label="Resumen de documentos" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px 32px; padding: 18px 24px;">
+<div class="r-dato"><span class="r-etiqueta">Vigentes</span><span class="r-dato__valor">{{nVigentes}}</span><span class="r-dato__nota"><span>de {{nTotal}} documentos con vencimiento</span></span></div>
+<div class="r-dato"><span class="r-etiqueta">Por vencer</span><span class="r-dato__valor" style="color: var(--atencion);">{{nPorVencer}}</span><span class="r-dato__nota"><span>en los próximos 30 días</span></span></div>
+<div class="r-dato"><span class="r-etiqueta">Vencidos</span><span class="r-dato__valor" style="color: {{colorVencidos}};">{{nVencidos}}</span><span class="r-dato__nota"><span>{{notaVencidos}}</span></span></div>
+<div class="r-dato"><span class="r-etiqueta">Pedidos en CA abiertas</span><span class="r-dato__valor">3</span><span class="r-dato__nota"><span>resolución sanitaria en 2 · F30 en 1</span></span></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;">
+<div class="r-seg" role="group" aria-label="Filtrar documentos">
+<sc-for list="{{vistas}}" as="v" hint-placeholder-count="4">
+<button type="button" aria-pressed="{{v.activo}}" onClick="{{v.elegir}}">{{v.nombre}}</button>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+<section class="r-tarjeta" aria-label="Documentos" style="flex: 1 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<div style="display: grid; grid-template-columns: {{cols}}; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--borde);">
+<span class="m-cab">Documento</span><span class="m-cab">Vence</span>
+<sc-if value="{{conUso}}" hint-placeholder-val="{{true}}"><span class="m-cab">Se usa en</span></sc-if>
+<span class="m-cab">Estado</span>
+</div>
+<sc-for list="{{docs}}" as="d" hint-placeholder-count="8">
+<div class="m-fila" style="display: grid; grid-template-columns: {{cols}}; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde); background: {{d.fondo}};">
+<div style="display: grid; gap: 2px; min-width: 0;">
+<button type="button" class="m-fila__abrir" onClick="{{d.abrir}}" aria-expanded="{{d.abiertoTxt}}"><span class="m-fila__nombre" style="display: block; color: {{d.colorNombre}};">{{d.nombre}}</span></button>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span>{{d.emisor}}</span></span>
+</div>
+<span style="display: grid; gap: 1px;"><span style="font-size: 14px; font-weight: 500; white-space: nowrap;">{{d.venceTxt}}</span><span style="font-size: 12px; color: var(--tinta-2);">{{d.venceNota}}</span></span>
+<sc-if value="{{conUso}}" hint-placeholder-val="{{true}}"><span style="font-size: 13px; color: var(--tinta-2);"><span>{{d.uso}}</span></span></sc-if>
+<span>
+<sc-if value="{{d.vigente}}" hint-placeholder-val="{{true}}"><span class="r-estado r-estado--ok"><span>Vigente</span></span></sc-if>
+<sc-if value="{{d.sinVence}}" hint-placeholder-val="{{false}}"><span class="r-estado"><span>{{d.estadoTxt}}</span></span></sc-if>
+<sc-if value="{{d.porVencer}}" hint-placeholder-val="{{false}}"><span class="m-ayuda m-ayuda--der" tabindex="0"><span class="r-senal r-senal--atencion" style="height: 24px; font-size: 12px;"><span>Vence en {{d.dias}} días</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Qué pasa</strong>{{d.ayuda}}<span class="m-ayuda__resuelve">Se resuelve subiendo la versión nueva antes del vencimiento.</span></span></span></sc-if>
+<sc-if value="{{d.vencido}}" hint-placeholder-val="{{false}}"><span class="m-ayuda m-ayuda--der" tabindex="0"><span class="r-senal r-senal--urgente" style="height: 24px; font-size: 12px;"><span>Vencido hace {{d.dias}} días</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Qué pasa</strong>{{d.ayuda}}<span class="m-ayuda__resuelve">Se resuelve obteniendo el documento nuevo y reemplazándolo aquí.</span></span></span></sc-if>
+</span>
+</div>
+</sc-for>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">Cada CA indica en su anexo qué documentos pide; Rastrillo adjunta la versión vigente al enviar.</p>
+</section>
+
+<div style="flex: 0 1 400px; min-width: 300px; display: grid; gap: 20px;">
+<sc-if value="{{hayPanel}}" hint-placeholder-val="{{true}}">
+<aside class="r-tarjeta" aria-labelledby="doc-titulo" style="border-radius: var(--radio-modal); box-shadow: var(--sombra-elevada); display: flex; flex-direction: column;">
+<div style="display: flex; align-items: flex-start; gap: 8px; padding: 18px 20px 14px;">
+<div style="display: grid; gap: 4px; flex: 1; min-width: 0;">
+<span class="r-etiqueta"><span>{{p.emisor}}</span></span>
+<h2 class="m-seccion" id="doc-titulo">{{p.nombre}}</h2>
+</div>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Cerrar panel" onClick="{{cerrar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+</div>
+<div style="margin: 0 20px; height: 120px; border-radius: var(--radio-control); border: 1px dashed var(--borde-control); display: grid; place-items: center; text-align: center; font-size: 13px; color: var(--tinta-2);"><span><span>{{p.archivo}}</span><br><span>vista previa del PDF</span></span></div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; padding: 14px 20px;">
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Vence</span>
+<sc-if value="{{p.conVence}}" hint-placeholder-val="{{true}}"><input class="m-precio" type="date" style="text-align: left;" value="{{p.venceIso}}" onChange="{{cambiarVence}}"></sc-if>
+<sc-if value="{{p.sinVence}}" hint-placeholder-val="{{false}}"><span style="height: 32px; display: flex; align-items: center; font-size: 14px;">No vence</span></sc-if>
+</label>
+<div class="r-dato r-dato--fila"><span class="r-etiqueta">Subido</span><span class="r-dato__valor">{{p.subido}}</span></div>
+</div>
+<div style="padding: 0 20px 14px; display: grid; gap: 6px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Se usa en</h3>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta-2);"><span>{{p.usoLargo}}</span></span>
+</div>
+<div style="padding: 0 20px 14px; display: grid; gap: 6px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Versiones</h3>
+<sc-for list="{{p.versiones}}" as="v" hint-placeholder-count="2">
+<span style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px;"><span>{{v.nombre}}</span><span style="color: var(--tinta-2);">{{v.fecha}}</span></span>
+</sc-for>
+</div>
+<div style="margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--borde);">
+<label class="{{p.claseReemplazar}}"><span>Reemplazar archivo</span><input class="m-oculto" type="file" onChange="{{reemplazar}}"></label>
+<button class="r-btn r-btn--terciario" type="button"><span>Descargar</span></button>
+</div>
+</aside>
+</sc-if>
+
+<section class="r-tarjeta" aria-labelledby="t-datos" style="padding: 16px 20px; display: grid; gap: 10px;">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
+<h2 class="m-seccion" id="t-datos" style="font-size: 15px;">Datos para la cotización</h2>
+<a class="m-enlace" href="Cotizacion.dc.html" style="font-size: 13px;">Ver cotización</a>
+</div>
+<div style="display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; font-size: 13px; line-height: 18px;">
+<span style="color: var(--tinta-2);">Razón social</span><span>[Razón social]</span>
+<span style="color: var(--tinta-2);">RUT</span><span>[00.000.000-0]</span>
+<span style="color: var(--tinta-2);">Giro</span><span>[Giro]</span>
+<span style="color: var(--tinta-2);">Dirección</span><span>[Dirección], [Comuna]</span>
+<span style="color: var(--tinta-2);">Contacto</span><span>[Nombre] · [correo] · [teléfono]</span>
+<span style="color: var(--tinta-2);">Logo</span><span>Sin logo · la cotización va sin recuadro</span>
+</div>
+<span style="font-size: 12px; color: var(--tinta-2);">Los edita un administrador en Administración › Empresas.</span>
+</section>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { vista: 'todos', abierto: 'f30', reemplazos: {}, vences: {} };
+  }
+  renderVals() {
+    const st = this.state;
+    const HOY = '2026-11-06';
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+    const fechaTxt = (iso) => { const d = new Date(iso + 'T12:00:00'); return d.getDate() + ' ' + MESES[d.getMonth()] + ' ' + d.getFullYear(); };
+    const dias = (iso) => Math.round((new Date(iso + 'T12:00:00') - new Date(HOY + 'T12:00:00')) / 86400000);
+    const DOCS = [
+      { id: 'rs', nombre: 'Resolución sanitaria', emisor: 'SEREMI de Salud Ñuble', vence: '2027-03-14', uso: '4 ofertas · 2 CA abiertas la piden', usoLargo: 'Adjuntada en 4 ofertas enviadas. La piden 2 CA abiertas: Guantes de nitrilo y alcohol gel (Lote 14) y Kit de aseo para salas cuna.', archivo: 'resolucion-sanitaria.pdf', subido: '14 mar 2025', versiones: [['Versión vigente', '14 mar 2025']] },
+      { id: 'f30', nombre: 'Certificado de antecedentes laborales y previsionales (F30)', emisor: 'Dirección del Trabajo', vence: '2026-10-31', uso: '1 CA abierta lo pide', usoLargo: 'Lo pide 1 CA abierta: Pañales adulto talla M y L (Servicio de Salud Ñuble). Sin la versión vigente, esa oferta no se puede marcar lista.', archivo: 'f30-octubre.pdf', subido: '1 oct 2026', versiones: [['Octubre 2026', '1 oct 2026'], ['Septiembre 2026', '2 sept 2026']] },
+      { id: 'vig', nombre: 'Certificado de vigencia de la sociedad', emisor: 'Registro de Empresas y Sociedades', vence: '2026-11-20', uso: '2 ofertas enviadas', usoLargo: 'Adjuntado en 2 ofertas enviadas. Ninguna CA abierta lo pide hoy.', archivo: 'vigencia-sociedad.pdf', subido: '20 ago 2026', versiones: [['Versión vigente', '20 ago 2026']] },
+      { id: 'reg', nombre: 'Inscripción en el Registro de Proveedores', emisor: 'ChileCompra', vence: '2027-06-30', uso: 'Requisito para ofertar', usoLargo: 'Requisito general para ofertar en Mercado Público; no se adjunta a cada oferta.', archivo: 'registro-proveedores.pdf', subido: '30 jun 2026', versiones: [['Versión vigente', '30 jun 2026']] },
+      { id: 'dj', nombre: 'Declaración jurada simple', emisor: 'Formato de la empresa', plantilla: true, uso: 'Se completa por CA', usoLargo: 'Plantilla: Rastrillo la completa con los datos de cada CA cuando el comprador no entrega su propio formulario.', archivo: 'declaracion-jurada.docx', subido: '2 sept 2026', versiones: [['Plantilla actual', '2 sept 2026']] },
+      { id: 'erut', nombre: 'e-RUT de la empresa', emisor: 'SII', noVence: true, uso: '3 ofertas enviadas', usoLargo: 'Adjuntado en 3 ofertas enviadas.', archivo: 'e-rut.pdf', subido: '15 may 2025', versiones: [['Versión vigente', '15 may 2025']] },
+      { id: 'ft', nombre: 'Fichas técnicas de productos', emisor: '18 archivos, uno por producto', noVence: true, uso: 'Por producto ofertado', usoLargo: 'Viven junto a cada producto en Inventario y Proveedores; aquí se ven todas juntas.', archivo: '18 archivos', subido: 'varias fechas', versiones: [['Última agregada: guante nitrilo azul M', '5 nov 2026']] }
+    ];
+    const conFecha = (x) => {
+      // Al reemplazar: el F30 dura un mes; los demás, un año (en la app la fecha se lee o se ingresa).
+      const vence = st.reemplazos[x.id] ? (x.id === 'f30' ? '2026-12-06' : '2027-' + x.vence.slice(5)) : (st.vences[x.id] || x.vence);
+      return vence;
+    };
+    const estadoDe = (x) => {
+      if (x.plantilla || x.noVence) return 'sinVence';
+      const d = dias(conFecha(x));
+      if (d < 0) return 'vencido';
+      if (d <= 30) return 'porVencer';
+      return 'vigente';
+    };
+    const VISTAS = [['todos', 'Todos'], ['alerta', 'Por vencer o vencidos'], ['sinVence', 'Sin vencimiento']];
+    const visibles = DOCS.filter((x) => st.vista === 'todos' || (st.vista === 'alerta' ? ['vencido', 'porVencer'].includes(estadoDe(x)) : estadoDe(x) === 'sinVence'))
+      .sort((a, b) => ['vencido', 'porVencer', 'vigente', 'sinVence'].indexOf(estadoDe(a)) - ['vencido', 'porVencer', 'vigente', 'sinVence'].indexOf(estadoDe(b)));
+    const abierto = DOCS.find((x) => x.id === st.abierto);
+    const nVenc = DOCS.filter((x) => estadoDe(x) === 'vencido').length;
+    const nPor = DOCS.filter((x) => estadoDe(x) === 'porVencer').length;
+    return {
+      tema: this.props.tema ?? 'claro', densidad: this.props.densidad ?? 'comoda',
+      nAlerta: nVenc + nPor,
+      nTotal: DOCS.filter((x) => !x.plantilla && !x.noVence).length,
+      nVigentes: DOCS.filter((x) => estadoDe(x) === 'vigente').length,
+      nPorVencer: nPor, nVencidos: nVenc,
+      colorVencidos: nVenc ? 'var(--urgente)' : 'var(--tinta)',
+      notaVencidos: nVenc ? 'bloquea 1 oferta en armado' : 'todo al día',
+      vistas: VISTAS.map(([id, nombre]) => ({ nombre, activo: st.vista === id ? 'true' : 'false', elegir: () => this.setState({ vista: id }) })),
+      conUso: !abierto,
+      cols: abierto ? 'minmax(0, 1fr) 104px 150px' : 'minmax(0, 1fr) 120px minmax(0, 0.8fr) 170px',
+      docs: visibles.map((x) => {
+        const e = estadoDe(x);
+        const v = conFecha(x);
+        const d = x.plantilla || x.noVence ? 0 : dias(v);
+        const esAbierto = st.abierto === x.id;
+        return {
+          ...x, vigente: e === 'vigente', porVencer: e === 'porVencer', vencido: e === 'vencido', sinVence: e === 'sinVence',
+          estadoTxt: x.plantilla ? 'Plantilla' : 'No vence',
+          dias: Math.abs(d),
+          venceTxt: x.plantilla || x.noVence ? '—' : fechaTxt(v),
+          venceNota: x.plantilla || x.noVence ? '' : (st.reemplazos[x.id] ? 'reemplazado hoy' : ''),
+          ayuda: e === 'vencido' ? 'Venció el ' + fechaTxt(v) + '. ' + x.usoLargo : 'Vence el ' + fechaTxt(v) + '. ' + x.usoLargo,
+          abrir: () => this.setState({ abierto: esAbierto ? null : x.id }),
+          abiertoTxt: esAbierto ? 'true' : 'false',
+          fondo: esAbierto ? 'var(--superficie-2)' : 'transparent',
+          colorNombre: esAbierto ? 'var(--accion)' : 'var(--tinta)'
+        };
+      }),
+      hayPanel: !!abierto,
+      p: abierto ? {
+        ...abierto, conVence: !abierto.plantilla && !abierto.noVence, sinVence: !!(abierto.plantilla || abierto.noVence),
+        venceIso: abierto.vence ? conFecha(abierto) : '',
+        subido: st.reemplazos[abierto.id] ? 'hoy' : abierto.subido,
+        versiones: (st.reemplazos[abierto.id] ? [['Versión nueva', 'hoy']] : []).concat(abierto.versiones).map(([nombre, fecha]) => ({ nombre, fecha })),
+        claseReemplazar: ['vencido', 'porVencer'].includes(estadoDe(abierto)) ? 'r-btn r-btn--primario' : 'r-btn r-btn--secundario'
+      } : {},
+      cerrar: () => this.setState({ abierto: null }),
+      reemplazar: () => abierto && this.setState({ reemplazos: { ...st.reemplazos, [abierto.id]: true } }),
+      cambiarVence: (ev) => abierto && this.setState({ vences: { ...st.vences, [abierto.id]: ev.target.value } })
+    };
+  }
+}
+</script>
+</body>
+</html>

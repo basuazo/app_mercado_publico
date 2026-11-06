@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · En trabajo</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main" style="gap: 20px;">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+<div>
+<h1 class="m-titulo">En trabajo</h1>
+<p class="m-sub">{{nLotes}} lotes abiertos · {{nSinLote}} CA recibidas de la mesa sin lote</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+<div class="r-seg" role="group" aria-label="Lote">
+<sc-for list="{{lotes}}" as="lo" hint-placeholder-count="2">
+<button type="button" aria-pressed="{{lo.activo}}" onClick="{{lo.elegir}}">{{lo.nombre}}</button>
+</sc-for>
+</div>
+<button class="r-btn r-btn--secundario" type="button" onClick="{{crearLote}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>Nuevo lote</button>
+</div>
+</header>
+
+<sc-if value="{{haySinLote}}" hint-placeholder-val="{{true}}">
+<section aria-labelledby="t-sinlote" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 16px; border: 1px dashed var(--borde-control); border-radius: var(--radio-panel);">
+<span id="t-sinlote" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span>Recibidas de la mesa</span><span class="r-contador r-contador--atencion">{{nSinLote}}</span></span>
+<span style="font-size: 13px; color: var(--tinta-2);">sin lote todavía</span>
+<sc-for list="{{sinLote}}" as="s" hint-placeholder-count="2">
+<span class="r-tarjeta" style="display: inline-flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; min-width: 0;">
+<span style="display: grid; min-width: 0;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">{{s.nombre}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{s.comprador}} · cierra {{s.cierre}}</span></span>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{s.agregar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg><span>Agregar a {{loteNombre}}</span></button>
+</span>
+</sc-for>
+</section>
+</sc-if>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+<div style="display: flex; align-items: baseline; gap: 10px;">
+<sc-if value="{{noEditando}}" hint-placeholder-val="{{true}}">
+<h2 class="m-seccion" style="font-size: 20px;">{{loteNombre}}<sc-if value="{{conNombreLote}}" hint-placeholder-val="{{true}}"><span style="color: var(--tinta-2); font-weight: 500;"> · {{nombreLote}}</span></sc-if></h2>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Renombrar lote" onClick="{{editarNombre}}" style="align-self: center;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></svg></button>
+</sc-if>
+<sc-if value="{{editando}}" hint-placeholder-val="{{false}}">
+<h2 class="m-seccion" style="font-size: 20px;">{{loteNombre}} ·</h2>
+<label class="m-campo" style="height: 32px; width: 240px; align-self: center;"><input type="text" value="{{borrador}}" placeholder="Nombre (ej.: Limpieza)" aria-label="Nombre del lote" onChange="{{cambiarBorrador}}" onKeyDown="{{teclaNombre}}" autoFocus="{{si}}"><span class="r-tecla">↵</span></label>
+<button class="r-btn r-btn--primario r-btn--sm" type="button" onClick="{{guardarNombre}}" style="align-self: center;">Guardar</button>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{cancelarNombre}}" style="align-self: center;">Cancelar</button>
+</sc-if>
+<span style="font-size: 13px; color: var(--tinta-2);">{{loteNota}}</span>
+<span class="m-presencia" title="Para no trabajar dos veces lo mismo"><span class="m-avatar" aria-hidden="true">G</span><span>Gonzalo también está aquí · en «Guantes de nitrilo»</span></span>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" aria-expanded="{{hiloLoteTxt}}" aria-controls="hilo-del-lote" onClick="{{alternarHiloLote}}" style="align-self: center;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span>{{textoHiloLote}}</span><sc-if value="{{mencionLote}}" hint-placeholder-val="{{false}}"><span class="r-contador" title="Te mencionaron">@</span></sc-if></button>
+</div>
+<ol aria-label="Pasos del lote" style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+<sc-for list="{{pasos}}" as="p" hint-placeholder-count="3">
+<li aria-current="{{p.actual}}" style="display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px; background: {{p.fondo}}; border: 1px solid {{p.borde}};">
+<span style="display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; flex: none; font: 600 12px/1 var(--font-sans); background: {{p.circulo}}; color: {{p.colorCirculo}};">
+<sc-if value="{{p.hecho}}" hint-placeholder-val="{{false}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+<sc-if value="{{p.pendiente}}" hint-placeholder-val="{{true}}">{{p.n}}</sc-if>
+</span>
+<span style="font-size: 13px; font-weight: 600; color: var(--tinta);">{{p.nombre}}</span>
+<span style="font-size: 12px; color: var(--tinta-2);">{{p.nota}}</span>
+</li>
+</sc-for>
+<li><a class="r-btn r-btn--secundario r-btn--sm" href="Enviar.dc.html"><span>Ir a enviar</span><svg class="r-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></a></li>
+</ol>
+</div>
+
+<sc-if value="{{hiloLoteCerrado}}" hint-placeholder-val="{{true}}">
+<sc-if value="{{hayUltimoLote}}" hint-placeholder-val="{{true}}">
+<p style="margin: -8px 0 0; font-size: 13px; line-height: 18px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span>Último en el lote · </span><strong style="color: var(--tinta); font-weight: 500;">{{ultimoLote.autor}}</strong><span>: {{ultimoLote.texto}}</span></p>
+</sc-if>
+</sc-if>
+<sc-if value="{{hiloLoteAbierto}}" hint-placeholder-val="{{false}}">
+<section id="hilo-del-lote" class="r-tarjeta" aria-label="Conversación del lote" style="padding: 14px 16px; display: grid; gap: 10px;">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;"><span>Conversación de {{loteNombre}}</span></h3>
+<span style="font-size: 12px; color: var(--tinta-2);">Para todo el lote; lo de cada CA va en su oferta</span>
+</div>
+<sc-if value="{{sinComentariosLote}}" hint-placeholder-val="{{false}}"><p style="margin: 0; font-size: 13px; color: var(--tinta-2);">Nadie ha comentado este lote todavía.</p></sc-if>
+<ol style="list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;">
+<sc-for list="{{comentariosLote}}" as="cm" hint-placeholder-count="3">
+<li style="display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px;">
+<span class="m-avatar" aria-hidden="true" style="width: 26px; height: 26px; font-size: 11px;">{{cm.ini}}</span>
+<div style="display: grid; gap: 2px; min-width: 0;">
+<span style="display: flex; gap: 6px; align-items: baseline; font-size: 12px;"><strong style="font-size: 13px; color: var(--tinta);">{{cm.autor}}</strong><span style="color: var(--tinta-2);">{{cm.hora}}</span></span>
+<p style="margin: 0; font-size: 13px; line-height: 19px; color: var(--tinta); white-space: pre-wrap; overflow-wrap: anywhere;"><sc-for list="{{cm.partes}}" as="p" hint-placeholder-count="1"><sc-if value="{{p.m}}" hint-placeholder-val="{{false}}"><span style="padding: 0 4px; border-radius: 4px; background: var(--accion-suave); font-weight: 600;">{{p.t}}</span></sc-if><sc-if value="{{p.n}}" hint-placeholder-val="{{true}}"><span>{{p.t}}</span></sc-if></sc-for></p>
+</div>
+</li>
+</sc-for>
+</ol>
+<div style="display: grid; gap: 6px;">
+<label class="m-oculto" for="hilo-lote-gral">Comentar en el lote</label>
+<textarea id="hilo-lote-gral" rows="2" placeholder="Comentar para todo el lote… usa @ para mencionar" value="{{borradorL}}" onChange="{{escribirL}}" onKeyDown="{{teclaLote}}" style="box-sizing: border-box; width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: var(--radio-control); background: var(--superficie); color: var(--tinta); font: 400 13px/19px var(--font-sans);"></textarea>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+<span style="font-size: 12px; color: var(--tinta-2);"><span class="r-tecla">↵</span> envía · <span class="r-tecla">⇧↵</span> salto de línea · <span class="r-tecla">@</span> menciona</span>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{enviarLote}}" disabled="{{sinBorradorL}}"><span>Enviar</span></button>
+</div>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{hayAviso}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: var(--radio-control); background: var(--ok-fondo); color: var(--ok);">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+<span style="font-size: 13px; font-weight: 500; flex: 1;">{{avisoTexto}}</span>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{deshacer}}">Deshacer</button>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{irDestino}}">{{avisoIr}}</button>
+</div>
+</sc-if>
+
+<sc-if value="{{hayCA}}" hint-placeholder-val="{{true}}">
+<section aria-label="CA del lote" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<button class="m-tab" type="button" aria-pressed="{{t.activo}}" onClick="{{t.elegir}}">
+<span style="display: flex; justify-content: space-between; align-items: center; gap: 8px;"><span class="r-codigo">{{t.codigo}}</span>
+<sc-if value="{{t.lista}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--ok">Lista</span></sc-if>
+</span>
+<span class="m-fila__nombre">{{t.nombre}}</span>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{t.comprador}}</span>
+<span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px;">
+<sc-if value="{{t.urgente}}" hint-placeholder-val="{{false}}"><span class="r-senal r-senal--urgente" style="height: 22px; padding: 0 8px; font-size: 12px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2 2"></path><path d="M5 3 2 6"></path><path d="m22 6-3-3"></path><path d="M6.38 18.7 4 21"></path><path d="M17.64 18.67 20 21"></path></svg>{{t.cierre}}</span></sc-if>
+<sc-if value="{{t.tranquila}}" hint-placeholder-val="{{true}}"><span style="font-size: 12px; font-weight: 500; color: var(--tinta);">Cierra {{t.cierre}}</span></sc-if>
+<span style="font-size: 12px; color: var(--tinta-2);">{{t.progreso}}</span>
+</span>
+</button>
+</sc-for>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+<section class="r-tarjeta" aria-labelledby="t-oferta" style="flex: 2 1 640px; min-width: 0;">
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px 14px;">
+<div style="display: grid; gap: 2px; min-width: 0;">
+<span class="r-etiqueta">Oferta para</span>
+<h2 class="m-seccion" id="t-oferta">{{ca.nombre}}</h2>
+<span style="font-size: 13px; color: var(--tinta-2);">{{ca.comprador}} · <span class="r-codigo">{{ca.codigo}}</span></span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" aria-expanded="{{hiloAbiertoTxt}}" aria-controls="hilo-lote" onClick="{{alternarHilo}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span>{{textoHilo}}</span><sc-if value="{{hayMencion}}" hint-placeholder-val="{{false}}"><span class="r-contador" title="Te mencionaron">@</span></sc-if></button>
+<span style="position: relative; display: inline-flex;">
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" aria-expanded="{{menuMoverTxt}}" aria-haspopup="true" onClick="{{alternarMenu}}">Mover a…<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<sc-if value="{{menuMover}}" hint-placeholder-val="{{false}}">
+<div class="r-tarjeta" style="position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 240px; padding: 6px; border-radius: var(--radio-control); box-shadow: var(--sombra-elevada); display: grid; gap: 2px;">
+<span class="r-etiqueta" style="padding: 6px 8px 4px;">Mover esta CA a</span>
+<sc-for list="{{destinos}}" as="d" hint-placeholder-count="1">
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{d.mover}}" style="justify-content: space-between; color: var(--tinta);">{{d.nombre}}<span style="font-size: 12px; font-weight: 400; color: var(--tinta-2);">{{d.nota}}</span></button>
+</sc-for>
+<span style="height: 1px; margin: 4px 0; background: var(--borde);" aria-hidden="true"></span>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{moverANuevo}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>Nuevo lote con esta CA</button>
+</div>
+</sc-if>
+</span>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{quitar}}">Quitar del lote</button>
+<sc-if value="{{ca.noLista}}" hint-placeholder-val="{{true}}"><button class="r-btn r-btn--primario" type="button" onClick="{{marcarLista}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Marcar oferta lista</button></sc-if>
+<sc-if value="{{ca.lista}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--ok">Oferta lista</span><button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{marcarLista}}">Reabrir</button></sc-if>
+</div>
+</div>
+
+<sc-if value="{{hiloAbierto}}" hint-placeholder-val="{{false}}">
+<section id="hilo-lote" aria-label="Conversación del equipo sobre esta CA" style="margin: 0 20px 14px; padding: 12px 14px; border-radius: var(--radio-control); background: var(--superficie-2); display: grid; gap: 10px;">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--tinta-2);">
+<span><span>Conversación de esta CA · la misma que en la Mesa</span></span>
+<span style="display: flex; align-items: center; gap: 6px;"><span>Responsable:</span><strong style="color: var(--tinta);">{{responsable}}</strong></span>
+</div>
+<sc-if value="{{sinComentarios}}" hint-placeholder-val="{{false}}"><p style="margin: 0; font-size: 13px; color: var(--tinta-2);">Nadie ha comentado esta CA todavía.</p></sc-if>
+<ol style="list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;">
+<sc-for list="{{comentarios}}" as="cm" hint-placeholder-count="2">
+<li style="display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px;">
+<span class="m-avatar" aria-hidden="true" style="width: 26px; height: 26px; font-size: 11px; background: var(--superficie);">{{cm.ini}}</span>
+<div style="display: grid; gap: 2px; min-width: 0;">
+<span style="display: flex; gap: 6px; align-items: baseline; font-size: 12px;"><strong style="font-size: 13px; color: var(--tinta);">{{cm.autor}}</strong><span style="color: var(--tinta-2);">{{cm.hora}}</span></span>
+<p style="margin: 0; font-size: 13px; line-height: 19px; color: var(--tinta); white-space: pre-wrap; overflow-wrap: anywhere;"><sc-for list="{{cm.partes}}" as="p" hint-placeholder-count="1"><sc-if value="{{p.m}}" hint-placeholder-val="{{false}}"><span style="padding: 0 4px; border-radius: 4px; background: var(--accion-suave); font-weight: 600;">{{p.t}}</span></sc-if><sc-if value="{{p.n}}" hint-placeholder-val="{{true}}"><span>{{p.t}}</span></sc-if></sc-for></p>
+</div>
+</li>
+</sc-for>
+</ol>
+<div style="display: grid; gap: 6px;">
+<label class="m-oculto" for="hilo-lote-texto">Comentar en esta CA</label>
+<textarea id="hilo-lote-texto" rows="2" placeholder="Responder… usa @ para mencionar" value="{{borradorC}}" onChange="{{escribir}}" onKeyDown="{{teclaComentario}}" style="box-sizing: border-box; width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: var(--radio-control); background: var(--superficie); color: var(--tinta); font: 400 13px/19px var(--font-sans);"></textarea>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+<span style="font-size: 12px; color: var(--tinta-2);"><span class="r-tecla">↵</span> envía · <span class="r-tecla">⇧↵</span> salto de línea · <span class="r-tecla">@</span> menciona</span>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{enviarComentario}}" disabled="{{sinBorrador}}"><span>Enviar</span></button>
+</div>
+</div>
+</section>
+</sc-if>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px; padding: 14px 20px; border-top: 1px solid var(--borde); border-bottom: 1px solid var(--borde); background: var(--fondo);">
+<div class="r-dato"><span class="r-etiqueta">Oferta</span><span class="r-dato__valor">{{ca.ofertaTxt}}</span>
+<sc-if value="{{ca.dentro}}" hint-placeholder-val="{{true}}"><span class="r-dato__nota"><span>{{ca.pctDisp}} del disponible ({{ca.disponibleTxt}})</span></span></sc-if>
+<sc-if value="{{ca.sobre}}" hint-placeholder-val="{{false}}"><span class="r-dato__nota" style="color: var(--urgente); font-weight: 500;"><span>Sobre el disponible ({{ca.disponibleTxt}})</span></span></sc-if>
+</div>
+<div class="r-dato"><span class="r-etiqueta">Margen</span><span class="r-dato__valor">{{ca.margenTxt}}</span><span class="r-dato__nota">{{ca.margenNota}}</span></div>
+<div class="r-dato"><span class="r-etiqueta">P(ganar)</span><span class="r-dato__valor">{{ca.p}}</span><span class="r-dato__nota">con el precio sugerido</span></div>
+<div class="r-dato"><span class="r-etiqueta">Cierre</span><span class="r-dato__valor">{{ca.cierre}}</span><span class="r-dato__nota">{{ca.listasTxt}}</span></div>
+</div>
+
+<sc-if value="{{ca.sinLineas}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; align-items: center; gap: 12px; padding: 24px 20px;">
+<span class="r-icono r-icono--neutro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"></path><path d="m9 18-1.5-1.5"></path><circle cx="5" cy="14" r="3"></circle></svg></span>
+<span style="display: grid; gap: 2px;"><span style="font-weight: 600;">Las líneas vienen en el anexo y aún no se leen</span><span style="font-size: 13px; color: var(--tinta-2);">Cuando el anexo se lea (con IA o subido a mano) y se revisen las líneas, aquí podrás elegir qué producto ofertar en cada una.</span></span>
+</div>
+</sc-if>
+
+<sc-if value="{{ca.conLineas}}" hint-placeholder-val="{{true}}">
+<div class="m-desliza">
+<div style="min-width: 720px;">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 190px 116px 112px 20px; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--borde);">
+<span class="m-cab">Lo que pide la CA · producto a ofertar (toca la línea para configurarla)</span><span class="m-cab">Costo unit.</span><span class="m-cab" style="text-align: right;">Precio unit.</span><span class="m-cab" style="text-align: right;">Total</span><span></span>
+</div>
+<sc-for list="{{ca.lineas}}" as="l" hint-placeholder-count="4">
+<div class="m-fila" style="border-bottom: 1px solid var(--borde); background: {{l.fondo}};">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 190px 116px 112px 20px; gap: 12px; align-items: center; padding: 12px 20px;">
+<div style="display: grid; gap: 2px; min-width: 0;">
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">Pide: {{l.pide}} · {{l.cantTxt}}</span>
+<button type="button" class="m-fila__abrir" onClick="{{l.abrir}}" aria-haspopup="dialog" aria-label="Configurar la línea: {{l.pide}}"><span class="m-fila__nombre" style="display: block; color: {{l.colorProducto}};">{{l.producto}}</span></button>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{l.proveedor}}<sc-if value="{{l.hayNotaBodega}}" hint-placeholder-val="{{false}}"><span style="color: var(--ok); font-weight: 500;"> · {{l.notaBodega}}</span></sc-if><sc-if value="{{l.aprendido}}" hint-placeholder-val="{{false}}"><span style="color: var(--tinta);"> · elegido por historial</span></sc-if></span>
+</div>
+<div style="display: grid; gap: 4px; justify-items: start;">
+<span class="m-num" style="text-align: left;">{{l.costoTxt}}</span>
+<sc-if value="{{l.ok}}" hint-placeholder-val="{{true}}"><span class="r-estado r-estado--ok"><span>Al día · {{l.dias}} días</span></span></sc-if>
+<sc-if value="{{l.bodega}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--ok"><span>En bodega · {{l.cantNum}} reservadas</span></span></sc-if>
+<sc-if value="{{l.parcial}}" hint-placeholder-val="{{false}}"><span class="m-ayuda" tabindex="0"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg><span>Faltan {{l.faltan}} en bodega</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Qué pasa</strong>En bodega alcanzan {{l.cubre}} de {{l.cantNum}}. El resto del stock no existe o está reservado en otras CA de tus lotes.<span class="m-ayuda__resuelve">Se resuelve eligiendo un proveedor para la línea en sus opciones, o reponiendo inventario antes del cierre.</span></span></span></sc-if>
+<sc-if value="{{l.vencido}}" hint-placeholder-val="{{false}}"><span class="m-ayuda" tabindex="0"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg><span>Precio desactualizado · {{l.dias}} días</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Qué pasa</strong>El último costo de {{l.proveedor}} tiene {{l.dias}} días; pasados 15 se considera desactualizado. La oferta se puede armar igual, pero queda marcada.<span class="m-ayuda__resuelve">Se resuelve abriendo la línea: pide precio actualizado o elige una opción al día.</span></span></span></sc-if>
+<sc-if value="{{l.sin}}" hint-placeholder-val="{{false}}"><span class="m-ayuda" tabindex="0"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 18V6"></path></svg>{{l.textoSin}}</span><span class="m-ayuda__texto" role="tooltip"><strong>Qué falta</strong>{{l.proveedor}} vende este producto, pero no hay costo cargado. Sin costo, esta línea no suma al margen.<span class="m-ayuda__resuelve">Se resuelve abriendo la línea: pide precio o carga el costo a mano.</span></span></span></sc-if>
+<sc-if value="{{l.ninguno}}" hint-placeholder-val="{{false}}"><span class="m-ayuda" tabindex="0"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;">Sin producto</span><span class="m-ayuda__texto" role="tooltip"><strong>Qué falta</strong>Esta línea aún no tiene qué ofertar: nada del inventario ni de los proveedores calzó automáticamente.<span class="m-ayuda__resuelve">Se resuelve abriendo la línea: busca en nuestro inventario o pide cotización a proveedores del rubro.</span></span></span></sc-if>
+<sc-if value="{{l.buscar}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--curso"><span>{{l.buscarTxt}}</span></span></sc-if>
+</div>
+<span class="m-encima">
+<sc-if value="{{l.conProducto}}" hint-placeholder-val="{{true}}"><input class="m-precio" type="text" inputmode="numeric" value="{{l.precioTxt}}" placeholder="Sin precio" onChange="{{l.cambiarPrecio}}" aria-label="Precio unitario: {{l.pide}}"></sc-if>
+</span>
+<span class="m-num">{{l.totalTxt}}</span>
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--tinta-2);"><path d="m9 18 6-6-6-6"></path></svg>
+</div>
+
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+<p class="m-fuente" style="margin: 0; padding: 12px 20px;">Líneas y montos: Fuente: Dirección ChileCompra · costos: catálogo de proveedores de la empresa · precio sugerido = costo + 24 %.</p>
+</section>
+
+<section class="r-tarjeta" aria-labelledby="t-solicitudes" style="flex: 1 1 320px; min-width: 0;">
+<div style="display: grid; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--borde);">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
+<h2 class="m-seccion" id="t-solicitudes">Abastecimiento</h2>
+<span class="r-etiqueta">{{loteNombre}}</span>
+</div>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta-2);">Primero sale de nuestro inventario; lo que no alcanza se pide a proveedores, sumando cantidades de todas las CA del lote.</span>
+</div>
+<div style="display: grid; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--borde);">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="r-icono r-icono--sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="m7 16.5-4.74-2.85"></path><path d="m7 16.5 5-3"></path><path d="M7 16.5v5.17"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="m17 16.5-5-3"></path><path d="m17 16.5 4.74-2.85"></path><path d="M17 16.5v5.17"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path><path d="M12 8 7.26 5.15"></path><path d="m12 8 4.74-2.85"></path><path d="M12 13.5V8"></path></svg></span><span>1 · Desde nuestro inventario</span></span>
+<sc-for list="{{invLote}}" as="v" hint-placeholder-count="2">
+<div style="display: grid; gap: 1px;">
+<span style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px;"><span style="color: var(--tinta);">{{v.nombre}}</span><span class="m-num" style="font-size: 13px; color: var(--tinta-2); white-space: nowrap;">{{v.reserva}}</span></span>
+<sc-if value="{{v.parcial}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; line-height: 16px; color: var(--atencion); font-weight: 500;">{{v.faltaTxt}}</span></sc-if>
+</div>
+</sc-for>
+<sc-if value="{{sinInv}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; color: var(--tinta-2);">Ningún producto de este lote sale de bodega.</span></sc-if>
+</div>
+<div style="display: grid; gap: 12px; padding: 14px 20px 12px; border-bottom: 1px solid var(--borde);">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="r-icono r-icono--sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg></span><span>2 · Solicitudes a proveedores</span></span>
+<sc-if value="{{hayPendientes}}" hint-placeholder-val="{{true}}">
+<button class="r-btn r-btn--primario" type="button" onClick="{{enviarTodas}}" style="justify-content: center;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg><span>Enviar {{nPendientes}} pendientes</span><span class="r-tecla">↵</span></button>
+</sc-if>
+</div>
+<sc-if value="{{sinSolicitudes}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 20px; font-size: 13px; color: var(--tinta-2);">No hay solicitudes en este lote. Usa «Pedir precio» en las opciones de una línea.</p></sc-if>
+<sc-for list="{{solicitudes}}" as="s" hint-placeholder-count="3">
+<div style="display: grid; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--borde);">
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+<span style="display: grid; gap: 2px; min-width: 0;"><span style="font-size: 14px; font-weight: 600; color: var(--tinta);">{{s.prov}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{s.contacto}}</span></span>
+<span class="r-estado {{s.claseEstado}}">{{s.estado}}</span>
+</div>
+<div style="display: grid; gap: 2px;">
+<sc-for list="{{s.productos}}" as="x" hint-placeholder-count="2">
+<span style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px;"><span style="color: var(--tinta);">{{x.nombre}}</span><span class="m-num" style="font-size: 13px; color: var(--tinta-2); white-space: nowrap;">{{x.cant}}</span></span>
+</sc-for>
+</div>
+<span>
+<sc-if value="{{s.puedeEnviar}}" hint-placeholder-val="{{true}}"><button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{s.enviar}}">
+<sc-if value="{{s.porWhatsapp}}" hint-placeholder-val="{{false}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></sc-if>
+<sc-if value="{{s.porCorreo}}" hint-placeholder-val="{{true}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></sc-if>
+<span>Enviar por {{s.canal}}</span></button></sc-if>
+<sc-if value="{{s.enviada}}" hint-placeholder-val="{{false}}"><button class="r-btn r-btn--terciario r-btn--sm" type="button"><span>Recordar por {{s.canal}}</span></button></sc-if>
+</span>
+</div>
+</sc-for>
+<p style="margin: 0; padding: 12px 20px; font-size: 12px; line-height: 16px; color: var(--tinta-2);">El mensaje lleva productos, cantidades y la hora límite para responder (antes del primer cierre del lote).</p>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{loteVacio}}" hint-placeholder-val="{{false}}">
+<div class="r-tarjeta" style="display: flex; align-items: center; gap: 14px; padding: 28px 24px;">
+<span class="r-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg></span>
+<span style="display: grid; gap: 2px;"><span style="font-weight: 600;">Este lote no tiene CA</span><span style="font-size: 13px; color: var(--tinta-2);">Agrega CA desde «Recibidas de la mesa» (arriba), muévelas desde otro lote o selecciónalas en la Mesa.</span></span>
+<a class="r-btn r-btn--secundario" href="Mesa.dc.html" style="margin-left: auto;">Ir a la Mesa</a>
+</div>
+</sc-if>
+
+<sc-if value="{{hayModal}}" hint-placeholder-val="{{false}}">
+<div class="m-velo">
+<div class="r-tarjeta" role="dialog" aria-modal="true" aria-labelledby="modal-titulo" onKeyDown="{{m.teclas}}" style="width: 100%; max-width: 780px; border-radius: var(--radio-modal); box-shadow: var(--sombra-elevada); display: flex; flex-direction: column;">
+
+<div style="display: flex; align-items: flex-start; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--borde);">
+<div style="display: grid; gap: 4px; flex: 1; min-width: 0;">
+<span class="r-etiqueta"><span>{{m.posicion}} · {{m.caNombre}}</span></span>
+<h2 class="m-seccion" id="modal-titulo" style="font-size: 20px;">{{m.pide}}</h2>
+<span style="font-size: 13px; color: var(--tinta-2);">La CA pide {{m.cantTxt}}</span>
+</div>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Línea anterior" onClick="{{m.anterior}}" disabled="{{m.sinAnterior}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Línea siguiente" onClick="{{m.siguiente}}" disabled="{{m.sinSiguiente}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Cerrar (Esc)" onClick="{{m.cerrar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+</div>
+
+<div style="display: grid; gap: 18px; padding: 16px 22px;">
+
+<sc-if value="{{m.alertaVencido}}" hint-placeholder-val="{{false}}">
+<div role="alert" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: var(--radio-control); background: var(--atencion-fondo); color: var(--atencion);">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
+<span style="flex: 1 1 320px; display: grid; gap: 2px;"><strong style="font-size: 14px;">Precio desactualizado</strong><span style="font-size: 13px; line-height: 18px;">{{m.alertaTxt}}</span></span>
+<sc-if value="{{m.alertaPuedePedir}}" hint-placeholder-val="{{true}}"><button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{m.pedirElegido}}">Pedir precio actualizado</button></sc-if>
+<sc-if value="{{m.alertaPedido}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--curso">En solicitudes</span></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{m.alertaSin}}" hint-placeholder-val="{{false}}">
+<div role="alert" style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radio-control); background: var(--atencion-fondo); color: var(--atencion);"><span style="display: grid; gap: 2px;"><strong style="font-size: 14px;">Sin precio</strong><span style="font-size: 13px;">{{m.alertaSinTxt}} Pídelo en la lista de proveedores, abajo.</span></span></div>
+</sc-if>
+<sc-if value="{{m.alertaParcial}}" hint-placeholder-val="{{false}}">
+<div role="alert" style="padding: 12px 14px; border-radius: var(--radio-control); background: var(--atencion-fondo); color: var(--atencion); font-size: 13px;"><strong>No alcanza la bodega.</strong> {{m.alertaParcialTxt}}</div>
+</sc-if>
+<sc-if value="{{m.aprendidoHist}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radio-control); background: var(--superficie-2); font-size: 13px; color: var(--tinta);"><span class="r-icono r-icono--sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path></svg></span><span>{{m.historialTxt}}</span></div>
+</sc-if>
+<sc-if value="{{m.aprendidoNuevo}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radio-control); background: var(--ok-fondo); color: var(--ok); font-size: 13px; font-weight: 500;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg><span>{{m.aprendidoTxt}}</span></div>
+</sc-if>
+
+<section aria-labelledby="piso-inv" style="display: grid; gap: 6px;">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
+<h3 id="piso-inv" style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="r-icono r-icono--sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg></span><span>1 · Nuestro inventario</span></h3>
+<sc-if value="{{m.noBuscarInv}}" hint-placeholder-val="{{true}}"><button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{m.abrirBuscar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg><span>Buscar en el inventario</span></button></sc-if>
+</div>
+<div style="padding: 4px; border-radius: var(--radio-control); background: var(--superficie-2); display: grid; gap: 2px;">
+<sc-for list="{{m.inv}}" as="o" hint-placeholder-count="1">
+<div class="m-opcion" style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 90px 170px 116px; gap: 10px; align-items: center; padding: 8px;">
+<input class="m-radio" type="radio" id="{{o.rid}}" name="{{o.grupo}}" checked="{{o.elegido}}" onChange="{{o.elegir}}">
+<label for="{{o.rid}}" style="display: grid; min-width: 0; cursor: pointer;"><span style="font-size: 14px; line-height: 20px; color: var(--tinta);">{{o.nombre}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{o.sub}}</span></label>
+<span class="m-num">{{o.costoTxt}}</span>
+<span>
+<sc-if value="{{o.invOk}}" hint-placeholder-val="{{true}}"><span class="r-estado r-estado--ok"><span>{{o.textoInv}}</span></span></sc-if>
+<sc-if value="{{o.invFalta}}" hint-placeholder-val="{{false}}"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;"><span>{{o.textoInv}}</span></span></sc-if>
+</span>
+<span></span>
+</div>
+</sc-for>
+<sc-if value="{{m.sinInv}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 10px 8px; font-size: 13px; color: var(--tinta-2);">Nada de nuestra bodega calzó automáticamente con esta línea. Si tenemos algo que sirva, búscalo: Rastrillo aprenderá la equivalencia.</p></sc-if>
+<sc-if value="{{m.buscarInv}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; gap: 6px; padding: 8px; border-top: 1px solid var(--borde);">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;">
+<label class="m-campo" style="flex: 1 1 260px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg><input type="search" value="{{m.q}}" placeholder="Buscar en bodega (nombre o código)" aria-label="Buscar en nuestro inventario" onChange="{{m.cambiarQ}}" autoFocus="{{si}}"></label>
+<label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--tinta); cursor: pointer;"><input class="m-check" type="checkbox" checked="{{m.recordar}}" onChange="{{m.alternarRecordar}}"><span>Recordar para líneas parecidas</span></label>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{m.cerrarBuscar}}">Cerrar búsqueda</button>
+</div>
+<sc-for list="{{m.resultados}}" as="x" hint-placeholder-count="3">
+<div class="m-opcion" style="display: flex; align-items: center; gap: 12px; padding: 6px 8px;">
+<span style="display: grid; flex: 1; min-width: 0;"><span style="font-size: 14px; line-height: 20px;">{{x.nombre}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{x.sub}}</span></span>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{x.usar}}">Usar este</button>
+</div>
+</sc-for>
+<sc-if value="{{m.sinResultados}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 6px 8px; font-size: 13px; color: var(--tinta-2);">Nada en bodega con ese nombre.</p></sc-if>
+</div>
+</sc-if>
+</div>
+</section>
+
+<section aria-labelledby="piso-prov" style="display: grid; gap: 6px;">
+<h3 id="piso-prov" style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><span class="r-icono r-icono--sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg></span><span>2 · Proveedores</span></h3>
+<div style="padding: 4px; border-radius: var(--radio-control); background: var(--superficie-2); display: grid; gap: 2px;">
+<sc-for list="{{m.prov}}" as="o" hint-placeholder-count="2">
+<div class="m-opcion" style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 90px 170px 116px; gap: 10px; align-items: center; padding: 8px;">
+<input class="m-radio" type="radio" id="{{o.rid}}" name="{{o.grupo}}" checked="{{o.elegido}}" onChange="{{o.elegir}}">
+<label for="{{o.rid}}" style="display: grid; min-width: 0; cursor: pointer;"><span style="font-size: 14px; line-height: 20px; color: var(--tinta);">{{o.nombre}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{o.sub}}</span></label>
+<span class="m-num">{{o.costoTxt}}</span>
+<span>
+<sc-if value="{{o.ok}}" hint-placeholder-val="{{true}}"><span class="r-estado r-estado--ok"><span>Al día · {{o.dias}} días</span></span></sc-if>
+<sc-if value="{{o.vencido}}" hint-placeholder-val="{{false}}"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;"><span>Desactualizado · {{o.dias}} días</span></span></sc-if>
+<sc-if value="{{o.sin}}" hint-placeholder-val="{{false}}"><span class="r-senal r-senal--atencion" style="height: 22px; padding: 0 8px; font-size: 12px;">Sin precio</span></sc-if>
+</span>
+<span style="justify-self: end;">
+<sc-if value="{{o.puedePedir}}" hint-placeholder-val="{{false}}"><button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{o.pedir}}">Pedir precio</button></sc-if>
+<sc-if value="{{o.pedido}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--curso">En solicitudes</span></sc-if>
+</span>
+</div>
+</sc-for>
+<div class="m-opcion" style="display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px; border-top: 1px solid var(--borde);">
+<input class="m-radio" type="radio" id="{{m.ridBuscar}}" name="{{m.grupo}}" checked="{{m.buscarElegido}}" onChange="{{m.elegirBuscar}}">
+<label for="{{m.ridBuscar}}" style="display: grid; min-width: 0; cursor: pointer;"><span style="font-size: 14px; line-height: 20px; color: var(--tinta);">Sin producto actual · buscar proveedores</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">Pide cotización por esta línea a proveedores del rubro: {{m.rubroTxt}}</span></label>
+<span>
+<sc-if value="{{m.puedeCotizar}}" hint-placeholder-val="{{false}}"><button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{m.cotizar}}">Pedir cotización</button></sc-if>
+<sc-if value="{{m.cotizando}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--curso">En solicitudes</span></sc-if>
+</span>
+</div>
+</div>
+</section>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 20px; padding: 14px 22px; border-top: 1px solid var(--borde); background: var(--fondo); border-radius: 0 0 var(--radio-modal) var(--radio-modal);">
+<label style="display: grid; gap: 4px; width: 140px;"><span class="r-etiqueta">Precio unitario</span>
+<sc-if value="{{m.conProducto}}" hint-placeholder-val="{{true}}"><input class="m-precio" type="text" inputmode="numeric" value="{{m.precioTxt}}" placeholder="Sin precio" onChange="{{m.cambiarPrecio}}"></sc-if>
+<sc-if value="{{m.sinProducto}}" hint-placeholder-val="{{false}}"><span style="height: 32px; display: flex; align-items: center; color: var(--tinta-2);">—</span></sc-if>
+</label>
+<div class="r-dato r-dato--fila"><span class="r-etiqueta">Costo</span><span class="r-dato__valor">{{m.costoTxt}}</span></div>
+<div class="r-dato r-dato--fila"><span class="r-etiqueta">Margen de la línea</span><span class="r-dato__valor">{{m.margenTxt}}</span></div>
+<div class="r-dato r-dato--fila"><span class="r-etiqueta">Total</span><span class="r-dato__valor">{{m.totalTxt}}</span></div>
+<span style="flex: 1;"></span>
+<sc-if value="{{m.noUltima}}" hint-placeholder-val="{{true}}"><button class="r-btn r-btn--secundario" type="button" onClick="{{m.siguiente}}"><span>Siguiente línea</span><svg class="r-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></button></sc-if>
+<button class="r-btn r-btn--primario" type="button" onClick="{{m.cerrar}}"><span>Listo</span><span class="r-tecla">Esc</span></button>
+</div>
+</div>
+</div>
+</sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"mostrarModal":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      lote: 'l14',
+      lotes: { l14: ['a', 'b', 'd', 'e'], l15: ['h', 'c'] },
+      sinLote: ['f', 'g'],
+      activa: { l14: 'a', l15: 'h' },
+      abierta: (props.mostrarModal ?? false) ? 'a3' : null,
+      elegido: { a1: 'itata-nit-m', a2: 'itata-nit-l', a3: 'itata-gel', a4: 'inv-masc', b1: 'lib-resma75', b2: 'lib-arch', b3: 'lib-lapiz-az',
+        d1: 'nuble-ph-doble', d2: 'nuble-toalla-int', e1: 'inv-cloro', e2: 'nuble-det3', e3: 'itata-toall80', e4: null,
+        f1: 'nuble-pan-m', f2: 'itata-pan-l', h1: 'may-cafe', h2: 'may-te', h3: 'inv-azucar' },
+      precios: {},
+      pedidos: ['itata-nit-l', 'itata-gel', 'nuble-toalla-int', 'lib-resma75'],
+      enviados: ['lib-resma75'],
+      listas: ['b', 'd']
+    };
+  }
+  renderVals() {
+    const st = this.state;
+    const P = {
+      'itata-nit-m': ['Guante nitrilo azul talla M, caja 100', 'Comercial Itata', 4290, 6],
+      'nuble-nit-m': ['Guante nitrilo negro talla M, caja 100', 'Distribuidora Ñuble Aseo', 4650, 12],
+      'itata-nit-l': ['Guante nitrilo azul talla L, caja 100', 'Comercial Itata', null, 0],
+      'itata-gel': ['Alcohol gel 70 % 1 L con dosificador', 'Comercial Itata', 3150, 23],
+      'nuble-gel': ['Alcohol gel 70 % 1 L, recarga', 'Distribuidora Ñuble Aseo', 2890, 9],
+      'itata-masc': ['Mascarilla 3 pliegues, caja 50', 'Comercial Itata', 2100, 5],
+      'lib-resma75': ['Resma carta 75 g, 500 hojas', 'Librería Central Chillán', 3890, 18],
+      'itata-resma75': ['Resma carta 75 g, 500 hojas', 'Comercial Itata', 3990, 3],
+      'lib-arch': ['Archivador lomo ancho, oficio', 'Librería Central Chillán', 1990, 4],
+      'lib-lapiz-az': ['Lápiz pasta azul, caja 50', 'Librería Central Chillán', 4500, 4],
+      'lib-lapiz-sur': ['Lápiz pasta 4 colores, caja 50', 'Librería Central Chillán', 4800, 4],
+      'nuble-ph-doble': ['Papel higiénico doble hoja, pack 4 × 50 m', 'Distribuidora Ñuble Aseo', 2760, 9],
+      'nuble-ph-simple': ['Papel higiénico hoja simple, pack 4 × 50 m', 'Distribuidora Ñuble Aseo', 2150, 9],
+      'nuble-toalla-int': ['Toalla interfoliada, caja 20 paquetes', 'Distribuidora Ñuble Aseo', null, 0],
+      'itata-toalla-rollo': ['Toalla en rollo, pack 6 × 100 m', 'Comercial Itata', 7900, 7],
+      'nuble-cloro': ['Cloro gel 900 ml', 'Distribuidora Ñuble Aseo', 990, 9],
+      'nuble-det3': ['Detergente líquido 3 L', 'Distribuidora Ñuble Aseo', 4890, 31],
+      'itata-det5': ['Detergente líquido 5 L', 'Comercial Itata', 6900, 14],
+      'itata-toall80': ['Toallitas húmedas, 80 unidades', 'Comercial Itata', 1290, 6],
+      'nuble-toall50': ['Toallitas húmedas hipoalergénicas, 50 unidades', 'Distribuidora Ñuble Aseo', 1150, 9],
+      'nuble-toall100': ['Toallitas húmedas, 100 unidades', 'Distribuidora Ñuble Aseo', null, 0],
+      'nuble-pan-m': ['Pañal adulto talla M, paquete 20', 'Distribuidora Ñuble Aseo', 9200, 8],
+      'itata-pan-l': ['Pañal adulto talla L, paquete 20', 'Comercial Itata', null, 0],
+      'may-cafe': ['Café instantáneo 170 g', 'Mayorista Chillán', 4350, 5],
+      'may-te': ['Té, caja 100 bolsitas', 'Mayorista Chillán', 2190, 5],
+      'may-azucar': ['Azúcar granulada 1 kg', 'Mayorista Chillán', 1050, 20],
+      'itata-azucar': ['Azúcar granulada 1 kg', 'Comercial Itata', 1090, 2]
+    };
+    const CONTACTO = {
+      'Comercial Itata': ['correo', 'correo · responde en ~4 h'],
+      'Librería Central Chillán': ['WhatsApp', 'WhatsApp · responde en ~1 h'],
+      'Distribuidora Ñuble Aseo': ['correo', 'correo · responde en ~2 h'],
+      'Mayorista Chillán': ['WhatsApp', 'WhatsApp · responde en ~30 min']
+    };
+    const CAS = {
+      a: { codigo: '1057510-1996-COT26', nombre: 'Guantes de nitrilo y alcohol gel', comprador: 'Hospital de San Carlos', disp: 1240000, p: '0,42', cierre: 'Hoy 15:00', urgente: true,
+        lineas: [['a1', 'Guantes de nitrilo talla M, sin polvo', 60, 'cajas', ['itata-nit-m', 'nuble-nit-m']], ['a2', 'Guantes de nitrilo talla L, sin polvo', 60, 'cajas', ['itata-nit-l']],
+          ['a3', 'Alcohol gel 70 %, envase 1 litro', 100, 'unidades', ['inv-gel', 'itata-gel', 'nuble-gel']], ['a4', 'Mascarilla desechable 3 pliegues', 50, 'cajas', ['inv-masc', 'itata-masc']]] },
+      b: { codigo: '2389114-412-COT26', nombre: 'Resmas carta y artículos de escritorio', comprador: 'DAEM Bulnes', disp: 860000, p: '0,55', cierre: 'Hoy 18:00', urgente: true,
+        lineas: [['b1', 'Resma papel carta', 120, 'resmas', ['inv-resma', 'lib-resma75', 'itata-resma75']], ['b2', 'Archivador lomo ancho', 50, 'unidades', ['lib-arch']],
+          ['b3', 'Lápices pasta, caja 50', 10, 'cajas', ['lib-lapiz-az', 'lib-lapiz-sur']]] },
+      c: { codigo: '3011207-88-COT26', nombre: 'Arroz, legumbres y aceite', comprador: 'Liceo Bicentenario de Coihueco', disp: 2150000, p: '0,31', cierre: 'mañana 12:00', lineas: [] },
+      d: { codigo: '1874420-301-COT26', nombre: 'Papel higiénico y toalla de manos', comprador: 'CESFAM Los Volcanes', disp: 540000, p: '0,61', cierre: 'mañana 16:00',
+        lineas: [['d1', 'Papel higiénico', 90, 'packs', ['nuble-ph-doble', 'nuble-ph-simple']], ['d2', 'Toalla de manos', 30, 'cajas', ['nuble-toalla-int', 'itata-toalla-rollo']]] },
+      e: { codigo: '2765530-157-COT26', nombre: 'Kit de aseo para salas cuna', comprador: 'Municipalidad de Chillán Viejo', disp: 1080000, p: '0,38', cierre: 'lun 9 · 15:00',
+        lineas: [['e1', 'Cloro gel', 48, 'unidades', ['inv-cloro', 'nuble-cloro']], ['e2', 'Detergente líquido', 24, 'unidades', ['nuble-det3', 'itata-det5']],
+          ['e3', 'Toallitas húmedas para bebé', 300, 'paquetes', ['itata-toall80', 'nuble-toall50', 'nuble-toall100']], ['e4', 'Bolsas de basura 70 × 90', 80, 'paquetes', []]] },
+      f: { codigo: '1209981-2044-COT26', nombre: 'Pañales adulto talla M y L', comprador: 'Servicio de Salud Ñuble', disp: 3400000, p: '0,27', cierre: 'mar 10 · 12:00',
+        lineas: [['f1', 'Pañal adulto talla M', 150, 'paquetes', ['nuble-pan-m']], ['f2', 'Pañal adulto talla L', 150, 'paquetes', ['itata-pan-l']]] },
+      g: { codigo: '2550716-93-COT26', nombre: 'Detergente industrial y cloro', comprador: 'Municipalidad de Quillón', disp: 410000, p: '0,49', cierre: 'mié 11 · 18:00', lineas: [] },
+      h: { codigo: '6033012-21-COT26', nombre: 'Café, té y azúcar para oficinas', comprador: 'Delegación Presidencial Ñuble', disp: 295000, p: '0,58', cierre: 'jue 12 · 15:00',
+        lineas: [['h1', 'Café instantáneo 170 g', 24, 'frascos', ['may-cafe']], ['h2', 'Té en bolsitas, caja 100', 20, 'cajas', ['may-te']],
+          ['h3', 'Azúcar granulada 1 kg', 40, 'bolsas', ['inv-azucar', 'may-azucar', 'itata-azucar']]] }
+    };
+    const NOMBRES = {};
+    Object.keys(st.lotes).forEach((id) => { NOMBRES[id] = 'Lote ' + id.slice(1); });
+    const CREADO = { l14: 'creado ayer por Boris', l15: 'creado hoy por Mario' };
+    // Cada lote tiene número fijo y un nombre libre («Lote 14 · Limpieza»).
+    const nombres = st.nombres || { l14: 'Limpieza', l15: 'Alimentos' };
+    const ETIQ = (id) => NOMBRES[id] + (nombres[id] ? ' · ' + nombres[id] : '');
+    const siguienteId = () => 'l' + (Math.max.apply(null, Object.keys(st.lotes).map((id) => parseInt(id.slice(1), 10))) + 1);
+    const fmt = (n) => '$ ' + Math.round(n).toLocaleString('es-CL');
+    const num = (n) => Math.round(n).toLocaleString('es-CL');
+    const pct = (x) => (x * 100).toFixed(1).replace('.', ',') + ' %';
+    // Nuestro inventario: [nombre, stock, costo promedio]. Se revisa antes que los proveedores.
+    const INV = {
+      'inv-gel': ['Alcohol gel 70 % 1 L con dosificador', 40, 2980],
+      'inv-masc': ['Mascarilla 3 pliegues, caja 50', 80, 1850],
+      'inv-resma': ['Resma carta 75 g, 500 hojas', 30, 3620],
+      'inv-cloro': ['Cloro gel 900 ml', 120, 870],
+      'inv-azucar': ['Azúcar granulada 1 kg', 60, 980],
+      'inv-bolsas': ['Bolsa de basura 70 × 90, paquete 10', 150, 690],
+      'inv-toallitas': ['Toallitas húmedas bebé, 80 unidades', 120, 1080],
+      'inv-guante-m': ['Guante nitrilo talla M, caja 100', 15, 4100]
+    };
+    const prod = (pid) => {
+      if (pid && INV[pid]) return { id: pid, nombre: INV[pid][0], prov: 'Nuestro inventario · bodega Chillán', costo: INV[pid][2], dias: 0, inv: true, stock: INV[pid][1] };
+      return pid && P[pid] ? { id: pid, nombre: P[pid][0], prov: P[pid][1], costo: P[pid][2], dias: P[pid][3] } : null;
+    };
+    const estadoDe = (pr) => (!pr ? 'ninguno' : pr.costo == null ? 'sin' : pr.dias > 15 ? 'vencido' : 'ok');
+    const precioDe = (lid) => {
+      const pr = prod(st.elegido[lid]);
+      if (!pr) return null;
+      if (st.precios[lid] != null) return st.precios[lid];
+      return pr.costo != null ? Math.round(pr.costo * 1.24 / 10) * 10 : null;
+    };
+    // Reserva de inventario: se reparte el stock entre las líneas de todos los lotes abiertos, en orden.
+    const cubre = {};
+    const usado = {};
+    Object.keys(st.lotes).forEach((lt) => st.lotes[lt].forEach((id) => CAS[id].lineas.forEach(([lid, , cant]) => {
+      const pid = st.elegido[lid];
+      if (pid && INV[pid]) {
+        const c = Math.max(0, Math.min(cant, INV[pid][1] - (usado[pid] || 0)));
+        cubre[lid] = c;
+        usado[pid] = (usado[pid] || 0) + c;
+      }
+    })));
+    const estadoLinea = (lid, pr, cant) => (pr && pr.inv ? ((cubre[lid] || 0) >= cant ? 'bodega' : 'parcial') : estadoDe(pr));
+    const libresPara = (pid, lid) => INV[pid][1] - (usado[pid] || 0) + (st.elegido[lid] === pid ? (cubre[lid] || 0) : 0);
+    const resumen = (ca) => {
+      let oferta = 0, venta = 0, costo = 0, alDia = 0, conCosto = 0;
+      ca.lineas.forEach(([lid, , cant]) => {
+        const pr = prod(st.elegido[lid]);
+        const precio = precioDe(lid);
+        if (precio != null) oferta += precio * cant;
+        if (pr && pr.costo != null && precio != null) { venta += precio * cant; costo += pr.costo * cant; conCosto++; }
+        const el = estadoLinea(lid, pr, cant);
+        if (el === 'ok' || el === 'bodega') alDia++;
+      });
+      return { oferta, margen: venta ? (venta - costo) / venta : null, alDia, conCosto, n: ca.lineas.length };
+    };
+    const lote = st.lote;
+    const ids = st.lotes[lote];
+    const activaId = ids.includes(st.activa[lote]) ? st.activa[lote] : ids[0];
+    const ca = CAS[activaId];
+    const r = ca ? resumen(ca) : null;
+
+    // Solicitudes del lote: productos pedidos que aparecen en alguna línea del lote; cantidad sumada en todas las CA del lote.
+    const lineasLote = [];
+    ids.forEach((id) => CAS[id].lineas.forEach((l) => lineasLote.push(l)));
+    const grupos = {};
+    st.pedidos.forEach((pid) => {
+      const usan = lineasLote.filter((l) => l[4].includes(pid));
+      if (!usan.length) return;
+      const elegidas = usan.filter((l) => st.elegido[l[0]] === pid);
+      const base = elegidas.length ? elegidas : usan;
+      const cant = base.reduce((s, l) => s + l[2], 0);
+      const pr = prod(pid);
+      (grupos[pr.prov] = grupos[pr.prov] || []).push({ pid, nombre: pr.nombre, cant: num(cant) + ' ' + base[0][3] });
+    });
+    // «Sin producto actual»: se pide cotización por la línea a los proveedores del rubro.
+    (st.cotizar || []).forEach((lid) => {
+      const l = lineasLote.find((x) => x[0] === lid);
+      if (!l || st.elegido[lid] !== 'buscar') return;
+      const rubro = lid[0] === 'h' ? ['Mayorista Chillán', 'Comercial Itata'] : ['Comercial Itata', 'Distribuidora Ñuble Aseo'];
+      rubro.forEach((prov) => (grupos[prov] = grupos[prov] || []).push({ pid: 'cat:' + lid, nombre: 'Cotizar: ' + l[1], cant: num(l[2]) + ' ' + l[3] }));
+    });
+    const solicitudes = Object.keys(grupos).map((prov) => {
+      const items = grupos[prov];
+      const enviada = items.every((x) => st.enviados.includes(x.pid));
+      const [canal, contacto] = CONTACTO[prov] || ['correo', 'correo'];
+      return {
+        prov, contacto, canal, porWhatsapp: canal === 'WhatsApp', porCorreo: canal !== 'WhatsApp',
+        productos: items, enviada, puedeEnviar: !enviada,
+        estado: enviada ? 'Enviada por ' + canal + ' 10:15' : 'Por enviar',
+        claseEstado: enviada ? 'r-estado--curso' : '',
+        enviar: () => this.setState({ enviados: Array.from(new Set(st.enviados.concat(items.map((x) => x.pid)))) })
+      };
+    });
+    const pendientes = solicitudes.filter((s) => !s.enviada);
+
+    const lista = ca && st.listas.includes(activaId);
+    const pctDisp = r && ca.disp ? r.oferta / ca.disp : 0;
+    const paso = (n, nombre, nota, estado) => ({
+      n, nombre, nota, hecho: estado === 'hecho', pendiente: estado !== 'hecho', actual: estado === 'actual' ? 'step' : 'false',
+      fondo: estado === 'actual' ? 'var(--superficie)' : 'transparent',
+      borde: estado === 'actual' ? 'var(--accion)' : 'var(--borde)',
+      circulo: estado === 'hecho' ? 'var(--ok-fondo)' : (estado === 'actual' ? 'var(--accion)' : 'var(--superficie-2)'),
+      colorCirculo: estado === 'hecho' ? 'var(--ok)' : (estado === 'actual' ? 'var(--sobre-accion)' : 'var(--tinta-2)')
+    });
+    const nListas = ids.filter((id) => st.listas.includes(id)).length;
+    const setActiva = (id) => this.setState({ activa: { ...st.activa, [lote]: id }, abierta: null, menuMover: false, borradorC: '' });
+
+    // Conversación del equipo por CA (la misma que en la Mesa). Una mención en el lote avisa en la campana y lleva aquí.
+    const MIEMBROS = ['Boris', 'Mario', 'Gonzalo'];
+    const HILOS0 = {
+      a: [
+        { autor: 'Mario', hora: 'hoy 9:41', texto: 'El hospital pide guantes sin polvo y con ficha técnica. @Gonzalo ¿tenemos la del nitrilo azul?' },
+        { autor: 'Gonzalo', hora: 'hoy 9:58', texto: 'Sí, la subo al lote. La talla L no la tiene Itata en stock; estoy pidiendo precio. @Boris ¿la ofertamos igual con la M sola?' }
+      ],
+      b: [{ autor: 'Boris', hora: 'ayer 18:20', texto: 'La armo yo; cierra hoy a las 18:00.' }],
+      d: [{ autor: 'Mario', hora: 'hoy 10:15', texto: 'Lista. Este CESFAM paga a 30 días sin atrasos.' }]
+    };
+    const RESP = { a: 'Gonzalo', b: 'Boris', d: 'Mario', e: 'Boris' };
+    const hilos = st.hilos || HILOS0;
+    const hiloAct = hilos[activaId] || [];
+    const partes = (texto) => texto.split(/(@[A-Za-zÁÉÍÓÚáéíóúÑñ]+)/).filter(Boolean).map((t) => {
+      const m = t[0] === '@' && MIEMBROS.includes(t.slice(1));
+      return { t, m, n: !m };
+    });
+    const enviarComentario = () => {
+      const texto = (st.borradorC || '').trim();
+      if (!texto || !activaId) return;
+      this.setState({ hilos: { ...hilos, [activaId]: hiloAct.concat({ autor: 'Boris', hora: 'ahora', texto }) }, borradorC: '' });
+    };
+    const hiloAbierto = st.hiloAbierto !== false;
+
+    // Conversación del lote completo (además de la de cada CA).
+    const hilosLote = st.hilosLote || {
+      l14: [
+        { autor: 'Mario', hora: 'hoy 8:50', texto: 'Armé el lote con lo de aseo que cierra hoy y mañana. @Gonzalo ¿puedes pedir los precios a Itata antes de las 11?' },
+        { autor: 'Gonzalo', hora: 'hoy 9:12', texto: 'Pedidos. Ñuble Aseo ya respondió la toalla y el detergente.' },
+        { autor: 'Mario', hora: 'hoy 9:35', texto: '@Boris la de guantes cierra a las 15:00, va primero.' }
+      ],
+      l15: [{ autor: 'Mario', hora: 'hoy 11:10', texto: 'Lote de alimentos: falta leer el anexo del arroz antes de cotizar.' }]
+    };
+    const hiloLote = hilosLote[lote] || [];
+    const hiloLoteAbierto = !!st.hiloLoteAbierto;
+    const enviarLote = () => {
+      const texto = (st.borradorL || '').trim();
+      if (!texto) return;
+      this.setState({ hilosLote: { ...hilosLote, [lote]: hiloLote.concat({ autor: 'Boris', hora: 'ahora', texto }) }, borradorL: '' });
+    };
+
+    // Opciones de una línea, en dos pisos: nuestro inventario y proveedores.
+    const aprendidas = st.aprendidas || { a4: 'historial' };
+    const opcion = (lid, cant, pid) => {
+      const q = prod(pid);
+      const e2 = estadoDe(q);
+      const pedido = st.pedidos.includes(pid);
+      const base = {
+        rid: lid + '-' + pid, grupo: 'linea-' + lid, nombre: q.nombre, elegido: st.elegido[lid] === pid,
+        elegir: () => this.setState({ elegido: { ...st.elegido, [lid]: pid }, precios: { ...st.precios, [lid]: null } })
+      };
+      if (q.inv) {
+        const libres = libresPara(pid, lid);
+        return { ...base, sub: 'Stock ' + num(q.stock) + ' · costo promedio', costoTxt: fmt(q.costo),
+          invOk: libres >= cant, invFalta: libres < cant,
+          textoInv: libres >= cant ? 'Alcanza · ' + num(libres) + ' libres' : (libres > 0 ? 'Solo ' + num(libres) + ' libres' : 'Sin stock libre') };
+      }
+      return { ...base, sub: q.prov + ' · por ' + (CONTACTO[q.prov] || ['correo'])[0],
+        costoTxt: q.costo != null ? fmt(q.costo) : '—', dias: q.dias, ok: e2 === 'ok', vencido: e2 === 'vencido', sin: e2 === 'sin',
+        puedePedir: e2 !== 'ok' && !pedido, pedido: e2 !== 'ok' && pedido,
+        pedir: () => this.setState({ pedidos: st.pedidos.concat(pid) }) };
+    };
+    const extrasDe = (lid) => (st.extras || {})[lid] || [];
+    const lineasCA = ca ? ca.lineas.map(([lid, pide, cant, unidad, cands]) => {
+      const sel = st.elegido[lid];
+      const buscando = sel === 'buscar';
+      const pr = buscando ? null : prod(sel);
+      const est = buscando ? 'buscar' : estadoLinea(lid, pr, cant);
+      const precio = precioDe(lid);
+      const invCand = cands.concat(extrasDe(lid)).find((pid) => INV[pid]);
+      const libresInv = invCand && !(pr && pr.inv) ? libresPara(invCand, lid) : 0;
+      return {
+        pide, cantTxt: num(cant) + ' ' + unidad, cantNum: num(cant), cubre: num(cubre[lid] || 0), faltan: num(cant - (cubre[lid] || 0)),
+        bodega: est === 'bodega', parcial: est === 'parcial', ok: est === 'ok', vencido: est === 'vencido', sin: est === 'sin', ninguno: est === 'ninguno',
+        buscar: buscando, buscarTxt: (st.cotizar || []).includes(lid) ? 'Cotizando con proveedores' : 'Por cotizar', textoSin: 'Sin precio',
+        hayNotaBodega: libresInv > 0, notaBodega: 'hay ' + num(libresInv) + ' en nuestra bodega',
+        aprendido: aprendidas[lid] === 'historial' && !!pr,
+        producto: buscando ? 'Sin producto actual' : (pr ? pr.nombre : 'Sin producto elegido'),
+        proveedor: buscando ? 'Buscando proveedores del rubro' : (pr ? pr.prov : 'Abre la línea para elegir qué ofertar'),
+        colorProducto: pr ? 'var(--tinta)' : 'var(--tinta-2)',
+        costoTxt: pr && pr.costo != null ? fmt(pr.costo) : '—', dias: pr ? pr.dias : 0,
+        conProducto: !!pr, precioTxt: precio != null ? num(precio) : '', totalTxt: precio != null ? fmt(precio * cant) : '—',
+        cambiarPrecio: (e) => { const v = parseInt(String(e.target.value).replace(/\D/g, ''), 10); this.setState({ precios: { ...st.precios, [lid]: isNaN(v) ? null : v } }); },
+        fondo: st.abierta === lid ? 'var(--accion-suave)' : 'transparent',
+        abrir: () => this.setState({ abierta: lid, buscarInv: false, q: '' })
+      };
+    }) : [];
+
+    // Modal de configuración de la línea abierta.
+    const idsLineas = ca ? ca.lineas.map((l) => l[0]) : [];
+    const mi = idsLineas.indexOf(st.abierta);
+    let modal = null;
+    if (mi >= 0) {
+      const [lid, pide, cant, unidad, cands] = ca.lineas[mi];
+      const extras = extrasDe(lid);
+      const invIds = cands.filter((p) => INV[p]).concat(extras.filter((p) => !cands.includes(p)));
+      const provIds = cands.filter((p) => !INV[p]);
+      const sel = st.elegido[lid];
+      const pr = sel === 'buscar' ? null : prod(sel);
+      const est = sel === 'buscar' ? 'buscar' : estadoLinea(lid, pr, cant);
+      const precio = precioDe(lid);
+      const cerrar = () => this.setState({ abierta: null, buscarInv: false, q: '' });
+      const ir = (d) => { const j = mi + d; if (j >= 0 && j < idsLineas.length) this.setState({ abierta: idsLineas[j], buscarInv: false, q: '' }); };
+      const qq = (st.q || '').toLowerCase();
+      const cotizando = (st.cotizar || []).includes(lid);
+      const rubro = lid[0] === 'h' ? ['Mayorista Chillán', 'Comercial Itata'] : ['Comercial Itata', 'Distribuidora Ñuble Aseo'];
+      modal = {
+        posicion: 'Línea ' + (mi + 1) + ' de ' + idsLineas.length, caNombre: ca.nombre, pide, cantTxt: num(cant) + ' ' + unidad,
+        sinAnterior: mi === 0, sinSiguiente: mi === idsLineas.length - 1, noUltima: mi < idsLineas.length - 1,
+        anterior: () => ir(-1), siguiente: () => ir(1), cerrar,
+        teclas: (e) => { if (e.key === 'Escape') cerrar(); },
+        inv: invIds.map((p) => opcion(lid, cant, p)), sinInv: invIds.length === 0,
+        prov: provIds.map((p) => opcion(lid, cant, p)),
+        buscarInv: !!st.buscarInv, noBuscarInv: !st.buscarInv,
+        abrirBuscar: () => this.setState({ buscarInv: true, q: '' }), cerrarBuscar: () => this.setState({ buscarInv: false }),
+        q: st.q || '', cambiarQ: (e) => this.setState({ q: e.target.value }),
+        recordar: st.recordar !== false, alternarRecordar: () => this.setState({ recordar: st.recordar === false }),
+        resultados: Object.keys(INV).filter((p) => !invIds.includes(p) && (!qq || INV[p][0].toLowerCase().includes(qq))).map((p) => ({
+          nombre: INV[p][0], sub: 'Stock ' + num(INV[p][1]) + ' · costo promedio ' + fmt(INV[p][2]),
+          usar: () => this.setState({
+            extras: { ...(st.extras || {}), [lid]: extras.concat(p) }, elegido: { ...st.elegido, [lid]: p }, precios: { ...st.precios, [lid]: null },
+            aprendidas: st.recordar === false ? aprendidas : { ...aprendidas, [lid]: 'nuevo' }, buscarInv: false, q: ''
+          })
+        })),
+        sinResultados: false,
+        ridBuscar: lid + '-buscar', grupo: 'linea-' + lid, buscarElegido: sel === 'buscar',
+        elegirBuscar: () => this.setState({ elegido: { ...st.elegido, [lid]: 'buscar' }, precios: { ...st.precios, [lid]: null } }),
+        rubroTxt: rubro.join(' y '), cotizando, puedeCotizar: sel === 'buscar' && !cotizando,
+        cotizar: () => this.setState({ cotizar: (st.cotizar || []).concat(lid) }),
+        alertaVencido: est === 'vencido',
+        alertaTxt: pr && est === 'vencido' ? 'El costo de ' + pr.nombre + ' (' + pr.prov + ', ' + fmt(pr.costo) + ') tiene ' + pr.dias + ' días; pasados 15 se considera desactualizado y el margen puede no ser el real.' : '',
+        alertaPuedePedir: est === 'vencido' && !st.pedidos.includes(sel), alertaPedido: est === 'vencido' && st.pedidos.includes(sel),
+        pedirElegido: () => this.setState({ pedidos: st.pedidos.concat(sel) }),
+        alertaSin: est === 'sin', alertaSinTxt: pr ? 'No hay costo cargado de ' + pr.nombre + ' (' + pr.prov + ').' : '',
+        alertaParcial: est === 'parcial', alertaParcialTxt: 'Alcanzan ' + num(cubre[lid] || 0) + ' de ' + num(cant) + '; elige un proveedor para la línea completa.',
+        aprendidoHist: aprendidas[lid] === 'historial' && !!pr,
+        historialTxt: pr ? 'Elegido automáticamente: usaste «' + pr.nombre + '» en 3 CA con líneas parecidas.' : '',
+        aprendidoNuevo: aprendidas[lid] === 'nuevo' && !!pr,
+        aprendidoTxt: pr ? 'Aprendido: la próxima línea parecida a «' + pide + '» se llenará con «' + pr.nombre + '».' : '',
+        conProducto: !!pr, sinProducto: !pr, precioTxt: precio != null ? num(precio) : '', totalTxt: precio != null ? fmt(precio * cant) : '—',
+        costoTxt: pr && pr.costo != null ? fmt(pr.costo) : '—',
+        margenTxt: pr && pr.costo != null && precio ? pct((precio - pr.costo) / precio) : '—',
+        cambiarPrecio: (e) => { const v = parseInt(String(e.target.value).replace(/\D/g, ''), 10); this.setState({ precios: { ...st.precios, [lid]: isNaN(v) ? null : v } }); }
+      };
+      modal.sinResultados = modal.resultados.length === 0;
+    }
+
+    return {
+      tema: this.props.tema ?? 'claro', densidad: this.props.densidad ?? 'comoda',
+      nLotes: Object.keys(st.lotes).length,
+      si: true,
+      hiloLoteAbierto, hiloLoteCerrado: !hiloLoteAbierto, hiloLoteTxt: hiloLoteAbierto ? 'true' : 'false',
+      alternarHiloLote: () => this.setState({ hiloLoteAbierto: !hiloLoteAbierto }),
+      textoHiloLote: hiloLoteAbierto ? 'Ocultar conversación del lote' : 'Conversación del lote' + (hiloLote.length ? ' (' + hiloLote.length + ')' : ''),
+      mencionLote: !hiloLoteAbierto && hiloLote.some((c) => c.autor !== 'Boris' && c.texto.includes('@Boris')),
+      hayUltimoLote: hiloLote.length > 0,
+      ultimoLote: hiloLote.length ? hiloLote[hiloLote.length - 1] : {},
+      comentariosLote: hiloLote.map((cm) => ({ ...cm, ini: cm.autor[0], partes: partes(cm.texto) })),
+      sinComentariosLote: hiloLote.length === 0,
+      borradorL: st.borradorL || '',
+      escribirL: (ev) => this.setState({ borradorL: ev.target.value }),
+      sinBorradorL: !(st.borradorL || '').trim(),
+      enviarLote,
+      teclaLote: (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarLote(); } },
+      hiloAbierto, hiloAbiertoTxt: hiloAbierto ? 'true' : 'false',
+      alternarHilo: () => this.setState({ hiloAbierto: !hiloAbierto }),
+      textoHilo: hiloAct.length ? (hiloAbierto ? 'Ocultar conversación' : hiloAct.length + (hiloAct.length === 1 ? ' comentario' : ' comentarios')) : (hiloAbierto ? 'Ocultar conversación' : 'Comentar'),
+      hayMencion: !hiloAbierto && hiloAct.some((c) => c.autor !== 'Boris' && c.texto.includes('@Boris')),
+      responsable: RESP[activaId] || 'sin responsable',
+      comentarios: hiloAct.map((cm) => ({ ...cm, ini: cm.autor[0], partes: partes(cm.texto) })),
+      sinComentarios: hiloAct.length === 0,
+      borradorC: st.borradorC || '',
+      escribir: (ev) => this.setState({ borradorC: ev.target.value }),
+      sinBorrador: !(st.borradorC || '').trim(),
+      enviarComentario,
+      teclaComentario: (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarComentario(); } },
+      hayCA: ids.length > 0, loteVacio: ids.length === 0,
+      nombreLote: nombres[lote] || '', conNombreLote: !!nombres[lote],
+      editando: st.editando === lote, noEditando: st.editando !== lote,
+      borrador: st.borrador ?? '',
+      editarNombre: () => this.setState({ editando: lote, borrador: nombres[lote] || '' }),
+      cambiarBorrador: (e) => this.setState({ borrador: e.target.value }),
+      guardarNombre: () => this.setState({ nombres: { ...nombres, [lote]: (st.borrador || '').trim() }, editando: null }),
+      cancelarNombre: () => this.setState({ editando: null }),
+      teclaNombre: (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); this.setState({ nombres: { ...nombres, [lote]: (st.borrador || '').trim() }, editando: null }); }
+        else if (e.key === 'Escape') { this.setState({ editando: null }); }
+      },
+      crearLote: () => {
+        const nuevo = siguienteId();
+        this.setState({ lotes: { ...st.lotes, [nuevo]: [] }, nombres: { ...nombres, [nuevo]: '' }, lote: nuevo, editando: nuevo, borrador: '', abierta: null, menuMover: false, aviso: null });
+      },
+      lotes: Object.keys(st.lotes).map((id) => ({ nombre: ETIQ(id), activo: id === lote ? 'true' : 'false', elegir: () => this.setState({ lote: id, abierta: null, menuMover: false }) })),
+      loteNombre: NOMBRES[lote],
+      loteNota: ids.length + ' CA · ' + (CREADO[lote] || 'creado recién por Boris'),
+      haySinLote: st.sinLote.length > 0,
+      nSinLote: st.sinLote.length,
+      sinLote: st.sinLote.map((id) => ({ ...CAS[id], agregar: () => this.setState({ sinLote: st.sinLote.filter((x) => x !== id), lotes: { ...st.lotes, [lote]: ids.concat(id) }, activa: { ...st.activa, [lote]: id }, abierta: null }) })),
+      pasos: [
+        paso(1, 'Agregar CA', ids.length + ' CA', 'hecho'),
+        paso(2, 'Armar ofertas', nListas + ' de ' + ids.length + ' listas', 'actual'),
+        paso(3, 'Enviar', 'subir al portal', 'pendiente')
+      ],
+      tabs: ids.map((id) => {
+        const c = CAS[id];
+        const rr = resumen(c);
+        return {
+          codigo: c.codigo, nombre: c.nombre, comprador: c.comprador, cierre: c.cierre, urgente: !!c.urgente, tranquila: !c.urgente,
+          lista: st.listas.includes(id), activo: id === activaId ? 'true' : 'false', elegir: () => setActiva(id),
+          progreso: rr.n ? rr.alDia + ' de ' + rr.n + ' líneas al día' : 'anexo sin leer'
+        };
+      }),
+      ca: ca ? {
+        ...ca, lista: !!lista, noLista: !lista,
+        ofertaTxt: fmt(r.oferta), disponibleTxt: fmt(ca.disp), pctDisp: pct(pctDisp), sobre: pctDisp > 1, dentro: pctDisp <= 1,
+        margenTxt: r.margen == null ? '—' : pct(r.margen),
+        margenNota: r.n ? 'en ' + r.conCosto + ' de ' + r.n + ' líneas con costo' : 'sin líneas',
+        listasTxt: r.n ? r.alDia + ' de ' + r.n + ' líneas con precio al día' : 'anexo sin leer',
+        sinLineas: r.n === 0, conLineas: r.n > 0,
+        lineas: lineasCA
+      } : {},
+      hayModal: !!modal,
+      m: modal || {},
+      marcarLista: () => this.setState({ listas: lista ? st.listas.filter((x) => x !== activaId) : st.listas.concat(activaId) }),
+      quitar: () => {
+        const resto = ids.filter((x) => x !== activaId);
+        if (!resto.length) return;
+        this.setState({ lotes: { ...st.lotes, [lote]: resto }, sinLote: st.sinLote.concat(activaId), activa: { ...st.activa, [lote]: resto[0] }, abierta: null, menuMover: false,
+          aviso: { texto: (ca ? ca.nombre : 'La CA') + ' volvió a «Recibidas de la mesa».', destino: null, previo: { lotes: st.lotes, sinLote: st.sinLote, activa: st.activa } } });
+      },
+      // Mover de lote: menú en línea (sin modal) con los otros lotes abiertos o uno nuevo; aviso con Deshacer.
+      menuMover: !!st.menuMover,
+      menuMoverTxt: st.menuMover ? 'true' : 'false',
+      alternarMenu: () => this.setState({ menuMover: !st.menuMover }),
+      destinos: Object.keys(st.lotes).filter((id) => id !== lote).map((id) => ({
+        nombre: ETIQ(id), nota: st.lotes[id].length + ' CA',
+        mover: () => {
+          const resto = ids.filter((x) => x !== activaId);
+          this.setState({
+            lotes: { ...st.lotes, [lote]: resto, [id]: st.lotes[id].concat(activaId) },
+            activa: { ...st.activa, [lote]: resto[0], [id]: activaId }, abierta: null, menuMover: false,
+            aviso: { texto: (ca ? ca.nombre : 'La CA') + ' se movió a ' + ETIQ(id) + ' con sus productos elegidos y solicitudes.', destino: id, previo: { lotes: st.lotes, sinLote: st.sinLote, activa: st.activa } }
+          });
+        }
+      })),
+      moverANuevo: () => {
+        const nuevo = siguienteId();
+        const resto = ids.filter((x) => x !== activaId);
+        this.setState({
+          lotes: { ...st.lotes, [lote]: resto, [nuevo]: [activaId] },
+          nombres: { ...nombres, [nuevo]: '' }, editando: nuevo, borrador: '',
+          activa: { ...st.activa, [lote]: resto[0], [nuevo]: activaId }, abierta: null, menuMover: false,
+          aviso: { texto: (ca ? ca.nombre : 'La CA') + ' quedó en el nuevo Lote ' + nuevo.slice(1) + '.', destino: nuevo, previo: { lotes: st.lotes, sinLote: st.sinLote, activa: st.activa } }
+        });
+      },
+      hayAviso: !!st.aviso,
+      avisoTexto: st.aviso ? st.aviso.texto : '',
+      avisoIr: st.aviso && st.aviso.destino ? 'Ir a Lote ' + st.aviso.destino.slice(1) : 'Cerrar',
+      irDestino: () => this.setState(st.aviso && st.aviso.destino && st.lotes[st.aviso.destino] ? { lote: st.aviso.destino, aviso: null, abierta: null } : { aviso: null }),
+      deshacer: () => st.aviso && this.setState({ ...st.aviso.previo, aviso: null }),
+      solicitudes,
+      sinSolicitudes: solicitudes.length === 0,
+      invLote: lineasLote.filter((l) => INV[st.elegido[l[0]]]).map(([lid, , cant, unidad]) => {
+        const pid = st.elegido[lid];
+        const c = cubre[lid] || 0;
+        return {
+          nombre: INV[pid][0], reserva: num(c) + ' de ' + num(cant) + ' ' + unidad,
+          parcial: c < cant, faltaTxt: 'Faltan ' + num(cant - c) + ': elige un proveedor en esa línea'
+        };
+      }),
+      sinInv: !lineasLote.some((l) => INV[st.elegido[l[0]]]),
+      hayPendientes: pendientes.length > 0,
+      nPendientes: pendientes.length,
+      enviarTodas: () => this.setState({ enviados: Array.from(new Set(st.enviados.concat(...pendientes.map((s) => s.productos.map((x) => x.pid))))) })
+    };
+  }
+}
+</script>
+</body>
+</html>

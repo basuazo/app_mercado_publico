@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · Ventas · Ofertas enviadas</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main" style="gap: 20px;">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+<div>
+<h1 class="m-titulo">Ventas</h1>
+<p class="m-sub"><span>Ofertas enviadas y lo que pasa después: adjudicación, OC, entrega, factura y pago</span></p>
+</div>
+<button class="r-btn r-btn--secundario" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg><span>Exportar XLSX</span></button>
+</header>
+
+<section class="r-tarjeta" aria-label="Cifras de ventas" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px 32px; padding: 18px 24px;">
+<div class="r-dato r-dato--xl"><span class="r-etiqueta">Ganado en los últimos 30 días</span><span class="r-dato__valor">$ 1,65<small>M</small></span><span class="r-dato__nota"><span>4 CA · margen promedio 20,8 %</span></span></div>
+<div class="r-dato" style="align-content: end;"><span class="r-etiqueta">Esperando resultado</span><span class="r-dato__valor">3</span><span class="r-dato__nota"><span>$ 1,54 M ofertados</span></span></div>
+<div class="r-dato" style="align-content: end;"><span class="r-etiqueta">Tasa de adjudicación</span><span class="r-dato__valor">36<small>%</small></span><span class="r-dato__nota"><span class="r-delta--sube">+4 pts</span><span>vs. octubre</span></span></div>
+<div class="r-dato" style="align-content: end;"><span class="r-etiqueta">Por cobrar</span><span class="r-dato__valor">$ 455.000</span><span class="r-dato__nota"><span>1 factura · vence el 29 nov</span></span></div>
+</section>
+
+<section aria-label="Seguimiento por estado" style="display: flex; flex-wrap: wrap; gap: 12px;">
+<sc-for list="{{grupos}}" as="gr" hint-placeholder-count="3">
+<div style="flex: {{gr.flex}} 1 {{gr.flex}}00px; min-width: 0; display: grid; gap: 6px; align-content: start;">
+<button class="m-grupo-estado" type="button" aria-pressed="{{gr.activo}}" onClick="{{gr.elegir}}"><span>{{gr.nombre}}</span><span class="m-num" style="font-size: 12px; color: var(--tinta-2);">{{gr.n}}</span></button>
+<div style="display: grid; grid-template-columns: {{gr.cols}}; gap: 6px;">
+<sc-for list="{{gr.estados}}" as="es" hint-placeholder-count="2">
+<button class="m-estado-btn" type="button" aria-pressed="{{es.activo}}" onClick="{{es.elegir}}" title="{{es.ayuda}}">
+<span style="font-size: 12px; line-height: 16px; font-weight: 500; color: var(--tinta-2);">{{es.nombre}}</span>
+<span style="font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: -.01em; color: var(--tinta); font-variant-numeric: tabular-nums;">{{es.n}}</span>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2); font-variant-numeric: tabular-nums;">{{es.monto}}</span>
+<sc-if value="{{es.conExtra}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; line-height: 16px; font-weight: 500; color: var(--atencion);">{{es.extra}}</span></sc-if>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;">
+<sc-if value="{{filtrando}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--curso r-estado--sin-punto"><span>Mostrando: {{filtroTxt}}</span></span><button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{verTodas}}"><span>Ver todas ({{nTotal}})</span></button></sc-if>
+<button class="r-filtro" type="button" aria-pressed="{{soloAccion}}" onClick="{{alternarAccion}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg><span>Con algo pendiente</span></button>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+<section class="r-tarjeta" aria-label="Ofertas enviadas" onKeyDown="{{teclas}}" style="flex: 1 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<div style="display: grid; grid-template-columns: {{cols}}; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--borde); border-radius: var(--radio-panel) var(--radio-panel) 0 0;">
+<span class="m-cab">Enviada</span><span class="m-cab">Compra Ágil</span><span class="m-cab" style="text-align: right;">Ofertado</span>
+<sc-if value="{{conMargen}}" hint-placeholder-val="{{true}}"><span class="m-cab" style="text-align: right;">Margen</span></sc-if>
+<span class="m-cab">Etapa</span>
+</div>
+<sc-for list="{{filas}}" as="r" hint-placeholder-count="8">
+<div class="m-fila" style="display: grid; grid-template-columns: {{cols}}; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde); background: {{r.fondo}};">
+<div style="display: grid; gap: 2px;"><span style="font-size: 14px; font-weight: 500; white-space: nowrap;">{{r.enviada}}</span><span style="font-size: 12px; color: var(--tinta-2);"><span>por {{r.quien}}</span></span></div>
+<div style="display: grid; gap: 4px; min-width: 0;">
+<button type="button" class="m-fila__abrir" onClick="{{r.abrir}}" aria-expanded="{{r.abiertaTxt}}"><span class="m-fila__nombre" style="display: block; color: {{r.colorNombre}};">{{r.nombre}}</span></button>
+<span style="display: flex; gap: 6px; min-width: 0; font-size: 13px; line-height: 18px; color: var(--tinta-2); white-space: nowrap; overflow: hidden;"><span style="overflow: hidden; text-overflow: ellipsis;">{{r.comprador}}</span><span class="r-codigo" style="line-height: 18px;">{{r.codigo}}</span>
+<sc-if value="{{r.conResponsable}}" hint-placeholder-val="{{false}}"><span class="m-avatar" title="Responsable: {{r.responsable}}" style="width: 18px; height: 18px; font-size: 10px; flex: none;"><span aria-hidden="true">{{r.iniResp}}</span><span class="m-oculto">Responsable: {{r.responsable}}</span></span></sc-if>
+<sc-if value="{{r.conComentarios}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 3px; flex: none;" title="{{r.nComentariosTxt}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span><span aria-hidden="true">{{r.nComentarios}}</span><span class="m-oculto">{{r.nComentariosTxt}}</span></span></span></sc-if>
+</span>
+<sc-if value="{{r.conSenal}}" hint-placeholder-val="{{false}}">
+<span style="margin-top: 2px;"><span class="m-ayuda" tabindex="0"><span class="r-senal {{r.claseSenal}}" style="height: 22px; font-size: 12px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2 2"></path><path d="M5 3 2 6"></path><path d="m22 6-3-3"></path><path d="M6.38 18.7 4 21"></path><path d="M17.64 18.67 20 21"></path></svg><span>{{r.senal}}</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Qué pasa</strong>{{r.ayuda}}<span class="m-ayuda__resuelve">{{r.resuelve}}</span></span></span></span>
+</sc-if>
+<sc-if value="{{r.conNota}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{r.nota}}</span></sc-if>
+</div>
+<span class="m-num">{{r.ofertado}}</span>
+<sc-if value="{{conMargen}}" hint-placeholder-val="{{true}}"><span class="m-num">{{r.margen}}</span></sc-if>
+<div style="display: grid; gap: 6px; justify-items: start;">
+<span class="r-estado {{r.claseEstado}}"><span>{{r.estado}}</span></span>
+<span style="display: flex; gap: 3px;" aria-label="{{r.etapaTxt}}" role="img">
+<sc-for list="{{r.puntos}}" as="p" hint-placeholder-count="7"><span style="width: 14px; height: 4px; border-radius: 2px; background: {{p.color}};"></span></sc-for>
+</span>
+</div>
+</div>
+</sc-for>
+<sc-if value="{{vacia}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 32px 16px; text-align: center; color: var(--tinta-2);">No hay ofertas en esta vista.</p></sc-if>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px;">
+<span class="m-fuente"><span>Mostrando {{nFilas}} · resultados y OC: Fuente: Dirección ChileCompra</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tinta-2);"><span class="r-tecla">↑</span><span class="r-tecla">↓</span><span>cambian la oferta del panel</span></span>
+</div>
+</section>
+
+<sc-if value="{{hayPanel}}" hint-placeholder-val="{{true}}">
+<aside class="r-tarjeta" aria-labelledby="panel-titulo" style="flex: 0 1 420px; min-width: 300px; box-sizing: border-box; border-radius: var(--radio-modal); box-shadow: var(--sombra-elevada); display: flex; flex-direction: column;">
+<div style="display: flex; align-items: flex-start; gap: 8px; padding: 18px 20px 14px;">
+<div style="display: grid; gap: 4px; min-width: 0; flex: 1;">
+<span class="r-codigo">{{o.codigo}}</span>
+<h2 class="m-seccion" id="panel-titulo">{{o.nombre}}</h2>
+<span style="font-size: 13px; color: var(--tinta-2);"><span>{{o.comprador}}</span></span>
+</div>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Oferta anterior (↑)" onClick="{{anterior}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"></path></svg></button>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Oferta siguiente (↓)" onClick="{{siguiente}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+<button class="r-btn r-btn--icono r-btn--sm" type="button" aria-label="Cerrar panel (Esc)" onClick="{{cerrar}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; padding: 16px 20px; border-top: 1px solid var(--borde); border-bottom: 1px solid var(--borde); background: var(--fondo);">
+<div class="r-dato"><span class="r-etiqueta">Ofertado</span><span class="r-dato__valor">{{o.ofertado}}</span><span class="r-dato__nota"><span>{{o.lineasTxt}}</span></span></div>
+<div class="r-dato"><span class="r-etiqueta">Margen</span><span class="r-dato__valor">{{o.margen}}</span><span class="r-dato__nota"><span>P(ganar) al enviar: {{o.p}}</span></span></div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 20px; border-bottom: 1px solid var(--borde);">
+<span class="r-estado {{o.claseEstado}}"><span>{{o.estadoNombre}}</span></span>
+<span style="font-size: 12px; color: var(--tinta-2);"><span>{{o.estadoAyuda}}</span></span>
+<label style="margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tinta-2);"><span>Cambiar a mano</span>
+<select class="m-precio" style="width: auto; height: 28px; padding: 0 6px; text-align: left; font-size: 13px;" value="{{o.estadoId}}" onChange="{{cambiarEstado}}" aria-label="Cambiar el estado a mano">
+<option value="enviada">Enviada</option><option value="evaluacion">En evaluación</option><option value="oc">Pendiente de OC</option><option value="despacho">Pendiente de despacho</option><option value="factura">Pendiente de factura</option><option value="pago">Pendiente de pago</option><option value="completa">Completa</option><option value="perdida">No ganada</option>
+</select></label>
+</div>
+
+<sc-if value="{{o.conResultado}}" hint-placeholder-val="{{false}}">
+<div style="margin: 14px 20px 0; padding: 12px 14px; border-radius: var(--radio-control); background: var(--superficie-2); display: grid; gap: 4px;">
+<strong style="font-size: 14px;">Resultado</strong>
+<span style="font-size: 13px; line-height: 18px; color: var(--tinta-2);">{{o.resultado}}</span>
+</div>
+</sc-if>
+
+<div style="padding: 14px 20px 4px;">
+<h3 style="margin: 0 0 8px; font-size: 14px; font-weight: 600;">Seguimiento</h3>
+<ol style="list-style: none; margin: 0; padding: 0; display: grid;">
+<sc-for list="{{o.pasos}}" as="s" hint-placeholder-count="7">
+<li style="display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px;">
+<span style="display: grid; justify-items: center; grid-template-rows: 22px 1fr;">
+<span style="display: grid; place-items: center; width: 18px; height: 18px; margin-top: 2px; border-radius: 50%; background: {{s.fondo}}; border: 2px solid {{s.borde}}; box-sizing: border-box; color: var(--ok);">
+<sc-if value="{{s.hecho}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+</span>
+<span style="width: 2px; background: {{s.linea}};"></span>
+</span>
+<span style="display: grid; gap: 1px; padding-bottom: 12px;"><span style="font-size: 14px; line-height: 20px; font-weight: {{s.peso}}; color: {{s.color}};">{{s.nombre}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{s.fecha}}</span></span>
+</li>
+</sc-for>
+</ol>
+</div>
+
+<section aria-labelledby="t-equipo-v" style="margin: 0 20px 14px; padding: 12px 14px; border-radius: var(--radio-control); background: var(--superficie-2); display: grid; gap: 10px;">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;">
+<h3 id="t-equipo-v" style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span>Equipo</span></h3>
+<label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tinta-2);"><span>Responsable</span>
+<select class="m-precio" style="width: auto; height: 28px; padding: 0 6px; text-align: left; font-size: 13px;" value="{{h.responsableId}}" onChange="{{h.asignar}}" aria-label="Responsable de esta venta">
+<option value="">Sin responsable</option><option value="Boris">Boris (tú)</option><option value="Mario">Mario</option><option value="Gonzalo">Gonzalo</option>
+</select></label>
+</div>
+<sc-if value="{{h.sinComentarios}}" hint-placeholder-val="{{false}}"><p style="margin: 0; font-size: 13px; color: var(--tinta-2);">Nadie ha comentado esta venta todavía.</p></sc-if>
+<ol style="list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;" aria-label="Conversación del equipo">
+<sc-for list="{{h.comentarios}}" as="cm" hint-placeholder-count="1">
+<li style="display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px;">
+<span class="m-avatar" aria-hidden="true" style="width: 26px; height: 26px; font-size: 11px; background: var(--superficie);">{{cm.ini}}</span>
+<div style="display: grid; gap: 2px; min-width: 0;">
+<span style="display: flex; gap: 6px; align-items: baseline; font-size: 12px;"><strong style="font-size: 13px; color: var(--tinta);">{{cm.autor}}</strong><span style="color: var(--tinta-2);">{{cm.hora}}</span></span>
+<p style="margin: 0; font-size: 13px; line-height: 19px; color: var(--tinta); white-space: pre-wrap; overflow-wrap: anywhere;"><sc-for list="{{cm.partes}}" as="p" hint-placeholder-count="1"><sc-if value="{{p.m}}" hint-placeholder-val="{{false}}"><span style="padding: 0 4px; border-radius: 4px; background: var(--accion-suave); font-weight: 600;">{{p.t}}</span></sc-if><sc-if value="{{p.n}}" hint-placeholder-val="{{true}}"><span>{{p.t}}</span></sc-if></sc-for></p>
+</div>
+</li>
+</sc-for>
+</ol>
+<div style="display: grid; gap: 6px;">
+<label class="m-oculto" for="hilo-venta-texto">Comentar en esta venta</label>
+<textarea id="hilo-venta-texto" rows="2" placeholder="Comentar… usa @ para mencionar" value="{{h.borrador}}" onChange="{{h.escribir}}" onKeyDown="{{h.tecla}}" style="box-sizing: border-box; width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: var(--radio-control); background: var(--superficie); color: var(--tinta); font: 400 13px/19px var(--font-sans);"></textarea>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+<span style="font-size: 12px; color: var(--tinta-2);"><span class="r-tecla">↵</span> envía · <span class="r-tecla">@</span> menciona</span>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{h.enviar}}" disabled="{{h.sinBorrador}}"><span>Enviar</span></button>
+</div>
+</div>
+</section>
+
+<div style="padding: 0 20px 14px; display: grid; gap: 8px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Lo que se envió</h3>
+<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+<sc-for list="{{o.docs}}" as="d" hint-placeholder-count="2">
+<button class="r-btn r-btn--secundario r-btn--sm" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg><span>{{d}}</span></button>
+</sc-for>
+</div>
+</div>
+
+<sc-if value="{{g.sinOcPend}}" hint-placeholder-val="{{false}}">
+<div role="status" style="margin: 0 20px 14px; padding: 12px 14px; border-radius: var(--radio-control); background: var(--atencion-fondo); color: var(--atencion); display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+<span style="flex: 1 1 220px; display: grid; gap: 2px;"><strong style="font-size: 14px;">Despachada sin OC</strong><span style="font-size: 13px; line-height: 18px;">El comprador aún no envía la OC. La factura la referencia: no se puede facturar hasta registrarla.</span></span>
+<span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+<input class="m-precio" type="text" style="width: 190px; text-align: left; height: 30px;" placeholder="N.º de OC" aria-label="Número de la OC" value="{{g.ocN}}" onChange="{{g.cambiarOcN}}">
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{g.registrarOC}}"><span>Registrar OC</span></button>
+</span>
+</div>
+</sc-if>
+<sc-if value="{{g.puedeSinOc}}" hint-placeholder-val="{{false}}">
+<div style="margin: 0 20px 14px; padding: 10px 14px; border-radius: var(--radio-control); background: var(--superficie-2); display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+<span style="flex: 1 1 220px; font-size: 13px; line-height: 18px; color: var(--tinta-2);">¿Hay que despachar antes de que llegue la OC? El despacho sigue y la OC queda pendiente aparte.</span>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{g.despacharSinOc}}"><span>Despachar sin OC</span></button>
+</div>
+</sc-if>
+
+<sc-if value="{{g.entrega}}" hint-placeholder-val="{{false}}">
+<section aria-labelledby="t-entrega" style="margin: 0 20px 14px; padding: 14px; border-radius: var(--radio-control); border: 1px solid var(--borde); display: grid; gap: 12px;">
+<div style="display: grid; gap: 2px;">
+<h3 id="t-entrega" style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg><span>Planificar entrega</span></h3>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);"><span>Plazo de la OC: {{g.plazoTxt}} · {{g.direccion}}</span></span>
+</div>
+<sc-if value="{{g.sinPlan}}" hint-placeholder-val="{{true}}">
+<fieldset style="border: 0; margin: 0; padding: 0; display: grid; gap: 2px;">
+<legend class="r-etiqueta" style="margin-bottom: 4px;">Cómo se entrega (costos de Logística)</legend>
+<sc-for list="{{g.modos}}" as="md" hint-placeholder-count="3">
+<div class="m-opcion" style="display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 4px;">
+<input class="m-radio" type="radio" id="{{md.rid}}" name="modo-entrega" checked="{{md.elegido}}" onChange="{{md.elegir}}">
+<label for="{{md.rid}}" style="display: grid; min-width: 0; cursor: pointer;"><span style="font-size: 13px; line-height: 18px; font-weight: 500;">{{md.nombre}}</span><span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">{{md.sub}}</span></label>
+<span class="m-num" style="font-size: 13px;">{{md.costoTxt}}</span>
+</div>
+</sc-for>
+</fieldset>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Fecha de entrega</span><input class="m-precio" type="date" style="text-align: left;" value="{{g.fecha}}" min="2026-11-06" onChange="{{g.cambiarFecha}}"></label>
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Recibe</span><input class="m-precio" type="text" style="text-align: left;" placeholder="Nombre (opcional)" value="{{g.recibe}}" onChange="{{g.cambiarRecibe}}"></label>
+</div>
+<sc-if value="{{g.fueraPlazo}}" hint-placeholder-val="{{false}}"><span class="r-senal r-senal--urgente" style="justify-self: start;"><span>Esa fecha queda fuera del plazo de la OC</span></span></sc-if>
+<span style="font-size: 13px; color: var(--tinta-2);"><span>Margen tras el despacho: </span><strong style="color: var(--tinta);">{{g.margenTras}}</strong><span> (antes {{o.margen}})</span></span>
+</sc-if>
+<sc-if value="{{g.conPlan}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+<span class="r-estado r-estado--curso"><span>Programada · {{g.planTxt}}</span></span>
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{g.replanificar}}">Cambiar</button>
+</div>
+<label style="display: grid; gap: 4px; max-width: 220px;"><span class="r-etiqueta">N.º de guía de despacho (al entregar)</span><input class="m-precio" type="text" inputmode="numeric" style="text-align: left;" placeholder="Opcional" value="{{g.guia}}" onChange="{{g.cambiarGuia}}"></label>
+</sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{g.factura}}" hint-placeholder-val="{{false}}">
+<section aria-labelledby="t-factura" style="margin: 0 20px 14px; padding: 14px; border-radius: var(--radio-control); border: 1px solid var(--borde); display: grid; gap: 12px;">
+<div style="display: grid; gap: 2px;">
+<h3 id="t-factura" style="margin: 0; font-size: 14px; font-weight: 600;">Registrar factura</h3>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);">Por ahora se ingresa a mano; más adelante se leerá del SII.</span>
+</div>
+<span style="font-size: 13px; color: var(--tinta);"><span>Referencia: {{g.ocRef}}</span></span>
+<sc-if value="{{g.facturaSinOc}}" hint-placeholder-val="{{false}}"><span class="r-senal r-senal--atencion" style="justify-self: start;"><span>Registra la OC primero: la factura la referencia</span></span></sc-if>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">N.º de factura</span><input class="m-precio" type="text" inputmode="numeric" style="text-align: left;" placeholder="Ej.: 1.291" value="{{g.facN}}" onChange="{{g.cambiarFacN}}"></label>
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Fecha de emisión</span><input class="m-precio" type="date" style="text-align: left;" value="{{g.facFecha}}" onChange="{{g.cambiarFacFecha}}"></label>
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Monto bruto (IVA incluido)</span><input class="m-precio" type="text" inputmode="numeric" value="{{g.facMonto}}" onChange="{{g.cambiarFacMonto}}"></label>
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Plazo de pago</span><select class="m-precio" style="text-align: left;" value="{{g.facPlazo}}" onChange="{{g.cambiarFacPlazo}}"><option value="30">30 días</option><option value="45">45 días</option><option value="60">60 días</option></select></label>
+</div>
+<span style="font-size: 13px; color: var(--tinta-2);"><span>Vence el {{g.facVence}}</span></span>
+</section>
+</sc-if>
+
+<sc-if value="{{g.pago}}" hint-placeholder-val="{{false}}">
+<section aria-labelledby="t-pago" style="margin: 0 20px 14px; padding: 14px; border-radius: var(--radio-control); border: 1px solid var(--borde); display: grid; gap: 12px;">
+<div style="display: grid; gap: 2px;">
+<h3 id="t-pago" style="margin: 0; font-size: 14px; font-weight: 600;">Registrar pago</h3>
+<span style="font-size: 12px; line-height: 16px; color: var(--tinta-2);"><span>{{g.pagoNota}}</span></span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Fecha de pago</span><input class="m-precio" type="date" style="text-align: left;" value="2026-11-06"></label>
+<label style="display: grid; gap: 4px;"><span class="r-etiqueta">Monto recibido (bruto)</span><input class="m-precio" type="text" inputmode="numeric" value="{{g.pagoMonto}}"></label>
+</div>
+</section>
+</sc-if>
+
+<div style="margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--borde);">
+<sc-if value="{{o.conAccion}}" hint-placeholder-val="{{true}}"><button class="r-btn r-btn--primario" type="button" onClick="{{avanzar}}" disabled="{{o.bloqueada}}"><span>{{o.accion}}</span></button></sc-if>
+<a class="r-btn r-btn--terciario" href="https://www.mercadopublico.cl"><span>{{o.textoPortal}}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>
+</div>
+</aside>
+</sc-if>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { filtro: 'todas', soloAccion: false, abierta: 'v4', etapas: {}, perdidas: {}, planes: {}, facturas: {}, borrador: {}, sinOC: { v9: true }, ocTarde: {} };
+  }
+  renderVals() {
+    const st = this.state;
+    const PASOS = ['Enviada', 'Cierre', 'Adjudicación', 'OC aceptada', 'Entregada', 'Facturada', 'Pagada'];
+    const ACCION = { 3: 'Marcar OC aceptada', 4: 'Marcar entregada', 5: 'Registrar factura', 6: 'Registrar pago' };
+    // etapa = índice del paso en curso (7 = todo cumplido). fechas = fecha de cada paso cumplido o la esperada del paso en curso.
+    const OF = [
+      { id: 'v1', enviada: 'Hoy 10:32', quien: 'Boris', nombre: 'Kit de aseo para salas cuna', comprador: 'Municipalidad de Chillán Viejo', codigo: '2765530-157-COT26', ofertado: 746080, margen: '22,0 %', p: '0,38', lineas: 4,
+        etapa: 1, fechas: ['hoy 10:32', 'cierra el lun 9 a las 15:00'], docs: ['Cotización formal', 'Resolución sanitaria'] },
+      { id: 'v2', enviada: 'Hoy 10:15', quien: 'Mario', nombre: 'Papel higiénico y toalla de manos', comprador: 'CESFAM Los Volcanes', codigo: '1874420-301-COT26', ofertado: 523800, margen: '21,8 %', p: '0,61', lineas: 2,
+        etapa: 1, fechas: ['hoy 10:15', 'cierra mañana a las 16:00'], docs: ['Cotización formal', 'Ficha técnica'] },
+      { id: 'v3', enviada: '3 nov', quien: 'Boris', nombre: 'Insumos de oficina', comprador: 'Municipalidad de San Nicolás', codigo: '2210045-77-COT26', ofertado: 612000, margen: '18,9 %', p: '0,48', lineas: 5,
+        etapa: 3, fechas: ['3 nov 11:20', '4 nov 15:00', 'ganada el 5 nov', 'OC 2210045-1123-SE26 · aceptar antes de mañana 12:00'], docs: ['Cotización formal', 'Declaración jurada'],
+        senal: 'Aceptar OC · vence mañana 12:00', claseSenal: 'r-senal--urgente',
+        ayuda: 'La OC 2210045-1123-SE26 llegó el 5 nov. Si no se acepta en el portal dentro del plazo, el comprador puede anularla.', resuelve: 'Se resuelve aceptándola en Mercado Público y luego marcándola aceptada aquí.',
+        comuna: 'San Nicolás', plazoTxt: '5 días hábiles desde la aceptación (vie 13 nov)', plazoMax: '2026-11-13' },
+      { id: 'v4', enviada: '29 oct', quien: 'Gonzalo', nombre: 'Útiles de aseo', comprador: 'Liceo Polivalente de Quirihue', codigo: '3320871-64-COT26', ofertado: 388500, margen: '24,1 %', p: '0,52', lineas: 6,
+        etapa: 4, fechas: ['29 oct', '30 oct', 'ganada el 31 oct', 'aceptada el 31 oct', 'entregar antes del lun 9'], docs: ['Cotización formal'],
+        senal: 'Entregar antes del lun 9', claseSenal: 'r-senal--atencion',
+        ayuda: 'La OC pide entrega en 5 días hábiles desde la aceptación (31 oct). Todavía no tiene entrega programada.', resuelve: 'Se resuelve aquí mismo: abre la oferta y planifica la entrega.',
+        comuna: 'Quirihue', plazoTxt: 'lun 9 nov', plazoMax: '2026-11-09' },
+      { id: 'v5', enviada: '24 oct', quien: 'Mario', nombre: 'Alcohol gel y toallas', comprador: 'CESFAM Bulnes', codigo: '2389114-398-COT26', ofertado: 455000, margen: '17,2 %', p: '0,44', lineas: 3,
+        etapa: 6, fechas: ['24 oct', '25 oct', 'ganada el 27 oct', 'aceptada el 27 oct', 'entregada el 29 oct', 'factura 1.284 el 30 oct', 'vence el 29 nov (30 días)'], docs: ['Cotización formal', 'Factura 1.284'],
+        nota: 'Por cobrar · vence el 29 nov' },
+      { id: 'v6', enviada: '22 oct', quien: 'Boris', nombre: 'Café, té y azúcar', comprador: 'Municipalidad de Pinto', codigo: '4012236-55-COT26', ofertado: 198700, margen: '23,0 %', p: '0,57', lineas: 3,
+        etapa: 7, fechas: ['22 oct', '23 oct', 'ganada el 24 oct', 'aceptada el 24 oct', 'entregada el 27 oct', 'factura 1.279 el 27 oct', 'pagada el 5 nov'], docs: ['Cotización formal', 'Factura 1.279'] },
+      { id: 'v7', enviada: '28 oct', quien: 'Gonzalo', nombre: 'Guantes de nitrilo', comprador: 'Hospital de Quirihue', codigo: '1057633-412-COT26', ofertado: 910000, margen: '15,4 %', p: '0,35', lineas: 2,
+        etapa: 2, perdida: true, fechas: ['28 oct', '29 oct', 'perdida el 31 oct'], docs: ['Cotización formal', 'Ficha técnica'],
+        nota: 'Ganó Insumos Clínicos del Sur · 0,4 % más barato',
+        resultado: 'Ganó Insumos Clínicos del Sur con $ 906.000 (0,4 % menos). La diferencia estuvo en los guantes talla M: su precio unitario fue $ 40 menor. Queda en Competencia.' },
+      { id: 'v8', enviada: '30 oct', quien: 'Mario', nombre: 'Detergente industrial', comprador: 'DAEM Coihueco', codigo: '3011207-71-COT26', ofertado: 274000, margen: '20,0 %', p: '0,46', lineas: 2,
+        etapa: 2, fechas: ['30 oct', '4 nov 12:00', 'sin resultado hace 2 días'], docs: ['Cotización formal'],
+        nota: 'Cerró el 4 nov · sin resultado hace 2 días' },
+      { id: 'v9', enviada: '27 oct', quien: 'Gonzalo', nombre: 'Mascarillas y guantes', comprador: 'CESFAM de Coihueco', codigo: '1057588-203-COT26', ofertado: 341000, margen: '19,6 %', p: '0,50', lineas: 2,
+        etapa: 5, fechas: ['27 oct', '28 oct', 'ganada el 29 oct', 'aceptada el 29 oct', 'entregada el 4 nov · guía 3.412'], docs: ['Cotización formal', 'Guía 3.412'],
+        nota: 'Entregada el 4 nov · falta emitir la factura' }
+    ].map((x) => ({ ...x, perdida: st.perdidas[x.id] != null ? st.perdidas[x.id] : !!x.perdida }));
+    const fmt = (n) => '$ ' + Math.round(n).toLocaleString('es-CL');
+    const etapaDe = (o) => (st.etapas[o.id] != null ? st.etapas[o.id] : o.etapa);
+    // Estados de seguimiento: cada oferta está siempre en uno; se agrupan en Por resolver · Adjudicadas · Cerradas.
+    const ESTADOS = [
+      { id: 'enviada', nombre: 'Enviada', grupo: 'resolver', etapa: 1, clase: '', ayuda: 'La CA sigue abierta' },
+      { id: 'evaluacion', nombre: 'En evaluación', grupo: 'resolver', etapa: 2, clase: '', ayuda: 'Cerró; falta la adjudicación' },
+      { id: 'oc', nombre: 'Pendiente de OC', grupo: 'adjudicadas', etapa: 3, clase: 'r-estado--curso', ayuda: 'Adjudicada; la OC no llega o falta aceptarla' },
+      { id: 'despacho', nombre: 'Pendiente de despacho', grupo: 'adjudicadas', etapa: 4, clase: 'r-estado--curso', ayuda: 'OC aceptada; falta entregar' },
+      { id: 'factura', nombre: 'Pendiente de factura', grupo: 'adjudicadas', etapa: 5, clase: 'r-estado--curso', ayuda: 'Entregada; falta facturar' },
+      { id: 'pago', nombre: 'Pendiente de pago', grupo: 'adjudicadas', etapa: 6, clase: 'r-estado--curso', ayuda: 'Facturada; falta el pago' },
+      { id: 'completa', nombre: 'Completa', grupo: 'cerradas', etapa: 7, clase: 'r-estado--ok', ayuda: 'Pagada' },
+      { id: 'perdida', nombre: 'No ganada', grupo: 'cerradas', etapa: 2, clase: '', ayuda: 'Adjudicada a otro proveedor o desierta' }
+    ];
+    const GRUPOS = [['resolver', 'Por resolver'], ['adjudicadas', 'Adjudicadas'], ['cerradas', 'Cerradas']];
+    const estadoIdDe = (o) => (o.perdida ? 'perdida' : ESTADOS.find((s) => s.etapa === etapaDe(o) && s.id !== 'perdida').id);
+    const estadoObj = (o) => ESTADOS.find((s) => s.id === estadoIdDe(o));
+    const conAccionPend = (o) => !o.perdida && !!ACCION[etapaDe(o)];
+    const estadoDe = (o) => { const s = estadoObj(o); return [s.nombre, s.clase]; };
+    // La OC puede no llegar y aun así hay que despachar: el despacho sigue y la OC queda pendiente aparte.
+    const ocPend = (o) => !o.perdida && !!st.sinOC[o.id] && !st.ocTarde[o.id] && etapaDe(o) >= 4;
+    const pasaFiltro = (o) => st.filtro === 'todas' || estadoIdDe(o) === st.filtro || estadoObj(o).grupo === st.filtro || (st.filtro === 'oc' && ocPend(o));
+    const visibles = OF.filter((o) => pasaFiltro(o) && (!st.soloAccion || conAccionPend(o)));
+    const millones = (n) => '$ ' + (n / 1e6).toFixed(2).replace('.', ',') + ' M';
+    const abierta = OF.find((o) => o.id === st.abierta);
+    const hayPanel = !!abierta;
+    const idx = abierta ? visibles.findIndex((o) => o.id === abierta.id) : -1;
+    const mover = (d) => {
+      if (!visibles.length) return;
+      const i = idx < 0 ? 0 : Math.min(visibles.length - 1, Math.max(0, idx + d));
+      this.setState({ abierta: visibles[i].id, borrador: {} });
+    };
+    // Gestión de la etapa en curso: entrega (se planifica aquí con los costos de Logística), factura (a mano) y pago.
+    const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+    const fechaTxt = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return DIAS[d.getDay()] + ' ' + d.getDate() + ' ' + MESES[d.getMonth()]; };
+    const sumarDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+    const pctNum = (t) => parseFloat(String(t).replace(',', '.'));
+    const b = st.borrador;
+    // Conversación del equipo por CA (la misma de la Mesa y el Lote), también después de enviar.
+    const MIEMBROS = ['Boris', 'Mario', 'Gonzalo'];
+    const hilos = st.hilos || {
+      v3: [{ autor: 'Mario', hora: 'hoy 10:05', texto: 'La OC llegó por correo, la acepto a mediodía.' }],
+      v4: [{ autor: 'Gonzalo', hora: 'ayer 17:40', texto: '@Boris el liceo recibe solo en la mañana, hasta las 12:00.' }],
+      v7: [{ autor: 'Boris', hora: '31 oct', texto: 'Perdimos por $ 4.000 en los guantes M. Revisar el costo con Itata antes de la próxima.' }],
+      v9: [{ autor: 'Mario', hora: 'hoy 9:20', texto: 'Pedí la OC al CESFAM por correo; dicen que sale el lunes.' }]
+    };
+    const responsables = st.responsables || { v3: 'Mario', v4: 'Gonzalo', v5: 'Mario', v9: 'Mario', v1: 'Boris', v2: 'Mario' };
+    const hiloDe = (id) => hilos[id] || [];
+    const partes = (texto) => texto.split(/(@[A-Za-zÁÉÍÓÚáéíóúÑñ]+)/).filter(Boolean).map((t) => {
+      const m = t[0] === '@' && MIEMBROS.includes(t.slice(1));
+      return { t, m, n: !m };
+    });
+    const enviarComentario = () => {
+      const texto = (st.borradorC || '').trim();
+      if (!texto || !abierta) return;
+      this.setState({ hilos: { ...hilos, [abierta.id]: hiloDe(abierta.id).concat({ autor: 'Boris', hora: 'ahora', texto }) }, borradorC: '' });
+    };
+    const h = abierta ? {
+      responsableId: responsables[abierta.id] || '',
+      asignar: (ev) => this.setState({ responsables: { ...responsables, [abierta.id]: ev.target.value || null } }),
+      comentarios: hiloDe(abierta.id).map((cm) => ({ ...cm, ini: cm.autor[0], partes: partes(cm.texto) })),
+      sinComentarios: hiloDe(abierta.id).length === 0,
+      borrador: st.borradorC || '', escribir: (ev) => this.setState({ borradorC: ev.target.value }),
+      sinBorrador: !(st.borradorC || '').trim(), enviar: enviarComentario,
+      tecla: (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarComentario(); } }
+    } : {};
+    let g = {};
+    let bloqueada = false;
+    let accionTxt = '';
+    if (abierta) {
+      const e = etapaDe(abierta);
+      const plan = st.planes[abierta.id];
+      const comuna = abierta.comuna || 'la comuna del comprador';
+      const MODOS = [
+        { id: 'propia', nombre: 'Ruta propia · ' + (abierta.id === 'v4' ? 'lunes 9 en la mañana' : 'próxima salida'), sub: 'Chillán → ' + comuna + (abierta.id === 'v4' ? '; comparte camioneta con 1 entrega a Coihueco' : ''), costo: 9500 },
+        { id: 'transp', nombre: 'Transportes Ñuble Sur', sub: 'Proveedor logístico · entrega en 24 h hábiles', costo: 18000 },
+        { id: 'retiro', nombre: 'Retira el comprador', sub: 'Solo si la OC lo permite', costo: 0 }
+      ];
+      const modo = MODOS.find((m) => m.id === (b.modo || 'propia'));
+      const fecha = b.fecha || (abierta.id === 'v4' ? '2026-11-09' : '2026-11-10');
+      const utilidad = abierta.ofertado * pctNum(abierta.margen) / 100 - modo.costo;
+      const facFecha = b.facFecha || '2026-11-06';
+      const facPlazo = b.facPlazo || '30';
+      const fac = st.facturas[abierta.id];
+      g = {
+        entrega: e === 4, sinPlan: e === 4 && !plan, conPlan: e === 4 && !!plan,
+        plazoTxt: abierta.plazoTxt || 'según la OC', direccion: 'dirección de despacho de la OC',
+        modos: MODOS.map((m) => ({ ...m, rid: 'modo-' + m.id, costoTxt: m.costo ? '$ ' + m.costo.toLocaleString('es-CL') : 'Sin costo', elegido: m.id === modo.id,
+          elegir: () => this.setState({ borrador: { ...b, modo: m.id } }) })),
+        fecha, cambiarFecha: (ev) => this.setState({ borrador: { ...b, fecha: ev.target.value } }),
+        recibe: b.recibe || '', cambiarRecibe: (ev) => this.setState({ borrador: { ...b, recibe: ev.target.value } }),
+        fueraPlazo: !!abierta.plazoMax && fecha > abierta.plazoMax,
+        margenTras: (utilidad / abierta.ofertado * 100).toFixed(1).replace('.', ',') + ' %',
+        planTxt: plan ? fechaTxt(plan.fecha) + ' · ' + plan.modo + (plan.recibe ? ' · recibe ' + plan.recibe : '') : '',
+        replanificar: () => { const p = { ...st.planes }; delete p[abierta.id]; this.setState({ planes: p }); },
+        guia: b.guia || '', cambiarGuia: (ev) => this.setState({ borrador: { ...b, guia: ev.target.value } }),
+        sinOcPend: ocPend(abierta), puedeSinOc: e === 3 && !abierta.perdida,
+        registrarOC: () => this.setState({ ocTarde: { ...st.ocTarde, [abierta.id]: (b.ocN || '').trim() || true } }),
+        ocN: b.ocN || '', cambiarOcN: (ev) => this.setState({ borrador: { ...b, ocN: ev.target.value } }),
+        facturaSinOc: e === 5 && ocPend(abierta),
+        ocRef: ocPend(abierta) ? 'sin OC registrada' : 'OC ' + (typeof st.ocTarde[abierta.id] === 'string' ? st.ocTarde[abierta.id] : abierta.codigo.replace(/-COT26$/, '-SE26')),
+        despacharSinOc: () => this.setState({ sinOC: { ...st.sinOC, [abierta.id]: true }, etapas: { ...st.etapas, [abierta.id]: 4 } }),
+        factura: e === 5,
+        facN: b.facN || '', cambiarFacN: (ev) => this.setState({ borrador: { ...b, facN: ev.target.value } }),
+        facFecha, cambiarFacFecha: (ev) => this.setState({ borrador: { ...b, facFecha: ev.target.value } }),
+        facMonto: b.facMonto != null ? b.facMonto : abierta.ofertado.toLocaleString('es-CL'), cambiarFacMonto: (ev) => this.setState({ borrador: { ...b, facMonto: ev.target.value } }),
+        facPlazo, cambiarFacPlazo: (ev) => this.setState({ borrador: { ...b, facPlazo: ev.target.value } }),
+        facVence: fechaTxt(sumarDias(facFecha, parseInt(facPlazo, 10))),
+        pago: e === 6,
+        pagoNota: fac ? 'Factura ' + fac.n + ' · vence el ' + fac.vence : (abierta.fechas[5] ? abierta.fechas[5].replace('factura ', 'Factura ') + ' · ' + (abierta.fechas[6] || '') : ''),
+        pagoMonto: abierta.ofertado.toLocaleString('es-CL'),
+        _modo: modo, _fecha: fecha
+      };
+      accionTxt = e === 4 ? (plan ? 'Marcar entregada' : 'Programar entrega') : (ACCION[e] || '');
+      // La factura referencia la OC: sin OC registrada no se puede facturar.
+      bloqueada = (e === 4 && !plan && g.fueraPlazo) || (e === 5 && (!(b.facN || '').trim() || ocPend(abierta)));
+    }
+    let o = {};
+    if (abierta) {
+      const e = etapaDe(abierta);
+      const ultimo = abierta.perdida ? 2 : 6;
+      const plan = st.planes[abierta.id];
+      const fac = st.facturas[abierta.id];
+      o = {
+        ...abierta, ofertado: fmt(abierta.ofertado), lineasTxt: abierta.lineas + ' líneas',
+        perdida: !!abierta.perdida, resultado: abierta.resultado || '', conResultado: !!abierta.perdida && !!abierta.resultado,
+        estadoId: estadoIdDe(abierta), estadoNombre: estadoObj(abierta).nombre, claseEstado: estadoObj(abierta).clase, estadoAyuda: estadoObj(abierta).ayuda,
+        conAccion: conAccionPend(abierta), accion: accionTxt, bloqueada,
+        textoPortal: e === 3 ? 'Aceptar OC en Mercado Público' : 'Ver en Mercado Público',
+        pasos: PASOS.slice(0, ultimo + 1).map((nombre, i) => {
+          let hecho = i < e || (abierta.perdida && i === 2);
+          const actual = i === e && !abierta.perdida;
+          const avanzadoHoy = st.etapas[abierta.id] != null && i >= abierta.etapa && i < e;
+          let fecha = avanzadoHoy ? 'hoy' : (i <= abierta.etapa && abierta.fechas[i] ? abierta.fechas[i] : 'pendiente');
+          if (i === 4 && plan) fecha = (i < e ? 'entregada hoy' : 'programada: ') + (i < e ? '' : fechaTxt(plan.fecha) + ' · ' + plan.modo) + (i < e && plan.guia ? ' · guía ' + plan.guia : '');
+          if (i === 5 && fac) fecha = 'factura ' + fac.n + ' el ' + fac.fecha;
+          if (i === 6 && fac && i === e) fecha = 'vence el ' + fac.vence;
+          if (i === 3 && st.sinOC[abierta.id]) {
+            hecho = !!st.ocTarde[abierta.id];
+            const nOc = st.ocTarde[abierta.id];
+            fecha = hecho ? (typeof nOc === 'string' ? 'OC ' + nOc + ' · ' : '') + 'registrada hoy (llegó después del despacho)' : 'sin OC todavía · se despachó igual; bloquea la factura';
+            nombre = 'OC';
+          }
+          return {
+            nombre: abierta.perdida && i === 2 ? 'Adjudicación · perdida' : nombre, fecha, hecho,
+            fondo: hecho ? 'var(--ok-fondo)' : 'var(--superficie)',
+            borde: hecho ? 'var(--ok)' : (actual ? 'var(--tinta)' : 'var(--borde-control)'),
+            linea: i === ultimo ? 'transparent' : (hecho ? 'var(--ok)' : 'var(--borde)'),
+            color: hecho || actual ? 'var(--tinta)' : 'var(--tinta-2)', peso: actual ? '600' : '400'
+          };
+        })
+      };
+    }
+    return {
+      tema: this.props.tema ?? 'claro', densidad: this.props.densidad ?? 'comoda',
+      nAccion: OF.filter(conAccionPend).length,
+      grupos: GRUPOS.map(([gid, gnombre]) => {
+        const estados = ESTADOS.filter((s) => s.grupo === gid);
+        const delGrupo = OF.filter((x) => estadoObj(x).grupo === gid);
+        return {
+          nombre: gnombre, n: delGrupo.length, activo: st.filtro === gid ? 'true' : 'false',
+          elegir: () => this.setState({ filtro: st.filtro === gid ? 'todas' : gid }),
+          flex: estados.length, cols: 'repeat(' + estados.length + ', minmax(0, 1fr))',
+          estados: estados.map((s) => {
+            const de = OF.filter((x) => estadoIdDe(x) === s.id);
+            const yaDespachadas = s.id === 'oc' ? OF.filter(ocPend).length : 0;
+            return {
+              conExtra: yaDespachadas > 0, extra: '+' + yaDespachadas + ' ya despachada' + (yaDespachadas === 1 ? '' : 's') + ' sin OC',
+              nombre: s.nombre, ayuda: s.ayuda, n: de.length, monto: de.length ? millones(de.reduce((a, x) => a + x.ofertado, 0)) : '—',
+              activo: st.filtro === s.id ? 'true' : 'false',
+              elegir: () => this.setState({ filtro: st.filtro === s.id ? 'todas' : s.id })
+            };
+          })
+        };
+      }),
+      filtrando: st.filtro !== 'todas',
+      filtroTxt: st.filtro === 'todas' ? '' : ((ESTADOS.find((s) => s.id === st.filtro) || {}).nombre || (GRUPOS.find((gg) => gg[0] === st.filtro) || [])[1] || ''),
+      verTodas: () => this.setState({ filtro: 'todas' }),
+      nTotal: OF.length,
+      cambiarEstado: (ev) => {
+        if (!abierta) return;
+        const s = ESTADOS.find((x) => x.id === ev.target.value);
+        this.setState({ perdidas: { ...st.perdidas, [abierta.id]: s.id === 'perdida' }, etapas: { ...st.etapas, [abierta.id]: s.etapa } });
+      },
+      soloAccion: st.soloAccion ? 'true' : 'false',
+      alternarAccion: () => this.setState({ soloAccion: !st.soloAccion }),
+      conMargen: !hayPanel,
+      cols: hayPanel ? '72px minmax(0, 1fr) 96px 168px' : '84px minmax(0, 1fr) 110px 72px 190px',
+      filas: visibles.map((x) => {
+        const [estado, clase] = estadoDe(x);
+        const e = etapaDe(x);
+        const abiertaEsta = st.abierta === x.id;
+        const planX = st.planes[x.id];
+        const facX = st.facturas[x.id];
+        const senalViva = !!x.senal && e === x.etapa && !(e === 4 && planX);
+        let nota = x.nota || '';
+        if (e === 4 && planX) nota = 'Entrega programada · ' + fechaTxt(planX.fecha) + ' · ' + planX.modo;
+        else if (e === 4 && !senalViva) nota = 'Por planificar la entrega · ' + (x.plazoTxt || 'según la OC');
+        if (e === 6 && facX) nota = 'Por cobrar · factura ' + facX.n + ' vence el ' + facX.vence;
+        const sinOcSenal = !senalViva && ocPend(x);
+        return {
+          ...x, ofertado: fmt(x.ofertado), estado, claseEstado: clase,
+          conSenal: senalViva || sinOcSenal,
+          senal: sinOcSenal ? 'Sin OC · ya despachada' : (x.senal || ''),
+          claseSenal: sinOcSenal ? 'r-senal--atencion' : (x.claseSenal || ''),
+          ayuda: sinOcSenal ? 'Se despachó sin que llegara la OC. ' + (nota ? nota + '. ' : '') + 'La factura referencia la OC: no se puede facturar hasta registrarla.' : (x.ayuda || ''),
+          resuelve: sinOcSenal ? 'Se resuelve pidiendo la OC al comprador y registrándola en el panel cuando llegue.' : (x.resuelve || ''),
+          conNota: !senalViva && !sinOcSenal && !!nota, nota,
+          etapaTxt: 'Etapa: ' + estado,
+          puntos: PASOS.map((p, i) => ({ color: x.perdida ? (i <= 2 ? 'var(--tinta-2)' : 'var(--superficie-2)') : (i === 3 && ocPend(x) ? 'var(--atencion-marca)' : (i < e ? 'var(--ok)' : (i === e ? 'var(--tinta)' : 'var(--superficie-2)'))) })),
+          abrir: () => this.setState({ abierta: abiertaEsta ? null : x.id, borrador: {} }),
+          abiertaTxt: abiertaEsta ? 'true' : 'false',
+          fondo: abiertaEsta ? 'var(--superficie-2)' : 'transparent',
+          colorNombre: abiertaEsta ? 'var(--accion)' : 'var(--tinta)',
+          conResponsable: !!responsables[x.id], responsable: responsables[x.id] || '', iniResp: (responsables[x.id] || ' ')[0],
+          conComentarios: hiloDe(x.id).length > 0, nComentarios: hiloDe(x.id).length,
+          nComentariosTxt: hiloDe(x.id).length + (hiloDe(x.id).length === 1 ? ' comentario' : ' comentarios')
+        };
+      }),
+      vacia: visibles.length === 0,
+      nFilas: visibles.length + ' de ' + OF.length,
+      hayPanel,
+      o,
+      cerrar: () => this.setState({ abierta: null }),
+      anterior: () => mover(-1),
+      siguiente: () => mover(1),
+      teclas: (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); mover(1); }
+        else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); mover(-1); }
+        else if (e.key === 'Escape') { this.setState({ abierta: null }); }
+      },
+      g,
+      h,
+      avanzar: () => {
+        if (!abierta) return;
+        const e = etapaDe(abierta);
+        const siguiente = { etapas: { ...st.etapas, [abierta.id]: e + 1 } };
+        if (e === 4 && !st.planes[abierta.id]) {
+          this.setState({ planes: { ...st.planes, [abierta.id]: { fecha: g._fecha, modo: g._modo.nombre.split(' · ')[0], recibe: (b.recibe || '').trim() } } });
+          return;
+        }
+        if (e === 4) {
+          this.setState({ ...siguiente, planes: { ...st.planes, [abierta.id]: { ...st.planes[abierta.id], guia: (b.guia || '').trim() } }, borrador: {} });
+          return;
+        }
+        if (e === 5) {
+          this.setState({ ...siguiente, facturas: { ...st.facturas, [abierta.id]: { n: b.facN.trim(), fecha: fechaTxt(b.facFecha || '2026-11-06'), vence: g.facVence } }, borrador: {} });
+          return;
+        }
+        this.setState({ ...siguiente, borrador: {} });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

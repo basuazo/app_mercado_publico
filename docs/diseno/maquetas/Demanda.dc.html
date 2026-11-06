@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Rastrillo · Demanda MP</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/rastrillo/tokens.css">
+<link rel="stylesheet" href="ds/rastrillo/components/bundle.css">
+<link rel="stylesheet" href="maquetas.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accion)}a:hover{color:var(--accion-hover)}
+</style>
+</helmet>
+<div class="r-raiz m-app" data-tema="{{tema}}" data-densidad="{{densidad}}" style="font-family: var(--font-sans); color: var(--tinta); background: var(--fondo);">
+
+<nav class="m-nav" aria-label="Navegación principal">
+<div class="m-marca" style="position: relative;"><span style="flex: 1;">Rastrillo</span>
+<dc-import name="Campana" hint-size="28px,28px"></dc-import>
+</div>
+<dc-import name="Paleta" hint-size="100%,44px"></dc-import>
+<a class="m-item" href="Main.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>Hoy<span class="r-contador">10</span></a>
+<a class="m-item" href="Mesa.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Mesa</a>
+<a class="m-item" href="Lote.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect width="20" height="14" x="2" y="6" rx="2"></rect></svg>En trabajo<span class="r-contador r-contador--atencion">2</span></a>
+<a class="m-item" href="Ventas.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></svg>Ventas</a>
+<a class="m-item" href="Actividad.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.180a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>Actividad</a>
+<a class="m-item" href="Competencia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></svg>Competencia</a>
+<a class="m-item" href="Estrategia.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></svg>Estrategia</a>
+<a class="m-item" href="Abastecimiento.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></svg>Abastecimiento</a>
+<div class="m-grupo">Catálogo</div>
+<a class="m-item" href="Demanda.dc.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.830l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>Demanda MP<span class="r-contador r-contador--atencion">12</span></a>
+<a class="m-item" href="Proveedores.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>Proveedores</a>
+<a class="m-item" href="Inventario.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path></svg>Inventario<span class="r-contador r-contador--atencion">4</span></a>
+<a class="m-item" href="Logistica.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"></path><path d="M15 18H9"></path><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"></path><circle cx="17" cy="18" r="2"></circle><circle cx="7" cy="18" r="2"></circle></svg>Logística</a>
+<a class="m-item" href="Documentos.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>Documentos<span class="r-contador">2</span></a>
+<div class="m-grupo">Administración</div>
+<a class="m-item" href="Admin.dc.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Configuración</a>
+<a class="m-pie" href="Admin.dc.html" title="Mis preferencias" style="text-decoration: none;"><span class="m-avatar" aria-hidden="true">B</span><div style="display: grid; min-width: 0; flex: 1;"><span style="font-size: 13px; font-weight: 500; color: var(--tinta);">Boris</span><span class="r-etiqueta" style="font-size: 12px;">Administrador · preferencias</span></div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--tinta-2);" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+</nav>
+
+<main class="m-main" style="gap: 20px;">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+<div>
+<h1 class="m-titulo">Demanda MP</h1>
+<p class="m-sub"><span>Cómo Rastrillo entiende lo que piden los compradores: cada línea se traduce a un producto del catálogo común y a su unidad base. Lo que confirmas aquí, lo aprende.</span></p>
+</div>
+</header>
+
+<section aria-label="Secciones" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<button type="button" class="m-tab" aria-pressed="{{t.activo}}" onClick="{{t.elegir}}">
+<span class="r-etiqueta"><span>{{t.nombre}}</span></span>
+<span style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 22px; font-weight: 600; color: {{t.color}};">{{t.n}}</span><span style="font-size: 13px; color: var(--tinta-2);"><span>{{t.nota}}</span></span></span>
+</button>
+</sc-for>
+</section>
+
+<sc-if value="{{enRevision}}" hint-placeholder-val="{{true}}">
+<section class="r-tarjeta" aria-labelledby="t-rev" style="display: flex; flex-direction: column;">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 16px; border-bottom: 1px solid var(--borde);">
+<div style="display: grid; gap: 2px;">
+<h2 class="m-seccion" id="t-rev" style="font-size: 15px;">Líneas dudosas de CA abiertas</h2>
+<span style="font-size: 13px; color: var(--tinta-2);"><span>Primero las que cierran antes. Sin confirmar, la línea no entra a la Mesa con precio estimado.</span></span>
+</div>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{confirmarSeguras}}"><span>Confirmar las de confianza alta ({{nAltas}})</span></button>
+</div>
+<sc-if value="{{aviso}}" hint-placeholder-val="{{false}}"><div role="status" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--ok-fondo); color: var(--ok); font-size: 13px; border-bottom: 1px solid var(--borde);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg><span style="flex: 1; min-width: 0;"><span>{{aviso}}</span></span><button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{deshacer}}"><span>Deshacer</span></button></div></sc-if>
+<div class="m-desliza"><div style="min-width: 900px;">
+<div style="display: grid; grid-template-columns: minmax(0, 1.5fr) 110px minmax(0, 1.3fr) 120px 240px; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--borde);">
+<span class="m-cab">Lo que pide el comprador</span><span class="m-cab" style="text-align: right;">Cantidad</span><span class="m-cab">Rastrillo entiende</span><span class="m-cab" style="text-align: right;">En unidad base</span><span class="m-cab"></span>
+</div>
+<sc-for list="{{lineas}}" as="l" hint-placeholder-count="6">
+<div style="display: grid; grid-template-columns: minmax(0, 1.5fr) 110px minmax(0, 1.3fr) 120px 240px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde);">
+<div style="display: grid; gap: 3px; min-width: 0;">
+<span class="r-codigo" style="font-size: 12px; white-space: normal;">{{l.texto}}</span>
+<span style="font-size: 12px; color: var(--tinta-2);"><span>{{l.ca}} · {{l.comprador}} · cierra {{l.cierre}}</span></span>
+</div>
+<span class="m-num" style="text-align: right;">{{l.cantidad}}</span>
+<div style="display: grid; gap: 4px; min-width: 0;">
+<select class="m-precio" style="height: 30px; text-align: left; font-size: 13px;" aria-label="Producto del catálogo" value="{{l.producto}}" onChange="{{l.cambiar}}">
+<sc-for list="{{productos}}" as="p" hint-placeholder-count="6"><option value="{{p.id}}">{{p.nombre}}</option></sc-for>
+</select>
+<span class="m-ayuda" tabindex="0" style="justify-self: start;"><span class="{{l.claseConf}}" style="height: 22px; font-size: 12px;"><span>Confianza {{l.conf}}</span></span><span class="m-ayuda__texto" role="tooltip"><strong>Por qué</strong>{{l.porque}}</span></span>
+</div>
+<span class="m-num" style="text-align: right;">{{l.base}}</span>
+<span style="display: flex; justify-content: flex-end; gap: 6px;">
+<button class="r-btn r-btn--terciario r-btn--sm" type="button" onClick="{{l.noAplica}}"><span>No es del catálogo</span></button>
+<button class="r-btn r-btn--secundario r-btn--sm" type="button" onClick="{{l.confirmar}}"><span>Confirmar</span></button>
+</span>
+</div>
+</sc-for>
+<sc-if value="{{sinLineas}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 28px 16px; text-align: center; color: var(--tinta-2);">No quedan líneas dudosas. Las nuevas CA llegan cada mañana.</p></sc-if>
+</div></div>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">El catálogo es común a todas las empresas: un alias confirmado ayuda a todos. Fuente de las líneas: Dirección ChileCompra (API).</p>
+</section>
+</sc-if>
+
+<sc-if value="{{enAnexos}}" hint-placeholder-val="{{false}}">
+<section class="r-tarjeta" aria-labelledby="t-anx" style="display: flex; flex-direction: column;">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 16px; border-bottom: 1px solid var(--borde);">
+<div style="display: grid; gap: 2px;">
+<h2 class="m-seccion" id="t-anx" style="font-size: 15px;">CA cuyo detalle está en un anexo</h2>
+<span style="font-size: 13px; color: var(--tinta-2);"><span>La API no trae las líneas: descarga el anexo desde la ficha de la CA y súbelo aquí. Rastrillo lo lee y propone las líneas.</span></span>
+</div>
+<label class="r-btn r-btn--secundario r-btn--sm"><span>Subir varios anexos</span><input class="m-oculto" type="file" multiple></label>
+</div>
+<sc-for list="{{anexos}}" as="a" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 140px 200px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde);">
+<div style="display: grid; gap: 2px; min-width: 0;"><span style="font-size: 14px; font-weight: 500;">{{a.nombre}}</span><span style="font-size: 12px; color: var(--tinta-2);"><span>{{a.ca}} · {{a.comprador}}</span></span></div>
+<span style="font-size: 13px;"><span>cierra {{a.cierre}}</span></span>
+<span style="display: flex; justify-content: flex-end;">
+<sc-if value="{{a.subido}}" hint-placeholder-val="{{false}}"><span class="r-estado r-estado--curso"><span>Leyendo · 9 líneas</span></span></sc-if>
+<sc-if value="{{a.pendiente}}" hint-placeholder-val="{{true}}"><label class="r-btn r-btn--secundario r-btn--sm"><span>Subir anexo</span><input class="m-oculto" type="file" onChange="{{a.subir}}"></label></sc-if>
+</span>
+</div>
+</sc-for>
+</section>
+</sc-if>
+
+<sc-if value="{{enProductos}}" hint-placeholder-val="{{false}}">
+<section class="r-tarjeta" aria-label="Productos del catálogo" style="display: flex; flex-direction: column;">
+<div style="display: grid; grid-template-columns: minmax(0, 1.4fr) 90px minmax(0, 1fr) 110px 90px; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--borde);">
+<span class="m-cab">Producto</span><span class="m-cab">Unidad base</span><span class="m-cab">Familia</span><span class="m-cab">UNSPSC</span><span class="m-cab" style="text-align: right;">Alias</span>
+</div>
+<sc-for list="{{catalogo}}" as="c" hint-placeholder-count="6">
+<div class="m-fila" style="display: grid; grid-template-columns: minmax(0, 1.4fr) 90px minmax(0, 1fr) 110px 90px; gap: 12px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--borde);">
+<span style="font-size: 14px; font-weight: 500;">{{c.nombre}}</span><span style="font-size: 13px;">{{c.unidad}}</span><span style="font-size: 13px; color: var(--tinta-2);">{{c.familia}}</span><span class="r-codigo">{{c.unspsc}}</span><span class="m-num" style="text-align: right;">{{c.alias}}</span>
+</div>
+</sc-for>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">1.284 productos · 6.912 alias aprendidos.</p>
+</section>
+</sc-if>
+
+<sc-if value="{{enReglas}}" hint-placeholder-val="{{false}}">
+<section class="r-tarjeta" aria-label="Reglas por familia" style="display: flex; flex-direction: column;">
+<sc-for list="{{reglas}}" as="r" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 200px minmax(0, 1fr) 120px; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--borde);">
+<span style="font-size: 14px; font-weight: 500;">{{r.familia}}</span><span style="font-size: 13px; line-height: 18px; color: var(--tinta-2);"><span>{{r.regla}}</span></span><span class="{{r.claseEstado}}" style="justify-self: end;"><span>{{r.estado}}</span></span>
+</div>
+</sc-for>
+<p class="m-fuente" style="margin: 0; padding: 12px 16px;">Las reglas cambian cómo se normaliza la unidad y qué impuesto se aplica. Solo las edita un administrador.</p>
+</section>
+</sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro"},"densidad":{"editor":"enum","options":["comoda","compacta"],"default":"comoda"},"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    // Recuerda los filtros de esta pantalla entre visitas (en la app: por usuario).
+    let g = {};
+    try { g = JSON.parse(window.localStorage.getItem('rastrillo.demanda') || '{}'); } catch (e) {}
+    this.state = { tab: 'rev', hechas: {}, elegidos: {}, aviso: '', subidos: {}, ...g };
+  }
+  componentDidUpdate() {
+    const st = this.state;
+    try { window.localStorage.setItem('rastrillo.demanda', JSON.stringify({ tab: st.tab })); } catch (e) {}
+  }
+  renderVals() {
+    const st = this.state;
+    const PROD = [['gel', 'Alcohol gel 1 L'], ['gel5', 'Alcohol gel 5 L'], ['guante', 'Guante de nitrilo M (caja 100)'], ['guanteL', 'Guante de nitrilo L (caja 100)'], ['leche', 'Leche descremada en polvo'], ['papel', 'Papel higiénico 4 rollos'], ['toalla', 'Toalla de papel interfoliada'], ['jabon', 'Jabón líquido 5 L'], ['resma', 'Resma carta 75 g']];
+    const NP = Object.fromEntries(PROD);
+    // id, texto, ca, comprador, cierre, cantidad, propuesto, conf, porque, base(fn by prod)
+    const L = [
+      ['l1', 'ALCOHOL GEL 70% 1000ML C/DOSIFICADOR', '2241-118-COT26', 'Servicio de Salud Ñuble', 'hoy 18:00', '60 u', 'gel', 'alta', 'Coincide con 41 líneas confirmadas antes («alcohol gel 1000 ml»).', { gel: '60 L', gel5: '300 L' }],
+      ['l2', 'GUANTES NITRILO TALLA M X 100 UNID SIN POLVO', '2241-118-COT26', 'Servicio de Salud Ñuble', 'hoy 18:00', '40 cajas', 'guante', 'alta', 'Talla y formato coinciden con el alias «guante nitrilo m caja 100».', { guante: '40 cajas', guanteL: '40 cajas' }],
+      ['l3', 'LECHE EN POLVO DESCREMADA BOLSA 800 GR', '1057-399-COT26', 'JUNJI Ñuble', 'mañana 15:00', '120 u', 'leche', 'media', 'El producto calza, pero el formato 800 g no está en el catálogo: se normaliza a kg.', { leche: '96 kg' }],
+      ['l4', 'TOALLA NOVA MEGARROLLO', '3011-61-COT26', 'DAEM Bulnes', 'lun 9 nov', '24 u', 'toalla', 'baja', 'Nombra una marca y no el tipo. Podría ser toalla de cocina en rollo, que no está en el catálogo.', { toalla: '24 paquetes', papel: '24 paquetes' }],
+      ['l5', 'JABON LIQ. MANOS BIDON 5LT AROMA', '3011-61-COT26', 'DAEM Bulnes', 'lun 9 nov', '6 u', 'jabon', 'alta', 'Coincide con 12 líneas confirmadas antes.', { jabon: '30 L' }],
+      ['l6', 'PAPEL FOTOCOPIA CARTA 75GR RESMA 500 HJS', '4102-12-COT26', 'Municipalidad de Chillán Viejo', 'mar 10 nov', '50 u', 'resma', 'alta', 'Alias exacto «resma carta 75 g».', { resma: '50 resmas' }]
+    ];
+    const pend = L.filter((l) => !st.hechas[l[0]]);
+    const altas = pend.filter((l) => l[7] === 'alta' && !st.elegidos[l[0]]);
+    const ANX = [['a1', 'Insumos de aseo para salas cuna', '1057-405-COT26', 'JUNJI Ñuble', 'mañana 15:00'], ['a2', 'Útiles de oficina 2.º semestre', '4102-15-COT26', 'Municipalidad de Chillán Viejo', 'mar 10 nov'], ['a3', 'Alimentos programa PAE', '3011-63-COT26', 'DAEM Bulnes', 'mié 11 nov'], ['a4', 'Material de curación', '2209-81-COT26', 'Hospital de San Carlos', 'jue 12 nov']];
+    const TABS = [['rev', 'Líneas por revisar', pend.length, pend.length ? 'en CA abiertas' : 'al día', pend.length ? 'var(--atencion)' : 'var(--tinta)'], ['anx', 'Anexos por leer', ANX.filter((a) => !st.subidos[a[0]]).length, 'el detalle no viene en la API', 'var(--tinta)'], ['prod', 'Productos del catálogo', '1.284', '6.912 alias', 'var(--tinta)'], ['reg', 'Reglas por familia', 9, '1 sin impuesto definido', 'var(--tinta)']];
+    const marcar = (ids, txt) => { const h = { ...st.hechas }; ids.forEach((i) => { h[i] = true; }); this.setState({ hechas: h, aviso: txt, anterior: st.hechas }); };
+    return {
+      tema: this.props.tema ?? 'claro', densidad: this.props.densidad ?? 'comoda',
+      tabs: TABS.map(([id, nombre, n, nota, color]) => ({ nombre, n, nota, color, activo: st.tab === id ? 'true' : 'false', elegir: () => this.setState({ tab: id }) })),
+      enRevision: st.tab === 'rev', enAnexos: st.tab === 'anx', enProductos: st.tab === 'prod', enReglas: st.tab === 'reg',
+      aviso: st.aviso, nAltas: altas.length,
+      deshacer: () => this.setState({ hechas: st.anterior || {}, aviso: '', anterior: null }),
+      confirmarSeguras: () => marcar(altas.map((l) => l[0]), altas.length + ' líneas confirmadas. Rastrillo usará estos alias en las próximas CA.'),
+      productos: PROD.map(([id, nombre]) => ({ id, nombre })),
+      lineas: pend.map((l) => {
+        const prod = st.elegidos[l[0]] || l[6];
+        const cambiado = !!st.elegidos[l[0]];
+        return {
+          texto: l[1], ca: l[2], comprador: l[3], cierre: l[4], cantidad: l[5], producto: prod,
+          conf: cambiado ? 'tuya' : l[7], claseConf: cambiado ? 'r-estado r-estado--ok' : l[7] === 'alta' ? 'r-estado r-estado--sin-punto' : 'r-senal r-senal--atencion',
+          porque: cambiado ? 'Elegiste ' + NP[prod] + '. Al confirmar, Rastrillo aprende este texto como alias.' : l[8],
+          base: l[9][prod] || '—',
+          cambiar: (ev) => this.setState({ elegidos: { ...st.elegidos, [l[0]]: ev.target.value } }),
+          confirmar: () => marcar([l[0]], 'Confirmada: «' + l[1].toLowerCase() + '» → ' + NP[prod] + '. Rastrillo aprendió el alias.'),
+          noAplica: () => marcar([l[0]], 'Marcada fuera del catálogo. La línea queda sin precio estimado en la Mesa.')
+        };
+      }),
+      sinLineas: pend.length === 0,
+      anexos: ANX.map(([id, nombre, ca, comprador, cierre]) => ({ nombre, ca, comprador, cierre, subido: !!st.subidos[id], pendiente: !st.subidos[id], subir: () => this.setState({ subidos: { ...st.subidos, [id]: true } }) })),
+      catalogo: [['Alcohol gel 1 L', 'L', 'Limpieza e higiene', '53131626', 48], ['Guante de nitrilo M (caja 100)', 'caja', 'Insumos médicos', '42132203', 31], ['Leche descremada en polvo', 'kg', 'Alimentos', '50131800', 27], ['Papel higiénico 4 rollos', 'paquete', 'Limpieza e higiene', '14111704', 64], ['Resma carta 75 g', 'resma', 'Oficina', '14111507', 22], ['Jabón líquido 5 L', 'L', 'Limpieza e higiene', '53131608', 19]].map(([nombre, unidad, familia, unspsc, alias]) => ({ nombre, unidad, familia, unspsc, alias })),
+      reglas: [['Alimentos', 'Unidad base kg o L. IVA 19 %.', 'Activa', 'r-estado r-estado--ok'], ['Limpieza e higiene', 'Unidad base L para líquidos y unidad para el resto. IVA 19 %.', 'Activa', 'r-estado r-estado--ok'], ['Bebidas', 'Unidad base L. IVA 19 % más impuesto adicional (10 % o 18 % según azúcar).', 'Activa', 'r-estado r-estado--ok'], ['Insumos médicos', 'Unidad base caja o unidad. Falta definir si aplica exención.', 'Por clasificar', 'r-estado r-estado--curso']].map(([familia, regla, estado, c]) => ({ familia, regla, estado, claseEstado: c }))
+    };
+  }
+}
+</script>
+</body>
+</html>
