@@ -28,7 +28,7 @@ from app.models.tables import (
 
 UNIDADES = ("kg", "L", "u")
 # `solicitud` (F-plat-lote): la respuesta de un proveedor a una solicitud de precio de un lote.
-FUENTES = ("manual", "planilla", "lista_llm", "solicitud")
+FUENTES = ("manual", "planilla", "lista_llm", "solicitud", "compra")
 DIAS_VIGENCIA_DEFAULT = 15  # `empresas.dias_vigencia_precio` (decisión de Boris, 5-nov)
 TRAMOS_MAX = 20
 PROVINCIAS_NUBLE = ("Diguillín", "Itata", "Punilla")
@@ -240,7 +240,7 @@ def guardar_producto(
         _registrar_costo(session, pp, float(precio_neto), vigente, fuente, usuario_id)
         return pp, "historico"
     if abs(pp.precio_neto_actual - float(precio_neto)) <= _TOL:
-        if fuente == "solicitud" and vigente > pp.vigente_desde:
+        if fuente in ("solicitud", "compra") and vigente > pp.vigente_desde:
             # F-plat-lote: el proveedor CONFIRMÓ el mismo precio: deja de estar vencido y queda
             # en el historial (sin esto, un precio sin cambios seguiría «de hace n días»).
             pp.vigente_desde = vigente

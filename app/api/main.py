@@ -29,6 +29,7 @@ from app.api.routes import mesa as mesa_router
 from app.api.routes import mesa_dia as mesa_dia_router
 from app.api.routes import mesa_precio as mesa_precio_router
 from app.api.routes import pages as pages_router
+from app.api.routes import seguimiento as seguimiento_router
 from app.core.db import normalizar_url_driver as _normalizar_url_driver
 from app.core.settings import Settings
 
@@ -142,6 +143,7 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     app.include_router(catalogo_router.router)
     app.include_router(inventario_router.router)
     app.include_router(lotes_router.router)
+    app.include_router(seguimiento_router.router)
     app.include_router(api_router.router)
 
     # Manejar LoginRequired → redirect a /login

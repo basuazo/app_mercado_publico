@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Requisitos — Rastrillo{% endblock %}
+{% block content %}
+<h2>Requisitos de las Compras Ágiles</h2>
+<p class="small text-muted">Esta plantilla se copia al checklist de cada Compra Ágil cuando se prioriza o entra a un lote.
+  Cambiarla no toca las CA que ya tienen su checklist. No se marca «Enviada» con un requisito obligatorio sin cumplir.
+  Nada acá viene del portal: ajústala a lo que de verdad piden las bases.</p>
+{% if mensaje %}<div class="alert alert-success py-2" role="status">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger py-2" role="alert">{{ error }}</div>{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm align-middle" data-plantilla>
+  <thead><tr><th>Requisito</th><th>Obligatorio</th><th>Activo</th><th></th></tr></thead>
+  <tbody>
+  {% for i in items %}
+  <tr>
+    <td><label class="visually-hidden" for="pt-{{ i.id }}">Texto</label>
+      <input class="form-control form-control-sm" id="pt-{{ i.id }}" name="texto" form="plantilla-{{ i.id }}" maxlength="300" value="{{ i.texto }}" required></td>
+    <td><input class="form-check-input" type="checkbox" name="obligatorio" value="1" form="plantilla-{{ i.id }}" aria-label="Obligatorio" {% if i.obligatorio %}checked{% endif %}></td>
+    <td><input class="form-check-input" type="checkbox" name="activo" value="1" form="plantilla-{{ i.id }}" aria-label="Activo" {% if i.activo %}checked{% endif %}></td>
+    <td><button class="btn btn-sm btn-outline-primary" form="plantilla-{{ i.id }}" type="submit">Guardar</button></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="text-muted">La plantilla está vacía.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% for i in items %}
+<form method="post" action="/requisitos/plantilla/{{ i.id }}" id="plantilla-{{ i.id }}" class="d-none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+</form>
+{% endfor %}
+
+<form method="post" action="/requisitos/plantilla/agregar" class="d-flex flex-wrap gap-2 align-items-center mt-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="visually-hidden" for="pt-nuevo">Nuevo requisito</label>
+  <input class="form-control form-control-sm w-auto flex-grow-1" id="pt-nuevo" name="texto" maxlength="300" required placeholder="Nuevo requisito (p. ej. Declaración jurada simple)">
+  <div class="form-check m-0"><input class="form-check-input" type="checkbox" name="obligatorio" value="1" id="pt-obl" checked><label class="form-check-label small" for="pt-obl">Obligatorio</label></div>
+  <button type="submit" class="btn btn-sm btn-primary">Agregar</button>
+</form>
+{% endblock %}

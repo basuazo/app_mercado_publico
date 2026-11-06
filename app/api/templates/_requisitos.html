@@ -1,0 +1,92 @@
+{#- Requisitos administrativos de una CA, cotización formal y venta (F-plat-seguimiento).
+    Cada acción reemplaza este bloque entero (hx-swap="outerHTML" sobre el [data-requisitos] más
+    cercano); un 422 también se pinta acá (lo deja pasar static/equipo.js). Contexto: codigo, reqs,
+    pendientes, oferta, condiciones, venta, puede_registrar_venta, etiqueta_venta, mensaje, error,
+    csrf_token. -#}
+<section class="border rounded p-3 mt-4" data-requisitos id="requisitos-{{ codigo }}" aria-labelledby="req-titulo-{{ codigo }}">
+  <h3 class="fs-6 mb-2" id="req-titulo-{{ codigo }}">Requisitos y cotización formal</h3>
+  {% if mensaje %}<div class="alert alert-success py-1 px-2 small" role="status">{{ mensaje }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger py-1 px-2 small" role="alert">{{ error }}</div>{% endif %}
+
+  {% if reqs %}
+  <p class="small text-muted mb-1">
+    {% if pendientes %}<strong data-req-pendientes="{{ pendientes | length }}">{{ pendientes | length }} obligatorio{{ '' if pendientes | length == 1 else 's' }} sin cumplir</strong>:
+    no se puede marcar «Enviada» hasta completarlos (un administrador puede forzarlo con un motivo).
+    {% else %}Todos los requisitos obligatorios están cumplidos.{% endif %}
+  </p>
+  <ul class="list-unstyled mb-2" data-req-lista>
+    {% for r in reqs %}
+    <li class="d-flex flex-wrap align-items-start gap-2 py-1 border-bottom">
+      <form method="post" action="/requisitos/ca/{{ codigo }}/marcar/{{ r.id }}" class="m-0 flex-grow-1"
+            hx-post="/requisitos/ca/{{ codigo }}/marcar/{{ r.id }}" hx-target="closest [data-requisitos]" hx-swap="outerHTML" hx-trigger="change">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="cumplido" value="1" id="req-{{ r.id }}" {% if r.cumplido %}checked{% endif %}>
+          <label class="form-check-label" for="req-{{ r.id }}">
+            {{ r.texto }}
+            {% if not r.obligatorio %}<span class="badge text-bg-light fw-normal">opcional</span>{% endif %}
+            {% if r.origen == 'documento_ca' %}<span class="badge text-bg-info fw-normal">documento de la CA</span>{% endif %}
+          </label>
+        </div>
+        <noscript><button type="submit" class="btn btn-sm btn-outline-secondary">Guardar</button></noscript>
+      </form>
+      {% if r.cumplido and r.cumplido_en %}<span class="small text-muted">cumplido {{ r.cumplido_en | fecha_chile }}</span>{% endif %}
+      {% if r.origen != 'plantilla' %}
+      <form method="post" action="/requisitos/ca/{{ codigo }}/quitar/{{ r.id }}" class="m-0"
+            hx-post="/requisitos/ca/{{ codigo }}/quitar/{{ r.id }}" hx-target="closest [data-requisitos]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-sm btn-link text-danger p-0" aria-label="Quitar el requisito «{{ r.texto }}»">Quitar</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="small text-muted mb-2">Esta CA todavía no tiene checklist: se crea al priorizarla o agregarla a un lote (plantilla en <a href="/requisitos">Requisitos</a>).</p>
+  {% endif %}
+
+  <form method="post" action="/requisitos/ca/{{ codigo }}/agregar" class="d-flex flex-wrap gap-2 align-items-center mb-3"
+        hx-post="/requisitos/ca/{{ codigo }}/agregar" hx-target="closest [data-requisitos]" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="visually-hidden" for="req-nuevo-{{ codigo }}">Nuevo requisito</label>
+    <input class="form-control form-control-sm w-auto flex-grow-1" id="req-nuevo-{{ codigo }}" name="texto" maxlength="300" required placeholder="Agregar un requisito de esta CA">
+    <div class="form-check m-0"><input class="form-check-input" type="checkbox" name="obligatorio" value="1" id="req-obl-{{ codigo }}" checked><label class="form-check-label small" for="req-obl-{{ codigo }}">Obligatorio</label></div>
+    <button type="submit" class="btn btn-sm btn-outline-primary" data-accion="req-agregar">Agregar</button>
+  </form>
+
+  <h4 class="fs-6 mb-1">Cotización formal</h4>
+  {% if oferta %}
+  <p class="small text-muted mb-1">
+    {% if oferta.numero_cotizacion %}N° <strong data-cotizacion-numero>{{ oferta.numero_cotizacion }}</strong> · {% endif %}validez {{ oferta.validez_dias }} días.
+    Generar el documento no marca el requisito: adjúntalo en el portal y márcalo tú.
+  </p>
+  <form method="post" action="/mesa/ca/{{ codigo }}/cotizacion.docx" class="d-flex flex-wrap gap-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div>
+      <label class="form-label small mb-0" for="cot-validez-{{ codigo }}">Validez (días)</label>
+      <input class="form-control form-control-sm" style="width:6rem" type="number" min="1" max="365" name="validez_dias" id="cot-validez-{{ codigo }}" value="{{ oferta.validez_dias }}">
+    </div>
+    <div class="flex-grow-1">
+      <label class="form-label small mb-0" for="cot-cond-{{ codigo }}">Condiciones (vacío = las de la empresa)</label>
+      <input class="form-control form-control-sm" name="condiciones" id="cot-cond-{{ codigo }}" maxlength="4000" value="{{ oferta.condiciones or '' }}" placeholder="{{ condiciones[:80] }}">
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary" data-accion="cotizacion-docx">Cotización formal (DOCX)</button>
+  </form>
+  {% else %}
+  <p class="small text-muted mb-0">Guarda la oferta («Precio y mi oferta») para generar la cotización formal.</p>
+  {% endif %}
+
+  <h4 class="fs-6 mt-3 mb-1">Venta</h4>
+  {% if venta %}
+  <p class="small mb-0">Venta <strong>{{ etiqueta_venta[venta.estado] }}</strong> · <a href="/ventas/{{ venta.id }}" data-venta-enlace>Abrir seguimiento →</a></p>
+  {% elif puede_registrar_venta %}
+  <form method="post" action="/ventas/nueva" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="codigo" value="{{ codigo }}">
+    <button type="submit" class="btn btn-sm btn-outline-primary" data-accion="venta-registrar">Registrar venta</button>
+    <span class="small text-muted ms-2">Si ganamos, también se crea sola al detectar el resultado.</span>
+  </form>
+  {% else %}
+  <p class="small text-muted mb-0">Cuando la CA esté enviada y ganada, aquí aparece su seguimiento.</p>
+  {% endif %}
+</section>

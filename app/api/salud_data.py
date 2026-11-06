@@ -24,6 +24,7 @@ from app.models.tables import (
     CaCotizacionProducto,
     CaEvento,
     CaLinea,
+    CaRequisito,
     CaTrabajo,
     CompetenciaCompradorMes,
     CompetenciaMes,
@@ -31,6 +32,7 @@ from app.models.tables import (
     DemandaSerie,
     EmpresaProducto,
     EmpresaProductoMovimiento,
+    EmpresaRequisito,
     EvaluacionCache,
     LlmCache,
     OcLineaCa,
@@ -48,6 +50,8 @@ from app.models.tables import (
     Recomendacion,
     RubroVocabulario,
     SyncState,
+    Venta,
+    VentaCompra,
 )
 
 # Clave del advisory lock (igual que orchestrator._LOCK_KEY)
@@ -257,6 +261,11 @@ def _tablas_mercado_salud(session: Session) -> list[dict[str, Any]]:
         ("ca_eventos", CaEvento),
         ("ca_comentarios", CaComentario),
         ("empresa_productos", EmpresaProducto),
+        # F-plat-seguimiento: checklist, ventas y compras (las ventas no se purgan).
+        ("empresa_requisitos", EmpresaRequisito),
+        ("ca_requisitos", CaRequisito),
+        ("ventas", Venta),
+        ("venta_compras", VentaCompra),
         ("empresa_producto_movimientos", EmpresaProductoMovimiento),
         ("llm_cache", LlmCache),
     )

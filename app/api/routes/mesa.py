@@ -31,6 +31,7 @@ from app.api.routes.pages import _TEMPLATES, _ctx, _es_htmx
 from app.api.selector import contexto_selector, entero_o_none
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
 from app.mercado import importar, vinculo
+from app.mercado import requisitos as rq
 from app.mercado.catalogo import cargar_catalogo
 from app.mercado.proveedores import (
     UNIDADES,
@@ -203,6 +204,7 @@ async def admin_empresa_crear(
     session.add(empresa)
     session.flush()
     asegurar_tarifas_iniciales(session, empresa.id)
+    rq.sembrar_plantilla(session, empresa.id)  # F-plat-seguimiento §1.2
     session.commit()
     return RedirectResponse(
         url=f"/admin/empresas/{empresa.id}?mensaje={quote('Empresa creada')}", status_code=303
@@ -250,6 +252,11 @@ def _pagina_empresa(
         "activa": empresa.activa,
         "dias_vigencia_precio": empresa.dias_vigencia_precio,
         "margen_objetivo": f"{(empresa.margen_objetivo or 0) * 100:g}",
+        "direccion": empresa.direccion or "",
+        "contacto": empresa.contacto or "",
+        "giro": empresa.giro or "",
+        "condiciones_cotizacion": empresa.condiciones_cotizacion or "",
+        "plazo_pago_comprador_dias": empresa.plazo_pago_comprador_dias,
     }
     return _TEMPLATES.TemplateResponse(
         request,
@@ -296,6 +303,11 @@ async def admin_empresa_editar(
     activa: str = Form(""),
     dias_vigencia_precio: str = Form(""),
     margen_objetivo: str = Form(""),
+    direccion: str = Form(""),
+    contacto: str = Form(""),
+    giro: str = Form(""),
+    condiciones_cotizacion: str = Form(""),
+    plazo_pago_comprador_dias: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_admin),
     session: Session = Depends(get_db),
@@ -318,6 +330,30 @@ async def admin_empresa_editar(
             datos["margen_objetivo"] = round(margen / 100, 4)
         else:
             errores["margen_objetivo"] = f"De 0 a {MARGEN_OBJETIVO_MAX_PCT:g} %"
+    # F-plat-seguimiento: membrete de la cotización formal, condiciones y plazo de pago.
+    for campo, valor, maximo in (
+        ("direccion", direccion, 300),
+        ("contacto", contacto, 200),
+        ("giro", giro, 200),
+    ):
+        limpio = " ".join(valor.split())
+        if len(limpio) > maximo:
+            errores[campo] = f"Máximo {maximo} caracteres"
+        else:
+            datos[campo] = limpio or None
+    condiciones = condiciones_cotizacion.strip()
+    if len(condiciones) > 4000:
+        errores["condiciones_cotizacion"] = "Máximo 4000 caracteres"
+    else:
+        datos["condiciones_cotizacion"] = condiciones or None
+    plazo_pago = _num_o_none(
+        plazo_pago_comprador_dias, "plazo_pago_comprador_dias", errores, entero=True
+    )
+    if plazo_pago is not None:
+        if 0 <= plazo_pago <= DIAS_VIGENCIA_MAX:
+            datos["plazo_pago_comprador_dias"] = plazo_pago
+        else:
+            errores["plazo_pago_comprador_dias"] = f"De 0 a {DIAS_VIGENCIA_MAX} días"
     if errores:
         form = {
             **datos,
@@ -327,6 +363,11 @@ async def admin_empresa_editar(
             "activa": bool(activa),
             "dias_vigencia_precio": dias_vigencia_precio,
             "margen_objetivo": margen_objetivo,
+            "direccion": direccion,
+            "contacto": contacto,
+            "giro": giro,
+            "condiciones_cotizacion": condiciones_cotizacion,
+            "plazo_pago_comprador_dias": plazo_pago_comprador_dias,
         }
         return _pagina_empresa(
             request, user, session, empresa, errores=errores, form=form, status_code=422

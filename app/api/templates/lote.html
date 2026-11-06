@@ -74,7 +74,7 @@
       {% else %}<span class="badge text-bg-danger fw-normal">sin detalle</span>{% endif %}
       {{ c.n_lineas }}{% if c.sin_producto %} · <a href="/catalogo/ca/{{ c.codigo }}">{{ c.sin_producto }} sin producto</a>{% endif %}
     </td>
-    <td class="small">{{ estados_ca.get(c.estado, c.estado) }}{% if c.resultado %} · {{ resultados.get(c.resultado, c.resultado) }}{% endif %}</td>
+    <td class="small">{{ estados_ca.get(c.estado, c.estado) }}{% if c.resultado %} · {{ resultados.get(c.resultado, c.resultado) }}{% endif %}{% if c.venta_id %} · <a href="/ventas/{{ c.venta_id }}" data-lote-venta>Venta →</a>{% endif %}</td>
     <td class="text-end num small">{{ c.oferta_total | clp if c.oferta_total is not none else '—' }}</td>
     <td class="text-end">
       {% if editable %}

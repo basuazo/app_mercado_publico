@@ -325,6 +325,10 @@
     <div class="mt-4" hx-get="/mesa/ca/{{ codigo }}/precio" hx-trigger="load" hx-swap="outerHTML">
       <p class="small text-muted mb-0">Calculando precio y margen…</p>
     </div>
+    {# F-plat-seguimiento: requisitos administrativos, cotización formal y venta. #}
+    <div hx-get="/requisitos/ca/{{ codigo }}" hx-trigger="load" hx-swap="outerHTML">
+      <p class="small text-muted mt-4 mb-0">Cargando requisitos…</p>
+    </div>
     {% endif %}
 
     {% if con_equipo %}

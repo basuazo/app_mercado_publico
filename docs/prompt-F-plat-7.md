@@ -156,3 +156,7 @@ Changelog ("Salud e informe mensual del pivote"). `00-estado.md`. Commit:
    fuera de `mercado-*` consume ticket.
 2. Leer el primer informe mensual con Mario y anotar en `decisiones.md` si el pivote pasa al peldaño 3
    (`16-pivote` §2): ≥ 20 % de adjudicación con margen realizado ≥ 10 %.
+
+## Nota 6-nov (F-plat-seguimiento)
+- §1.4: la retención de `ca_requisitos` (CA descartadas > 12 meses) ya está registrada en `retencion.PURGAS` («requisitos_borrados»).
+- §1.2: el informe mensual aún NO suma ventas (OC, entregas, facturado, cobrado); queda para una fase chica sobre `app.mercado.ventas`.

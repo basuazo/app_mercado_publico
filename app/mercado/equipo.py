@@ -30,10 +30,11 @@ from sqlalchemy.orm import Session, aliased
 
 from app.core.logging import get_logger
 from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.mercado import requisitos as rq
 from app.mercado.comprador import rut_competidor
 from app.mercado.eleccion import elegir_por_rut
 from app.mercado.proveedores import normalizar_rut
-from app.models.enums import EstadoOportunidad
+from app.models.enums import EstadoOportunidad, RolUsuario
 from app.models.tables import (
     CaComentario,
     CaCotizacion,
@@ -82,6 +83,22 @@ EV_RESULTADO = "resultado"
 # (columna sin FK), `usuario_id` NULL → idempotente por lote con el índice único parcial.
 EV_PRECIO_VENCIDO = "precio_vencido"
 PREFIJO_LOTE = "lote:"
+# F-plat-seguimiento: `venta` = cambio de estado de una venta (de usuario, `datos.estado`); los
+# otros cinco son alarmas de sistema, idempotentes por (empresa, CA, tipo) con el índice parcial.
+# `ca_eventos.tipo` es VARCHAR(20): ningún nombre pasa de 20 caracteres.
+EV_VENTA = "venta"
+EV_REQ_PENDIENTES = "req_pendientes"
+EV_OC_SIN_REGISTRAR = "oc_sin_registrar"
+EV_ENTREGA_VENCE = "entrega_vence"
+EV_FACTURA_PENDIENTE = "factura_pendiente"
+EV_PAGO_ATRASADO = "pago_atrasado"
+TIPOS_SEGUIMIENTO = (
+    EV_REQ_PENDIENTES,
+    EV_OC_SIN_REGISTRAR,
+    EV_ENTREGA_VENCE,
+    EV_FACTURA_PENDIENTE,
+    EV_PAGO_ATRASADO,
+)
 
 
 def url_de_evento(ca_codigo: str, datos: dict[str, Any] | None = None) -> str:
@@ -95,8 +112,14 @@ def url_de_evento(ca_codigo: str, datos: dict[str, Any] | None = None) -> str:
 
 TIPOS_USUARIO = (EV_ESTADO, EV_ASIGNADA, EV_COMENTARIO, EV_MENCION)
 TIPOS_SISTEMA = (EV_CIERRE_24H, EV_CIERRE_4H, EV_RESULTADO)
-TIPOS_EVENTO = TIPOS_USUARIO + TIPOS_SISTEMA + (EV_PRECIO_VENCIDO,)
+TIPOS_EVENTO = TIPOS_USUARIO + TIPOS_SISTEMA + (EV_PRECIO_VENCIDO, EV_VENTA) + TIPOS_SEGUIMIENTO
 ETIQUETA_TIPO = {
+    EV_VENTA: "Ventas",
+    EV_REQ_PENDIENTES: "Requisitos pendientes",
+    EV_OC_SIN_REGISTRAR: "OC sin registrar",
+    EV_ENTREGA_VENCE: "Entregas por vencer",
+    EV_FACTURA_PENDIENTE: "Facturas pendientes",
+    EV_PAGO_ATRASADO: "Pagos atrasados",
     EV_ESTADO: "Cambios de estado",
     EV_ASIGNADA: "Asignaciones",
     EV_COMENTARIO: "Comentarios",
@@ -151,6 +174,15 @@ DIAS_SIN_MARCA = 7  # sin `actividad_leida_hasta`, solo es «no leído» lo de l
 
 class ErrorEquipo(Exception):
     """Entrada inválida (→ 422)."""
+
+
+class RequisitosPendientes(ErrorEquipo):
+    """No se puede marcar `enviada` con requisitos obligatorios sin cumplir (→ 422 con la lista).
+    Un administrador puede forzarla con un motivo (queda en el evento)."""
+
+    def __init__(self, pendientes: list[str]) -> None:
+        self.pendientes = pendientes
+        super().__init__("Faltan requisitos obligatorios: " + "; ".join(pendientes))
 
 
 class NoEncontrado(Exception):
@@ -299,9 +331,14 @@ def cambiar_estado(
     version: int,
     motivo: str = "",
     datos_extra: dict[str, Any] | None = None,
+    forzar_motivo: str = "",
 ) -> CaTrabajo:
     """Cambia el estado (transiciones libres; `descartada` exige motivo). No hace commit.
-    `datos_extra` se suma a los datos del evento (F-plat-lote: `lote_id`)."""
+    `datos_extra` se suma a los datos del evento (F-plat-lote: `lote_id`).
+
+    F-plat-seguimiento: al pasar a un estado de trabajo se siembra el checklist de la CA, y NO se
+    puede marcar `enviada` con un requisito obligatorio sin cumplir (`RequisitosPendientes`). Un
+    administrador puede forzarlo con `forzar_motivo` (queda en el evento)."""
     if nuevo not in ESTADOS:
         raise ErrorEquipo("Estado desconocido")
     motivo = (motivo or "").strip()[:MOTIVO_MAX]
@@ -312,6 +349,16 @@ def cambiar_estado(
     anterior = t.estado if t is not None else NUEVA
     if anterior == nuevo and nuevo != DESCARTADA:
         return t if t is not None else _sin_fila(empresa_id, codigo)
+    forzado = ""
+    if nuevo in ACTIVOS + (ENVIADA,):
+        rq.sembrar_ca(session, empresa_id, codigo)
+    if nuevo == ENVIADA:
+        faltan = rq.pendientes(session, empresa_id, codigo)
+        if faltan:
+            forzar = (forzar_motivo or "").strip()[:MOTIVO_MAX]
+            if not (forzar and usuario.rol == RolUsuario.ADMIN):
+                raise RequisitosPendientes(faltan)
+            forzado = forzar
     if t is None:
         t = CaTrabajo(
             empresa_id=empresa_id,
@@ -335,6 +382,8 @@ def cambiar_estado(
     datos: dict[str, Any] = {"de": anterior, "a": nuevo}
     if motivo and nuevo == DESCARTADA:
         datos["motivo"] = motivo
+    if forzado:
+        datos["forzado"] = forzado
     if datos_extra:
         datos.update({k: v for k, v in datos_extra.items() if k not in ("de", "a")})
     _evento(session, empresa_id, codigo, usuario.id, EV_ESTADO, datos, creado_en=ahora)
@@ -577,6 +626,8 @@ def consulta_no_leidos(session: Session, usuario: Usuario, empresa_id: int) -> S
         ramas += [
             ev.tipo == EV_ESTADO,
             ev.tipo == EV_PRECIO_VENCIDO,
+            ev.tipo == EV_VENTA,
+            ev.tipo.in_(TIPOS_SEGUIMIENTO),
             and_(ev.tipo == EV_COMENTARIO, ~me_menciona),
             and_(
                 ev.tipo == EV_ASIGNADA,
@@ -773,16 +824,28 @@ def generar_alarmas(session: Session, empresa_id: int, ahora: datetime) -> dict[
                 session, empresa_id, t.ca_codigo, EV_RESULTADO, {"resultado": res}, ahora
             ):
                 cuenta[EV_RESULTADO] += 1
+            if res == GANADA:
+                # F-plat-seguimiento §1.4: ganar abre la venta (idempotente por empresa × CA).
+                from app.mercado import ventas
+
+                ventas.crear_desde_ganada(session, empresa_id, t.ca_codigo)
     session.flush()
     return cuenta
 
 
 def generar_alarmas_todas(session: Session, ahora: datetime) -> dict[str, int]:
     """Para todas las empresas activas (al final de `mercado-ca` y de `mercado-backfill`)."""
+    from app.mercado import ventas
+
     total = {EV_CIERRE_24H: 0, EV_CIERRE_4H: 0, EV_RESULTADO: 0}
     for empresa_id in session.execute(select(Empresa.id).where(Empresa.activa.is_(True))).scalars():
         for k, v in generar_alarmas(session, empresa_id, ahora).items():
             total[k] += v
+        # F-plat-seguimiento: las claves nuevas solo aparecen si hubo alarmas (el contrato de las
+        # tres primeras no cambia).
+        for k, v in ventas.generar_alarmas_seguimiento(session, empresa_id, ahora).items():
+            if v:
+                total[k] = total.get(k, 0) + v
     return total
 
 
@@ -813,7 +876,10 @@ def generar_si_toca(session: Session, empresa_id: int, ahora: datetime) -> bool:
     )
     if not tomada.rowcount:  # type: ignore[attr-defined]
         return False
+    from app.mercado import ventas
+
     generar_alarmas(session, empresa_id, ahora)
+    ventas.generar_alarmas_seguimiento(session, empresa_id, ahora)
     return True
 
 
@@ -898,6 +964,8 @@ class EquipoCA:
     comentarios_no_leidos: bool = False
     conflicto: str | None = None
     error: str | None = None
+    # F-plat-seguimiento: el 422 es por requisitos obligatorios (muestra «forzar» al admin).
+    requisitos_pendientes: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -1002,6 +1070,23 @@ _FRASE_RESULTADO = {
     SIN_DATO: "Sin dato de selección en",
     DESIERTA: "Quedó desierta o cancelada",
 }
+# F-plat-seguimiento: textos de la campana y de /actividad (la CA va en énfasis, después).
+ETIQUETA_VENTA = {
+    "adjudicada": "Adjudicada",
+    "oc_recibida": "OC recibida",
+    "comprando": "Comprando",
+    "entregada": "Entregada",
+    "facturada": "Facturada",
+    "pagada": "Pagada",
+    "anulada": "Anulada",
+}
+FRASE_SEGUIMIENTO = {
+    EV_REQ_PENDIENTES: "Faltan requisitos obligatorios antes de que cierre:",
+    EV_OC_SIN_REGISTRAR: "Adjudicada hace días y sin orden de compra registrada:",
+    EV_ENTREGA_VENCE: "La entrega comprometida vence pronto:",
+    EV_FACTURA_PENDIENTE: "Entregada y sin factura:",
+    EV_PAGO_ATRASADO: "El pago esperado ya venció:",
+}
 FRAGMENTO_MAX = 80
 
 
@@ -1071,6 +1156,8 @@ def describir_eventos(
             despues = f"· {cuando_cierra(cierre, ahora)}"
             if a == DESCARTADA and d.get("motivo"):
                 despues = f"· motivo: {d['motivo']}"
+            if d.get("forzado"):
+                despues = f"· con requisitos pendientes (motivo: {d['forzado']})"
         elif e.tipo == EV_ASIGNADA:
             dest = e.destinatario_id
             if dest is None:
@@ -1105,6 +1192,16 @@ def describir_eventos(
         elif e.tipo == EV_RESULTADO:
             antes = _FRASE_RESULTADO.get(d.get("resultado", ""), "Resultado de")
         url = url_de_evento(e.ca_codigo, d)
+        if e.tipo == EV_VENTA:
+            antes = f"{actor} pasó la venta a {ETIQUETA_VENTA.get(str(d.get('estado')), '…')}:"
+            despues = ""
+            if d.get("venta_id"):
+                url = f"/ventas/{int(d['venta_id'])}"
+        elif e.tipo in TIPOS_SEGUIMIENTO:
+            antes = FRASE_SEGUIMIENTO[e.tipo]
+            despues = ""
+            if e.tipo != EV_REQ_PENDIENTES and d.get("venta_id"):
+                url = f"/ventas/{int(d['venta_id'])}"
         if e.tipo == EV_PRECIO_VENCIDO:
             n = int(d.get("n") or 0)
             antes = "El lote"

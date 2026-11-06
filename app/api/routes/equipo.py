@@ -28,6 +28,7 @@ from app.auth.csrf import generate_csrf_token
 from app.core.tiempo import ahora_utc
 from app.mercado import equipo as eq
 from app.mercado.territorio import regiones_activas
+from app.models.enums import RolUsuario
 from app.models.tables import CaEvento, CompraAgil, Empresa, Usuario
 
 router = APIRouter()
@@ -72,6 +73,7 @@ def contexto_equipo(
         "miembros": [(m.id, eq.nombre_visible(m)) for m in eq.miembros(session, empresa_id)],
         "estados": eq.ETIQUETA_ESTADO,
         "empresa_sin_rut": eq.rut_empresa(empresa) is None,
+        "es_admin": user.rol == RolUsuario.ADMIN,
         "csrf_token": _csrf(request),
     }
 
@@ -87,6 +89,7 @@ def _render_equipo(
     status_code: int = 200,
     conflicto: eq.ConflictoVersion | None = None,
     error: str | None = None,
+    requisitos_pendientes: bool = False,
 ) -> HTMLResponse:
     session.expire_all()
     e = eq.equipo_de(session, empresa_id, user, [codigo])[codigo]
@@ -97,6 +100,7 @@ def _render_equipo(
             "Esto es lo que hay ahora."
         ).replace("  ", " ")
     e.error = error
+    e.requisitos_pendientes = requisitos_pendientes
     ctx = contexto_equipo(request, session, user, empresa_id, codigo, origen=origen, estado_ca=e)
     return _TEMPLATES.TemplateResponse(
         request, "_equipo_ca.html", ctx, status_code=status_code
@@ -140,7 +144,8 @@ def _aplicar(
         if not _es_htmx(request):
             raise HTTPException(status_code=422, detail=str(err)) from err
         return _render_equipo(
-            request, session, user, empresa_id, codigo, origen, status_code=422, error=str(err)
+            request, session, user, empresa_id, codigo, origen, status_code=422, error=str(err),
+            requisitos_pendientes=isinstance(err, eq.RequisitosPendientes),
         )
     if not _es_htmx(request):
         return RedirectResponse(url=_volver(origen, codigo), status_code=303)
@@ -171,6 +176,7 @@ async def equipo_estado(  # noqa: PLR0913
     version: str = Form("0"),
     motivo: str = Form(""),
     origen: str = Form("mesa"),
+    forzar_motivo: str = Form(""),
     csrf_token: str = Form(""),
     sesion: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
@@ -186,7 +192,8 @@ async def equipo_estado(  # noqa: PLR0913
         codigo,
         origen,
         lambda: eq.cambiar_estado(
-            session, empresa_id, user, codigo, estado, _version(version), motivo
+            session, empresa_id, user, codigo, estado, _version(version), motivo,
+            forzar_motivo=forzar_motivo,
         ),
     )
 

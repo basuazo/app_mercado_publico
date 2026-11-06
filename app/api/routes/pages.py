@@ -490,6 +490,7 @@ async def portada(
     n_proveedores = n_productos = 0
     n_inventario = n_bajo_minimo = n_vencidos = 0
     en_trabajo: dict[str, Any] | None = None
+    ventas_hoy: dict[str, Any] | None = None
     equipo_hoy: dict[str, Any] | None = None
     if empresa_id is not None:
         from app.mercado import equipo as eq
@@ -517,6 +518,9 @@ async def portada(
         from app.mercado.proveedores import vencidos_por_proveedor
 
         en_trabajo = lt.resumen_hoy(session, empresa_id)
+        from app.mercado import ventas as vt
+
+        ventas_hoy = vt.resumen_hoy(session, empresa_id)
         n_vencidos = sum(vencidos_por_proveedor(session, empresa_id).values())
     return _TEMPLATES.TemplateResponse(
         request,
@@ -536,6 +540,7 @@ async def portada(
             n_bajo_minimo=n_bajo_minimo,
             n_vencidos=n_vencidos,
             en_trabajo=en_trabajo,
+            ventas_hoy=ventas_hoy,
             equipo_hoy=equipo_hoy,
         ),
     )

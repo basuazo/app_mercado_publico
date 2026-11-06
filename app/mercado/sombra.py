@@ -411,7 +411,12 @@ def cerrar_ofertas(
         nuestra = _elegidas(session, ca.codigo).get(rut)
         precio = nuestra[2] if nuestra and nuestra[2] is not None else o.total_neto
         o.precio_ganador_real = precio
-        o.margen_realizado = of.margen_realizado(session, o.empresa_id, ca, o, precio, tasa)
+        # F-plat-seguimiento: si la venta ya tiene compras registradas, el margen es el REAL
+        # (ingreso − costo real) y esta estimación no lo pisa.
+        from app.mercado import ventas
+
+        if not ventas.tiene_costo_real(session, o.empresa_id, ca.codigo):
+            o.margen_realizado = of.margen_realizado(session, o.empresa_id, ca, o, precio, tasa)
         cuenta["ofertas_ganadas"] += 1
     session.commit()
     return cuenta

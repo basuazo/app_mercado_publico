@@ -57,6 +57,16 @@
     </div></div>
   </div>
   {% endif %}
+  {% if ventas_hoy %}
+  <div class="col-12 col-md-4">
+    <div class="card h-100"><div class="card-body">
+      <p class="tarjeta-numero__etiqueta">Ventas</p>
+      <p class="tarjeta-numero__valor" data-hoy="ventas-en-curso">{{ ventas_hoy.en_curso }} <small>en curso</small></p>
+      <p class="tarjeta-numero__nota">por cobrar <span class="num" data-hoy="ventas-por-cobrar">{{ ventas_hoy.por_cobrar | clp }}</span> · entregas esta semana <span class="num" data-hoy="ventas-entregas">{{ ventas_hoy.entregas_semana }}</span></p>
+      <a href="/ventas" class="tarjeta-numero__ver">Ver →</a>
+    </div></div>
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Venta {{ v.venta.ca_codigo }} — Rastrillo{% endblock %}
+{% macro csrf_version(venta) -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="version" value="{{ venta.version }}">
+{%- endmacro %}
+{% block content %}
+{% set venta = v.venta %}
+{% set pendiente = venta.estado in pendientes_de_entrega %}
+<nav aria-label="Migas" class="small mb-2"><a href="/ventas">Ventas</a></nav>
+<h2 class="mb-1">{{ v.nombre_ca }}</h2>
+<p class="text-muted small mb-2">{{ venta.ca_codigo }}{% if v.comprador %} · {{ v.comprador }}{% endif %}
+  · <a href="/oportunidad/compras_agiles/{{ venta.ca_codigo }}">ficha de la Compra Ágil</a>
+  {% if venta.lote_id %}· <a href="/lotes/{{ venta.lote_id }}">{{ v.lote_nombre or 'lote' }}</a>{% endif %}</p>
+<p><span class="badge text-bg-primary fs-6" data-venta-estado="{{ venta.estado }}">{{ estados[venta.estado] }}</span>
+  {% if venta.estado == 'anulada' and venta.motivo_anulacion %}<span class="small text-muted ms-2">Motivo: {{ venta.motivo_anulacion }}</span>{% endif %}</p>
+
+{% if mensaje %}<div class="alert alert-success py-2" role="status">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger py-2" role="alert">{{ error }}</div>{% endif %}
+
+<div class="row g-3 mb-3" data-venta-margen>
+  <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Ingreso neto</div><strong>{{ v.ingreso | clp if v.ingreso else '—' }}</strong></div></div>
+  <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Costo real</div><strong data-costo-real>{{ venta.costo_real | clp if venta.costo_real is not none else '—' }}</strong></div></div>
+  <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Margen ofertado</div><strong data-margen-ofertado>{{ v.margen_ofertado | clp if v.margen_ofertado is not none else '—' }}</strong></div></div>
+  <div class="col-6 col-md-3"><div class="border rounded p-2"><div class="small text-muted">Margen realizado</div><strong data-margen-realizado>{{ v.margen_realizado | clp if v.margen_realizado is not none else 'sin compras registradas' }}</strong></div></div>
+</div>
+
+<section class="border rounded p-3 mb-3" aria-labelledby="v-oc">
+  <h3 class="fs-6" id="v-oc">1. Orden de compra</h3>
+  {% if venta.oc_numero %}<p class="small mb-2">OC <strong>{{ venta.oc_numero }}</strong> del {{ venta.oc_fecha.strftime('%d-%m-%Y') }}{% if venta.oc_monto %} · {{ venta.oc_monto | clp }} neto{% endif %}
+    · entrega comprometida: <strong data-comprometida>{{ venta.entrega_fecha_comprometida.strftime('%d-%m-%Y') if venta.entrega_fecha_comprometida else 'sin plazo en la oferta' }}</strong></p>{% endif %}
+  {% if pendiente %}
+  <form method="post" action="/ventas/{{ venta.id }}/oc" class="row g-2 align-items-end">
+    {{ csrf_version(venta) }}
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="oc-n">N° de OC</label><input class="form-control form-control-sm" id="oc-n" name="oc_numero" maxlength="50" required value="{{ venta.oc_numero or '' }}"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="oc-f">Fecha de la OC</label><input class="form-control form-control-sm" type="date" id="oc-f" name="oc_fecha" required value="{{ venta.oc_fecha.isoformat() if venta.oc_fecha else '' }}"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="oc-m">Monto neto (opcional)</label><input class="form-control form-control-sm" id="oc-m" name="oc_monto" inputmode="decimal" value="{{ venta.oc_monto | int if venta.oc_monto else '' }}"></div>
+    <div class="col-6 col-md-3"><button class="btn btn-sm btn-primary" type="submit" data-accion="venta-oc">{{ 'Corregir OC' if venta.oc_numero else 'Registrar OC' }}</button></div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="border rounded p-3 mb-3" aria-labelledby="v-compras">
+  <h3 class="fs-6" id="v-compras">2. Compras a proveedores</h3>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-2" data-compras>
+    <thead><tr><th>Fecha</th><th>Producto</th><th class="text-end">Cantidad</th><th class="text-end">Precio neto</th><th class="text-end">Total</th><th>Pago al proveedor</th></tr></thead>
+    <tbody>
+    {% for c in v.compras %}
+    <tr>
+      <td class="small">{{ c.fecha.strftime('%d-%m-%Y') }}</td>
+      <td>{{ c.descripcion }}</td>
+      <td class="text-end">{{ c.cantidad | cantidad }}</td>
+      <td class="text-end">{{ c.precio_neto | clp }}</td>
+      <td class="text-end">{{ (c.cantidad * c.precio_neto) | clp }}</td>
+      <td class="small">
+        <form method="post" action="/ventas/{{ venta.id }}/compras/{{ c.id }}/pagada" class="d-flex gap-2 align-items-center m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="form-check m-0"><input class="form-check-input" type="checkbox" name="pagada" value="1" id="cp-{{ c.id }}" {% if c.pagada %}checked{% endif %}><label class="form-check-label" for="cp-{{ c.id }}">Pagada</label></div>
+          {% if not c.pagada and c.pagar_en %}<span class="text-muted">vence {{ c.pagar_en.strftime('%d-%m-%Y') }}</span>{% endif %}
+          <button class="btn btn-sm btn-outline-secondary py-0" type="submit">Guardar</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted">Todavía no hay compras registradas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if pendiente %}
+  <form method="post" action="/ventas/{{ venta.id }}/compras" class="row g-2 align-items-end">
+    {{ csrf_version(venta) }}
+    <div class="col-12 col-md-5"><label class="form-label small mb-0" for="cp-pp">Producto del proveedor</label>
+      <select class="form-select form-select-sm" id="cp-pp" name="proveedor_producto_id" required>
+        <option value="">Elegir…</option>
+        {% for pid, texto in opciones_compra %}<option value="{{ pid }}">{{ texto }}</option>{% endfor %}
+      </select></div>
+    <div class="col-4 col-md-2"><label class="form-label small mb-0" for="cp-c">Cantidad</label><input class="form-control form-control-sm" id="cp-c" name="cantidad" inputmode="decimal" required></div>
+    <div class="col-4 col-md-2"><label class="form-label small mb-0" for="cp-p">Precio neto</label><input class="form-control form-control-sm" id="cp-p" name="precio_neto" inputmode="decimal" required></div>
+    <div class="col-4 col-md-3"><label class="form-label small mb-0" for="cp-f">Fecha</label><input class="form-control form-control-sm" type="date" id="cp-f" name="fecha"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="cp-v">Pagar en (opcional)</label><input class="form-control form-control-sm" type="date" id="cp-v" name="pagar_en"></div>
+    <div class="col-6 col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="pagada" value="1" id="cp-pg"><label class="form-check-label small" for="cp-pg">Ya pagada</label></div></div>
+    <div class="col-12 col-md-3"><button class="btn btn-sm btn-primary" type="submit" data-accion="venta-compra">Registrar compra</button></div>
+  </form>
+  <p class="small text-muted mt-2 mb-0">Cantidad en unidades del formato del proveedor. La compra deja el precio en el historial del proveedor y suma al inventario si el producto está ahí.</p>
+  {% endif %}
+</section>
+
+<section class="border rounded p-3 mb-3" aria-labelledby="v-entrega">
+  <h3 class="fs-6" id="v-entrega">3. Entrega</h3>
+  {% if venta.estado not in ('anulada',) and venta.estado != 'pagada' %}
+  <form method="post" action="/ventas/{{ venta.id }}/logistica" class="row g-2 align-items-end mb-3">
+    {{ csrf_version(venta) }}
+    <div class="col-12 col-md-6"><label class="form-label small mb-0" for="en-d">Dirección de entrega</label><input class="form-control form-control-sm" id="en-d" name="direccion" maxlength="500" value="{{ venta.entrega_direccion or '' }}"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="en-h">Horario</label><input class="form-control form-control-sm" id="en-h" name="horario" maxlength="200" value="{{ venta.entrega_horario or '' }}"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="en-r">Quién recibe (nombre / teléfono)</label><input class="form-control form-control-sm" id="en-r" name="recibe" maxlength="200" value="{{ venta.entrega_recibe or '' }}"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="en-c">Fecha comprometida</label><input class="form-control form-control-sm" type="date" id="en-c" name="comprometida" value="{{ venta.entrega_fecha_comprometida.isoformat() if venta.entrega_fecha_comprometida else '' }}"></div>
+    <div class="col-12 col-md-6"><label class="form-label small mb-0" for="en-n">Notas</label><input class="form-control form-control-sm" id="en-n" name="notas" maxlength="2000" value="{{ venta.notas or '' }}"></div>
+    <div class="col-12 col-md-3"><button class="btn btn-sm btn-outline-primary" type="submit" data-accion="venta-logistica">Guardar datos</button></div>
+  </form>
+  {% endif %}
+  {% if pendiente %}
+  <form method="post" action="/ventas/{{ venta.id }}/entrega" class="row g-2 align-items-end">
+    {{ csrf_version(venta) }}
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="et-f">Fecha de entrega</label><input class="form-control form-control-sm" type="date" id="et-f" name="fecha_real"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="et-g">N° de guía</label><input class="form-control form-control-sm" id="et-g" name="guia" maxlength="50"></div>
+    <div class="col-12 col-md-3"><button class="btn btn-sm btn-primary" type="submit" data-accion="venta-entrega">Marcar entregada</button></div>
+  </form>
+  <p class="small text-muted mt-2 mb-0">Al entregar, el stock propio que usó esta venta se descuenta del inventario y se libera su reserva del lote.</p>
+  {% elif venta.entrega_fecha_real %}
+  <p class="small mb-0">Entregada el <strong>{{ venta.entrega_fecha_real.strftime('%d-%m-%Y') }}</strong>{% if venta.guia_numero %} · guía {{ venta.guia_numero }}{% endif %}.</p>
+  {% endif %}
+  {% if v.movimientos %}
+  <h4 class="fs-6 mt-3">Movimientos de stock de esta venta</h4>
+  <ul class="small mb-0" data-movimientos>
+    {% for m in v.movimientos %}<li>{{ m.cuando | fecha_chile }} · {{ m.producto }} ({{ m.formato }}) · {{ m.motivo }} {{ '%+g' | format(m.delta) }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="border rounded p-3 mb-3" aria-labelledby="v-factura">
+  <h3 class="fs-6" id="v-factura">4. Factura y pago</h3>
+  {% if venta.factura_numero %}<p class="small mb-2">Factura <strong>{{ venta.factura_numero }}</strong> del {{ venta.factura_fecha.strftime('%d-%m-%Y') }} · {{ venta.factura_monto | clp }} neto ·
+    pago esperado: <strong data-pago-esperado>{{ venta.pago_esperado_en.strftime('%d-%m-%Y') }}</strong> ({{ venta.plazo_pago_dias }} días)</p>{% endif %}
+  {% if venta.estado in ('entregada', 'facturada') %}
+  <form method="post" action="/ventas/{{ venta.id }}/factura" class="row g-2 align-items-end mb-2">
+    {{ csrf_version(venta) }}
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="fa-n">N° de factura</label><input class="form-control form-control-sm" id="fa-n" name="factura_numero" maxlength="50" required value="{{ venta.factura_numero or '' }}"></div>
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="fa-f">Fecha</label><input class="form-control form-control-sm" type="date" id="fa-f" name="factura_fecha" required value="{{ venta.factura_fecha.isoformat() if venta.factura_fecha else '' }}"></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0" for="fa-m">Monto neto</label><input class="form-control form-control-sm" id="fa-m" name="factura_monto" inputmode="decimal" value="{{ venta.factura_monto | int if venta.factura_monto else '' }}"></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0" for="fa-p">Plazo de pago (días)</label><input class="form-control form-control-sm" id="fa-p" name="plazo_pago_dias" inputmode="numeric" value="{{ venta.plazo_pago_dias }}"></div>
+    <div class="col-12 col-md-2"><button class="btn btn-sm btn-primary" type="submit" data-accion="venta-factura">{{ 'Corregir factura' if venta.factura_numero else 'Registrar factura' }}</button></div>
+  </form>
+  {% endif %}
+  {% if venta.estado == 'facturada' %}
+  <form method="post" action="/ventas/{{ venta.id }}/pago" class="row g-2 align-items-end">
+    {{ csrf_version(venta) }}
+    <div class="col-6 col-md-3"><label class="form-label small mb-0" for="pg-f">Fecha del pago</label><input class="form-control form-control-sm" type="date" id="pg-f" name="fecha"></div>
+    <div class="col-6 col-md-3"><button class="btn btn-sm btn-success" type="submit" data-accion="venta-pago">Registrar pago recibido</button></div>
+  </form>
+  {% elif venta.estado == 'pagada' %}
+  <p class="small mb-0">Pago recibido el <strong>{{ venta.pago_recibido_en.strftime('%d-%m-%Y') }}</strong>.</p>
+  {% endif %}
+</section>
+
+{% if pendiente %}
+<details class="mb-4">
+  <summary class="small text-danger">Anular esta venta</summary>
+  <form method="post" action="/ventas/{{ venta.id }}/anular" class="d-flex gap-2 mt-2">
+    {{ csrf_version(venta) }}
+    <label class="visually-hidden" for="an-m">Motivo</label>
+    <input class="form-control form-control-sm" id="an-m" name="motivo" maxlength="300" required placeholder="Motivo (obligatorio)">
+    <button class="btn btn-sm btn-danger" type="submit" data-accion="venta-anular">Anular</button>
+  </form>
+</details>
+{% endif %}
+<p class="small text-muted">Montos netos (sin IVA). Fuente: Dirección ChileCompra.</p>
+{% endblock %}

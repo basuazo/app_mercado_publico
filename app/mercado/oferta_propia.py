@@ -542,6 +542,45 @@ def liberar(session: Session, empresa_id: int, referencia: str, usuario_id: int 
     return n
 
 
+def liberar_parcial(
+    session: Session,
+    empresa_id: int,
+    ep_id: int,
+    unidades: float,
+    referencia: str,
+    usuario_id: int | None,
+) -> float:
+    """Libera hasta `unidades` (del formato) de lo que sigue reservado con esa `referencia` en ese
+    producto del inventario (F-plat-seguimiento: una entrega consume su parte de la reserva del
+    lote, no toda). Nunca más que Σ reserva − Σ liberación de la referencia ni que `reservado`.
+    Deja un movimiento `liberacion` (delta negativo); compatible con `liberar`, que luego solo
+    encuentra el resto. Devuelve lo liberado."""
+    if unidades <= _TOL:
+        return 0.0
+    neto = 0.0
+    for (delta,) in session.execute(
+        select(EmpresaProductoMovimiento.delta).where(
+            EmpresaProductoMovimiento.empresa_producto_id == ep_id,
+            EmpresaProductoMovimiento.referencia == referencia[:100],
+            EmpresaProductoMovimiento.motivo.in_(("reserva", "liberacion")),
+        )
+    ):
+        neto += float(delta)
+    ep = obtener(session, empresa_id, ep_id, para_escribir=True)
+    liberado = round(min(unidades, neto, ep.reservado or 0.0), 3)
+    if liberado <= _TOL:
+        return 0.0
+    ep.reservado = round((ep.reservado or 0.0) - liberado, 3)
+    session.add(
+        EmpresaProductoMovimiento(
+            empresa_producto_id=ep.id, delta=-liberado, motivo="liberacion",
+            referencia=referencia[:100], usuario_id=usuario_id,
+        )
+    )  # fmt: skip
+    session.flush()
+    return liberado
+
+
 def disponible_base(
     session: Session, empresa_id: int, producto_ids: Iterable[int]
 ) -> dict[int, float]:

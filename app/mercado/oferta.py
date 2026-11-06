@@ -37,6 +37,7 @@ from app.models.tables import (
     EmpresaProducto,
     OfertaPropia,
     ProductoCanonico,
+    ProductoFormato,
     Proveedor,
     ProveedorProducto,
     Usuario,
@@ -105,6 +106,7 @@ class LineaOferta:
     empresa_producto_id: int | None = None
     aviso: str | None = None  # p. ej. el stock propio elegido ya no cubre la línea
     vencido_dias: int | None = None  # F-plat-lote: el costo elegido es un precio vencido
+    formato: str | None = None  # F-plat-seguimiento: formato pedido (para la cotización formal)
 
     @property
     def total(self) -> float | None:
@@ -170,6 +172,18 @@ def _unidades(session: Session, lineas: list[CaLinea]) -> dict[int, tuple[str, s
             select(
                 ProductoCanonico.id, ProductoCanonico.nombre, ProductoCanonico.unidad_base
             ).where(ProductoCanonico.id.in_(ids))
+        )
+    }
+
+
+def _formatos(session: Session, lineas: list[CaLinea]) -> dict[int, str]:
+    ids = {ln.formato_id for ln in lineas if ln.formato_id is not None}
+    if not ids:
+        return {}
+    return {
+        int(fid): str(nombre)
+        for fid, nombre in session.execute(
+            select(ProductoFormato.id, ProductoFormato.nombre).where(ProductoFormato.id.in_(ids))
         )
     }
 
@@ -243,6 +257,7 @@ def armar(
     no el precio. No aplica a lo que manda el formulario (`entradas`)."""
     lineas = lineas_de(session, ca.codigo)
     unidades = _unidades(session, lineas)
+    formatos = _formatos(session, lineas)
     sugeridos = precios_sugeridos_por_linea(ev)
     previas: dict[int, dict[str, Any]] = {}
     if guardada is not None:
@@ -291,7 +306,7 @@ def armar(
             producto_id=ln.producto_id, producto=nombre, unidad_base=ub, cantidad=ln.cantidad,
             cantidad_base=ln.cantidad_base, precio_sugerido_unitario=unit_sug,
             precio_unitario=precio, proveedor_producto_id=pp_ok, candidatos=cands,
-            stock=stock,
+            stock=stock, formato=formatos.get(ln.formato_id) if ln.formato_id else None,
         )  # fmt: skip
         if origen == ORIGEN_STOCK and stock is None:
             lo.aviso = AVISO_SIN_STOCK
@@ -548,12 +563,37 @@ def marcar_enviada(session: Session, empresa_id: int, usuario: Usuario, codigo: 
     if eq.rut_empresa(session.get(Empresa, empresa_id)) is None:
         raise ErrorOferta("Para marcarla enviada, tu empresa necesita su RUT")
     t = eq.trabajo_de(session, empresa_id, codigo)
-    eq.cambiar_estado(session, empresa_id, usuario, codigo, eq.ENVIADA, t.version if t else 0)
+    try:
+        eq.cambiar_estado(session, empresa_id, usuario, codigo, eq.ENVIADA, t.version if t else 0)
+    except eq.RequisitosPendientes as err:
+        # F-plat-seguimiento: la lista de lo que falta va al mensaje; forzar es de la ficha.
+        raise ErrorOferta(f"{err}. Márcalos en «Requisitos» de la ficha.") from err
 
 
 # ---------------------------------------------------------------------------
 # Exportar
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FilaCotizacion:
+    """Una línea de la oferta tal como sale en el XLSX y en la cotización formal (DOCX)."""
+
+    n: int
+    producto: str
+    formato: str | None
+    cantidad: float | None
+    precio_unitario: float | None
+    total: float | None
+
+
+def filas_cotizacion(lineas: list[LineaOferta]) -> list[FilaCotizacion]:
+    """UNA función arma las filas para el XLSX y el DOCX (F-plat-seguimiento §1.3): mismas líneas,
+    mismos precios. `armar` ya excluye las `reemplazada` (F-plat-anexos-2)."""
+    return [
+        FilaCotizacion(lo.n, lo.texto, lo.formato, lo.cantidad, lo.precio_unitario, lo.total)
+        for lo in lineas
+    ]
 
 
 def xlsx(ca: CompraAgil, lineas: list[LineaOferta], plazo: int | None) -> bytes:
@@ -568,8 +608,8 @@ def xlsx(ca: CompraAgil, lineas: list[LineaOferta], plazo: int | None) -> bytes:
     ws.append([ca.nombre or ""])
     ws.append([])
     ws.append(["N°", "Producto solicitado", "Cantidad", "Precio unitario neto", "Total neto"])
-    for lo in lineas:
-        ws.append([lo.n, lo.texto, lo.cantidad, lo.precio_unitario, lo.total])
+    for f in filas_cotizacion(lineas):
+        ws.append([f.n, f.producto, f.cantidad, f.precio_unitario, f.total])
     ws.append([])
     ws.append(["", "Total neto", "", "", total_de(lineas)])
     ws.append(["", "Plazo de entrega (días)", plazo if plazo is not None else "No indicado"])

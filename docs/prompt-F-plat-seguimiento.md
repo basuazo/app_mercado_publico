@@ -115,3 +115,36 @@ retención de requisitos. Commit: `F-plat-seguimiento: requisitos, cotización f
 2. Con Mario: revisar 3 CA reales en el portal y ajustar la plantilla de requisitos a lo que de verdad piden;
    confirmar si aceptan la cotización en DOCX o hay que pasarla a PDF (decide una fase chica con `reportlab`).
 3. Registrar la primera venta real de punta a punta y comparar el margen realizado con el ofertado.
+
+## 7. Revisión 6-nov (implementación; donde el prompt chocó con el código, manda el código)
+- **Migración** `c6d9a3f1e8b2`, cuelga de `b4e7d2a9c3f1` (F-plat-lote; una sola cabeza). DDL revisado con
+  `alembic upgrade --sql` (el seed de la plantilla es `INSERT … SELECT`, válido offline); no se aplicó en ninguna base.
+- **`ca_trabajo.estado` NO suma `adjudicada`** (desvío de §1.4). `equipo.cambiar_estado` limpia `resultado` al salir de
+  `enviada` y `generar_alarmas`/los filtros buscan `enviada` + `resultado`: un estado nuevo los rompería. La CA queda
+  `enviada` + `ganada` y la etapa vive en `ventas.estado` (la venta nace en `generar_alarmas` al resolver `ganada`, o con
+  «Registrar venta» sobre una CA `enviada`).
+- **Reserva → entrega.** El lote reserva por producto agregado con referencia `lote:{id}`, no por CA: no existe «liberar
+  la reserva por esa CA». Se agregó `oferta_propia.liberar_parcial` (libera solo la parte consumida, movimiento
+  `liberacion`) y `ventas._sacar` lo llama y luego `ajustar_stock(…, "entrega", "venta:{id}")`, capado a lo disponible
+  (nunca `reservado > stock`; si falta, descuenta lo que hay y avisa). Lo comprado entra con `compra` y sale con `entrega`.
+  Las líneas `reemplazada` no cuentan (ni en DOCX/XLSX ni en la entrega). Orden de formatos: el de más stock primero.
+- **Documentos de la CA:** se leen de `compras_agiles.documentos` (nombres del detalle) y de `ca_anexos.nombre_original`;
+  los de nombre administrativo (`PATRON_ADMINISTRATIVO`) son requisitos **obligatorios** (la persona los marca con un clic).
+- **Siembra:** al pasar a priorizada/cotizando/lista/enviada (idempotente) y al abrir el bloque en la ficha. «Enviada» siempre
+  siembra antes de validar, así no se esquiva saltándose «priorizar». Forzar: solo admin, con motivo (`datos.forzado`).
+- **Alarmas:** `generar_alarmas` conserva su contrato de 3 claves (hay tests que lo comparan); las cinco nuevas están en
+  `ventas.generar_alarmas_seguimiento`, que llaman `generar_alarmas_todas` y `generar_si_toca`. Tipos: `req_pendientes`
+  (`ca_eventos.tipo` es VARCHAR(20)), `oc_sin_registrar`, `entrega_vence`, `factura_pendiente`, `pago_atrasado`; cada una una
+  vez por empresa × CA. Entran a la campana bajo «Actividad del equipo», junto con el evento `venta`.
+- **Cotización:** correlativo `COT-{año}-{n}` por empresa (`FOR UPDATE` sobre la empresa; **no reinicia con el año**);
+  validez/condiciones editables por oferta (`POST /mesa/ca/{c}/cotizacion.docx`), el GET usa lo guardado. La fila trae
+  «formato» (de `LineaOferta.formato`); `oferta.filas_cotizacion` sirve al XLSX (que no muestra formato) y al DOCX.
+- **`guardar_producto(fuente="compra")`:** nueva fuente; un precio de compra igual al vigente lo «confirma» como ya hacía
+  `solicitud`. Una compra a otro precio cambia el precio actual del proveedor (con su historial).
+- **Margen:** `ofertas_propias.margen_realizado` = ingreso (factura › OC › precio ganador › oferta) − `costo_real`, solo con
+  compras registradas; `sombra.cerrar_ofertas` ya no lo pisa. Montos «96.000» se leen como miles.
+- **Retención:** `requisitos` registrado con `registrar_purga` (CA descartadas > 12 meses) e importado en `run_retencion`
+  (orchestrator); `ventas` no se purga. `/salud` suma las 4 tablas.
+- **Caja:** una página (`/caja`), no pestaña. Neto a 30/60 = cobros (facturas por `pago_esperado_en`; lo no facturado por
+  entrega comprometida + plazo) − compras impagas; lo vencido cuenta de inmediato. Todo neto.
+- **Sin PDF:** solo DOCX y XLSX. Pendiente de Boris/Mario: confirmar que el portal acepta DOCX.

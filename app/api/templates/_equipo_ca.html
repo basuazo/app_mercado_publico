@@ -32,6 +32,18 @@
 
   {% if e.conflicto %}<div class="alert alert-warning py-1 px-2 small mt-2 mb-0" role="alert">{{ e.conflicto }}</div>{% endif %}
   {% if e.error %}<div class="alert alert-danger py-1 px-2 small mt-2 mb-0" role="alert">{{ e.error }}</div>{% endif %}
+  {% if e.requisitos_pendientes and es_admin %}
+  <form method="post" action="/equipo/ca/{{ e.codigo }}/estado" class="d-flex gap-1 mt-1"
+        hx-post="/equipo/ca/{{ e.codigo }}/estado" hx-target="closest [data-equipo]" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ e.version }}">
+    <input type="hidden" name="origen" value="{{ origen }}">
+    <input type="hidden" name="estado" value="enviada">
+    <label class="visually-hidden" for="forzar-{{ e.codigo }}-{{ origen }}">Motivo para forzar</label>
+    <input class="form-control form-control-sm" name="forzar_motivo" id="forzar-{{ e.codigo }}-{{ origen }}" maxlength="300" required placeholder="Motivo para enviarla igual (admin)">
+    <button type="submit" class="btn btn-sm btn-warning" data-accion="equipo-forzar-enviada">Forzar envío</button>
+  </form>
+  {% endif %}
   {% if e.estado == 'descartada' and e.motivo_descarte %}
   <p class="small text-muted mt-1 mb-0">Motivo del descarte: {{ e.motivo_descarte }}</p>
   {% endif %}

@@ -18,6 +18,14 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-seguimiento (6-nov, rama `F-plat-seguimiento` desde `ca2b195`, commit local sin push ni merge; migración `c6d9a3f1e8b2`, cuelga de `b4e7d2a9c3f1`)
+Checklist administrativo por CA, cotización formal (DOCX), ventas post-adjudicación y caja (`prompt-F-plat-seguimiento.md`,
+§7 «Revisión 6-nov»). **Esquema:** `empresa_requisitos`, `ca_requisitos`, `ventas`, `venta_compras`; columnas nuevas en
+`empresas` (membrete, condiciones, correlativo, plazo de pago) y `ofertas_propias` (número, validez, condiciones). **Reglas:**
+no se marca «Enviada» con obligatorios pendientes (admin fuerza con motivo); la venta nace al ganar y la entrega descuenta
+stock (`entrega`) y libera su reserva; `ca_trabajo` no suma estado `adjudicada`. **Pendiente de Boris:** aplicar la migración,
+completar membrete/condiciones/plazo en `/admin/empresas/{id}`, ajustar la plantilla de requisitos con Mario y confirmar DOCX.
+
 ## F-plat-lote (6-nov, rama `F-plat-lote` desde `c4c09ec`, commit local sin push ni merge; migración `b4e7d2a9c3f1`, cuelga de `e7c2a9f4b1d8` tras el rebase sobre F-plat-anexos-2 y F-plat-7)
 Cotizar varias CA a la vez (`prompt-F-plat-lote.md`, §7 «Cómo quedó»). **Esquema:** `lotes`, `lote_cas`, `lote_lineas`
 (agregado derivado por producto × formato de compra), `solicitudes_precio`, `solicitud_lineas`; columnas nuevas

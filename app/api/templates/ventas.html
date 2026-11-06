@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Ventas — Rastrillo{% endblock %}
+{% block content %}
+<h2>Ventas</h2>
+<p class="small text-muted">Lo que viene después de ganar una Compra Ágil: orden de compra, compras, entrega, factura y pago.
+  Se crean solas al detectar que ganamos, o con «Registrar venta» en la ficha de una CA enviada. · <a href="/caja">Caja</a></p>
+
+<ul class="nav nav-tabs mb-3" aria-label="Estado de la venta">
+  <li class="nav-item"><a class="nav-link{% if not estado %} active{% endif %}" href="/ventas"{% if not estado %} aria-current="page"{% endif %}>Todas ({{ conteo.values() | sum }})</a></li>
+  {% for clave, etiqueta in estados.items() %}
+  <li class="nav-item"><a class="nav-link{% if estado == clave %} active{% endif %}" href="/ventas?estado={{ clave }}"{% if estado == clave %} aria-current="page"{% endif %}>{{ etiqueta }} ({{ conteo.get(clave, 0) }})</a></li>
+  {% endfor %}
+</ul>
+
+<div class="table-responsive">
+<table class="table table-sm align-middle" data-ventas>
+  <thead><tr><th>Compra Ágil</th><th>Comprador</th><th>Estado</th><th>OC</th><th>Entrega comprometida</th><th>Pago esperado</th><th class="text-end">Monto neto</th></tr></thead>
+  <tbody>
+  {% for f in filas %}
+  {% set v = f.venta %}
+  <tr>
+    <td><a href="/ventas/{{ v.id }}">{{ f.nombre_ca }}</a><div class="small text-muted">{{ v.ca_codigo }}</div></td>
+    <td class="small">{{ f.comprador }}</td>
+    <td>{{ estados[v.estado] }}</td>
+    <td class="small">{{ v.oc_numero or '—' }}</td>
+    <td class="small{% if f.atrasada and v.estado != 'facturada' %} text-danger fw-semibold{% endif %}" {% if f.atrasada and v.estado != 'facturada' %}data-vencida{% endif %}>{{ v.entrega_fecha_comprometida.strftime('%d-%m-%Y') if v.entrega_fecha_comprometida else '—' }}</td>
+    <td class="small{% if f.atrasada and v.estado == 'facturada' %} text-danger fw-semibold{% endif %}" {% if f.atrasada and v.estado == 'facturada' %}data-vencida{% endif %}>{{ v.pago_esperado_en.strftime('%d-%m-%Y') if v.pago_esperado_en else '—' }}</td>
+    <td class="text-end">{{ f.monto | clp if f.monto else '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="text-muted">No hay ventas{% if estado %} en «{{ estados[estado] }}»{% endif %}.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="small text-muted">Montos netos (sin IVA). Fuente: Dirección ChileCompra.</p>
+{% endblock %}

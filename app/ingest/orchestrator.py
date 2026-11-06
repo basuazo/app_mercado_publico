@@ -191,6 +191,7 @@ def run_retencion(engine: Engine, settings: Settings | None = None) -> dict[str,
     # Las fases con retención propia se registran en `retencion.PURGAS` al importarse: se importan
     # acá para que el job las vea aunque el proceso no las haya cargado (F-plat-7 §1.4).
     import app.mercado.lote  # noqa: F401  (registra la purga «lotes»)
+    import app.mercado.requisitos  # noqa: F401  (registra la purga «requisitos», F-plat-seguimiento)
 
     with Session(engine) as session:
         resultado = purgar_terminales(session, regiones_protegidas=regiones)

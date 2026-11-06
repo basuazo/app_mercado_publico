@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Caja — Rastrillo{% endblock %}
+{% macro tabla(titulo, filas, id_tabla) -%}
+<h3 class="fs-6 mt-4">{{ titulo }}</h3>
+<div class="table-responsive">
+<table class="table table-sm align-middle" data-caja="{{ id_tabla }}">
+  <thead><tr><th>Fecha</th><th>Concepto</th><th class="text-end">Monto neto</th></tr></thead>
+  <tbody>
+  {% for m in filas %}
+  <tr>
+    <td class="small{% if m.vencido %} text-danger fw-semibold{% endif %}">{{ m.fecha.strftime('%d-%m-%Y') }}{% if m.vencido %} · vencido{% endif %}</td>
+    <td>{% if m.venta_id %}<a href="/ventas/{{ m.venta_id }}">{{ m.concepto }}</a>{% else %}{{ m.concepto }}{% endif %}</td>
+    <td class="text-end">{{ m.monto | clp }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" class="text-muted">Nada por ahora.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}
+{% block content %}
+<h2>Caja</h2>
+<p class="small text-muted">Los plazos de pago del sector público tensionan la caja: acá se ve lo que falta cobrar, lo que debes a
+  proveedores y lo adjudicado que aún no se factura. Todo en montos <strong>netos</strong>. <a href="/ventas">Ventas</a></p>
+
+<div class="row g-3">
+  <div class="col-12 col-md-4"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">Por cobrar al Estado</p>
+    <p class="tarjeta-numero__valor" data-caja-total="por_cobrar">{{ c.por_cobrar_total | clp }}</p>
+    <p class="tarjeta-numero__nota">Facturado y no pagado</p>
+  </div></div></div>
+  <div class="col-12 col-md-4"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">Comprometido con proveedores</p>
+    <p class="tarjeta-numero__valor" data-caja-total="comprometido">{{ c.comprometido_total | clp }}</p>
+    <p class="tarjeta-numero__nota">Compras no pagadas</p>
+  </div></div></div>
+  <div class="col-12 col-md-4"><div class="card h-100"><div class="card-body">
+    <p class="tarjeta-numero__etiqueta">Adjudicado sin facturar</p>
+    <p class="tarjeta-numero__valor" data-caja-total="sin_facturar">{{ c.sin_facturar_total | clp }}</p>
+    <p class="tarjeta-numero__nota">Monto de la OC (o de la oferta)</p>
+  </div></div></div>
+</div>
+
+<p class="mt-3 mb-1"><strong>Neto esperado</strong> (cobros − pagos a proveedores):
+  {% for h in horizontes %}<span class="me-3" data-caja-neto="{{ h }}">a {{ h }} días: <strong>{{ c.neto[h] | clp }}</strong></span>{% endfor %}</p>
+<p class="small text-muted">Cobros: facturas por su fecha de pago esperada; lo no facturado, por la entrega comprometida más el plazo de
+  pago. Pagos: compras impagas por su fecha de pago. Lo ya vencido cuenta de inmediato.</p>
+
+{{ tabla('Por cobrar al Estado', c.por_cobrar, 'por_cobrar') }}
+{{ tabla('Comprometido con proveedores', c.comprometido, 'comprometido') }}
+{{ tabla('Adjudicado sin facturar (fecha de cobro estimada)', c.sin_facturar, 'sin_facturar') }}
+{% endblock %}

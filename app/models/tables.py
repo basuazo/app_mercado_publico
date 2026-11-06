@@ -773,6 +773,18 @@ class Empresa(Base):
         Float, nullable=False, default=0.15, server_default="0.15"
     )
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # F-plat-seguimiento: membrete de la cotización formal, condiciones por defecto, correlativo
+    # `COT-{año}-{n}` (se incrementa bajo FOR UPDATE) y plazo de pago del comprador (default 30).
+    direccion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    contacto: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    giro: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    condiciones_cotizacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ultimo_correlativo: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    plazo_pago_comprador_dias: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
     # F-plat-anexos-2: sha256 del token de `POST /api/anexos/{codigo}`. El token en claro se
     # muestra una sola vez al generarlo y nunca se guarda ni se loguea (regla 1).
     token_anexos_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -1458,6 +1470,7 @@ class OfertaPropia(Base):
     __tablename__ = "ofertas_propias"
     __table_args__ = (
         UniqueConstraint("ca_codigo", "empresa_id", name="uq_oferta_propia_ca_empresa"),
+        UniqueConstraint("empresa_id", "numero_cotizacion", name="uq_oferta_propia_numero"),
     )
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
@@ -1479,6 +1492,14 @@ class OfertaPropia(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     precio_ganador_real: Mapped[float | None] = mapped_column(Float, nullable=True)
     margen_realizado: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # F-plat-seguimiento: cotización formal. El número se asigna la primera vez que se genera el
+    # documento (`app.mercado.cotizacion`); el DOCX no se guarda (regla 11), solo su número.
+    numero_cotizacion: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    validez_dias: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+    condiciones: Mapped[str | None] = mapped_column(Text, nullable=True)
+    documento_generado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1846,3 +1867,165 @@ class SolicitudLinea(Base):
     disponible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     plazo_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
     respondida_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# F-plat-seguimiento: checklist administrativo por CA, post-adjudicación (ventas) y caja. Todo
+# pertenece a una empresa (regla 26). `ventas` no se purga; `ca_requisitos` de una CA descartada
+# hace más de 12 meses sí (`app.mercado.requisitos.purgar`, `retencion.PURGAS`).
+# ---------------------------------------------------------------------------
+
+ORIGENES_REQUISITO = ("plantilla", "documento_ca", "manual")
+ESTADOS_VENTA = (
+    "adjudicada",
+    "oc_recibida",
+    "comprando",
+    "entregada",
+    "facturada",
+    "pagada",
+    "anulada",
+)
+
+
+class EmpresaRequisito(Base):
+    """Plantilla de requisitos de la empresa: se copia a cada CA que se prioriza o entra a un lote."""
+
+    __tablename__ = "empresa_requisitos"
+    __table_args__ = (UniqueConstraint("empresa_id", "texto", name="uq_empresa_requisito_texto"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    texto: Mapped[str] = mapped_column(String(300), nullable=False)
+    obligatorio: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    activo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+
+class CaRequisito(Base):
+    """Un requisito administrativo de una CA para una empresa (checklist con casillas)."""
+
+    __tablename__ = "ca_requisitos"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "ca_codigo", "texto", name="uq_ca_requisito_texto"),
+        CheckConstraint("origen IN ('plantilla','documento_ca','manual')", name="origen"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo"), nullable=False
+    )
+    texto: Mapped[str] = mapped_column(String(300), nullable=False)
+    obligatorio: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    origen: Mapped[str] = mapped_column(String(15), nullable=False, default="manual")
+    cumplido: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    cumplido_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    cumplido_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+class Venta(Base):
+    """Lo que pasa después de ganar una CA: OC, compras, entrega, factura y pago. `version` sube
+    con cada cambio (conflicto como F-equipo). El estado de `ca_trabajo` NO cambia: sigue
+    `enviada` con `resultado = ganada` (los filtros y las alarmas de F-equipo dependen de eso)."""
+
+    __tablename__ = "ventas"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "ca_codigo", name="uq_venta_empresa_ca"),
+        Index("ix_ventas_empresa_estado", "empresa_id", "estado"),
+        CheckConstraint(
+            "estado IN ('adjudicada','oc_recibida','comprando','entregada','facturada',"
+            "'pagada','anulada')",
+            name="estado",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo"), nullable=False
+    )
+    # SET NULL: los lotes `cerrado` se purgan a los 24 meses, las ventas no.
+    lote_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("lotes.id", ondelete="SET NULL"), nullable=True
+    )
+    oferta_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("ofertas_propias.id", ondelete="SET NULL"), nullable=True
+    )
+    estado: Mapped[str] = mapped_column(String(15), nullable=False, default="adjudicada")
+    oc_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    oc_fecha: Mapped[date | None] = mapped_column(Date, nullable=True)
+    oc_monto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entrega_fecha_comprometida: Mapped[date | None] = mapped_column(Date, nullable=True)
+    entrega_fecha_real: Mapped[date | None] = mapped_column(Date, nullable=True)
+    entrega_direccion: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    entrega_horario: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    entrega_recibe: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    guia_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    factura_numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    factura_fecha: Mapped[date | None] = mapped_column(Date, nullable=True)
+    factura_monto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    plazo_pago_dias: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+    pago_esperado_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pago_recibido_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    costo_real: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motivo_anulacion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class VentaCompra(Base):
+    """Una compra a un proveedor para cumplir una venta (alimenta `costo_real`)."""
+
+    __tablename__ = "venta_compras"
+    __table_args__ = (Index("ix_venta_compras_venta", "venta_id"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    venta_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("ventas.id", ondelete="CASCADE"), nullable=False
+    )
+    proveedor_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("proveedores.id", ondelete="SET NULL"), nullable=True
+    )
+    producto_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id", ondelete="SET NULL"), nullable=True
+    )
+    formato_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("producto_formato.id", ondelete="SET NULL"), nullable=True
+    )
+    descripcion: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    cantidad: Mapped[float] = mapped_column(Float, nullable=False)
+    precio_neto: Mapped[float] = mapped_column(Float, nullable=False)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False)
+    pagada: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    pagar_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    creado_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)

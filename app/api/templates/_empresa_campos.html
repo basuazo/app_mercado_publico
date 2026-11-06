@@ -66,8 +66,38 @@
       {% if errores.get('margen_objetivo') %}<div class="invalid-feedback d-block">{{ errores['margen_objetivo'] }}</div>{% endif %}
       <div class="form-text">Para pre-llenar ofertas de un lote cuando no hay precio sugerido: costo × (1 + margen).</div>
     </div>
+    <div class="col-md-3">
+      <label class="form-label" for="emp_plazo_pago">Plazo de pago del comprador (días)</label>
+      <input type="text" inputmode="numeric" name="plazo_pago_comprador_dias" id="emp_plazo_pago" maxlength="3"
+             class="form-control{% if errores.get('plazo_pago_comprador_dias') %} is-invalid{% endif %}" value="{{ v.get('plazo_pago_comprador_dias', 30) }}">
+      {% if errores.get('plazo_pago_comprador_dias') %}<div class="invalid-feedback d-block">{{ errores['plazo_pago_comprador_dias'] }}</div>{% endif %}
+      <div class="form-text">Factura + este plazo = fecha esperada de pago (se puede cambiar por venta).</div>
+    </div>
+    <div class="col-12"><hr class="my-1"><h2 class="h6 mb-0">Cotización formal (DOCX)</h2></div>
+    <div class="col-md-6">
+      <label class="form-label" for="emp_direccion">Dirección</label>
+      <input type="text" name="direccion" id="emp_direccion" maxlength="300" class="form-control{% if errores.get('direccion') %} is-invalid{% endif %}" value="{{ v.get('direccion', '') }}">
+      {% if errores.get('direccion') %}<div class="invalid-feedback d-block">{{ errores['direccion'] }}</div>{% endif %}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="emp_contacto">Contacto (nombre, teléfono, correo)</label>
+      <input type="text" name="contacto" id="emp_contacto" maxlength="200" class="form-control{% if errores.get('contacto') %} is-invalid{% endif %}" value="{{ v.get('contacto', '') }}">
+      {% if errores.get('contacto') %}<div class="invalid-feedback d-block">{{ errores['contacto'] }}</div>{% endif %}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="emp_giro">Giro</label>
+      <input type="text" name="giro" id="emp_giro" maxlength="200" class="form-control{% if errores.get('giro') %} is-invalid{% endif %}" value="{{ v.get('giro', '') }}">
+      {% if errores.get('giro') %}<div class="invalid-feedback d-block">{{ errores['giro'] }}</div>{% endif %}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="emp_condiciones">Condiciones por defecto</label>
+      <textarea name="condiciones_cotizacion" id="emp_condiciones" rows="3" maxlength="4000" class="form-control{% if errores.get('condiciones_cotizacion') %} is-invalid{% endif %}">{{ v.get('condiciones_cotizacion', '') }}</textarea>
+      {% if errores.get('condiciones_cotizacion') %}<div class="invalid-feedback d-block">{{ errores['condiciones_cotizacion'] }}</div>{% endif %}
+      <div class="form-text">Forma de pago, lugar y condiciones de entrega… Cada oferta puede cambiarlas.</div>
+    </div>
     {% endif %}
     <div class="col-12">
+      {% if editando %}<p class="small mb-2"><a href="/requisitos">Plantilla de requisitos de las Compras Ágiles</a></p>{% endif %}
       <button type="submit" class="btn btn-primary">{% if editando %}Guardar{% else %}Crear{% endif %}</button>
     </div>
   </div>

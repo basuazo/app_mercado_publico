@@ -68,6 +68,7 @@ from app.models.tables import (
     SolicitudLinea,
     SolicitudPrecio,
     Usuario,
+    Venta,
 )
 
 _log = get_logger(__name__)
@@ -1322,6 +1323,7 @@ class VistaCa:
     sin_producto: int
     oferta_total: float | None
     resultado: str | None
+    venta_id: int | None = None  # F-plat-seguimiento: la CA ganada abre su venta
 
 
 @dataclass
@@ -1416,6 +1418,18 @@ def vista(session: Session, empresa_id: int, lote_id: int) -> VistaLote:
         if codigos
         else {}
     )
+    ventas_por_ca = (
+        {
+            c: int(i)
+            for c, i in session.execute(
+                select(Venta.ca_codigo, Venta.id).where(
+                    Venta.empresa_id == empresa_id, Venta.ca_codigo.in_(codigos)
+                )
+            )
+        }
+        if codigos
+        else {}
+    )
     conteo: dict[str, tuple[int, int]] = {}
     for codigo, total, sin in (
         session.execute(
@@ -1444,6 +1458,7 @@ def vista(session: Session, empresa_id: int, lote_id: int) -> VistaLote:
             detalle=c.detalle_lineas if c else "sin_detalle",
             estado=t.estado if t else eq.NUEVA, n_lineas=total, sin_producto=sin,
             oferta_total=o.total_neto if o else None, resultado=t.resultado if t else None,
+            venta_id=ventas_por_ca.get(codigo),
         ))  # fmt: skip
     sin_cantidad = int(
         session.execute(

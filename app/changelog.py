@@ -16,6 +16,24 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 6),
+        titulo="Checklist por Compra Ágil, cotización formal, seguimiento de ventas y caja",
+        descripcion=(
+            "Cada Compra Ágil que priorizas trae un checklist de requisitos administrativos (la "
+            "plantilla de tu empresa, editable en «Requisitos», más los formularios y declaraciones "
+            "que la propia CA lista): no se puede marcar «Enviada» con un requisito obligatorio "
+            "sin cumplir, y un administrador puede forzarlo dejando un motivo. En la ficha, «Cotización "
+            "formal (DOCX)» genera el documento con membrete de tu empresa, número correlativo, "
+            "validez, líneas, neto, IVA y condiciones; adjuntarlo en el portal y marcar el requisito "
+            "lo haces tú. Al ganar una CA nace su venta (o la registras a mano): orden de compra, "
+            "compras a proveedores, entrega (descuenta el stock y libera la reserva del lote), factura "
+            "y pago, con el margen realizado calculado con el costo real. Nueva sección «Ventas» y "
+            "«Caja»: por cobrar al Estado, comprometido con proveedores, adjudicado sin facturar y el "
+            "neto a 30 y 60 días. La campana avisa requisitos pendientes, OC sin registrar, entregas "
+            "por vencer, facturas pendientes y pagos atrasados. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 6),
         titulo=(
             "Cotizar varias Compras Ágiles a la vez: lote, solicitud de precios a proveedores y "
             "precios vencidos"
