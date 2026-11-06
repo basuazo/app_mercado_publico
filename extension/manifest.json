@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Rastrillo: adjuntos de Compra Ágil",
+  "version": "0.1.0",
+  "description": "Envía a Rastrillo, con un clic, los adjuntos que tú abres en la ficha pública de una Compra Ágil. Fuente: Dirección ChileCompra.",
+  "minimum_chrome_version": "111",
+  "permissions": ["storage"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://buscador.mercadopublico.cl/ficha*"],
+      "js": ["hook_main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://buscador.mercadopublico.cl/ficha*"],
+      "js": ["lib.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": { "page": "options.html", "open_in_tab": true }
+}

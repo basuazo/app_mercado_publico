@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Rastrillo: opciones de la extensión</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input { width: 100%; padding: .4rem; box-sizing: border-box; }
+    button { margin-top: 1rem; padding: .45rem 1rem; }
+    #estado { margin-top: .75rem; }
+    small { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Rastrillo: adjuntos de Compra Ágil</h1>
+  <label for="url">URL de Rastrillo</label>
+  <input id="url" type="url" placeholder="https://tu-rastrillo.onrender.com" autocomplete="off">
+  <label for="token">Token de anexos de tu empresa</label>
+  <input id="token" type="password" autocomplete="off">
+  <small>Lo genera un administrador en «Empresas» → «Generar token de anexos». Se guarda solo en este navegador.</small>
+  <div><button id="guardar" type="button">Guardar</button></div>
+  <p id="estado" role="status" aria-live="polite"></p>
+  <p><small>Fuente: Dirección ChileCompra.</small></p>
+  <script src="lib.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

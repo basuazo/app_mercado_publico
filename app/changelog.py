@@ -16,6 +16,18 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 6),
+        titulo="Adjuntos a Rastrillo con un clic desde la ficha pública",
+        descripcion=(
+            "Nueva lista «CA que necesitan anexo» (Catálogo): las Compras Ágiles vigentes con "
+            "documentos adjuntos cuyo detalle no viene en la API, por cierre, con el botón «Abrir "
+            "fichas» que abre las próximas fichas públicas en pestañas. En cada una, la extensión de "
+            "Chrome (carpeta extension/) agrega «Enviar adjuntos a Rastrillo»: sube los archivos que tú "
+            "abres y las líneas llegan por revisar solas. «Hoy» avisa cuántas esperan anexo. "
+            "Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 6),
         titulo="Líneas de anexo confirmadas solas; el equipo revisa solo las excepciones",
         descripcion=(
             "Cuando se lee un anexo (subida, carga masiva, API externa o descarga automática), cada "

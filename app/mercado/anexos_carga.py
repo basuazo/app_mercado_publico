@@ -29,7 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.mercado import anexos
-from app.models.tables import CaAnexo, CompraAgil, Empresa, SyncState
+from app.models.tables import CompraAgil, Empresa, SyncState
 
 TIEMPO_ZIP_S = 20.0  # por request de un ZIP: al menos un miembro, y se encadena el resto
 LIMITE_API_POR_MIN = 60
@@ -289,38 +289,19 @@ def consumir_limite(session: Session, empresa_id: int, ahora: datetime) -> int |
 
 
 def pendientes(session: Session, empresa: Empresa, ahora: datetime) -> list[dict[str, Any]]:
-    """CA vigentes de las regiones de la empresa con `detalle_lineas = sin_detalle`,
-    `n_documentos > 0`, sin «Anexo resuelto» y sin anexos cargados; por cierre, máx. 200. Solo
-    datos del proceso (código, nombre, cierre, nombres de los adjuntos): nada personal."""
+    """CA vigentes de las regiones de la empresa que necesitan su anexo (criterio único de
+    :func:`app.mercado.anexos_pendientes.necesita_anexo`); por cierre, máx. 200. Solo datos del
+    proceso (código, nombre, cierre, nombres de los adjuntos): nada personal."""
+    from app.mercado.anexos_pendientes import pendientes as lista
+
     regiones = [int(r) for r in (empresa.regiones_prioritarias or [])]
-    if not regiones:
-        return []
-    con_anexo = select(CaAnexo.id).where(CaAnexo.ca_codigo == CompraAgil.codigo).exists()
-    filas = session.execute(
-        select(CompraAgil)
-        .where(
-            CompraAgil.region.in_(regiones),
-            CompraAgil.estado == "publicada",
-            CompraAgil.fecha_cierre > ahora,
-            CompraAgil.detalle_lineas == "sin_detalle",
-            CompraAgil.n_documentos > 0,
-            CompraAgil.anexo_resuelto_en.is_(None),
-            ~con_anexo,
-        )
-        .order_by(CompraAgil.fecha_cierre.asc(), CompraAgil.codigo)
-        .limit(LIMITE_PENDIENTES)
-    ).scalars()
     return [
         {
-            "codigo": ca.codigo,
-            "nombre": ca.nombre,
+            "codigo": p.codigo,
+            "nombre": p.nombre,
             # La base guarda UTC naive (`parse_fecha_iso`): se publica con su `Z`.
-            "fecha_cierre": ca.fecha_cierre.isoformat() + "Z" if ca.fecha_cierre else None,
-            "documentos": [
-                {"nombre": str(d.get("nombre") or "")}
-                for d in (ca.documentos or [])
-                if isinstance(d, dict)
-            ],
+            "fecha_cierre": p.fecha_cierre.isoformat() + "Z" if p.fecha_cierre else None,
+            "documentos": [{"nombre": d} for d in p.documentos],
         }
-        for ca in filas
+        for p in lista(session, regiones, ahora, LIMITE_PENDIENTES)
     ]

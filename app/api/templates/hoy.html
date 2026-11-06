@@ -22,6 +22,7 @@
       <p class="tarjeta-numero__etiqueta">Líneas por revisar</p>
       <p class="tarjeta-numero__valor" data-hoy="lineas-por-revisar">{{ lineas_por_revisar }}</p>
       {% if por_revisar %}<p class="tarjeta-numero__nota mb-1">vigentes: {{ por_revisar.vigentes }} · históricas (muestra): {{ por_revisar.historicas_muestra }}</p>{% endif %}
+      {% if n_anexos_pendientes %}<p class="tarjeta-numero__nota mb-1"><a href="/catalogo/anexos/pendientes" data-hoy="anexos-pendientes">{{ n_anexos_pendientes }} Compra{{ '' if n_anexos_pendientes == 1 else 's' }} Ágil{{ '' if n_anexos_pendientes == 1 else 'es' }} esperan anexo</a> · abrir fichas →</p>{% endif %}
       {% if lineas_por_revisar %}
       <a href="/catalogo" class="tarjeta-numero__ver">Ver →</a>
       {% else %}

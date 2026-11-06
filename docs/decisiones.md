@@ -272,3 +272,20 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
 - **Descarga directa (§2.7) apagada e inerte** hasta la captura de la URL del adjunto (R8). Si en una semana hay más
   de 2 cortes por 403/429 (`/salud` los cuenta), se apaga y se vuelve al flujo manual.
 
+
+## Adjuntos con un clic (F-plat-anexos-boton, 6-nov)
+- **Vía elegida: extensión de Chrome que dispara una persona** («la opción menos riesgosa», Boris). La API oficial solo
+  da `documentos[].id` y `nombre` [V, Guía API CA v2 3.0]; la ficha pública baja los archivos con una clave del
+  frontend [V, navegador 6-nov]. Usar esa clave desde nuestro servidor es la vía de mayor riesgo y queda en reserva
+  (`prompt-F-plat-anexos-auto.md`, sin implementar). La extensión no la usa, no llama al servicio de adjuntos y el
+  servidor no lee HTML: la descarga es el clic de una persona en su navegador (regla 9, orden de alternativas).
+- **Captura del archivo [I, sin probar en navegador]:** observar `URL.createObjectURL` y el clic del enlace temporal en
+  el mundo `MAIN`, antes de que se guarde. Plan B (carpeta de descargas) no implementado: una extensión no la puede leer
+  sin un permiso manual por persona.
+- **`necesita_anexo` (criterio único):** `n_documentos > 0`, vigente, sin «Anexo resuelto» ni anexos cargados, y sin
+  líneas de la API, o con el placeholder «ver anexo», o con líneas de la API sin reconocer (ninguna `ok`, caso D), o con
+  un texto que remite al adjunto. «Familias de la empresa» = alimentos (`G_ALIM`): la empresa no declara rubros y las
+  líneas solo existen para alimentos [I]; una CA sin productos conocidos no se descarta. Lo usan la lista web, «Hoy» y
+  `GET /api/anexos/pendientes` (que antes exigía `sin_detalle`: ahora también incluye el caso D).
+- **Si ChileCompra da un endpoint oficial** para bajar `documentos[].id` (se pide por `ayuda.mercadopublico.cl`), la
+  extensión se reemplaza por un job.

@@ -27,6 +27,14 @@ lo único que falta. `mercado-catalogo` muestrea el 5 % semanal a control y sube
 semanas < 95 %. Cola `/catalogo/revision`. **Apagada por defecto** (umbral vacío). **Pendiente de Boris:** migración, fijar
 modelos, `calibrar_auto_revision.py` → `AUTO_CONFIRMAR_UMBRAL` (.env y Render), primera semana de control.
 
+## F-plat-anexos-boton (6-nov, rama `F-plat-anexos-boton` desde `eed8a0f`, commit local sin push ni merge; sin migración)
+Adjuntos a Rastrillo con un clic (`prompt-F-plat-anexos-boton.md`). **Código:** `extension/` (Chrome MV3: botón en la ficha pública,
+captura del archivo que arma la ficha, subida a `POST /api/anexos/{codigo}`), `app/mercado/anexos_pendientes.py`
+(`necesita_anexo`, criterio único), `/catalogo/anexos/pendientes` («Abrir fichas»), bloque en «Hoy»; `GET /api/anexos/pendientes`
+usa el mismo criterio. **Sin probar en navegador:** la captura del `Blob` y los selectores de la sección «Adjuntos» son [I]
+(`extension/README.md`). **Pendiente de Boris:** token de anexos, cargar la extensión, probar con 5 CA (meta < 15 s por CA).
+`prompt-F-plat-anexos-auto.md` sigue en reserva.
+
 ## F-plat-seguimiento (6-nov, rama `F-plat-seguimiento` desde `ca2b195`, commit local sin push ni merge; migración `c6d9a3f1e8b2`, cuelga de `b4e7d2a9c3f1`)
 Checklist administrativo por CA, cotización formal (DOCX), ventas post-adjudicación y caja (`prompt-F-plat-seguimiento.md`,
 §7 «Revisión 6-nov»). **Esquema:** `empresa_requisitos`, `ca_requisitos`, `ventas`, `venta_compras`; columnas nuevas en

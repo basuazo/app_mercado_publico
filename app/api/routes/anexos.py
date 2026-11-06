@@ -11,6 +11,7 @@ mirar la CA: el cuerpo nunca revela si una CA existe.
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -18,11 +19,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_csrf, get_db, html_require_admin, html_require_empresa
+from app.api.query import url_ficha_ca
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.core.logging import get_logger
-from app.core.tiempo import ahora_utc
+from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.mercado import anexos
 from app.mercado import anexos_carga as carga
+from app.mercado import anexos_pendientes as pend
 from app.mercado.territorio import regiones_activas
 from app.models.tables import Empresa, Usuario
 
@@ -164,6 +167,58 @@ def _aviso_error(texto: str) -> str:
     return (
         f'<tr><td colspan="5"><div class="alert alert-danger py-2 mb-0" role="alert">'
         f"{escape(texto)}</div></td></tr>"
+    )
+
+
+# ===========================================================================
+# Web: CA que necesitan anexo + «Abrir fichas» (F-plat-anexos-boton §2)
+# ===========================================================================
+
+
+def _cierre_chile(valor: Any) -> str:
+    if valor is None:
+        return "—"
+    return str(valor.replace(tzinfo=UTC).astimezone(TZ_CHILE).strftime("%d-%m %H:%M"))
+
+
+def filas_pendientes(session: Session, empresa_id: int) -> list[dict[str, Any]]:
+    """Las CA que esperan anexo en las regiones de la empresa, listas para pintar."""
+    empresa = session.get(Empresa, empresa_id)
+    regiones = [int(r) for r in (empresa.regiones_prioritarias or [])] if empresa else []
+    return [
+        {
+            "codigo": p.codigo,
+            "nombre": p.nombre,
+            "comprador": p.comprador,
+            "cierre": _cierre_chile(p.fecha_cierre),
+            "n_documentos": p.n_documentos,
+            "motivo": p.motivo,
+            "url_ficha": url_ficha_ca(p.codigo),
+        }
+        for p in pend.pendientes(session, regiones, ahora_utc())
+    ]
+
+
+@router.get("/catalogo/anexos/pendientes", response_class=HTMLResponse)
+async def pendientes_get(
+    request: Request,
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Lista por cierre de las CA vigentes que necesitan anexo y botón «Abrir fichas»: abre las
+    próximas N fichas públicas en pestañas para pasar en cada una la extensión (`extension/`).
+    El servidor no toca mercadopublico.cl: solo arma enlaces que abre la persona."""
+    user, empresa_id = ctx
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "catalogo_anexos_pendientes.html",
+        _ctx(
+            request,
+            user,
+            filas=filas_pendientes(session, empresa_id),
+            n_defecto=pend.N_FICHAS_DEFECTO,
+            n_max=pend.N_FICHAS_MAX,
+        ),
     )
 
 

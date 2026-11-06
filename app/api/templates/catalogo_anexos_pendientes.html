@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Compras Ágiles que necesitan anexo — Rastrillo{% endblock %}
+{% block content %}
+<p class="mb-2"><a href="/catalogo">← {{ nav.DEMANDA_MP }}</a> · <a href="/catalogo/anexos/carga">Carga masiva de anexos</a></p>
+<h2 class="mb-2">Compras Ágiles que necesitan anexo</h2>
+<p class="small text-muted">
+  Vigentes de tus regiones, con documentos adjuntos y sin el detalle de productos en la API, ordenadas por cierre.
+  «Abrir fichas» abre las próximas fichas públicas en pestañas: en cada una, el botón «Enviar adjuntos a Rastrillo» de la
+  extensión de Chrome (carpeta <code>extension/</code>) sube los archivos y las líneas aparecen solas.
+  Rastrillo no baja nada de Mercado Público por su cuenta: la descarga la haces tú en tu navegador. Fuente: Dirección ChileCompra.
+</p>
+
+<div id="anexos-pendientes" data-n-defecto="{{ n_defecto }}" data-n-max="{{ n_max }}">
+  <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+    <div>
+      <label class="form-label small mb-0" for="abrir-n">Fichas a abrir</label>
+      <input class="form-control form-control-sm" type="number" id="abrir-n" min="1" max="{{ n_max }}" value="{{ n_defecto }}" style="width: 6rem">
+    </div>
+    <button type="button" class="btn btn-primary" id="abrir-fichas" {% if not filas %}disabled{% endif %}>Abrir fichas</button>
+    <span id="abrir-estado" class="small text-muted" role="status" aria-live="polite"></span>
+  </div>
+  <p class="small text-muted">Si el navegador bloquea las pestañas, permite las ventanas emergentes de este sitio y vuelve a pulsar.</p>
+
+  {% if filas %}
+  <p class="small">{{ filas|length }} Compra{{ '' if filas|length == 1 else 's' }} Ágil{{ '' if filas|length == 1 else 'es' }}.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-dark"><tr><th scope="col">Cierre</th><th scope="col">Código</th><th scope="col">Compra Ágil</th><th scope="col">Comprador</th><th scope="col" class="text-end">Docs</th><th scope="col">Por qué</th></tr></thead>
+      <tbody>
+        {% for f in filas %}
+        <tr>
+          <td class="text-nowrap">{{ f.cierre }}</td>
+          <td><a href="{{ f.url_ficha }}" target="_blank" rel="noopener" data-ficha>{{ f.codigo }} ↗</a></td>
+          <td><a href="/catalogo/ca/{{ f.codigo }}">{{ f.nombre }}</a></td>
+          <td class="small">{{ f.comprador or '—' }}</td>
+          <td class="text-end">{{ f.n_documentos }}</td>
+          <td class="small text-muted">{{ f.motivo }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">No hay Compras Ágiles vigentes esperando anexo. Cuando entren nuevas con documentos adjuntos, aparecen aquí.</p>
+  {% endif %}
+</div>
+<script src="/static/anexos_pendientes.js?v={{ version_estaticos }}" defer></script>
+{% endblock %}
