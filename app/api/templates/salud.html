@@ -130,7 +130,7 @@
 <h5>Catálogo (últimos {{ pv.catalogo.dias }} días)</h5>
 <p class="small mb-1">CA publicadas: <strong>{{ pv.catalogo.ca.completo | numero }}</strong> completas ·
   {{ pv.catalogo.ca.incompleto | numero }} incompletas · {{ pv.catalogo.ca.sin_detalle | numero }} sin detalle.
-  Líneas pendientes o dudosas: {{ pv.catalogo.lineas_pendientes | numero }} · alias aprendidos: {{ pv.catalogo.alias_aprendidos | numero }}.</p>
+  Líneas pendientes o dudosas: {{ pv.catalogo.lineas_pendientes | numero }} · reemplazadas por un anexo: {{ pv.catalogo.lineas_reemplazadas | numero }} · alias aprendidos: {{ pv.catalogo.alias_aprendidos | numero }}.</p>
 {% if pv.catalogo.correcciones %}
 <p class="small mb-3">Correcciones por usuario:
   {% for c in pv.catalogo.correcciones %}{{ c.usuario }} ({{ c.correcciones }}){{ ', ' if not loop.last }}{% endfor %}</p>

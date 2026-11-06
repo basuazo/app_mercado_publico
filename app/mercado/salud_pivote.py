@@ -167,6 +167,11 @@ def catalogo(session: Session, regiones: list[int], ahora: datetime) -> dict[str
         .select_from(CaLinea)
         .where(CaLinea.estado.in_(("pendiente", "dudosa")))
     ).scalar_one()
+    # F-plat-anexos-2: las `reemplazada` (líneas de la API que el anexo reemplazó) son evidencia:
+    # no son pendientes ni confirmadas, se cuentan aparte.
+    reemplazadas = session.execute(
+        select(func.count()).select_from(CaLinea).where(CaLinea.estado == "reemplazada")
+    ).scalar_one()
     alias = session.execute(
         select(func.count()).select_from(ProductoAlias).where(ProductoAlias.fuente == "humano")
     ).scalar_one()
@@ -185,6 +190,7 @@ def catalogo(session: Session, regiones: list[int], ahora: datetime) -> dict[str
         "dias": DIAS_CATALOGO,
         "ca": por_detalle,
         "lineas_pendientes": int(pendientes),
+        "lineas_reemplazadas": int(reemplazadas),
         "alias_aprendidos": int(alias),
         "correcciones": correcciones,
     }

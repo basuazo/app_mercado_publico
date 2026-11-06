@@ -270,11 +270,12 @@ def test_territorio_catalogo_llm_y_sombra(engine, settings):
                       revisado_por=u.id, revisado_en=ahora))  # fmt: skip
         s.add(CaLinea(ca_codigo="B", n=1, texto_origen="pan", estado="pendiente"))
         s.add(CaLinea(ca_codigo="B", n=2, texto_origen="queso", estado="dudosa"))
+        s.add(CaLinea(ca_codigo="B", n=3, texto_origen="de la API", estado="reemplazada"))
         s.add(ProductoAlias(texto_normalizado="leche", producto_id=p.id, fuente="humano"))
         s.add(ProductoAlias(texto_normalizado="pan", producto_id=p.id, fuente="auto"))
         s.add(LlmUso(mes=ahora.strftime("%Y-%m"), requests=4, costo_usd=1.25, estimado=False))
-        for costo in (0.0, 0.0, 0.05):  # 2 de 3 salieron de la caché
-            s.add(CaAnexo(ca_codigo="A", mime="application/pdf", tamano=1, sha256="x" * 64,
+        for i, costo in enumerate((0.0, 0.0, 0.05)):  # 2 de 3 salieron de la caché
+            s.add(CaAnexo(ca_codigo="A", mime="application/pdf", tamano=1, sha256=str(i) * 64,
                           extraccion_estado="hecha", extraccion_costo_usd=costo))  # fmt: skip
         s.add(Prediccion(ca_codigo="A", empresa_id=e1.id, modelo_tipo="base", precio_sugerido=1.0,
                          detalle={}, estado="cerrada", resultado_en_intervalo=True))  # fmt: skip
@@ -292,7 +293,9 @@ def test_territorio_catalogo_llm_y_sombra(engine, settings):
         assert t["ultima_mercado_ca"] is None
         c = salud_pivote.catalogo(s, [16], ahora)
         assert c["ca"] == {"sin_detalle": 1, "incompleto": 1, "completo": 1}
+        # La `reemplazada` (anexo manda, F-plat-anexos-2) ni es pendiente ni cuenta como tal.
         assert (c["lineas_pendientes"], c["alias_aprendidos"]) == (2, 1)
+        assert c["lineas_reemplazadas"] == 1
         assert c["correcciones"] == [{"usuario": "mario@t.cl", "correcciones": 1}]
         ll = salud_pivote.llm(s, _settings(llm_presupuesto_mes_usd=5.0), ahora)
         assert (ll["gasto_usd"], ll["pct_presupuesto"], ll["requests"]) == (1.25, 25.0, 4)
