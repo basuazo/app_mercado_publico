@@ -346,3 +346,13 @@ retención nunca borraba filas, solo vaciaba `raw_json`.
   ± 0,5 %; usa el mismo instante de corte del respaldo) y `--compactar` (`VACUUM FULL` tabla por tabla, solo
   22:00–07:00 de Chile).
 - **Antes y después:** _pendiente — Boris anota acá el `--medir` previo y el posterior._
+
+## Flujo con CI, PR y migraciones por workflow (F-ci, 6-nov, Boris)
+- Cada fase va en su rama `F-<nombre>`; la sesión de Claude Code (local o en la nube) **hace push de la rama** y abre
+  un PR hacia `main`. **Nunca push directo a `main`.** Reemplaza «sin push hasta auditarla».
+- `ci.yml` corre en push a `F-**`/`fix/**` y en PR a `main`: ruff, mypy, migraciones y pytest contra Postgres 16
+  efímero, y los tests de la extensión. Sin secretos (valores de prueba fijos). Verde = 0 fallos, 0 errores, 0 saltados.
+- Neon se migra solo con `migrar.yml` (manual): `dev` con el secret `DATABASE_URL_DEV`; `prod` con `DATABASE_URL`,
+  exige escribir `MIGRAR PROD` y corre en el environment `produccion` (revisor opcional: el repo es público). Una sola
+  cabeza de Alembic o falla. Si la fase trae migración: fusionar → `migrar` → `prod` → recién ahí el deploy de Render.
+- La nube usa `scripts/dev/setup_nube.sh` (Postgres local del contenedor). Ningún secreto real en el entorno de la nube.

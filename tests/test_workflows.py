@@ -26,8 +26,17 @@ _WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
 _LINEA_JOBS = re.compile(r'^\s*jobs:\s*"([^"]*)"\s*$', re.MULTILINE)
 
 
+# F-ci: workflows de infraestructura (tests y migraciones). No mueven datos ni los dispara
+# cron-job.org: quedan fuera de las reglas de los jobs y tienen sus propios tests al final.
+_INFRA = {"ci.yml", "migrar.yml"}
+
+
 def _archivos() -> list[Path]:
     return sorted(_WORKFLOWS.glob("*.yml"))
+
+
+def _de_jobs() -> list[Path]:
+    return [p for p in _archivos() if p.name not in _INFRA]
 
 
 def test_hay_workflows() -> None:
@@ -67,8 +76,8 @@ def test_job_reutilizable_no_trae_secret_key_ni_jobs_token_de_secrets() -> None:
 
 
 def test_job_reutilizable_no_aplica_migraciones() -> None:
-    """Las migraciones las aplica Render en el deploy; Actions solo mueve datos."""
-    for p in _archivos():
+    """Los workflows de jobs solo mueven datos; las migraciones van por `migrar.yml` o Render."""
+    for p in _de_jobs():
         assert "alembic" not in p.read_text(encoding="utf-8"), p.name
 
 
@@ -125,8 +134,8 @@ _INPUT_COMPLETO = re.compile(
 
 
 def _llamadores() -> list[Path]:
-    """Los workflows que disparan algo: todos menos el reutilizable."""
-    return [p for p in _archivos() if p.name != "_job.yml"]
+    """Los workflows que disparan jobs: todos menos el reutilizable y los de infraestructura."""
+    return [p for p in _de_jobs() if p.name != "_job.yml"]
 
 
 def _texto(p: Path) -> str:
@@ -287,3 +296,45 @@ def test_con_completo_solo_lo_reciben_los_tres_jobs() -> None:
     con = {x.split("--job=")[1].split()[0] for x in lineas if x.rstrip().endswith("--completo")}
     assert len(lineas) == 4
     assert con == {"mercado-indices", "mercado-competencia", "mercado-demanda"}
+
+
+# ---------------------------------------------------------------------------
+# F-ci: CI y migraciones con disparo manual
+# ---------------------------------------------------------------------------
+
+
+def test_infra_existe() -> None:
+    assert {p.name for p in _archivos()} >= _INFRA
+
+
+def test_ci_no_usa_secretos_ni_neon() -> None:
+    """Repo público: el CI corre con valores de prueba fijos y un Postgres efímero."""
+    texto = _texto(_WORKFLOWS / "ci.yml")
+    assert "secrets." not in texto
+    assert "neon.tech" not in texto.lower()
+    assert "image: postgres:16" in texto
+    assert re.search(r"^\s*TEST_DATABASE_URL: postgresql\+psycopg://[^\s]*@localhost:", texto, re.MULTILINE)
+
+
+def test_ci_falla_con_tests_saltados_y_corre_todo() -> None:
+    texto = _texto(_WORKFLOWS / "ci.yml")
+    for paso in ("alembic upgrade head", "ruff check .", "python -m mypy app",
+                 "python -m pytest -rs", "node --test extension/lib.test.js"):
+        assert paso in texto, paso
+    assert "skipped" in texto and "exit 1" in texto
+    on = _bloque_on(texto)
+    assert "push:" in on and "pull_request:" in on and "workflow_dispatch" not in on
+
+
+def test_migrar_es_manual_y_exige_confirmacion_en_prod() -> None:
+    texto = _texto(_WORKFLOWS / "migrar.yml")
+    on = _bloque_on(texto)
+    assert re.match(r"\s*workflow_dispatch:", on) and "push:" not in on
+    assert "options: [dev, prod]" in texto
+    assert '[ "$CONFIRMAR" != "MIGRAR PROD" ]' in texto
+    # La confirmación va antes del checkout: falla sin conectarse a nada.
+    assert texto.index("MIGRAR PROD\" ]") < texto.index("actions/checkout")
+    assert "secrets.DATABASE_URL_DEV" in texto and "secrets.DATABASE_URL }}" in texto
+    assert "::add-mask::$url" in texto
+    assert re.search(r"^\s*group: migrar-\$\{\{ inputs\.destino \}\}\s*$", texto, re.MULTILINE)
+    assert re.search(r"^\s*cancel-in-progress:\s*false\s*$", texto, re.MULTILINE)

@@ -1,8 +1,10 @@
 # Orden de ejecución de las fases F-dis (7-nov-2026)
 
-Reglas: una fase por sesión de Claude Code y un commit por fase, sin push. Cuando dos fases corren al mismo tiempo, cada
-una va en su propio `git worktree`, en su rama `F-dis-<nombre>` y con su propia base de tests. **Nunca dos fases con
-migración al mismo tiempo.** Antes de pasar al paso siguiente, Boris revisa, fusiona a `main`, hace push y deploy.
+Reglas: una fase por sesión de Claude Code y un commit por fase, en su rama `F-dis-<nombre>`. Desde F-ci (6-nov) la
+sesión **hace push de su rama y abre un PR** hacia `main` (nunca push a `main`); el CI tiene que quedar verde. Cuando dos
+fases corren al mismo tiempo, cada una va en su propio `git worktree` (o su propia sesión en la nube) y con su propia base
+de tests. **Nunca dos fases con migración al mismo tiempo.** Antes de pasar al paso siguiente, Boris revisa y fusiona el
+PR, corre `migrar` → `prod` si la fase trae migración, y deploy.
 Para correr una fase: «Lee `docs/prompt-F-dis-<nombre>.md` y ejecútalo».
 
 | Paso | Sesión A | Modelo | Sesión B (en paralelo) | Modelo | Migración | Requiere |

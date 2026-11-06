@@ -33,10 +33,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import evaluar_extraccion as ev  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 
-import evaluar_extraccion as ev  # noqa: E402
 from app.clients.openrouter import OpenRouterClient, clave_cache  # noqa: E402
 from app.core.db import normalizar_url_driver  # noqa: E402
 from app.core.settings import Settings  # noqa: E402
@@ -169,7 +169,7 @@ def main() -> None:
                 f"  {archivo[:42]:42} {tipo:10} {res.paginas or 0:>4} {res.paginas_omitidas:>4} "  # type: ignore[attr-defined]
                 f"{len(esperadas):>4} {len(extr):>4} {n_ok:>4}  {'sí' if lineas is not None else 'NO'}"
             )
-        pct = lambda n: f"{100 * n / tot:5.1f}%" if tot else "  -  "  # noqa: E731
+        pct = lambda n, tot=tot: f"{100 * n / tot:5.1f}%" if tot else "  -  "  # noqa: E731
         print(f"\n  Líneas esperadas: {tot} · anexos sin caché: {sin_cache} · filas sobrantes: {sobr}")
         for c in ("ok", "texto", "cantidad", "multiplicador", "unidad", "sin_extraccion", "sin_cache"):
             print(f"    {c:15} {clases[c]:4}  {pct(clases[c])}")
