@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Versión de los estáticos: se usa como ?v= al enlazar app.css, para que un
@@ -245,6 +245,22 @@ class Settings(BaseSettings):
     mercado_anexos_max_dia: int = Field(
         default=60, description="Tope diario de adjuntos bajados por descarga directa"
     )
+    # F-plat-auto-revision: puntaje mínimo (0–1, `auto_revision.puntaje_linea`) para que una línea
+    # leída de un anexo pase sola a `ok`. Vacío = apagado: todas quedan `dudosa` (como antes). Lo
+    # fija Boris con `scripts/mercado/calibrar_auto_revision.py` (precisión ≥ 98 %); el job puede
+    # subirlo solo si la precisión observada cae (queda en `sync_state`, nunca lo baja).
+    auto_confirmar_umbral: float | None = Field(
+        default=None,
+        gt=0,
+        le=1,
+        description="Puntaje mínimo para confirmar sola una línea de anexo (vacío = apagado)",
+    )
+
+    @field_validator("auto_confirmar_umbral", mode="before")
+    @classmethod
+    def _umbral_vacio(cls, v: object) -> object:
+        return None if isinstance(v, str) and not v.strip() else v
+
     # F-plat-4: costo financiero del margen (30 días de capital de trabajo × esta tasa).
     costo_financiero_mensual: float = Field(
         default=0.015, ge=0, description="Tasa mensual del costo financiero (0,015 = 1,5 %)"

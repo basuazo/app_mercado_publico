@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_csrf, get_db, html_require_empresa
@@ -23,7 +23,7 @@ from app.api.routes.pages import _TEMPLATES, _ctx
 from app.catalogos.canonico import normalizar_texto
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
 from app.core.tiempo import ahora_utc
-from app.mercado import anexos
+from app.mercado import anexos, auto_revision
 from app.mercado import catalogo as cat
 from app.mercado.territorio import regiones_activas
 from app.models.enums import RolUsuario
@@ -363,15 +363,22 @@ def _respuesta_linea(
     vista: str,
     texto_aviso: str,
 ) -> Response:
-    """Pendientes: la fila desaparece (200 vacío + aviso fuera de banda; nunca 204, que HTMX
-    ignora). Ficha de CA y tabla del anexo: la fila se repinta con su estado nuevo."""
-    if vista == "pendientes":
+    """Pendientes y cola de excepciones: la fila desaparece (200 vacío + aviso fuera de banda;
+    nunca 204, que HTMX ignora). Ficha de CA y tabla del anexo: la fila se repinta con su estado
+    nuevo."""
+    if vista in ("pendientes", "revision"):
         return HTMLResponse(_aviso(texto_aviso))
     return HTMLResponse(_html_fila(request, user, session, ln, ca, vista) + _aviso(texto_aviso))
 
 
 def _volver(request: Request, vista: str, ca_codigo: str, mensaje: str) -> RedirectResponse:
-    destino = f"/catalogo/ca/{quote(ca_codigo)}" if vista in ("ca", "anexo") else "/catalogo"
+    destino = (
+        f"/catalogo/ca/{quote(ca_codigo)}"
+        if vista in ("ca", "anexo")
+        else "/catalogo/revision"
+        if vista == "revision"
+        else "/catalogo"
+    )
     return RedirectResponse(f"{destino}?mensaje={quote(mensaje)}", status_code=303)
 
 
@@ -440,6 +447,100 @@ async def catalogo_anexo(
     session.refresh(ln)
     return _respuesta_linea(
         request, user, session, ln, ca, "ca" if vista == "ca" else "pendientes", texto
+    )
+
+
+# ===========================================================================
+# Cola de excepciones (F-plat-auto-revision)
+# ===========================================================================
+
+CAS_POR_PAGINA = 10
+
+
+def _en_cola() -> Any:
+    """Líneas de la cola: `dudosa` (lo que el auto no confirmó) y las auto-confirmadas que el
+    muestreo mandó a control y nadie revisó todavía."""
+    return or_(
+        CaLinea.estado == "dudosa",
+        and_(CaLinea.confirmada_por == auto_revision.AUTO, CaLinea.control_en.isnot(None)),
+    )
+
+
+@router.get("/catalogo/revision", response_class=HTMLResponse)
+async def catalogo_revision(
+    request: Request,
+    pagina: int = 1,
+    mensaje: str = "",
+    error: str = "",
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Cola de excepciones por CA: primero las vigentes (de la que cierra antes a la que cierra
+    después), luego las cerradas (la más reciente primero). Con «Confirmar todas» por CA para las
+    líneas de anexo con producto; las de control se revisan una a una."""
+    user, _ = ctx
+    regiones = regiones_activas(session, request.app.state.settings)
+    pagina = max(1, pagina)
+    ahora = ahora_utc()
+    vigente = cat._ca_vigente(ahora)
+    cas_q = (
+        select(CompraAgil)
+        .join(CaLinea, CaLinea.ca_codigo == CompraAgil.codigo)
+        .where(CompraAgil.region.in_(regiones), _en_cola())
+        .group_by(CompraAgil.codigo)
+    )
+    total_cas = session.execute(
+        select(func.count()).select_from(cas_q.with_only_columns(CompraAgil.codigo).subquery())
+    ).scalar_one()
+    cas = list(
+        session.execute(
+            cas_q.order_by(
+                case((vigente, 0), else_=1),
+                case((vigente, CompraAgil.fecha_cierre), else_=None).asc().nulls_last(),
+                CompraAgil.fecha_cierre.desc().nulls_last(),
+                CompraAgil.codigo,
+            )
+            .limit(CAS_POR_PAGINA)
+            .offset((pagina - 1) * CAS_POR_PAGINA)
+        ).scalars()
+    )
+    por_ca: dict[str, list[CaLinea]] = {ca.codigo: [] for ca in cas}
+    if cas:
+        for ln in session.execute(
+            select(CaLinea)
+            .where(CaLinea.ca_codigo.in_(list(por_ca)), _en_cola())
+            .order_by(CaLinea.ca_codigo, CaLinea.n)
+        ).scalars():
+            por_ca[ln.ca_codigo].append(ln)
+    nombres = _nombres_productos(session)
+    grupos = [
+        {
+            "ca": ca,
+            "vigente": ca.fecha_cierre is not None and ca.fecha_cierre > ahora,
+            "url_ficha": url_ficha_ca(ca.codigo),
+            "lineas": [_vista_linea(session, ln, ca, nombres) for ln in por_ca[ca.codigo]],
+            "n_confirmables": sum(
+                1
+                for ln in por_ca[ca.codigo]
+                if ln.anexo_id is not None and ln.estado == "dudosa" and ln.producto_id
+            ),
+            "n_control": sum(1 for ln in por_ca[ca.codigo] if auto_revision.es_control_pendiente(ln)),
+        }
+        for ca in cas
+    ]
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "catalogo_revision.html",
+        _ctx(
+            request,
+            user,
+            grupos=grupos,
+            total=total_cas,
+            pagina=pagina,
+            por_pagina=CAS_POR_PAGINA,
+            mensaje=mensaje,
+            error=error,
+        ),
     )
 
 
@@ -595,6 +696,7 @@ async def anexo_confirmar_todas(
     request: Request,
     codigo: str,
     csrf_token: str = Form(""),
+    volver: str = Form(""),
     ctx: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> Response:
@@ -639,9 +741,8 @@ async def anexo_confirmar_todas(
     )
     if hechas and n_api_antes:
         texto += f" El anexo reemplazó {n_api_antes} línea(s) de la API."
-    return RedirectResponse(
-        f"/catalogo/ca/{quote(ca.codigo)}?mensaje={quote(texto)}", status_code=303
-    )
+    destino = "/catalogo/revision" if volver == "revision" else f"/catalogo/ca/{quote(ca.codigo)}"
+    return RedirectResponse(f"{destino}?mensaje={quote(texto)}", status_code=303)
 
 
 @router.post("/catalogo/ca/{codigo}/anexo-resuelto", response_model=None)
