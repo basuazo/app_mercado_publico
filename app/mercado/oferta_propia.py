@@ -557,6 +557,9 @@ def liberar_parcial(
     encuentra el resto. Devuelve lo liberado."""
     if unidades <= _TOL:
         return 0.0
+    # Se bloquea la fila ANTES de leer el saldo de la referencia: dos entregas concurrentes del
+    # mismo producto se serializan acá y la segunda ve lo que la primera ya liberó.
+    ep = obtener(session, empresa_id, ep_id, para_escribir=True)
     neto = 0.0
     for (delta,) in session.execute(
         select(EmpresaProductoMovimiento.delta).where(
@@ -566,7 +569,6 @@ def liberar_parcial(
         )
     ):
         neto += float(delta)
-    ep = obtener(session, empresa_id, ep_id, para_escribir=True)
     liberado = round(min(unidades, neto, ep.reservado or 0.0), 3)
     if liberado <= _TOL:
         return 0.0
