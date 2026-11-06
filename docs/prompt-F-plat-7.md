@@ -42,6 +42,51 @@
     Boris confirma en cron-job.org que `GH retencion` volvió a estar activo tras F-plat-3-fix y que `GH nocturno`
     sigue en pausa [I].
 
+## Revisión 6-nov (Cowork + código de `main` en `c4c09ec`) — manda sobre la del 4-nov donde choquen
+Contraste punto por punto con el código antes de implementar. **Lo que ya existía** (no se duplica) y **lo que cambia**:
+
+1. **§1.1 requests por job.** Sigue sin existir. Cambio respecto a la revisión del 4-nov: no se toca cada runner; se
+   instrumenta el único camino por el que pasan scheduler, endpoint y CLI, `orchestrator._run_with_lock`. Lee
+   `quota_log` del día de Chile antes y después del job (`clients.base.requests_hoy`) y graba el delta como `requests` en
+   `job_runs.resultado_json` (`_con_requests`); el valor que devuelve el job no cambia, y un `requests` propio del runner
+   (`mercado-backfill`) manda. Una corrida que falla o se omite a mitad también deja su `requests` si gastó (para que la
+   alerta no pierda un job que cayó después de pedir). Sin tabla `quota_log` (tests) no agrega nada. Sin migración.
+2. **§1.1 tablas.** `_tablas_mercado_salud` ya existía (F-merc-2) y ya traía `demanda_series`, `pronosticos` y
+   `recomendaciones` (F-plat-6): se **extendió**, no se duplicó. Suma las que nacieron después: `competencia_mes`,
+   `competencia_comprador_mes`, `demanda_nombres`, `ca_lineas`, `ca_anexos`, `producto_canonico|formato|alias`,
+   `proveedores`, `proveedor_productos`, `predicciones`, `ofertas_propias`, `evaluaciones_cache`, `ca_trabajo`,
+   `ca_eventos`, `ca_comentarios`, `empresa_productos`, `empresa_producto_movimientos` y `llm_cache`. La alerta del 70 % de
+   0,5 GB mira la suma de esas tablas **y** la base entera.
+3. **§1.1 «Modelo».** La tarjeta «Precio esperado y P(ganar)» (F-plat-4: modelo activo, Brier, intervalo 80 %, ganables, metas
+   en verde/rojo) ya estaba en `/salud`: queda. Se suma el backtest de `demanda` (`evaluacion_modelo`, modelo `demanda`).
+3b. **§1.1 «Sombra».** Predicciones abiertas, cerradas y sin adjudicación y acierto acumulado del intervalo 80 %, por
+   empresa. «Acierto» = ganador dentro del intervalo; la calibración de P(ganar) sigue en `/mesa/resultados`.
+4. **§1.2 informe.** Sin cambios de fondo; lo nuevo: el informe también se ve en la web (`/mesa/informe/{AAAA-MM}`, empresa
+   de la sesión; mes mal formado o futuro → 404); es idempotente **por usuario** (`sync_state`, fuente
+   `mercado_informe:<empresa_id>:<AAAA-MM>`, `cursor` = ids ya atendidos: un fallo a mitad se completa al re-correr y un
+   usuario nuevo recibe solo el suyo); si no hay `BREVO_API_KEY` ni SMTP el job **no falla**: no envía, no marca nada y lo
+   dice en `avisos` (`::warning::` en Actions). Mes informado: el mes que acaba de terminar. Hora 08:40 (revisión 4-nov #8).
+5. **§1.3 cierre del ciclo.** **Ya existe** en `app/mercado/sombra.py` (`cerrar_predicciones`, `cerrar_ofertas`, `DIAS_ESPERA`
+   = 30) y es *más estricto* que el prompt: desierta, cancelada o revocada cierran de inmediato como `sin_adjudicacion`, y
+   una CA cerrada sin ofertas leídas o sin seleccionada se cierra a los 30 días (no a los 7). No se cambia ni se duplica.
+   `n_desiertas` ya lo alimenta F-plat-6 (`mercado-competencia`). **Lo único que faltaba:** el aviso del segundo punto →
+   `sombra.ofertas_sin_resultado` y un bloque en `/mesa/resultados`. Definición: `ca_trabajo.estado = enviada` y
+   `resultado` vacío, con la CA cerrada hace más de 14 días, de la empresa de la sesión. **Desvío:** no existe un formulario
+   de «resultado manual»; el aviso manda a revisar el portal y anotarlo en los comentarios de la CA.
+6. **§1.4 retención.** `ca_eventos` ya se purga (`equipo.purgar_eventos`, 12 meses): no se repite. Se creó la lista
+   `retencion.PURGAS` (`Purga(nombre, fn)`, `registrar_purga`): `purgar_terminales` corre cada regla y deja
+   `<nombre>_borrados` en el resultado del job. Hoy: `eventos_equipo` (la existente, movida a la lista), `llm_cache` > 180 días
+   y `evaluaciones_cache` de CA cerradas hace > 90 días. Las CA con `ofertas_propias`, `predicciones` o `ca_trabajo` ya estaban
+   protegidas (F-plat-5 §12, F-equipo): solo se agregó el test. **F-plat-lote** (lotes `cerrado` > 24 meses) y
+   **F-plat-seguimiento** (`ca_requisitos` de CA `descartada` > 12 meses) suman su tabla con **una** llamada
+   `registrar_purga(...)` (o una entrada en `PURGAS`) y una línea en `_tablas_mercado_salud`, sin tocar `purgar_terminales`.
+7. **§1.5 documentación.** Tabla única de disparos y lista de apagados en `operacion-disparos.md`; qué mirar cada semana en
+   `operacion.md` §16.
+8. **Sin migración.** No hizo falta ningún índice: `job_runs` ya tiene `(job, iniciado_en)` y el filtro del día usa
+   `iniciado_en` sobre pocas filas (≈ 100 por día).
+9. **No tocado** (otras ramas en paralelo): `app/mercado/anexos.py`, `oferta.py`, `mesa_dia.py` y las tablas de
+   F-plat-anexos-2 y F-plat-lote.
+
 ## 0. Antes de escribir código
 Leer `CLAUDE.md` (1, 3, 10, 11, 14), `17-plan` §2 C8 y §5 (riesgos), `app/api/salud_data.py` y
 `templates/salud.html`, `app/alerts/email.py` (Brevo, tope 250/día), `app/core/retencion.py`,

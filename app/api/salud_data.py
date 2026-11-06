@@ -15,15 +15,36 @@ from app.api.query import resumen_evaluacion_modelo
 from app.core.retencion import tamano_bd, tamano_tabla
 from app.core.settings import Settings
 from app.core.tiempo import TZ_CHILE
+from app.mercado.salud_pivote import salud_pivote
+from app.mercado.territorio import regiones_activas
 from app.models.tables import (
+    CaAnexo,
+    CaComentario,
     CaCotizacion,
     CaCotizacionProducto,
+    CaEvento,
+    CaLinea,
+    CaTrabajo,
+    CompetenciaCompradorMes,
+    CompetenciaMes,
+    DemandaNombre,
     DemandaSerie,
+    EmpresaProducto,
+    EmpresaProductoMovimiento,
+    EvaluacionCache,
+    LlmCache,
     OcLineaCa,
+    OfertaPropia,
     PlanCompraLinea,
     PrecioIndice,
     PrecioReferencia,
+    Prediccion,
+    ProductoAlias,
+    ProductoCanonico,
+    ProductoFormato,
     Pronostico,
+    Proveedor,
+    ProveedorProducto,
     Recomendacion,
     RubroVocabulario,
     SyncState,
@@ -76,6 +97,7 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
 
     tam = tamano_bd(session)
     limite_bytes = 500 * 1024 * 1024
+    tablas = _tablas_mercado_salud(session)
 
     errores = [
         {"fuente": f.fuente, "nota": f.notas}
@@ -102,7 +124,9 @@ def get_salud_data(session: Session, settings: Settings) -> dict[str, Any]:
         "errores_recientes": errores,
         "plan_anual": _plan_anual_salud(session),
         "vocabulario_rubros": _vocabulario_salud(session),
-        "tablas_mercado": _tablas_mercado_salud(session),
+        "tablas_mercado": tablas,
+        # F-plat-7: sección «Pivote» (cuota por job, territorio, catálogo, LLM, demanda, sombra).
+        "pivote": salud_pivote(session, settings, regiones_activas(session, settings), tablas, tam),
         # F-plat-4: metas del peldaño 2 en verde/rojo (no se aflojan: se reportan tal cual).
         "modelo_adjudicacion": resumen_evaluacion_modelo(session),
         "anexos": _anexos_salud(session, settings),
@@ -203,7 +227,8 @@ def _vocabulario_salud(session: Session) -> dict[str, Any]:
 
 def _tablas_mercado_salud(session: Session) -> list[dict[str, Any]]:
     """F-merc-2: filas y tamaño de las tablas del piloto de mercado (excepción a la regla 11:
-    no se purgan, así que hay que vigilar que Neon, 0,5 GB, no se llene)."""
+    no se purgan, así que hay que vigilar que Neon, 0,5 GB, no se llene). F-plat-7: todas las del
+    pivote; una fase que agrega tabla suma UNA línea acá (y a `PURGAS` si tiene retención)."""
     modelos = (
         ("oc_lineas_ca", OcLineaCa),
         ("precio_referencia", PrecioReferencia),
@@ -214,6 +239,26 @@ def _tablas_mercado_salud(session: Session) -> list[dict[str, Any]]:
         ("demanda_series", DemandaSerie),
         ("pronosticos", Pronostico),
         ("recomendaciones", Recomendacion),
+        # F-plat-7: el resto de las tablas del pivote (catálogo, proveedores, mesa, equipo, LLM).
+        ("competencia_mes", CompetenciaMes),
+        ("competencia_comprador_mes", CompetenciaCompradorMes),
+        ("demanda_nombres", DemandaNombre),
+        ("ca_lineas", CaLinea),
+        ("ca_anexos", CaAnexo),
+        ("producto_canonico", ProductoCanonico),
+        ("producto_formato", ProductoFormato),
+        ("producto_alias", ProductoAlias),
+        ("proveedores", Proveedor),
+        ("proveedor_productos", ProveedorProducto),
+        ("predicciones", Prediccion),
+        ("ofertas_propias", OfertaPropia),
+        ("evaluaciones_cache", EvaluacionCache),
+        ("ca_trabajo", CaTrabajo),
+        ("ca_eventos", CaEvento),
+        ("ca_comentarios", CaComentario),
+        ("empresa_productos", EmpresaProducto),
+        ("empresa_producto_movimientos", EmpresaProductoMovimiento),
+        ("llm_cache", LlmCache),
     )
     return [
         {

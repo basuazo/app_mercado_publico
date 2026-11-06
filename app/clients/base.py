@@ -361,6 +361,20 @@ ON CONFLICT (fuente) DO UPDATE
 """
 
 
+def requests_hoy(engine: Engine) -> int | None:
+    """Requests de la API gastados hoy (día de Chile), leídos de `quota_log`; None si no se puede
+    leer (tabla inexistente en una base de tests, base caída). F-plat-7: `_run_with_lock` resta
+    dos lecturas para dejar los `requests` de cada job en `job_runs`. Solo lee, no crea nada."""
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text(_SELECT_QUOTA), {"fecha": _ahora_chile().date().isoformat()}
+            ).fetchone()
+    except Exception:
+        return None
+    return int(row[0]) if row else 0
+
+
 def _iso_pausa(dt: datetime) -> str:
     return dt.astimezone(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
 

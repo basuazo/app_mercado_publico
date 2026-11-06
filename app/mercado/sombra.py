@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session, defer
 
@@ -41,6 +41,7 @@ from app.mercado.mesa_dia import condiciones_vigente
 from app.models.enums import EstadoOportunidad
 from app.models.tables import (
     CaCotizacion,
+    CaTrabajo,
     CompraAgil,
     Empresa,
     EvaluacionCache,
@@ -58,6 +59,8 @@ HORAS_MIN_CIERRE = 2
 DIAS_ESPERA = 30
 LOTE_MESA = 50
 SEMANAS_RESULTADOS = 8
+DIAS_AVISO_SIN_RESULTADO = 14  # F-plat-7 §1.3
+MAX_AVISO_SIN_RESULTADO = 20
 _SIN_ADJUDICACION = (
     EstadoOportunidad.DESIERTA.value,
     EstadoOportunidad.CANCELADA.value,
@@ -524,3 +527,46 @@ def resultados(
         "margen_realizado": sum(margenes) if margenes else None,
         "desde": desde,
     }  # fmt: skip
+
+
+def ofertas_sin_resultado(
+    session: Session, empresa_id: int, ahora: datetime
+) -> dict[str, Any]:
+    """F-plat-7 §1.3: CA que la empresa marcó `enviada` y cerraron hace más de 14 días sin que el
+    sistema haya podido decir si ganó (`ca_trabajo.resultado` vacío: la selección no llega o las
+    ofertas no se leyeron). `/mesa/resultados` las avisa para que el usuario revise el portal y lo
+    registre a mano. Solo de la empresa (regla 26). Devuelve `{"total", "filas"}`; las filas, las
+    más recientes primero, topadas a `MAX_AVISO_SIN_RESULTADO`."""
+    corte = ahora - timedelta(days=DIAS_AVISO_SIN_RESULTADO)
+    cond = (
+        CaTrabajo.empresa_id == empresa_id,
+        CaTrabajo.estado == eq.ENVIADA,
+        CaTrabajo.resultado.is_(None),
+        CompraAgil.fecha_cierre < corte,
+    )
+    total = session.execute(
+        select(func.count())
+        .select_from(CaTrabajo)
+        .join(CompraAgil, CompraAgil.codigo == CaTrabajo.ca_codigo)
+        .where(*cond)
+    ).scalar_one()
+    filas = session.execute(
+        select(CompraAgil.codigo, CompraAgil.nombre, CompraAgil.fecha_cierre, OfertaPropia.total_neto)
+        .select_from(CaTrabajo)
+        .join(CompraAgil, CompraAgil.codigo == CaTrabajo.ca_codigo)
+        .outerjoin(
+            OfertaPropia,
+            (OfertaPropia.ca_codigo == CaTrabajo.ca_codigo)
+            & (OfertaPropia.empresa_id == CaTrabajo.empresa_id),
+        )
+        .where(*cond)
+        .order_by(CompraAgil.fecha_cierre.desc(), CompraAgil.codigo)
+        .limit(MAX_AVISO_SIN_RESULTADO)
+    ).all()
+    return {
+        "total": int(total),
+        "filas": [
+            {"codigo": c, "nombre": n, "cierre": f, "oferta_total": t, "dias": (ahora - f).days}
+            for c, n, f, t in filas
+        ],
+    }

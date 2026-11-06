@@ -33,6 +33,22 @@ CHANGELOG: list[ChangelogEntry] = [
         ),
     ),
     ChangelogEntry(
+        fecha=date(2026, 11, 6),
+        titulo="Salud e informe mensual del pivote",
+        descripcion=(
+            "Cada mes recibirás por correo (y verás en la mesa, en «/mesa/informe/AAAA-MM») un "
+            "informe de tu empresa: cuántas Compras Ágiles hubo en tu territorio y por cuánto "
+            "dinero, cuáles cotizaste, ganaste y perdiste, el margen realizado total y por familia, "
+            "qué tan bien acertaron las predicciones (intervalo del 80 % y probabilidad de ganar), "
+            "los cinco compradores con más compras, las cinco recomendaciones de abastecimiento "
+            "vigentes y el estado del catálogo. En «Resultados» ahora se avisa de las ofertas que "
+            "marcaste como enviadas y que cerraron hace más de 14 días sin que la plataforma pueda "
+            "saber si ganaste, para que revises el resultado en el portal. Para el administrador, "
+            "«Salud» suma la sección «Pivote»: requests por job, territorio, catálogo, gasto de "
+            "lenguaje, pronóstico y modo sombra. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
         fecha=date(2026, 11, 5),
         titulo="Catálogo en tres capas: Demanda MP, Catálogo Proveedores e Inventario",
         descripcion=(

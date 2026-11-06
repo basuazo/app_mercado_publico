@@ -77,6 +77,32 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — **F-merc-2, sin crear todavía** (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
 | GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
 | GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; corre `mercado-indices`, `mercado-competencia` y `mercado-demanda`; ver nota abajo) |
+| GH mercado-informe | `mercado-informe.yml` | **día 1 de cada mes, 08:40 Chile** — **F-plat-7, sin crear todavía** (sin API; informe mensual por correo; ver tabla del pivote) |
+
+### Disparos del pivote — tabla única (F-plat-7, 6-nov-2026)
+
+Mientras dure el pivote (`17-plan-pivote-plataforma-ca.md`; regla 24: la cuota es solo de Compra Ágil), **solo estos**
+disparos de cron-job.org deben estar activos. Todos usan el mismo advisory lock.
+
+| Disparo (cron-job.org) | Workflow → jobs | Hora de Chile | API / cuota |
+|---|---|---|---|
+| `GH mercado` | `mercado.yml` → `mercado-ca`, `mercado-catalogo`, `mercado-mesa` | cada 15 min (00, 15, 30, 45) | sí, `mercado-ca` |
+| `GH mercado-nocturno` | `mercado-nocturno.yml` → `mercado-backfill` | 22:30 y 03:40 | sí (ventana 22:00–07:00, regla 5) |
+| `GH retencion` | `retencion.yml` → `retencion` | 05:40 | no |
+| `GH mercado-oc` | `mercado-oc.yml` → `mercado-oc` | 07:20 | no (datos abiertos) |
+| `GH mercado-indices` | `mercado-indices.yml` → `mercado-indices`, `mercado-competencia`, `mercado-demanda` | 07:45 | no |
+| `GH mercado-informe` | `mercado-informe.yml` → `mercado-informe` | **día 1 de cada mes, 08:40** | no (correo por Brevo) |
+
+**Apagados** (deben seguir en pausa o sin crear): `ca`, `ciclo-ca`, `ciclo-match`, `ciclo-activas`, `nocturno`, `resumen` y
+`catalogos` (que incluye `plan-anual` y `vocabulario-rubros`). Si uno de ellos corre y gasta ticket, `/salud` → Pivote
+muestra una **alerta roja** (un disparo olvidado en cron-job.org).
+
+**`mercado-informe` a las 08:40, no a las 08:00.** `mercado-indices` empieza a las 07:45 con el mismo lock y podría seguir
+corriendo a las 08:00: el informe saldría `omitido`. Con 08:40 y `esperar_lock_min: 10` hay holgura. El job es idempotente
+por empresa, mes y usuario (`sync_state` `mercado_informe:<empresa_id>:<AAAA-MM>`): re-dispararlo el mismo mes no repite
+correos; si el tope diario (250) corta, lo pendiente sale en la siguiente corrida. Sin `BREVO_API_KEY` no falla: avisa y el
+informe sigue en `/mesa/informe/AAAA-MM`. Un disparo manual (Actions → `mercado-informe` → Run workflow) informa siempre el **mes
+anterior** al de hoy.
 
 **`mercado-indices` (F-plat-4).** De noche no hay hueco: el lock lo tienen `mercado-nocturno` (22:30–06:45),
 `nocturno` (01:10), `retencion` (05:40) y `mercado-oc` (07:20); a las 04:00 saldría siempre `omitido`. A las 07:45

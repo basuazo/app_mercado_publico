@@ -36,6 +36,18 @@ lectura automática». **§2.7** `app/clients/mp_documentos.py` + `app/ingest/an
 (si no, corregir solo `URL_FICHA_CA` en `app/api/query.py`); generar el token de la empresa; capturar la URL del adjunto
 (R8) antes de pensar en encender §2.7; fijar `LLM_MODELO_RESPALDO`.
 
+## F-plat-7 (6-nov, rama `F-plat-7` desde `c4c09ec`, commit local sin push ni merge; **sin migración**)
+Operación del pivote (`prompt-F-plat-7.md`, con su «Revisión 6-nov»). **Requests por job:** `_run_with_lock` graba `requests`
+(delta de `quota_log`) en `job_runs.resultado_json`. **`/salud` → Pivote** (`app/mercado/salud_pivote.py`): cuota por job con
+alerta roja si algo fuera de `mercado-*` gastó ticket, pausa 429, territorio, tamaño del pivote (70 % de 0,5 GB), catálogo,
+LLM, demanda y sombra; `_tablas_mercado_salud` extendida. **Informe mensual** (`app/mercado/informe.py`): job
+`mercado-informe` (día 1, 08:40; idempotente por empresa/mes/usuario; sin Brevo no falla) y vista `/mesa/informe/{AAAA-MM}`.
+**Cierre del ciclo:** el cierre de predicciones ya existía (F-plat-5); se agregó el aviso de ofertas enviadas sin resultado en
+`/mesa/resultados`. **Retención:** lista `retencion.PURGAS` (`llm_cache` > 180 días, `evaluaciones_cache` de CA cerradas > 90
+días, `eventos_equipo`); F-plat-lote y F-plat-seguimiento suman la suya con `registrar_purga`.
+**Pendiente de Boris:** crear `GH mercado-informe` en cron-job.org (día 1, 08:40, `mercado-informe.yml`); confirmar que `GH
+retencion` está activo y `GH nocturno` en pausa; revisar `/salud` → Pivote (sin alerta roja); leer el primer informe con Mario.
+
 ## F-plat-capas (5-nov, rama `F-plat-capas` desde `8dd16c8`, commit local sin push ni merge; migración `a3c8e5d1b7f2`, cuelga de `d9a4e2b7c1f6`)
 Catálogo en tres capas (`prompt-F-plat-capas.md`): **Demanda MP** (`/catalogo`, solo renombrada), **Catálogo Proveedores**
 (`/proveedores`) e **Inventario** (`/inventario`, nueva). Comparten la llave `producto_canonico × producto_formato`.

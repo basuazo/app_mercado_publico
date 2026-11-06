@@ -41,6 +41,7 @@ from app.clients.base import (
     MPRateLimitError,
     MPTransportError,
     QuotaExceededError,
+    requests_hoy,
 )
 from app.clients.mp_v1 import MercadoPublicoV1Client
 from app.clients.mp_v2 import MercadoPublicoV2Client
@@ -318,6 +319,16 @@ def run_mercado_mesa(settings: Settings, engine: Engine) -> dict[str, Any]:
 
     with Session(engine) as session:
         return run_mesa(session, tasa=settings.costo_financiero_mensual)
+
+
+def run_mercado_informe(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Job `mercado-informe` (F-plat-7): informe mensual por empresa, por correo (Brevo). Sin ticket,
+    sin cuota, sin API. Día 1 a las 08:40 Chile (`mercado-indices` empieza 07:45 con el mismo lock).
+    Idempotente: re-dispararlo el mismo mes no repite correos. Sin proveedor de correo no falla."""
+    from app.mercado.informe import enviar_informes
+
+    with Session(engine) as session:
+        return enviar_informes(session, settings)
 
 
 def run_vocabulario_rubros(settings: Settings, engine: Engine) -> dict[str, int]:
@@ -787,6 +798,33 @@ def _registrar_corrida(
         session.commit()
 
 
+def _delta_requests(antes: int | None, despues: int | None) -> int | None:
+    """Requests que gastó un job: diferencia de `quota_log` entre el inicio y el fin. Los jobs
+    corren de a uno (advisory lock), así que el delta es del job. Si el día de Chile cambió a mitad
+    de la corrida, `despues` ya es solo del día nuevo. None si no se pudo medir."""
+    if antes is None or despues is None:
+        return None
+    return despues - antes if despues >= antes else despues
+
+
+def _con_requests(resultado: Any, antes: int | None, despues: int | None) -> Any:
+    """F-plat-7: el resultado que se GRABA en `job_runs` lleva `requests` = lo que el job gastó de
+    la cuota. `/salud` suma esos `requests` por job y alerta si uno fuera de `mercado-*` consumió
+    ticket. No toca el valor que devuelve el job, y si el runner ya trae su propio `requests`
+    (mercado-backfill) lo respeta."""
+    delta = _delta_requests(antes, despues)
+    if not isinstance(resultado, dict) or delta is None:
+        return resultado
+    return {"requests": delta, **resultado}
+
+
+def _requests_si_gasto(antes: int | None, despues: int | None) -> dict[str, Any] | None:
+    """Para las corridas que no terminaron bien (error u omitido a mitad): un job que cayó después
+    de gastar ticket igual tiene que verse en la suma de `/salud`. Sin gasto, sin resultado."""
+    delta = _delta_requests(antes, despues)
+    return {"requests": delta} if delta else None
+
+
 def _registrar_corrida_segura(
     engine: Engine,
     job: str,
@@ -915,13 +953,21 @@ def _run_with_lock(
         _registrar_corrida_segura(engine, job_name, iniciado_en, "omitido")
         return None
     with conn:
+        antes = requests_hoy(engine)
         try:
             _log.info("job=%s: iniciando", job_name)
             result = fn()
             _log.info("job=%s: OK %s", job_name, result)
-            _registrar_corrida_segura(engine, job_name, iniciado_en, "ok", resultado=result)
+            _registrar_corrida_segura(
+                engine,
+                job_name,
+                iniciado_en,
+                "ok",
+                resultado=_con_requests(result, antes, requests_hoy(engine)),
+            )
             return result
         except Exception as exc:
+            gasto = _requests_si_gasto(antes, requests_hoy(engine))
             if propagar and isinstance(exc, APIPausadaError):
                 _log.warning("job=%s: omitido — %s", job_name, exc)
                 _registrar_corrida_segura(
@@ -929,12 +975,14 @@ def _run_with_lock(
                     job_name,
                     iniciado_en,
                     "omitido",
-                    resultado={"omitido_por": "APIPausadaError"},
+                    resultado={"omitido_por": "APIPausadaError", **(gasto or {})},
                 )
                 raise
             tb = traceback.format_exc()
             _log.error("job=%s: ERROR\n%s", job_name, tb)
-            _registrar_corrida_segura(engine, job_name, iniciado_en, "error", error=tb)
+            _registrar_corrida_segura(
+                engine, job_name, iniciado_en, "error", resultado=gasto, error=tb
+            )
             if propagar:
                 raise
             return None

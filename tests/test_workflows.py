@@ -113,6 +113,8 @@ _PROGRAMADOS = {
     "mercado-oc.yml",
     # F-plat-4: índice y modelo de adjudicación, 07:45 Chile.
     "mercado-indices.yml",
+    # F-plat-7: informe mensual por correo, día 1 a las 08:40 Chile.
+    "mercado-informe.yml",
 }
 
 

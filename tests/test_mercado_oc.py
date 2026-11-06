@@ -526,7 +526,8 @@ def test_salud_muestra_tablas_de_mercado(
         datos = get_salud_data(s, settings)
     por_tabla = {t["tabla"]: t for t in datos["tablas_mercado"]}
     assert por_tabla["oc_lineas_ca"]["filas"] == 5
-    assert set(por_tabla) == {
+    # F-plat-7 extendió la lista (todas las tablas del pivote): aquí basta con que estén las de mercado.
+    assert set(por_tabla) >= {
         "oc_lineas_ca",
         "precio_referencia",
         "precio_indice",  # F-plat-4

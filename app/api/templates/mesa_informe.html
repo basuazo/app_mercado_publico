@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import encabezado %}
+{% block title %}Informe de {{ i.mes_texto }} — Rastrillo{% endblock %}
+{% block content %}
+{{ encabezado("Informe de " ~ i.mes_texto, i.empresa) }}
+<p class="small mb-3"><a href="/mesa">← Volver a la mesa</a> · <a href="/mesa/resultados">Resultados del modo sombra</a></p>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card card-body py-2"><div class="small text-muted">CA en tu territorio</div>
+    <div class="fs-5 num">{{ i.ca.n | numero }}</div><div class="small text-muted">{{ i.ca.monto }} disponibles</div></div></div>
+  <div class="col-6 col-lg-3"><div class="card card-body py-2"><div class="small text-muted">Cotizadas (enviadas)</div>
+    <div class="fs-5 num">{{ i.cotizadas.n }}</div><div class="small text-muted">{{ i.cotizadas.ganadas }} ganadas · {{ i.cotizadas.perdidas }} perdidas · {{ i.cotizadas.sin_resultado }} sin resultado</div></div></div>
+  <div class="col-6 col-lg-3"><div class="card card-body py-2"><div class="small text-muted">Margen realizado</div>
+    <div class="fs-5 num">{{ i.margen.total }}</div><div class="small text-muted">sobre {{ i.margen.vendido }} · {{ i.margen.n }} oferta(s) ganada(s)</div></div></div>
+  <div class="col-6 col-lg-3"><div class="card card-body py-2"><div class="small text-muted">Catálogo</div>
+    <div class="fs-5 num">{{ i.catalogo.lineas_confirmadas | numero }}</div><div class="small text-muted">líneas confirmadas · {{ i.catalogo.ca_sin_detalle }} CA sin detalle</div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <h5>Margen por familia</h5>
+    {% if i.margen.por_familia %}<ul class="small">{% for f in i.margen.por_familia %}<li>{{ f.familia }}: {{ f.margen }}</li>{% endfor %}</ul>
+    {% else %}<p class="small text-muted">Sin ofertas ganadas con margen en el mes.</p>{% endif %}
+    <h5>Acierto de las predicciones ({{ i.predicciones.n }} cerradas)</h5>
+    <ul class="small">
+      <li>Ganador dentro del intervalo 80 %: {{ i.predicciones.pct_intervalo }} ({{ i.predicciones.aciertos }} de {{ i.predicciones.n_intervalo }})</li>
+      <li>P(ganar) donde ofertamos: Brier {{ i.predicciones.brier }} (n = {{ i.predicciones.n_brier }}); prometió {{ i.predicciones.p_media }}, ganamos {{ i.predicciones.tasa_ganadas }}</li>
+    </ul>
+  </div>
+  <div class="col-lg-6">
+    <h5>Compradores con más CA del mes</h5>
+    <ol class="small">{% for c in i.compradores %}<li>{{ c.nombre }} — {{ c.n }} CA, {{ c.monto }}</li>{% else %}<li class="list-unstyled text-muted">Sin Compras Ágiles en el mes.</li>{% endfor %}</ol>
+    <h5>Recomendaciones de abastecimiento vigentes</h5>
+    <ul class="small">{% for r in i.recomendaciones %}<li><strong>{{ r.tipo }}:</strong> {{ r.texto }}</li>{% else %}<li class="text-muted">Ninguna vigente.</li>{% endfor %}</ul>
+  </div>
+</div>
+<p class="text-muted small mt-3">{{ i.pie }}</p>
+{% endblock %}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Informe de {{ mes_texto }}</title></head>
+<body style="font-family: Arial, sans-serif; color: #1f2937">
+  <h2 style="color:#003366">Informe de {{ mes_texto }} — {{ empresa }}</h2>
+  <p>Compras Ágiles en tu territorio: <strong>{{ ca.n }}</strong> publicadas, por {{ ca.monto }} disponibles.<br>
+  Cotizadas por tu empresa (enviadas, cierre en el mes): <strong>{{ cotizadas.n }}</strong> —
+  {{ cotizadas.ganadas }} ganadas, {{ cotizadas.perdidas }} perdidas, {{ cotizadas.sin_resultado }} sin resultado.</p>
+
+  <h3 style="color:#003366">Margen realizado</h3>
+  <p>{{ margen.total }} sobre {{ margen.vendido }} vendidos ({{ margen.n }} oferta(s) ganada(s)).</p>
+  {% if margen.por_familia %}<ul>{% for f in margen.por_familia %}<li>{{ f.familia }}: {{ f.margen }}</li>{% endfor %}</ul>{% endif %}
+
+  <h3 style="color:#003366">Predicciones del mes ({{ predicciones.n }} cerradas)</h3>
+  <ul>
+    <li>Precio ganador dentro del intervalo 80 %: {{ predicciones.pct_intervalo }} ({{ predicciones.aciertos }} de {{ predicciones.n_intervalo }})</li>
+    <li>P(ganar) donde ofertamos: Brier {{ predicciones.brier }} (n = {{ predicciones.n_brier }}); prometió {{ predicciones.p_media }} y ganamos {{ predicciones.tasa_ganadas }}</li>
+  </ul>
+
+  <h3 style="color:#003366">Compradores con más Compras Ágiles del mes</h3>
+  <ol>
+    {% for c in compradores %}<li>{{ c.nombre }} — {{ c.n }} CA, {{ c.monto }}</li>
+    {% else %}<li>Sin Compras Ágiles en el mes</li>{% endfor %}
+  </ol>
+
+  <h3 style="color:#003366">Recomendaciones de abastecimiento vigentes</h3>
+  <ul>
+    {% for r in recomendaciones %}<li><strong>{{ r.tipo }}:</strong> {{ r.texto }}</li>
+    {% else %}<li>Ninguna vigente</li>{% endfor %}
+  </ul>
+
+  <p>Catálogo: {{ catalogo.lineas_confirmadas }} líneas confirmadas; {{ catalogo.ca_sin_detalle }} CA sin detalle.</p>
+  <p><a href="{{ url_informe }}" style="display:inline-block;background:#0d6efd;color:white;padding:10px 14px;text-decoration:none;border-radius:6px">Ver el informe en la plataforma</a></p>
+  <p style="font-size:12px;color:#6b7280">{{ pie }}</p>
+</body>
+</html>

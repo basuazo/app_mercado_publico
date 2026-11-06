@@ -73,6 +73,103 @@
   </tbody>
 </table>
 
+<!-- Pivote (F-plat-7): solo base de datos, sin red -->
+{% set pv = salud.pivote %}
+<h4 class="mt-4" id="pivote">Pivote</h4>
+
+<h5>Cuota por job (hoy, hora de Chile)</h5>
+{% if pv.cuota.alerta_no_mercado %}
+<div class="alert alert-danger" role="alert" id="alerta-cuota-no-mercado">
+  <strong>Un job fuera de <code>mercado-*</code> gastó ticket hoy:</strong>
+  {{ pv.cuota.alerta_no_mercado | join(', ') }}. La cuota es solo para Compra Ágil (regla 24):
+  revisa en cron-job.org qué disparo sigue activo.
+</div>
+{% endif %}
+{% if pv.pausa %}
+<div class="alert alert-warning" role="status" id="pausa-429">
+  API en pausa por 429 hasta las {{ pv.pausa.hasta_chile }} (Chile), faltan {{ pv.pausa.minutos }} min.
+  {% if pv.pausa.causa %}<small>{{ pv.pausa.causa }}</small>{% endif %}
+</div>
+{% endif %}
+<table class="table table-sm table-bordered w-auto mb-3">
+  <thead class="table-dark"><tr><th scope="col">Job</th><th scope="col">Requests hoy</th></tr></thead>
+  <tbody>
+    <tr><td>mercado-ca</td><td>{{ pv.cuota.mercado_ca | numero }}</td></tr>
+    <tr><td>mercado-backfill</td><td>{{ pv.cuota.mercado_backfill | numero }}</td></tr>
+    {% for j, n in pv.cuota.otros.items() %}
+    <tr class="{{ 'table-danger' if j in pv.cuota.alerta_no_mercado else '' }}"><td>{{ j }}</td><td>{{ n | numero }}</td></tr>
+    {% endfor %}
+    <tr class="fw-bold"><td>Total</td><td>{{ pv.cuota.total | numero }}</td></tr>
+  </tbody>
+</table>
+
+<h5>Territorio activo</h5>
+<p class="small mb-1">Regiones que se ingestan: <strong>{{ pv.territorio.regiones | join(', ') or '—' }}</strong></p>
+<ul class="small mb-2">
+  {% for e in pv.territorio.empresas %}<li>{{ e.empresa }}: {{ e.regiones | join(', ') or '—' }}</li>{% endfor %}
+</ul>
+{% set u = pv.territorio.ultima_mercado_ca %}
+{% if u %}
+<p class="small text-muted mb-3">Última corrida buena de <code>mercado-ca</code> ({{ u.iniciado_en }} UTC):
+  {% for k, v in u.items() if k != 'iniciado_en' %}{{ k }} = {{ v }}{{ '; ' if not loop.last }}{% endfor %}</p>
+{% else %}
+<p class="small text-muted mb-3">Sin corridas buenas de <code>mercado-ca</code> en el historial.</p>
+{% endif %}
+
+<h5>Tamaño de las tablas del pivote</h5>
+{% if pv.tamano.alerta_tablas or pv.tamano.alerta_bd %}
+<div class="alert alert-danger" role="alert" id="alerta-tamano">
+  {% if pv.tamano.alerta_bd %}La base entera supera el 70 % de 0,5 GB.{% endif %}
+  {% if pv.tamano.alerta_tablas %}Las tablas del pivote suman {{ (pv.tamano.tablas_bytes / 1024 / 1024) | round(1) }} MB, más del 70 % de 0,5 GB.{% endif %}
+  Revisa la retención (regla 11) antes de seguir cargando.
+</div>
+{% endif %}
+<p class="small text-muted mb-3">Suma de las tablas de «Tablas de mercado»: {{ (pv.tamano.tablas_bytes / 1024 / 1024) | round(1) }} MB
+  (umbral {{ (pv.tamano.umbral_bytes / 1024 / 1024) | round(0) | int }} MB).</p>
+
+<h5>Catálogo (últimos {{ pv.catalogo.dias }} días)</h5>
+<p class="small mb-1">CA publicadas: <strong>{{ pv.catalogo.ca.completo | numero }}</strong> completas ·
+  {{ pv.catalogo.ca.incompleto | numero }} incompletas · {{ pv.catalogo.ca.sin_detalle | numero }} sin detalle.
+  Líneas pendientes o dudosas: {{ pv.catalogo.lineas_pendientes | numero }} · alias aprendidos: {{ pv.catalogo.alias_aprendidos | numero }}.</p>
+{% if pv.catalogo.correcciones %}
+<p class="small mb-3">Correcciones por usuario:
+  {% for c in pv.catalogo.correcciones %}{{ c.usuario }} ({{ c.correcciones }}){{ ', ' if not loop.last }}{% endfor %}</p>
+{% else %}
+<p class="small text-muted mb-3">Sin correcciones de usuarios en el período.</p>
+{% endif %}
+
+<h5>LLM (OpenRouter, {{ pv.llm.mes }})</h5>
+<p class="small mb-3">
+  Modelo: {{ pv.llm.modelo or 'apagado (flujo manual)' }} ·
+  gasto US$ {{ '%.2f' | format(pv.llm.gasto_usd) }} de {{ '%.2f' | format(pv.llm.presupuesto_usd) }}
+  {% if pv.llm.pct_presupuesto is not none %}({{ pv.llm.pct_presupuesto }} %){% endif %}{% if pv.llm.estimado %} <span class="text-muted">(parte estimada)</span>{% endif %} ·
+  {{ pv.llm.requests | numero }} requests ·
+  desde caché: {% if pv.llm.pct_cache is not none %}{{ pv.llm.pct_cache }} % de {{ pv.llm.extracciones }} extracciones{% else %}—{% endif %}
+</p>
+
+<h5>Pronóstico de demanda</h5>
+{% if pv.demanda %}
+<p class="small mb-3">Backtest {{ pv.demanda.mes }}:
+  {% for m in pv.demanda.metricas %}{{ m.metrica }} = {{ '%.3f' | format(m.valor) if m.valor is not none else '—' }} (n = {{ m.n }}){{ '; ' if not loop.last }}{% endfor %}</p>
+{% else %}
+<p class="small text-muted mb-3">Sin backtest de demanda todavía (job mercado-demanda).</p>
+{% endif %}
+
+<h5>Modo sombra</h5>
+{% if pv.sombra %}
+<table class="table table-sm table-bordered w-auto mb-4">
+  <thead class="table-dark"><tr><th scope="col">Empresa</th><th scope="col">Abiertas</th><th scope="col">Cerradas</th><th scope="col">Sin adjudicación</th><th scope="col">Acierto intervalo 80 %</th></tr></thead>
+  <tbody>
+    {% for e in pv.sombra %}
+    <tr><td>{{ e.empresa }}</td><td>{{ e.abiertas }}</td><td>{{ e.cerradas }}</td><td>{{ e.sin_adjudicacion }}</td>
+      <td>{% if e.pct_acierto is not none %}{{ e.pct_acierto }} % ({{ e.aciertos }} de {{ e.con_intervalo }}){% else %}—{% endif %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="small text-muted mb-4">Sin predicciones todavía.</p>
+{% endif %}
+
 <!-- Modelo de adjudicación y metas del peldaño 2 (F-plat-4) -->
 {% set ma = salud.modelo_adjudicacion %}
 <h5>Precio esperado y P(ganar)</h5>

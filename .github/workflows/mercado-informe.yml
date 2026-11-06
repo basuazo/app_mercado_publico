@@ -1,0 +1,29 @@
+# Mercado informe (F-plat-7): informe mensual por empresa, por correo (Brevo). Solo base de datos y
+# correo: sin ticket, sin cuota, sin API. Idempotente por (empresa, mes): re-dispararlo no repite
+# correos. Sin BREVO_API_KEY no falla (lo avisa y el informe sigue en /mesa/informe/AAAA-MM).
+#
+# Disparo: desde cron-job.org, el día 1 de cada mes a las 08:40 hora de Chile (workflow_dispatch).
+# No a las 08:00: `mercado-indices` empieza a las 07:45 con el mismo advisory lock y podría seguir
+# corriendo; con 08:40 y la espera del lock hay holgura. Documentado en docs/operacion-disparos.md.
+# Sin `schedule` a propósito.
+name: mercado-informe
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "mercado-informe"
+      # Hasta 10 min de espera del lock + armar y enviar un informe por empresa (pocos correos).
+      timeout_min: 30
+      esperar_lock_min: 10

@@ -22,6 +22,7 @@ from app.api.routes import auth as auth_router
 from app.api.routes import catalogo as catalogo_router
 from app.api.routes import competencia as competencia_router
 from app.api.routes import equipo as equipo_router
+from app.api.routes import informe as informe_router
 from app.api.routes import inventario as inventario_router
 from app.api.routes import mesa as mesa_router
 from app.api.routes import mesa_dia as mesa_dia_router
@@ -132,6 +133,7 @@ def create_app(settings: Settings, engine: Engine) -> FastAPI:
     app.include_router(mesa_router.router)
     app.include_router(mesa_dia_router.router)
     app.include_router(mesa_precio_router.router)
+    app.include_router(informe_router.router)
     app.include_router(competencia_router.router)
     app.include_router(abastecimiento_router.router)
     app.include_router(equipo_router.router)

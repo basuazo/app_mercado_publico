@@ -1,0 +1,30 @@
+Informe de {{ mes_texto }} — {{ empresa }}
+
+Compras Ágiles en tu territorio: {{ ca.n }} publicadas, por {{ ca.monto }} disponibles.
+Cotizadas por tu empresa (enviadas, cierre en el mes): {{ cotizadas.n }} — {{ cotizadas.ganadas }} ganadas, {{ cotizadas.perdidas }} perdidas, {{ cotizadas.sin_resultado }} sin resultado.
+
+Margen realizado: {{ margen.total }} sobre {{ margen.vendido }} vendidos ({{ margen.n }} oferta(s) ganada(s)).
+{% for f in margen.por_familia -%}
+  - {{ f.familia }}: {{ f.margen }}
+{% endfor %}
+Predicciones del mes: {{ predicciones.n }} cerradas.
+  - Precio ganador dentro del intervalo 80 %: {{ predicciones.pct_intervalo }} ({{ predicciones.aciertos }} de {{ predicciones.n_intervalo }}).
+  - P(ganar) donde ofertamos: Brier {{ predicciones.brier }} (n = {{ predicciones.n_brier }}); prometió {{ predicciones.p_media }} y ganamos {{ predicciones.tasa_ganadas }}.
+
+Compradores con más Compras Ágiles del mes:
+{% for c in compradores -%}
+  {{ loop.index }}. {{ c.nombre }} — {{ c.n }} CA, {{ c.monto }}
+{% else -%}
+  (sin Compras Ágiles en el mes)
+{% endfor %}
+Recomendaciones de abastecimiento vigentes:
+{% for r in recomendaciones -%}
+  - {{ r.tipo }}: {{ r.texto }}
+{% else -%}
+  (ninguna vigente)
+{% endfor %}
+Catálogo: {{ catalogo.lineas_confirmadas }} líneas confirmadas; {{ catalogo.ca_sin_detalle }} CA sin detalle.
+
+Ver el informe en la plataforma: {{ url_informe }}
+
+{{ pie }}

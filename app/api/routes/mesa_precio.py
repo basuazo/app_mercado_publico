@@ -395,5 +395,12 @@ async def mesa_resultados(
     return _TEMPLATES.TemplateResponse(
         request,
         "mesa_resultados.html",
-        _ctx(request, user, r=r, inicio=inicio, etiqueta_resultado=eq.ETIQUETA_RESULTADO),
+        _ctx(
+            request,
+            user,
+            r=r,
+            inicio=inicio,
+            etiqueta_resultado=eq.ETIQUETA_RESULTADO,
+            sin_resultado=sombra.ofertas_sin_resultado(session, empresa_id, ahora),
+        ),
     )

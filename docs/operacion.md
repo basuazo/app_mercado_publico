@@ -301,3 +301,27 @@ Crear la rama `tests` desde dev en la consola de Neon, exportar su URL como `TES
 - Si la base de tests no está en la cabeza de Alembic, la sesión aborta con un mensaje claro.
 - Si el host contiene `ep-rough-hill` (producción) o la URL es igual a `DATABASE_URL_PROD`, la sesión
   aborta (código 2) antes de abrir cualquier conexión.
+
+---
+
+## 16. Qué mirar cada semana en `/salud` → Pivote (F-plat-7)
+
+Solo admin. Todo sale de Postgres: no gasta cuota. Revisar **en este orden**:
+
+1. **Alertas rojas.** (a) «Un job fuera de `mercado-*` gastó ticket hoy»: algún disparo apagado sigue activo en
+   cron-job.org (`ca`, `ciclo-*`, `nocturno`, `resumen`, `catalogos`); pausarlo. (b) «Tablas del pivote > 70 % de 0,5 GB»:
+   ver `operacion.md` §9 antes de seguir cargando. Si no hay alertas, bien.
+2. **Pausa de 429 vigente.** Aparece con la hora de Chile en que termina. Es normal tras un corte; si aparece todos los días
+   a la misma hora, bajar el ritmo (`docs/15-diagnostico-ca-429.md`).
+3. **Cuota por job.** `mercado-ca` de día y `mercado-backfill` solo de noche (los `requests` salen del delta de
+   `quota_log`). El total debe quedar bajo el presupuesto (9.000).
+4. **Territorio y última corrida de `mercado-ca`.** Las regiones son las de las empresas activas; las CA listadas y los
+   detalles pendientes deben bajar con los días. Si `cortado_por` aparece seguido, mirar §7 (error 429).
+5. **Catálogo.** Las CA «sin detalle» de los últimos 30 días deben ir a la baja; las líneas pendientes y las correcciones por
+   usuario dicen si alguien está usando «Demanda MP».
+6. **LLM.** Gasto del mes frente a los US$ 5 de presupuesto y % desde caché; al llegar al tope el flujo vuelve a manual.
+7. **Modelo y sombra.** Metas del peldaño 2 en verde/rojo (intervalo 80 % ≥ 70 %, Brier ≤ 0,20, ganables ≥ 10 %) y el acierto
+   acumulado por empresa. Sin cambios: se reportan tal cual, no se aflojan.
+
+**Día 1 de cada mes:** confirmar que llegó el informe mensual (`mercado-informe`, 08:40) y leerlo con Mario. Si no llegó,
+ver `job_runs`: `sin_proveedor_correo`, `pospuestos` (tope diario) o `errores`.

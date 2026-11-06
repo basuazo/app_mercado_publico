@@ -18,6 +18,21 @@
   <button class="btn btn-sm btn-primary" type="submit">Aplicar</button>
 </form>
 
+{% if sin_resultado and sin_resultado.total %}
+<div class="alert alert-warning" role="status" id="sin-resultado">
+  <strong>{{ sin_resultado.total }} oferta{{ '' if sin_resultado.total == 1 else 's' }} enviada{{ '' if sin_resultado.total == 1 else 's' }} sin resultado</strong>
+  desde hace más de 14 días del cierre: la plataforma no pudo saber si ganaron (la selección no llega o sus ofertas no se leyeron).
+  Revisa el resultado en el portal y anótalo en los comentarios de la CA (hoy no hay un formulario de resultado manual).
+  <ul class="mb-0 mt-2 small">
+    {% for o in sin_resultado.filas %}
+    <li><a href="/oportunidad/compras_agiles/{{ o.codigo }}">{{ o.nombre | truncate(70) }}</a>
+      <span class="text-muted num">{{ o.codigo }}</span> · cerró hace {{ o.dias }} días{% if o.oferta_total is not none %} · mi oferta {{ o.oferta_total | clp }}{% endif %}</li>
+    {% endfor %}
+    {% if sin_resultado.total > sin_resultado.filas | length %}<li class="text-muted">… y {{ sin_resultado.total - sin_resultado.filas | length }} más.</li>{% endif %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="row g-2 mb-3">
   <div class="col-6 col-lg-2"><div class="card card-body py-2">
     <div class="small text-muted">Predicciones cerradas</div>
