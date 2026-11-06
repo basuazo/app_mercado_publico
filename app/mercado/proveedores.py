@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,13 +19,18 @@ from app.catalogos.mercado import norm
 from app.core.tiempo import TZ_CHILE
 from app.models.tables import (
     CostoHistorial,
+    Empresa,
+    EmpresaProducto,
     Proveedor,
     ProveedorProducto,
     TarifaLogistica,
 )
 
 UNIDADES = ("kg", "L", "u")
-FUENTES = ("manual", "planilla", "lista_llm")
+# `solicitud` (F-plat-lote): la respuesta de un proveedor a una solicitud de precio de un lote.
+FUENTES = ("manual", "planilla", "lista_llm", "solicitud")
+DIAS_VIGENCIA_DEFAULT = 15  # `empresas.dias_vigencia_precio` (decisión de Boris, 5-nov)
+TRAMOS_MAX = 20
 PROVINCIAS_NUBLE = ("Diguillín", "Itata", "Punilla")
 _ALIAS_UNIDAD = {
     "kg": "kg", "kilo": "kg", "kilos": "kg", "kilogramo": "kg", "kilogramos": "kg",
@@ -149,8 +155,10 @@ def guardar_producto(
     producto_id: int | None = None,
     formato_id: int | None = None,
     catalogo: Catalogo | None = None,
+    tramos: list[dict[str, Any]] | None = None,
 ) -> tuple[ProveedorProducto, str]:
-    """Crea el producto o actualiza su precio. Devuelve (producto, 'nuevo'|'cambiado'|'historico'|'igual').
+    """Crea el producto o actualiza su precio. Devuelve (producto,
+    'nuevo'|'cambiado'|'historico'|'igual'|'confirmado').
 
     Nuevo → primera fila de historial. Precio distinto → otra fila (misma transacción).
     Precio igual → sin fila nueva (idempotente). Fecha anterior a la vigente → solo historial. Los demás datos se actualizan siempre.
@@ -178,6 +186,8 @@ def guardar_producto(
         _vinculo_explicito(session, producto_id, formato_id, unidad_base)
     elif formato_id is not None:
         raise ValueError("formato_id requiere producto_id")
+    # F-plat-lote: `tramos` None = no tocar; `[]` = borrarlos.
+    tramos_ok = normalizar_tramos(tramos) if tramos is not None else None
     vigente = vigente_desde or hoy_chile()
 
     pp = buscar_producto(session, proveedor.id, producto_texto, formato_texto)
@@ -193,6 +203,7 @@ def guardar_producto(
             vigente_desde=vigente,
             fuente=fuente,
             disponible=True if disponible is None else disponible,
+            tramos=tramos_ok,
         )
         if producto_id is not None:
             pp.producto_id, pp.formato_id = producto_id, formato_id
@@ -213,6 +224,8 @@ def guardar_producto(
         pp.codigo_unspsc = _texto(codigo_unspsc, 20)
     if disponible is not None:
         pp.disponible = disponible
+    if tramos is not None:
+        pp.tramos = tramos_ok
     if vigente < pp.vigente_desde:
         # Lista vieja: queda en el historial pero no retrocede el precio actual.
         existe = session.execute(
@@ -227,6 +240,13 @@ def guardar_producto(
         _registrar_costo(session, pp, float(precio_neto), vigente, fuente, usuario_id)
         return pp, "historico"
     if abs(pp.precio_neto_actual - float(precio_neto)) <= _TOL:
+        if fuente == "solicitud" and vigente > pp.vigente_desde:
+            # F-plat-lote: el proveedor CONFIRMÓ el mismo precio: deja de estar vencido y queda
+            # en el historial (sin esto, un precio sin cambios seguiría «de hace n días»).
+            pp.vigente_desde = vigente
+            pp.fuente = fuente
+            _registrar_costo(session, pp, float(precio_neto), vigente, fuente, usuario_id)
+            return pp, "confirmado"
         return pp, "igual"
     pp.precio_neto_actual = float(precio_neto)
     pp.vigente_desde = vigente
@@ -284,42 +304,133 @@ def variaciones_de(
 # ---------------------------------------------------------------------------
 
 
+def dias_de_precio(vigente_desde: date, hoy: date) -> int:
+    """Antigüedad del precio en días (0 = de hoy)."""
+    return max((hoy - vigente_desde).days, 0)
+
+
+def vencido(pp: ProveedorProducto, hoy: date, dias: int) -> bool:
+    """F-plat-lote §1.4: `hoy − vigente_desde > dias` (`empresas.dias_vigencia_precio`)."""
+    return dias_de_precio(pp.vigente_desde, hoy) > dias
+
+
+def dias_vigencia(session: Session, empresa_id: int) -> int:
+    empresa = session.get(Empresa, empresa_id)
+    valor = getattr(empresa, "dias_vigencia_precio", None)
+    return int(valor) if valor is not None else DIAS_VIGENCIA_DEFAULT
+
+
+def normalizar_tramos(valor: object) -> list[dict[str, float]] | None:
+    """`[{desde, precio}]` válido (desde > 0 en unidades del formato, precio neto > 0 por
+    formato), ordenado por `desde` y sin `desde` repetidos. Vacío → None. ValueError si no."""
+    if valor is None or valor == []:
+        return None
+    if not isinstance(valor, list) or len(valor) > TRAMOS_MAX:
+        raise ValueError(f"Tramos: una lista de hasta {TRAMOS_MAX} pares desde/precio")
+    out: dict[float, float] = {}
+    for t in valor:
+        try:
+            desde, precio = float(t["desde"]), float(t["precio"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("Cada tramo necesita «desde» y «precio» numéricos") from None
+        if not (desde > 0 and precio > 0) or desde != desde or precio != precio:
+            raise ValueError("En un tramo, «desde» y «precio» deben ser mayores que 0")
+        out[round(desde, 3)] = round(precio, 2)
+    return [{"desde": d, "precio": p} for d, p in sorted(out.items())]
+
+
+def tramo_para(
+    tramos: list[dict[str, Any]] | None, cantidad_formato: float | None
+) -> tuple[float, float] | None:
+    """El tramo `(desde, precio)` de mayor `desde` que la cantidad alcanza; None si ninguno."""
+    if not tramos or not cantidad_formato or cantidad_formato <= 0:
+        return None
+    mejor: tuple[float, float] | None = None
+    for t in tramos:
+        try:
+            desde, precio = float(t["desde"]), float(t["precio"])
+        except (KeyError, TypeError, ValueError):
+            continue  # parseo defensivo: un tramo roto no rompe el costo
+        if desde <= cantidad_formato + _TOL and precio > 0 and (mejor is None or desde > mejor[0]):
+            mejor = (desde, precio)
+    return mejor
+
+
 @dataclass(frozen=True)
 class Candidato:
     proveedor_id: int
     proveedor: str
-    producto_id: int
+    producto_id: int  # id de `proveedor_productos` (no del canónico)
     producto_texto: str
     formato_texto: str
     unidad_base: str
-    precio_neto: float
+    precio_neto: float  # por formato (el del tramo si aplicó)
     precio_por_unidad_base: float
+    # F-plat-lote §2.3: antigüedad del precio y tramo por volumen aplicado (su `desde`).
+    vencido: bool = False
+    dias: int | None = None
+    tramo_aplicado: float | None = None
+    habitual: bool = False
 
 
 @dataclass(frozen=True)
 class MejorCosto:
     unidad_base: str
     ganador: Candidato
-    candidatos: list[Candidato]  # todos, del más barato al más caro
+    candidatos: list[Candidato]  # todos: los vigentes primero, del más barato al más caro
+
+    @property
+    def vencido(self) -> bool:
+        """El ganador es vencido = no queda ningún precio vigente (la UI lo pinta en ámbar)."""
+        return self.ganador.vencido
 
 
-def mejor_costo(
+def _habituales(session: Session, empresa_id: int, producto_id: int | None) -> set[int]:
+    if producto_id is None:
+        return set()
+    return {
+        int(pid)
+        for pid in session.execute(
+            select(EmpresaProducto.proveedor_habitual_id).where(
+                EmpresaProducto.empresa_id == empresa_id,
+                EmpresaProducto.producto_id == producto_id,
+                EmpresaProducto.activo.is_(True),
+                EmpresaProducto.proveedor_habitual_id.is_not(None),
+            )
+        ).scalars()
+        if pid is not None
+    }
+
+
+def mejor_costo(  # noqa: PLR0913 - una dimensión del costo = un parámetro
     session: Session,
     empresa_id: int,
     producto_id: int | None = None,
     producto_texto: str | None = None,
     unidad_base: str | None = None,
+    *,
+    cantidad_base: float | None = None,
+    permitir_vencidos: bool = False,
+    hoy: date | None = None,
 ) -> MejorCosto | None:
-    """Mejor costo hoy por (producto normalizado, unidad base) de la empresa.
+    """Mejor costo VIGENTE por (producto normalizado, unidad base) de la empresa. Única
+    definición: la mesa (job), la ficha (F-plat-5), abastecimiento y el lote la llaman.
 
-    Compite `precio_neto_actual / factor_base` (precio por kg, L o u) entre proveedores
-    ACTIVOS con el producto `disponible`; sin `factor_base`/`unidad_base` no compite.
-    `producto_id` filtra por la columna homónima (la llena F-plat-1); `producto_texto`, por
-    `norm`. Si hay más de una unidad base y no se pide una, gana la que tiene más candidatos
-    (empate: orden alfabético). None si nadie compite.
+    Compite `precio / factor_base` (precio por kg, L o u) entre proveedores ACTIVOS con el
+    producto `disponible`; sin `factor_base`/`unidad_base` no compite. `producto_id` filtra por la
+    columna homónima; `producto_texto`, por `norm`. Si hay más de una unidad base y no se pide una,
+    gana la que tiene más candidatos (empate: orden alfabético). None si nadie compite.
+
+    F-plat-lote §2.3. Orden: no vencido antes que vencido (`empresas.dias_vigencia_precio`; con
+    `permitir_vencidos` compiten igual), precio (el del tramo que cubre `cantidad_base` convertida
+    a unidades del formato, si el producto tiene `tramos`), y el proveedor habitual del inventario
+    como desempate. Si solo quedan vencidos, gana el mejor vencido con `vencido=True`.
     """
     if producto_id is None and not producto_texto:
         raise ValueError("producto_id o producto_texto")
+    dia = hoy or hoy_chile()
+    dias = dias_vigencia(session, empresa_id)
+    habituales = _habituales(session, empresa_id, producto_id)
     consulta = (
         select(ProveedorProducto, Proveedor)
         .join(Proveedor, Proveedor.id == ProveedorProducto.proveedor_id)
@@ -342,6 +453,12 @@ def mejor_costo(
             continue
         if unidad_base is not None and pp.unidad_base != unidad_base:
             continue
+        precio = pp.precio_neto_actual
+        tramo = tramo_para(pp.tramos, cantidad_base / pp.factor_base if cantidad_base else None)
+        if tramo is not None and tramo[1] < precio:
+            precio = tramo[1]  # un tramo por volumen solo puede bajar el precio
+        else:
+            tramo = None
         por_unidad.setdefault(pp.unidad_base, []).append(
             Candidato(
                 proveedor_id=prov.id,
@@ -350,15 +467,48 @@ def mejor_costo(
                 producto_texto=pp.producto_texto,
                 formato_texto=pp.formato_texto,
                 unidad_base=pp.unidad_base,
-                precio_neto=pp.precio_neto_actual,
-                precio_por_unidad_base=pp.precio_neto_actual / pp.factor_base,
+                precio_neto=precio,
+                precio_por_unidad_base=precio / pp.factor_base,
+                vencido=vencido(pp, dia, dias),
+                dias=dias_de_precio(pp.vigente_desde, dia),
+                tramo_aplicado=tramo[0] if tramo else None,
+                habitual=prov.id in habituales,
             )
         )
     if not por_unidad:
         return None
     unidad = sorted(por_unidad, key=lambda u: (-len(por_unidad[u]), u))[0]
-    ordenados = sorted(por_unidad[unidad], key=lambda c: c.precio_por_unidad_base)
+    ordenados = sorted(
+        por_unidad[unidad],
+        key=lambda c: (
+            c.vencido and not permitir_vencidos,
+            round(c.precio_por_unidad_base, 6),
+            not c.habitual,
+            c.proveedor,
+        ),
+    )
     return MejorCosto(unidad, ordenados[0], ordenados)
+
+
+def vencidos_por_proveedor(
+    session: Session, empresa_id: int, hoy: date | None = None
+) -> dict[int, int]:
+    """`{proveedor_id: n precios vencidos}` de los proveedores ACTIVOS de la empresa (productos
+    disponibles). Para el filtro «Vencidos» de /proveedores y «n precios por actualizar» de Hoy."""
+    corte = (hoy or hoy_chile()) - timedelta(days=dias_vigencia(session, empresa_id))
+    out: dict[int, int] = {}
+    for pid in session.execute(
+        select(ProveedorProducto.proveedor_id)
+        .join(Proveedor, Proveedor.id == ProveedorProducto.proveedor_id)
+        .where(
+            Proveedor.empresa_id == empresa_id,
+            Proveedor.activo.is_(True),
+            ProveedorProducto.disponible.is_(True),
+            ProveedorProducto.vigente_desde < corte,
+        )
+    ).scalars():
+        out[pid] = out.get(pid, 0) + 1
+    return out
 
 
 # ---------------------------------------------------------------------------

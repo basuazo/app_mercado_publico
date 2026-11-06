@@ -629,3 +629,14 @@ textarea.form-control { min-height: 0; }
 }
 .hilo__sugerencia { padding: 4px 10px; cursor: pointer; }
 .hilo__sugerencia.activa, .hilo__sugerencia:hover { background: var(--c-acento-suave); }
+
+/* F-plat-lote: barra fija «n seleccionadas · Cotizar» de la mesa. */
+.barra-lote {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  background: var(--c-superficie); border-top: 1px solid var(--c-borde);
+  box-shadow: 0 -4px 12px rgba(0,0,0,.08); padding: 10px 16px;
+}
+.barra-lote[hidden] { display: none; }
+@media (min-width: 992px) { .barra-lote { left: 232px; } }
+.barra-lote__cuerpo { max-width: 1200px; margin: 0 auto; }
+.lote-mensaje { white-space: pre-wrap; font-family: inherit; font-size: 14px; }

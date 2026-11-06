@@ -104,6 +104,7 @@ class LineaOferta:
     origen: str | None = None
     empresa_producto_id: int | None = None
     aviso: str | None = None  # p. ej. el stock propio elegido ya no cubre la línea
+    vencido_dias: int | None = None  # F-plat-lote: el costo elegido es un precio vencido
 
     @property
     def total(self) -> float | None:
@@ -131,11 +132,19 @@ class Simulacion:
 
 
 def _candidatos(
-    session: Session, empresa_id: int, producto_id: int | None, unidad_base: str | None
+    session: Session,
+    empresa_id: int,
+    producto_id: int | None,
+    unidad_base: str | None,
+    cantidad_base: float | None = None,
 ) -> list[Candidato]:
+    """Con la cantidad de la línea (F-plat-lote §2.3: tramos por volumen); vigentes primero."""
     if producto_id is None or not unidad_base:
         return []
-    mc = mejor_costo(session, empresa_id, producto_id=producto_id, unidad_base=unidad_base)
+    mc = mejor_costo(
+        session, empresa_id, producto_id=producto_id, unidad_base=unidad_base,
+        cantidad_base=cantidad_base,
+    )  # fmt: skip
     return mc.candidatos if mc else []
 
 
@@ -225,8 +234,13 @@ def armar(
     ev: adj.EvaluacionCA | None,
     guardada: OfertaPropia | None,
     entradas: Mapping[int, Entrada] | None = None,
+    costos_por_producto: Mapping[int, Entrada] | None = None,
 ) -> list[LineaOferta]:
-    """Líneas de la oferta: lo que manda el formulario, si no lo guardado, si no lo sugerido."""
+    """Líneas de la oferta: lo que manda el formulario, si no lo guardado, si no lo sugerido.
+
+    `costos_por_producto` (F-plat-lote §2.4, `{producto_id: Entrada}`): el origen del costo que
+    eligió el lote (proveedor o stock propio) para cada producto; pisa al proveedor guardado pero
+    no el precio. No aplica a lo que manda el formulario (`entradas`)."""
     lineas = lineas_de(session, ca.codigo)
     unidades = _unidades(session, lineas)
     sugeridos = precios_sugeridos_por_linea(ev)
@@ -251,7 +265,18 @@ def armar(
             origen = previas[ln.id].get("origen")
         else:
             precio, pp_id = (round(unit_sug, 2) if unit_sug is not None else None), None
-        cands = _candidatos(session, empresa_id, ln.producto_id, ub) if ln.estado == "ok" else []
+        elegido_lote = (
+            costos_por_producto.get(ln.producto_id)
+            if entradas is None and costos_por_producto is not None and ln.producto_id is not None
+            else None
+        )
+        if elegido_lote is not None:
+            pp_id, origen = elegido_lote.proveedor_producto_id, elegido_lote.origen
+        cands = (
+            _candidatos(session, empresa_id, ln.producto_id, ub, ln.cantidad_base)
+            if ln.estado == "ok"
+            else []
+        )
         # F-plat-capas: el stock propio solo se ofrece si CUBRE la línea; si lo elegido ya no
         # alcanza (alguien movió el stock), se vuelve al mejor costo.
         stock = (
@@ -283,6 +308,7 @@ def armar(
         elif elegido is not None:
             lo.costo_por_base = elegido.precio_por_unidad_base
             lo.proveedor = elegido.proveedor
+            lo.vencido_dias = elegido.dias if elegido.vencido else None
             if ln.cantidad_base:
                 lo.costo_total = elegido.precio_por_unidad_base * ln.cantidad_base
         out.append(lo)

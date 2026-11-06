@@ -452,6 +452,109 @@ def ajustar_stock(
 
 
 # ---------------------------------------------------------------------------
+# Reserva y liberación (F-plat-lote §1.5): mueven `reservado`, nunca `stock`
+# ---------------------------------------------------------------------------
+
+
+def reservar(
+    session: Session,
+    empresa_id: int,
+    producto_id: int,
+    cantidad_base: float,
+    referencia: str,
+    usuario_id: int | None,
+) -> float:
+    """Reserva hasta `cantidad_base` (unidad base) del producto, repartida entre sus formatos
+    activos (primero el de más disponible). Nunca más que lo disponible: `reservado ≤ stock`.
+    Cada formato tocado deja un movimiento `reserva` (`delta` = unidades del formato, > 0) con la
+    `referencia` (p. ej. «lote:12»). Devuelve lo reservado en unidad base (< pedido = no alcanzó).
+    """
+    if cantidad_base <= _TOL:
+        return 0.0
+    filas = list(
+        session.execute(
+            select(EmpresaProducto, ProductoFormato.factor_base)
+            .join(ProductoFormato, ProductoFormato.id == EmpresaProducto.formato_id)
+            .where(
+                EmpresaProducto.empresa_id == empresa_id,
+                EmpresaProducto.producto_id == producto_id,
+                EmpresaProducto.activo.is_(True),
+            )
+            .order_by(EmpresaProducto.id)
+            .with_for_update(of=EmpresaProducto)
+        ).all()
+    )
+    filas.sort(key=lambda f: -(max(f[0].disponible, 0.0) * float(f[1])))
+    restante = cantidad_base
+    reservado = 0.0
+    for ep, factor in filas:
+        f = float(factor)
+        unidades = round(min(max(ep.disponible, 0.0), restante / f), 3)
+        if unidades <= _TOL:
+            continue
+        ep.reservado = round((ep.reservado or 0.0) + unidades, 3)
+        session.add(
+            EmpresaProductoMovimiento(
+                empresa_producto_id=ep.id, delta=unidades, motivo="reserva",
+                referencia=referencia[:100], usuario_id=usuario_id,
+            )
+        )  # fmt: skip
+        reservado += unidades * f
+        restante -= unidades * f
+        if restante <= _TOL:
+            break
+    session.flush()
+    return round(reservado, 6)
+
+
+def liberar(
+    session: Session, empresa_id: int, referencia: str, usuario_id: int | None
+) -> int:
+    """Libera TODO lo que sigue reservado con esa `referencia` (Σ reserva − Σ liberación por
+    formato), sin bajar `reservado` de 0. Movimiento `liberacion` con `delta` negativo. Idempotente:
+    una segunda llamada no encuentra nada. Devuelve cuántos formatos liberó."""
+    netos: dict[int, float] = {}
+    for ep_id, delta in session.execute(
+        select(EmpresaProductoMovimiento.empresa_producto_id, EmpresaProductoMovimiento.delta)
+        .join(EmpresaProducto, EmpresaProducto.id == EmpresaProductoMovimiento.empresa_producto_id)
+        .where(
+            EmpresaProducto.empresa_id == empresa_id,
+            EmpresaProductoMovimiento.referencia == referencia[:100],
+            EmpresaProductoMovimiento.motivo.in_(("reserva", "liberacion")),
+        )
+    ):
+        netos[ep_id] = netos.get(ep_id, 0.0) + float(delta)
+    n = 0
+    for ep_id, neto in sorted(netos.items()):
+        if neto <= _TOL:
+            continue
+        ep = obtener(session, empresa_id, ep_id, para_escribir=True)
+        unidades = round(min(neto, ep.reservado or 0.0), 3)
+        if unidades <= _TOL:
+            continue
+        ep.reservado = round((ep.reservado or 0.0) - unidades, 3)
+        session.add(
+            EmpresaProductoMovimiento(
+                empresa_producto_id=ep.id, delta=-unidades, motivo="liberacion",
+                referencia=referencia[:100], usuario_id=usuario_id,
+            )
+        )  # fmt: skip
+        n += 1
+    session.flush()
+    return n
+
+
+def disponible_base(
+    session: Session, empresa_id: int, producto_ids: Iterable[int]
+) -> dict[int, float]:
+    """`{producto_id: disponible en unidad base}` (todos los formatos activos, sin negativos)."""
+    return {
+        pid: sum(max(ep.disponible, 0.0) * factor for ep, factor, _ in entradas)
+        for pid, entradas in _entradas(session, empresa_id, producto_ids).items()
+    }
+
+
+# ---------------------------------------------------------------------------
 # Cobertura de una Compra Ágil
 # ---------------------------------------------------------------------------
 

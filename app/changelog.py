@@ -16,6 +16,30 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 6),
+        titulo=(
+            "Cotizar varias Compras Ágiles a la vez: lote, solicitud de precios a proveedores y "
+            "precios vencidos"
+        ),
+        descripcion=(
+            "En la mesa, marca varias Compras Ágiles y pulsa «Cotizar»: se arma un lote que suma lo "
+            "que piden todas en la misma unidad (latas, botellas y packs se juntan), lo redondea al "
+            "formato en que compras, descuenta lo que tienes en Inventario y sugiere el proveedor con "
+            "mejor precio vigente, incluido el descuento por volumen si lo tiene. Para cada proveedor "
+            "se arma un mensaje listo para copiar en WhatsApp o correo y una planilla para que la "
+            "devuelva llena; el mensaje no dice qué Compra Ágil ni qué comprador estás cotizando. La "
+            "plataforma no envía nada: tú lo mandas y después anotas la respuesta (a mano o subiendo "
+            "la planilla) y el precio queda guardado con su historial. «Armar ofertas» pre-llena la "
+            "oferta de cada Compra Ágil con esos costos; al marcar el lote como ofertado se reserva el "
+            "stock que usa y al cerrarlo se libera. Un precio de proveedor con más de 15 días (se "
+            "cambia en la ficha de la empresa) ahora es «vencido»: no gana el mejor costo si hay "
+            "otro vigente, se ve como «precio de hace n días» en la mesa, la ficha y el lote, "
+            "«Catálogo Proveedores» tiene el filtro «Vencidos» y «Hoy» cuenta los precios por "
+            "actualizar. Nueva sección «En trabajo»: los lotes abiertos, lo que está en curso sin "
+            "lote y lo que cierra en 24 horas. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 6),
         titulo="Anexos: carga masiva por código, el anexo manda sobre la API, enlace a la ficha",
         descripcion=(
             "Nueva «Carga masiva de anexos» (en Demanda MP): sube varios archivos o un ZIP de una "

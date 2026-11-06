@@ -28,7 +28,7 @@ from app.mercado import catalogo as cat
 from app.mercado import importar, vinculo
 from app.mercado import oferta as of
 from app.mercado import oferta_propia as op
-from app.mercado.proveedores import guardar_producto, mejor_costo
+from app.mercado.proveedores import guardar_producto, hoy_chile, mejor_costo
 from app.models.base import Base
 from app.models.tables import (
     CaLinea,
@@ -47,6 +47,10 @@ from app.models.tables import (
 )
 
 _PW = "contraseña-segura-test"
+# F-plat-lote: un precio con más de 15 días es «vencido» y ya no gana el mejor costo. Las fechas
+# del costo son relativas a hoy (antes eran fijas y el test se pudría con el calendario).
+_HACE_10 = hoy_chile() - timedelta(days=10)
+_HACE_2 = hoy_chile() - timedelta(days=2)
 
 
 @pytest.fixture()
@@ -447,18 +451,18 @@ def _costos(s, mundo):
     pp1 = ProveedorProducto(proveedor_id=mundo["prov"], producto_id=mundo["arroz"],
                             formato_id=mundo["arroz_saco"], producto_texto="Arroz",
                             formato_texto="saco 25 kg", factor_base=25.0, unidad_base="kg",
-                            precio_neto_actual=20000.0, vigente_desde=date(2026, 10, 1),
+                            precio_neto_actual=20000.0, vigente_desde=_HACE_10,
                             fuente="manual")  # fmt: skip
     pp2 = ProveedorProducto(proveedor_id=otro.id, producto_id=mundo["arroz"],
                             formato_id=mundo["arroz_saco"], producto_texto="Arroz",
                             formato_texto="saco 25 kg", factor_base=25.0, unidad_base="kg",
-                            precio_neto_actual=22500.0, vigente_desde=date(2026, 11, 3),
+                            precio_neto_actual=22500.0, vigente_desde=_HACE_2,
                             fuente="manual")  # fmt: skip
     s.add_all([pp1, pp2])
     s.flush()
     s.add_all([
-        CostoHistorial(proveedor_producto_id=pp1.id, precio_neto=20000, vigente_desde=date(2026, 10, 1), fuente="manual"),
-        CostoHistorial(proveedor_producto_id=pp2.id, precio_neto=22500, vigente_desde=date(2026, 11, 3), fuente="manual"),
+        CostoHistorial(proveedor_producto_id=pp1.id, precio_neto=20000, vigente_desde=_HACE_10, fuente="manual"),
+        CostoHistorial(proveedor_producto_id=pp2.id, precio_neto=22500, vigente_desde=_HACE_2, fuente="manual"),
     ])  # fmt: skip
     s.flush()
     return pp1, pp2, otro

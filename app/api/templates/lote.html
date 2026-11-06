@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}{{ v.lote.nombre }} — Rastrillo{% endblock %}
+{% block content %}
+{%- set L = v.lote -%}
+<div id="lote-contenido" data-lote="{{ L.id }}">
+<nav aria-label="Migas" class="small mb-2"><a href="/trabajo">En trabajo</a> › <a href="/lotes">Lotes</a></nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+  <div>
+    <h2 class="mb-1">{{ L.nombre }}</h2>
+    <p class="small text-muted mb-0">
+      <span class="badge text-bg-{{ 'secondary' if L.estado == 'cerrado' else 'primary' }} fw-normal" data-lote="estado">{{ estados[L.estado] }}</span>
+      · {{ v.cas | length }} Compra{{ '' if v.cas | length == 1 else 's' }} Ágil{{ '' if v.cas | length == 1 else 'es' }}
+      · cierre más próximo: {{ L.fecha_limite | fecha_chile if L.fecha_limite else 'sin fecha' }}
+    </p>
+  </div>
+  {% if L.estado != 'cerrado' %}
+  <div class="d-flex flex-wrap gap-2">
+    {% if editable %}
+    <form method="post" action="/lotes/{{ L.id }}/recalcular" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-secondary btn-sm">Recalcular</button>
+    </form>
+    <form method="post" action="/lotes/{{ L.id }}/ofertas" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ L.version }}">
+      <button class="btn btn-{{ 'primary' if L.estado == 'con_precios' else 'outline-primary' }} btn-sm" data-lote="armar">Armar ofertas</button>
+    </form>
+    <form method="post" action="/lotes/{{ L.id }}/estado" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ L.version }}">
+      <input type="hidden" name="estado" value="ofertado">
+      <button class="btn btn-outline-success btn-sm" title="Todas las CA deben estar «Lista para enviar» o «Enviada». Reserva el stock propio.">Marcar ofertado</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/lotes/{{ L.id }}/estado" class="m-0 d-flex gap-1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ L.version }}">
+      <label class="visually-hidden" for="lote-estado">Cambiar estado</label>
+      <select class="form-select form-select-sm w-auto" name="estado" id="lote-estado">
+        {% for clave, etiqueta in estados.items() %}{% if clave != L.estado %}<option value="{{ clave }}">{{ etiqueta }}</option>{% endif %}{% endfor %}
+      </select>
+      <button class="btn btn-outline-secondary btn-sm">Cambiar</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{% if mensaje %}<div class="alert alert-success py-2" role="status">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger py-2" role="alert" data-lote="error">{{ error }}</div>{% endif %}
+{% if v.vencidas %}
+<div class="alert alert-warning py-2" role="status" data-lote="vencidos">{{ v.vencidas }} producto{{ '' if v.vencidas == 1 else 's' }} a comprar solo tiene{{ '' if v.vencidas == 1 else 'n' }} precio vencido: pídelo en las solicitudes de abajo.</div>
+{% endif %}
+{% if v.sin_producto_lineas %}
+<div class="alert alert-secondary py-2" role="status" data-lote="sin-producto">Sin producto: {{ v.sin_producto_lineas }} línea{{ '' if v.sin_producto_lineas == 1 else 's' }} en {{ v.sin_producto_cas }} CA no entra{{ '' if v.sin_producto_lineas == 1 else 'n' }} al agregado. Corrígelas en {{ nav.DEMANDA_MP }} (enlace en cada CA) y pulsa «Recalcular».</div>
+{% endif %}
+{% if v.sin_cantidad %}
+<div class="alert alert-secondary py-2" role="status">{{ v.sin_cantidad }} línea{{ '' if v.sin_cantidad == 1 else 's' }} con producto pero sin cantidad en la unidad base: no se suma{{ '' if v.sin_cantidad == 1 else 'n' }}.</div>
+{% endif %}
+
+{# --- 1. CA del lote ----------------------------------------------------------------------- #}
+<h3 class="fs-5 mt-4">Compras Ágiles del lote</h3>
+<div class="table-responsive">
+<table class="table table-sm align-middle" data-lote="cas">
+  <thead><tr><th>Compra Ágil</th><th>Comprador</th><th>Cierre</th><th>Líneas</th><th>Estado</th><th class="text-end">Oferta</th><th></th></tr></thead>
+  <tbody>
+  {% for c in v.cas %}
+  <tr>
+    <td><a href="/oportunidad/compras_agiles/{{ c.codigo }}">{{ c.nombre }}</a><div class="small text-muted num">{{ c.codigo }}</div></td>
+    <td class="small">{{ c.comprador }}</td>
+    <td class="small">{{ c.cierre | fecha_chile if c.cierre else '—' }}</td>
+    <td class="small">
+      {% if c.detalle == 'completo' %}<span class="badge text-bg-success fw-normal">completo</span>
+      {% elif c.detalle == 'incompleto' %}<span class="badge text-bg-warning fw-normal">incompleto</span>
+      {% else %}<span class="badge text-bg-danger fw-normal">sin detalle</span>{% endif %}
+      {{ c.n_lineas }}{% if c.sin_producto %} · <a href="/catalogo/ca/{{ c.codigo }}">{{ c.sin_producto }} sin producto</a>{% endif %}
+    </td>
+    <td class="small">{{ estados_ca.get(c.estado, c.estado) }}{% if c.resultado %} · {{ resultados.get(c.resultado, c.resultado) }}{% endif %}</td>
+    <td class="text-end num small">{{ c.oferta_total | clp if c.oferta_total is not none else '—' }}</td>
+    <td class="text-end">
+      {% if editable %}
+      <form method="post" action="/lotes/{{ L.id }}/cas/{{ c.codigo }}/quitar" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ L.version }}">
+        <button class="btn btn-link btn-sm text-danger p-0">Quitar</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{# --- 2. Agregado ---------------------------------------------------------------------------- #}
+<h3 class="fs-5 mt-4">Agregado por producto</h3>
+<p class="small text-muted">Suma de todas las CA en la unidad base, redondeada hacia arriba al formato de compra (el más usado por tus proveedores). Lo que cubre tu {{ nav.INVENTARIO | lower }} no se compra.</p>
+<div class="table-responsive">
+<table class="table table-sm align-middle" data-lote="agregado">
+  <thead><tr><th>Producto</th><th>Formato de compra</th><th class="text-end">Total</th><th class="text-end">En stock</th><th class="text-end">A comprar</th><th>Proveedor</th><th class="text-end">Costo</th><th class="text-end">Subtotal</th></tr></thead>
+  <tbody>
+  {% for l in v.lineas %}
+  <tr{% if l.ll.precio_vencido and l.ll.a_comprar_base > 0 %} class="table-warning"{% endif %}>
+    <td>{{ l.producto }}</td>
+    <td class="small">{{ l.formato }}</td>
+    <td class="text-end num">{{ l.ll.cantidad_base | cantidad }} {{ l.unidad_base }}<div class="small text-muted">{{ l.ll.cantidad_formato | cantidad }} × {{ l.formato }}</div></td>
+    <td class="text-end num">{{ l.ll.en_stock_base | cantidad }} {{ l.unidad_base }}</td>
+    <td class="text-end num">{{ l.ll.a_comprar_base | cantidad }} {{ l.unidad_base }}{% if l.ll.a_comprar_base > 0 %}<div class="small text-muted">{{ l.a_comprar_formato | cantidad }} × {{ l.formato }}</div>{% endif %}</td>
+    <td class="small" style="min-width: 14rem">
+      {% if editable and l.ll.a_comprar_base > 0 %}
+      <form method="post" action="/lotes/{{ L.id }}/lineas/{{ l.ll.id }}/proveedor" class="m-0"
+            hx-post="/lotes/{{ L.id }}/lineas/{{ l.ll.id }}/proveedor" hx-trigger="change"
+            hx-target="#lote-contenido" hx-select="#lote-contenido" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="visually-hidden" for="prov-{{ l.ll.id }}">Proveedor de {{ l.producto }}</label>
+        <select class="form-select form-select-sm" name="proveedor" id="prov-{{ l.ll.id }}">
+          <option value="">Automático (mejor costo vigente){% if not l.ll.proveedor_fijado and l.proveedor %}: {{ l.proveedor }}{% endif %}</option>
+          {% for o in l.opciones %}<option value="{{ o.valor }}" {% if o.valor == l.valor_elegido %}selected{% endif %}>{{ o.texto }}</option>{% endfor %}
+        </select>
+        <noscript><button class="btn btn-sm btn-outline-secondary mt-1">Guardar</button></noscript>
+      </form>
+      {% else %}{{ l.proveedor or ('—' if l.ll.a_comprar_base > 0 else 'stock propio') }}{% endif %}
+      {% if l.ll.precio_vencido and l.ll.a_comprar_base > 0 %}<span class="badge text-bg-warning fw-normal" data-lote="vencido">precio de hace {{ l.ll.dias_precio }} días</span>{% endif %}
+      {% if l.ll.a_comprar_base > 0 and not l.ll.proveedor_sugerido_id %}<span class="text-danger">sin proveedor: elige uno para pedirle precio</span>{% endif %}
+    </td>
+    <td class="text-end num small">{{ (l.ll.costo_unitario_sugerido | clp) ~ '/' ~ l.unidad_base if l.ll.costo_unitario_sugerido is not none else '—' }}</td>
+    <td class="text-end num">{{ l.subtotal | clp if l.subtotal is not none else ('—' if l.ll.a_comprar_base > 0 else '$0') }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="text-muted">Sin productos agregables: revisa las líneas de las CA.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{# --- 3. Solicitudes -------------------------------------------------------------------------- #}
+<h3 class="fs-5 mt-4">Solicitudes de precio</h3>
+<p class="small text-muted">Una por proveedor con productos a comprar. La plataforma no envía nada: copia el mensaje o descarga la planilla y mándala tú. El mensaje no dice qué Compra Ágil ni qué comprador se cotiza.</p>
+{% for vs in v.solicitudes %}
+{%- set s = vs.s -%}
+<div class="card mb-3" data-solicitud="{{ s.id }}">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <div><strong>{{ vs.proveedor.nombre }}</strong>
+        <span class="badge text-bg-{{ {'borrador': 'secondary', 'enviada': 'info', 'respondida': 'success', 'sin_respuesta': 'warning'}[s.estado] }} fw-normal">{{ etiqueta_solicitud[s.estado] }}</span>
+        {% if s.canal %}<span class="small text-muted">por {{ canales.get(s.canal, s.canal) }}</span>{% endif %}
+        {% if vs.proveedor.telefono %}<span class="small text-muted">· {{ vs.proveedor.telefono }}</span>{% endif %}
+        {% if vs.proveedor.email %}<span class="small text-muted">· {{ vs.proveedor.email }}</span>{% endif %}
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post" action="/lotes/{{ L.id }}/solicitudes/{{ s.id }}/texto" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-outline-secondary btn-sm">Generar mensaje</button>
+        </form>
+        <a class="btn btn-outline-secondary btn-sm" href="/lotes/{{ L.id }}/solicitudes/{{ s.id }}/planilla.xlsx">Descargar XLSX</a>
+      </div>
+    </div>
+    {% if s.texto_generado %}
+    <label class="form-label small" for="msg-{{ s.id }}">Mensaje para el proveedor</label>
+    <textarea class="form-control lote-mensaje mb-2" id="msg-{{ s.id }}" rows="7" readonly>{{ s.texto_generado }}</textarea>
+    <button type="button" class="btn btn-sm btn-outline-primary mb-3" data-copiar="msg-{{ s.id }}">Copiar</button>
+    {% endif %}
+
+    {% if L.estado != 'cerrado' %}
+    <form method="post" action="/lotes/{{ L.id }}/solicitudes/{{ s.id }}/enviada" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ s.version }}">
+      <label class="small" for="canal-{{ s.id }}">Enviada por</label>
+      <select class="form-select form-select-sm w-auto" name="canal" id="canal-{{ s.id }}">
+        {% for clave, etiqueta in canales.items() %}<option value="{{ clave }}" {% if s.canal == clave %}selected{% endif %}>{{ etiqueta }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-primary">Marcar enviada</button>
+    </form>
+
+    <details{% if s.estado in ('enviada', 'sin_respuesta') %} open{% endif %}>
+      <summary class="small">Registrar respuesta</summary>
+      <form method="post" action="/lotes/{{ L.id }}/solicitudes/{{ s.id }}/respuesta" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ s.version }}">
+        <div class="table-responsive">
+        <table class="table table-sm align-middle mb-2">
+          <thead><tr><th>Producto</th><th class="text-end">Cantidad</th><th>Precio neto por formato</th><th>Tramos (desde:precio; …)</th><th>Disponible</th><th>Plazo (días)</th></tr></thead>
+          <tbody>
+          {% for f in vs.filas %}{%- set sl = f.solicitud_linea -%}
+          <tr>
+            <td class="small">{{ f.producto }} · {{ f.formato }}</td>
+            <td class="text-end num small">{{ sl.cantidad_formato | cantidad }}</td>
+            <td><input class="form-control form-control-sm num" inputmode="decimal" name="precio_{{ sl.id }}" aria-label="Precio de {{ f.producto }}" value="{{ '%.2f' | format(sl.precio_respuesta) if sl.precio_respuesta is not none else '' }}"></td>
+            <td><input class="form-control form-control-sm" name="tramos_{{ sl.id }}" aria-label="Tramos de {{ f.producto }}" placeholder="10:950; 50:900" value="{{ f.tramos_txt }}"></td>
+            <td>
+              <select class="form-select form-select-sm" name="disp_{{ sl.id }}" aria-label="Disponible {{ f.producto }}">
+                <option value="" {% if sl.disponible is none %}selected{% endif %}>—</option>
+                <option value="si" {% if sl.disponible == true %}selected{% endif %}>Sí</option>
+                <option value="no" {% if sl.disponible == false %}selected{% endif %}>No</option>
+              </select>
+            </td>
+            <td><input class="form-control form-control-sm num" inputmode="numeric" name="plazo_{{ sl.id }}" aria-label="Plazo de {{ f.producto }}" value="{{ sl.plazo_dias if sl.plazo_dias is not none else '' }}"></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-sm btn-primary">Guardar respuesta</button>
+        </div>
+      </form>
+      <form method="post" action="/lotes/{{ L.id }}/solicitudes/{{ s.id }}/planilla" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ s.version }}">
+        <label class="small" for="archivo-{{ s.id }}">o sube la planilla que devolvió</label>
+        <input class="form-control form-control-sm w-auto" type="file" name="archivo" id="archivo-{{ s.id }}" accept=".xlsx">
+        <button class="btn btn-sm btn-outline-primary">Subir planilla</button>
+      </form>
+      <form method="post" action="/lotes/{{ L.id }}/solicitudes/{{ s.id }}/sin-respuesta" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ s.version }}">
+        <button class="btn btn-link btn-sm p-0">No respondió</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<p class="text-muted small">Sin solicitudes: no hay productos a comprar con proveedor asignado.</p>
+{% endfor %}
+
+{# --- Resumen -------------------------------------------------------------------------------- #}
+<h3 class="fs-5 mt-4">Resumen</h3>
+<dl class="row small" data-lote="resumen">
+  <dt class="col-6 col-md-3 fw-normal text-muted">Total a vender</dt><dd class="col-6 col-md-9 num">{{ v.resumen.total_vender | clp }}{% if v.resumen.sin_oferta %} <span class="text-muted">· CA sin oferta armada: {{ v.resumen.sin_oferta }}</span>{% endif %}</dd>
+  <dt class="col-6 col-md-3 fw-normal text-muted">Total a comprar</dt><dd class="col-6 col-md-9 num">{{ v.resumen.total_comprar | clp }}{% if v.resumen.falta_costo %} <span class="text-warning-emphasis">· falta costo de {{ v.resumen.falta_costo }} producto{{ '' if v.resumen.falta_costo == 1 else 's' }}</span>{% endif %}</dd>
+  <dt class="col-6 col-md-3 fw-normal text-muted">Margen simple</dt><dd class="col-6 col-md-9 num">{{ v.resumen.margen_simple | clp if v.resumen.margen_simple is not none else 'sin calcular' }} <span class="text-muted">(venta − compra; no descuenta el costo del stock propio ni la logística)</span></dd>
+  {% if L.estado in ('ofertado', 'cerrado') %}
+  <dt class="col-6 col-md-3 fw-normal text-muted">Ganadas</dt><dd class="col-6 col-md-9">{{ v.resumen.ganadas }} de {{ v.cas | length }} · <span class="num">{{ v.resumen.monto_ganado | clp }}</span>{% if v.resumen.con_resultado < v.cas | length %} <span class="text-muted">({{ v.cas | length - v.resumen.con_resultado }} sin resultado todavía)</span>{% endif %}</dd>
+  {% endif %}
+</dl>
+<p class="small text-muted">Fuente: Dirección ChileCompra</p>
+</div>
+{% endblock %}

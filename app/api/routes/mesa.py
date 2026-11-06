@@ -36,11 +36,13 @@ from app.mercado.proveedores import (
     UNIDADES,
     asegurar_tarifas_iniciales,
     buscar_producto,
+    dias_vigencia,
     guardar_producto,
     hoy_chile,
     normalizar_rut,
     normalizar_unidad,
     variaciones_de,
+    vencidos_por_proveedor,
 )
 from app.models.seeds import REGIONES
 from app.models.tables import (
@@ -57,6 +59,8 @@ router = APIRouter()
 
 _REGIONES_VALIDAS = {codigo for codigo, _ in REGIONES}
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DIAS_VIGENCIA_MAX = 365
+MARGEN_OBJETIVO_MAX_PCT = 200.0
 
 
 def _csv_a_lista(texto: str) -> list[str]:
@@ -244,6 +248,8 @@ def _pagina_empresa(
         "regiones_prioritarias": list(empresa.regiones_prioritarias or []),
         "comunas": ", ".join(empresa.comunas_prioritarias or []),
         "activa": empresa.activa,
+        "dias_vigencia_precio": empresa.dias_vigencia_precio,
+        "margen_objetivo": f"{(empresa.margen_objetivo or 0) * 100:g}",
     }
     return _TEMPLATES.TemplateResponse(
         request,
@@ -288,6 +294,8 @@ async def admin_empresa_editar(
     regiones: list[int] = Form([]),
     comunas: str = Form(""),
     activa: str = Form(""),
+    dias_vigencia_precio: str = Form(""),
+    margen_objetivo: str = Form(""),
     csrf_token: str = Form(""),
     user: Usuario = Depends(html_require_admin),
     session: Session = Depends(get_db),
@@ -297,6 +305,19 @@ async def admin_empresa_editar(
     datos, errores = _leer_empresa_form(
         session, empresa.id, nombre, rut, comuna_base, regiones, comunas
     )
+    # F-plat-lote: parámetros comerciales (vacío = no cambia).
+    dias = _num_o_none(dias_vigencia_precio, "dias_vigencia_precio", errores, entero=True)
+    if dias is not None:
+        if 1 <= dias <= DIAS_VIGENCIA_MAX:
+            datos["dias_vigencia_precio"] = dias
+        else:
+            errores["dias_vigencia_precio"] = f"De 1 a {DIAS_VIGENCIA_MAX} días"
+    margen = _num_o_none(margen_objetivo, "margen_objetivo", errores)
+    if margen is not None:
+        if 0 <= margen <= MARGEN_OBJETIVO_MAX_PCT:
+            datos["margen_objetivo"] = round(margen / 100, 4)
+        else:
+            errores["margen_objetivo"] = f"De 0 a {MARGEN_OBJETIVO_MAX_PCT:g} %"
     if errores:
         form = {
             **datos,
@@ -304,6 +325,8 @@ async def admin_empresa_editar(
             "comunas": comunas,
             "regiones_prioritarias": regiones,
             "activa": bool(activa),
+            "dias_vigencia_precio": dias_vigencia_precio,
+            "margen_objetivo": margen_objetivo,
         }
         return _pagina_empresa(
             request, user, session, empresa, errores=errores, form=form, status_code=422
@@ -400,6 +423,7 @@ async def proveedores_lista(
     request: Request,
     q: str = "",
     mensaje: str = "",
+    vencidos: str = "",
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -409,6 +433,10 @@ async def proveedores_lista(
     consulta = select(Proveedor).where(Proveedor.empresa_id == empresa_id)
     termino = q.strip()
     todos = list(session.execute(consulta.order_by(Proveedor.nombre)).scalars())
+    # F-plat-lote §1.4: precios con más días que `empresas.dias_vigencia_precio`.
+    n_vencidos = vencidos_por_proveedor(session, empresa_id)
+    if vencidos == "1":
+        todos = [p for p in todos if n_vencidos.get(p.id)]
     if termino:
         t = norm(termino)
         todos = [
@@ -438,6 +466,10 @@ async def proveedores_lista(
             q=q,
             mensaje=mensaje,
             sin_vincular=sin_vincular,
+            n_vencidos=n_vencidos,
+            total_vencidos=sum(n_vencidos.values()),
+            solo_vencidos=vencidos == "1",
+            dias_vigencia=dias_vigencia(session, empresa_id),
         ),
     )
 

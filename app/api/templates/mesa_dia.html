@@ -121,6 +121,15 @@
   {% for it in items %}
   <div class="tarjeta-op tarjeta-op--{{ it.urgencia }}" id="mesa-ca-{{ it.codigo }}">
     <div class="d-flex align-items-start gap-3">
+      <div class="pt-1" data-mesa="lote">
+        {% set en_lote = lote_de.get(it.codigo) %}
+        {% if en_lote %}
+        <a class="badge text-bg-info fw-normal text-decoration-none" href="/lotes/{{ en_lote.id }}" title="Ya está en un lote abierto">En lote</a>
+        {% else %}
+        <input class="form-check-input" type="checkbox" name="codigos" value="{{ it.codigo }}" form="form-lote"
+               id="lote-sel-{{ it.codigo }}" data-lote-check aria-label="Seleccionar {{ it.codigo }} para cotizar">
+        {% endif %}
+      </div>
       <div class="flex-grow-1 min-w-0">
         <a class="tarjeta-op__titulo" href="/oportunidad/compras_agiles/{{ it.codigo }}">{{ it.nombre }}</a>
         <div class="tarjeta-op__meta mt-1">
@@ -197,4 +206,23 @@
   {% else %}<span></span>{% endif %}
 </nav>
 {% endif %}
+
+{#- F-plat-lote: barra fija «n seleccionadas · Cotizar». Las casillas de las tarjetas se asocian a
+    este formulario con `form="form-lote"`; lote.js solo cuenta y muestra la barra. -#}
+<form id="form-lote" method="post" action="/lotes" class="barra-lote" data-barra-lote hidden>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="barra-lote__cuerpo d-flex flex-wrap align-items-center gap-2">
+    <span><strong class="num" data-lote-n>0</strong> seleccionada<span data-lote-plural>s</span></span>
+    {% if lotes_abiertos %}
+    <label class="visually-hidden" for="lote-destino">Lote</label>
+    <select class="form-select form-select-sm w-auto" name="lote_id" id="lote-destino">
+      <option value="">Nuevo lote</option>
+      {% for l in lotes_abiertos %}<option value="{{ l.id }}">Agregar a «{{ l.nombre }}»</option>{% endfor %}
+    </select>
+    {% endif %}
+    <button type="submit" class="btn btn-primary btn-sm">Cotizar</button>
+    <button type="button" class="btn btn-link btn-sm" data-lote-limpiar>Quitar selección</button>
+  </div>
+</form>
+<script src="/static/lote.js?v={{ version_estaticos }}" defer></script>
 {% endblock %}

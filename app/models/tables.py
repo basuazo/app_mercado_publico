@@ -764,6 +764,14 @@ class Empresa(Base):
     )
     # Ordenan la mesa y la logística; NO filtran la ingesta (regla 7).
     comunas_prioritarias: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    # F-plat-lote: un precio de proveedor con más días que esto es «vencido» (decisión de
+    # Boris, 5-nov: 15) y el margen con que se pre-llenan las ofertas sin predicción.
+    dias_vigencia_precio: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=15, server_default="15"
+    )
+    margen_objetivo: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.15, server_default="0.15"
+    )
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # F-plat-anexos-2: sha256 del token de `POST /api/anexos/{codigo}`. El token en claro se
     # muestra una sola vez al generarlo y nunca se guarda ni se loguea (regla 1).
@@ -841,6 +849,9 @@ class ProveedorProducto(Base):
     disponible: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    # F-plat-lote: precio por volumen `[{desde, precio}]`; `desde` en unidades de ESTE formato y
+    # `precio` neto por formato. `mejor_costo(cantidad_base=…)` usa el tramo que cubre la cantidad.
+    tramos: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -1673,3 +1684,165 @@ class EmpresaProductoMovimiento(Base):
         BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+# ---------------------------------------------------------------------------
+# F-plat-lote: cotizar varias Compras Ágiles a la vez. Un lote agrega lo que piden sus CA por
+# producto × formato de compra, descuenta el stock propio y arma una solicitud de precio por
+# proveedor. Todo pertenece a una empresa (regla 26). Retención: los lotes `cerrado` con más de 24
+# meses se purgan con sus hijas (`app.mercado.lote.purgar_cerrados`, F-plat-7 §1.4).
+# ---------------------------------------------------------------------------
+
+ESTADOS_LOTE = ("abierto", "solicitado", "con_precios", "ofertado", "cerrado")
+ESTADOS_SOLICITUD = ("borrador", "enviada", "respondida", "sin_respuesta")
+CANALES_SOLICITUD = ("whatsapp", "correo", "llamada", "planilla", "otro")
+
+
+class Lote(Base):
+    """Un ciclo de cotización. `version` sube con cada cambio (conflicto como F-equipo)."""
+
+    __tablename__ = "lotes"
+    __table_args__ = (
+        Index("ix_lotes_empresa_estado", "empresa_id", "estado"),
+        CheckConstraint(
+            "estado IN ('abierto','solicitado','con_precios','ofertado','cerrado')", name="estado"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    estado: Mapped[str] = mapped_column(String(15), nullable=False, default="abierto")
+    creado_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # El cierre más cercano de sus CA (UTC naive, como `compras_agiles.fecha_cierre`); se
+    # recalcula hasta que el lote queda `ofertado`.
+    fecha_limite: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class LoteCa(Base):
+    """Una CA del lote. Una CA está en a lo más un lote no cerrado de la empresa: lo valida el
+    servidor bajo el bloqueo de la fila de la empresa (`lote.agregar_cas`)."""
+
+    __tablename__ = "lote_cas"
+    __table_args__ = (
+        UniqueConstraint("lote_id", "ca_codigo", name="uq_lote_ca"),
+        Index("ix_lote_cas_ca", "ca_codigo"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    lote_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("lotes.id", ondelete="CASCADE"), nullable=False
+    )
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo"), nullable=False
+    )
+    agregada_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    agregada_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    # Estado de `ca_trabajo` antes de entrar al lote: al quitarla vuelve a él (o a `priorizada`).
+    estado_previo: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class LoteLinea(Base):
+    """Agregado DERIVADO del lote por producto × formato de compra; `lote.recalcular` lo reescribe
+    (upsert) salvo el proveedor elegido a mano (`proveedor_fijado`). Cantidades en la unidad base
+    del producto salvo `cantidad_formato`; `costo_unitario_sugerido` es por unidad base."""
+
+    __tablename__ = "lote_lineas"
+    __table_args__ = (
+        UniqueConstraint("lote_id", "producto_id", "formato_id", name="uq_lote_linea"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    lote_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("lotes.id", ondelete="CASCADE"), nullable=False
+    )
+    producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id"), nullable=False
+    )
+    formato_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_formato.id"), nullable=False
+    )
+    cantidad_base: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cantidad_formato: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    en_stock_base: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    a_comprar_base: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    proveedor_sugerido_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("proveedores.id", ondelete="SET NULL"), nullable=True
+    )
+    proveedor_producto_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("proveedor_productos.id", ondelete="SET NULL"), nullable=True
+    )
+    proveedor_fijado: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    costo_unitario_sugerido: Mapped[float | None] = mapped_column(Float, nullable=True)
+    precio_vencido: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    dias_precio: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # [{ca, n, linea_id, cantidad_base}]: qué aporta cada línea de cada CA.
+    detalle: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+
+
+class SolicitudPrecio(Base):
+    """Lo que se le pide a un proveedor en un lote. `texto_generado` es el mensaje listo para
+    pegar: nunca lleva el código de la CA ni el comprador (§3)."""
+
+    __tablename__ = "solicitudes_precio"
+    __table_args__ = (
+        UniqueConstraint("lote_id", "proveedor_id", name="uq_solicitud_lote_proveedor"),
+        CheckConstraint(
+            "estado IN ('borrador','enviada','respondida','sin_respuesta')", name="estado"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    lote_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("lotes.id", ondelete="CASCADE"), nullable=False
+    )
+    proveedor_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("proveedores.id", ondelete="CASCADE"), nullable=False
+    )
+    estado: Mapped[str] = mapped_column(String(15), nullable=False, default="borrador")
+    canal: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    enviada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    enviada_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    respondida_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    texto_generado: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class SolicitudLinea(Base):
+    """Una línea pedida a un proveedor (en el formato de compra del lote) y su respuesta."""
+
+    __tablename__ = "solicitud_lineas"
+    __table_args__ = (
+        UniqueConstraint("solicitud_id", "lote_linea_id", name="uq_solicitud_linea"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    solicitud_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("solicitudes_precio.id", ondelete="CASCADE"), nullable=False
+    )
+    lote_linea_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("lote_lineas.id", ondelete="CASCADE"), nullable=False
+    )
+    cantidad_formato: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    precio_respuesta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tramos: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    disponible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    plazo_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    respondida_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

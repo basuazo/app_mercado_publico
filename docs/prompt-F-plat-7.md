@@ -132,6 +132,9 @@ Leer `CLAUDE.md` (1, 3, 10, 11, 14), `17-plan` §2 C8 y §5 (riesgos), `app/api/
   días se purga; `evaluaciones_cache` de CA cerradas hace > 90 días se borra; las CA con `ofertas_propias` o
   `predicciones` no se purgan. Todo en el job
   `retencion` existente, con conteos en `job_runs`. Tests por regla.
+- F-plat-lote: los `lotes` en estado `cerrado` sin cambios hace más de 24 meses se purgan con sus hijas
+  (`lote_cas`, `lote_lineas`, `solicitudes_precio`, `solicitud_lineas`). La función ya existe y tiene test
+  (`app.mercado.lote.purgar_cerrados`); falta llamarla desde el job `retencion` y contar en `job_runs`.
 
 ### 1.5 Documentación operativa
 `docs/operacion-disparos.md`: tabla única de disparos del pivote (`mercado` 15 min, `mercado-nocturno`

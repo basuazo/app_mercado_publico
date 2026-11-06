@@ -35,6 +35,7 @@
       {% if p.costo_total is not none %}
       <span class="num">{{ p.costo_total | clp }}</span>
       <span class="text-muted">(productos <span class="num">{{ p.costo_productos | clp }}</span> + logística <span class="num">{{ p.logistica | clp }}</span>{% if not p.tarifa %} sin tarifa{% endif %} + financiero <span class="num">{{ p.costo_financiero | clp }}</span>)</span>
+      {% if p.costo_vencido_dias %}<span class="badge text-bg-warning fw-normal" data-precio="vencido" title="Hay líneas cuyo único costo es un precio vencido: pídele precio al proveedor">precio de hace {{ p.costo_vencido_dias }} días</span>{% endif %}
       {% elif p.n_sin_costo %}
       <span class="text-warning-emphasis">Falta costo de {{ p.n_sin_costo }} producto{{ '' if p.n_sin_costo == 1 else 's' }}</span>
       {% else %}

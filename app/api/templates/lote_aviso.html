@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Lote — Rastrillo{% endblock %}
+{% block content %}
+<h2>{{ titulo }}</h2>
+<div class="alert alert-warning" role="alert" data-lote="aviso">{{ texto }}</div>
+<p class="d-flex flex-wrap gap-2">
+  {% if lote_id %}<a class="btn btn-primary btn-sm" href="/lotes/{{ lote_id }}">Ver ese lote</a>{% endif %}
+  <a class="btn btn-outline-secondary btn-sm" href="/mesa">Volver a la mesa</a>
+</p>
+{% endblock %}

@@ -246,6 +246,11 @@ def recalcular_detalle_lineas(session: Session, ca_codigos: Iterable[str]) -> No
             .values(detalle_lineas=valor, actualizado_en=CompraAgil.actualizado_en)
             .execution_options(synchronize_session=False)
         )
+    # F-plat-lote: cambiaron las líneas de estas CA → se recalcula el agregado de los lotes que
+    # las tienen (una consulta; casi siempre ninguno). Import local: lote → oferta → catálogo.
+    from app.mercado.lote import recalcular_por_cas
+
+    recalcular_por_cas(session, codigos)
 
 
 # ---------------------------------------------------------------------------

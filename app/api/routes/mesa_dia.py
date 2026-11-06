@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import empresa_activa_id, get_db, html_require_empresa, html_require_user
 from app.api.presentacion import nombre_region
 from app.api.query import _url_ficha, mostrar_ficha_oficial
+from app.api.routes.lotes import contexto_mesa
 from app.api.routes.mesa import _sin_empresa
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.core.tiempo import ahora_utc
@@ -166,6 +167,8 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         it["evaluada_hace"] = eq.hace(ev.evaluada_en, ahora) if ev else ""
         it["con_prediccion"] = it["codigo"] in predichas
     estado_equipo = eq.equipo_de(session, empresa_id, user, [it["codigo"] for it in items])
+    # F-plat-lote: casilla «Cotizar» por tarjeta y lotes donde aún se puede agregar.
+    lotes_mesa = contexto_mesa(session, empresa_id, [it["codigo"] for it in items])
     opciones_familia = sorted({f for fs in familias.values() for f in fs})
     qs = {
         "familia": filtros.familia,
@@ -208,6 +211,8 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
             estados=eq.ETIQUETA_ESTADO,
             empresa_sin_rut=eq.rut_empresa(empresa) is None,
             hay_cache=bool(cache),
+            lote_de=lotes_mesa["lote_de"],
+            lotes_abiertos=lotes_mesa["lotes_abiertos"],
         ),
     )
 

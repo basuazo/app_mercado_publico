@@ -77,9 +77,13 @@ EV_MENCION = "mencion"
 EV_CIERRE_24H = "cierre_24h"
 EV_CIERRE_4H = "cierre_4h"
 EV_RESULTADO = "resultado"
+# F-plat-lote §1.4: un lote usa un precio vencido. No es de una CA: `ca_codigo` = «lote:{id}»
+# (columna sin FK), `usuario_id` NULL → idempotente por lote con el índice único parcial.
+EV_PRECIO_VENCIDO = "precio_vencido"
+PREFIJO_LOTE = "lote:"
 TIPOS_USUARIO = (EV_ESTADO, EV_ASIGNADA, EV_COMENTARIO, EV_MENCION)
 TIPOS_SISTEMA = (EV_CIERRE_24H, EV_CIERRE_4H, EV_RESULTADO)
-TIPOS_EVENTO = TIPOS_USUARIO + TIPOS_SISTEMA
+TIPOS_EVENTO = TIPOS_USUARIO + TIPOS_SISTEMA + (EV_PRECIO_VENCIDO,)
 ETIQUETA_TIPO = {
     EV_ESTADO: "Cambios de estado",
     EV_ASIGNADA: "Asignaciones",
@@ -88,6 +92,7 @@ ETIQUETA_TIPO = {
     EV_CIERRE_24H: "Cierra en 24 h",
     EV_CIERRE_4H: "Cierra en 4 h",
     EV_RESULTADO: "Resultados",
+    EV_PRECIO_VENCIDO: "Precios vencidos en un lote",
 }
 
 # --- Preferencias (las cuatro que eligió Boris; sin fila = activa) ---------------------------
@@ -281,8 +286,10 @@ def cambiar_estado(
     nuevo: str,
     version: int,
     motivo: str = "",
+    datos_extra: dict[str, Any] | None = None,
 ) -> CaTrabajo:
-    """Cambia el estado (transiciones libres; `descartada` exige motivo). No hace commit."""
+    """Cambia el estado (transiciones libres; `descartada` exige motivo). No hace commit.
+    `datos_extra` se suma a los datos del evento (F-plat-lote: `lote_id`)."""
     if nuevo not in ESTADOS:
         raise ErrorEquipo("Estado desconocido")
     motivo = (motivo or "").strip()[:MOTIVO_MAX]
@@ -316,6 +323,8 @@ def cambiar_estado(
     datos: dict[str, Any] = {"de": anterior, "a": nuevo}
     if motivo and nuevo == DESCARTADA:
         datos["motivo"] = motivo
+    if datos_extra:
+        datos.update({k: v for k, v in datos_extra.items() if k not in ("de", "a")})
     _evento(session, empresa_id, codigo, usuario.id, EV_ESTADO, datos, creado_en=ahora)
     session.flush()
     return t
@@ -545,6 +554,7 @@ def consulta_no_leidos(session: Session, usuario: Usuario, empresa_id: int) -> S
         )
         ramas += [
             ev.tipo == EV_ESTADO,
+            ev.tipo == EV_PRECIO_VENCIDO,
             and_(ev.tipo == EV_COMENTARIO, ~me_menciona),
             and_(
                 ev.tipo == EV_ASIGNADA,
@@ -1063,6 +1073,13 @@ def describir_eventos(
             despues = f"· {cuando_cierra(cierre, ahora)}"
         elif e.tipo == EV_RESULTADO:
             antes = _FRASE_RESULTADO.get(d.get("resultado", ""), "Resultado de")
+        url = f"/oportunidad/compras_agiles/{e.ca_codigo}"
+        if e.tipo == EV_PRECIO_VENCIDO:
+            n = int(d.get("n") or 0)
+            antes = "El lote"
+            nombre_ca = str(d.get("nombre") or e.ca_codigo)
+            despues = f"usa {n} precio{'s' if n != 1 else ''} vencido{'s' if n != 1 else ''}"
+            url = f"/lotes/{d.get('lote_id', '')}"
         out.append(
             {
                 "id": e.id,
@@ -1071,7 +1088,7 @@ def describir_eventos(
                 "ca": nombre_ca,
                 "codigo": e.ca_codigo,
                 "despues": despues,
-                "url": f"/oportunidad/compras_agiles/{e.ca_codigo}",
+                "url": url,
                 "cuando": hace(e.creado_en, ahora),
                 "creado_en": e.creado_en,
             }

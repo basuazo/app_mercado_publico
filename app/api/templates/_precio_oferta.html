@@ -128,10 +128,11 @@
                 <option value="stock:{{ lo.stock.empresa_producto_id }}" {% if lo.origen == 'stock' %}selected{% endif %}>Stock propio · hay {{ lo.stock.disponible | cantidad }} {{ lo.unidad_base }}{% if lo.stock.costo_por_base is not none %} · {{ lo.stock.costo_por_base | clp }}/{{ lo.unidad_base }}{% else %} · sin costo{% endif %}</option>
                 {% endif %}
                 {% for c in lo.candidatos %}
-                <option value="{{ c.producto_id }}" {% if c.producto_id == lo.proveedor_producto_id %}selected{% endif %}>{{ c.proveedor }} · {{ c.formato_texto or c.producto_texto }} · {{ c.precio_por_unidad_base | clp }}/{{ c.unidad_base }}</option>
+                <option value="{{ c.producto_id }}" {% if c.producto_id == lo.proveedor_producto_id %}selected{% endif %}>{{ c.proveedor }} · {{ c.formato_texto or c.producto_texto }} · {{ c.precio_por_unidad_base | clp }}/{{ c.unidad_base }}{% if c.vencido %} · precio de hace {{ c.dias }} días{% endif %}</option>
                 {% endfor %}
               </select>
               {% if lo.costo_total is not none %}<div class="text-muted">costo línea <span class="num">{{ lo.costo_total | clp }}</span></div>{% endif %}
+              {% if lo.vencido_dias %}<div><span class="badge text-bg-warning fw-normal" data-precio="vencido">precio de hace {{ lo.vencido_dias }} días</span></div>{% endif %}
               {% if lo.stock %}<div class="text-muted" data-en-stock>en stock: <span class="num">{{ lo.stock.disponible | cantidad }}</span> {{ lo.unidad_base }}</div>{% endif %}
               {% else %}<span class="text-muted">sin costo</span>{% endif %}
             </td>

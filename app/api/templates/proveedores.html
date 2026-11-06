@@ -25,14 +25,23 @@
     <label class="visually-hidden" for="q">Buscar por nombre, rubro o comuna</label>
     <input type="search" name="q" id="q" class="form-control" value="{{ q }}" placeholder="Buscar por nombre, rubro o comuna">
   </div>
+  <div class="col-auto d-flex align-items-center">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="vencidos" value="1" id="vencidos" {% if solo_vencidos %}checked{% endif %}>
+      <label class="form-check-label small" for="vencidos">Vencidos ({{ total_vencidos }})</label>
+    </div>
+  </div>
   <div class="col-auto"><button class="btn btn-primary">Buscar</button></div>
 </form>
+{% if total_vencidos %}
+<p class="small text-warning-emphasis" data-proveedores="vencidos">{{ total_vencidos }} precio{{ '' if total_vencidos == 1 else 's' }} por actualizar (más de {{ dias_vigencia }} días). Pídelos desde un lote o actualízalos en cada proveedor.</p>
+{% endif %}
 
 <table class="table table-hover align-middle">
   <thead class="table-dark">
     <tr>
       <th scope="col">Proveedor</th><th scope="col">Comuna</th><th scope="col">Rubros</th>
-      <th scope="col" class="text-end">Productos</th><th scope="col">Estado</th>
+      <th scope="col" class="text-end">Productos</th><th scope="col" class="text-end">Vencidos</th><th scope="col">Estado</th>
     </tr>
   </thead>
   <tbody>
@@ -42,11 +51,12 @@
       <td>{{ p.comuna or "—" }}</td>
       <td>{{ (p.rubros or [])|join(", ") or "—" }}</td>
       <td class="text-end">{{ n_productos.get(p.id, 0) }}</td>
+      <td class="text-end">{% if n_vencidos.get(p.id) %}<span class="badge text-bg-warning fw-normal">{{ n_vencidos[p.id] }}</span>{% else %}0{% endif %}</td>
       <td>{% if p.activo %}<span class="badge bg-success">activo</span>{% else %}<span class="badge bg-secondary">inactivo</span>{% endif %}</td>
     </tr>
     {% else %}
-    <tr><td colspan="5" class="text-muted">
-      {% if q %}Ningún proveedor coincide con la búsqueda.{% else %}Todavía no hay proveedores: crea uno o importa la planilla.{% endif %}
+    <tr><td colspan="6" class="text-muted">
+      {% if q or solo_vencidos %}Ningún proveedor coincide con la búsqueda.{% else %}Todavía no hay proveedores: crea uno o importa la planilla.{% endif %}
     </td></tr>
     {% endfor %}
   </tbody>

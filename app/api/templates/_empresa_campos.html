@@ -51,6 +51,22 @@
       </div>
       {% endif %}
     </div>
+    {% if editando %}
+    <div class="col-md-3">
+      <label class="form-label" for="emp_dias_vigencia">Vigencia de un precio (días)</label>
+      <input type="text" inputmode="numeric" name="dias_vigencia_precio" id="emp_dias_vigencia" maxlength="3"
+             class="form-control{% if errores.get('dias_vigencia_precio') %} is-invalid{% endif %}" value="{{ v.get('dias_vigencia_precio', 15) }}">
+      {% if errores.get('dias_vigencia_precio') %}<div class="invalid-feedback d-block">{{ errores['dias_vigencia_precio'] }}</div>{% endif %}
+      <div class="form-text">Un precio de proveedor más viejo que esto es «vencido»: no gana el mejor costo si hay otro vigente.</div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="emp_margen">Margen objetivo (%)</label>
+      <input type="text" inputmode="decimal" name="margen_objetivo" id="emp_margen" maxlength="6"
+             class="form-control{% if errores.get('margen_objetivo') %} is-invalid{% endif %}" value="{{ v.get('margen_objetivo', '15') }}">
+      {% if errores.get('margen_objetivo') %}<div class="invalid-feedback d-block">{{ errores['margen_objetivo'] }}</div>{% endif %}
+      <div class="form-text">Para pre-llenar ofertas de un lote cuando no hay precio sugerido: costo × (1 + margen).</div>
+    </div>
+    {% endif %}
     <div class="col-12">
       <button type="submit" class="btn btn-primary">{% if editando %}Guardar{% else %}Crear{% endif %}</button>
     </div>

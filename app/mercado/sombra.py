@@ -102,6 +102,11 @@ def datos_cache(ev: adj.EvaluacionCA) -> dict[str, Any]:
         "n_lineas": len(ev.lineas),
         "n_ok": len(oks),
         "n_sin_costo": sum(1 for e in oks if e.costo is None),
+        # F-plat-lote §1.4: el costo más viejo entre las líneas que solo tienen precio vencido.
+        "costo_vencido_dias": max(
+            (e.costo.dias or 0 for e in oks if e.costo is not None and e.costo.vencido),
+            default=None,
+        ),
     }
 
 

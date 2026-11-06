@@ -488,7 +488,8 @@ async def portada(
     por_revisar = conteo_por_revisar(session, regiones, ahora_utc())
     lineas_por_revisar = por_revisar["vigentes"] + por_revisar["historicas_muestra"]
     n_proveedores = n_productos = 0
-    n_inventario = n_bajo_minimo = 0
+    n_inventario = n_bajo_minimo = n_vencidos = 0
+    en_trabajo: dict[str, Any] | None = None
     equipo_hoy: dict[str, Any] | None = None
     if empresa_id is not None:
         from app.mercado import equipo as eq
@@ -511,6 +512,12 @@ async def portada(
         from app.mercado import oferta_propia as op
 
         n_inventario, n_bajo_minimo = op.resumen(session, empresa_id)
+        # F-plat-lote: «En trabajo» y precios vencidos («n precios por actualizar»).
+        from app.mercado import lote as lt
+        from app.mercado.proveedores import vencidos_por_proveedor
+
+        en_trabajo = lt.resumen_hoy(session, empresa_id)
+        n_vencidos = sum(vencidos_por_proveedor(session, empresa_id).values())
     return _TEMPLATES.TemplateResponse(
         request,
         "hoy.html",
@@ -527,6 +534,8 @@ async def portada(
             n_productos=n_productos,
             n_inventario=n_inventario,
             n_bajo_minimo=n_bajo_minimo,
+            n_vencidos=n_vencidos,
+            en_trabajo=en_trabajo,
             equipo_hoy=equipo_hoy,
         ),
     )

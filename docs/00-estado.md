@@ -18,6 +18,21 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-lote (6-nov, rama `F-plat-lote` desde `c4c09ec`, commit local sin push ni merge; migración `b4e7d2a9c3f1`, cuelga de `a3c8e5d1b7f2`)
+Cotizar varias CA a la vez (`prompt-F-plat-lote.md`, §7 «Cómo quedó»). **Esquema:** `lotes`, `lote_cas`, `lote_lineas`
+(agregado derivado por producto × formato de compra), `solicitudes_precio`, `solicitud_lineas`; columnas nuevas
+`empresas.dias_vigencia_precio` (15), `empresas.margen_objetivo` (0,15) y `proveedor_productos.tramos` (JSONB).
+**Lógica** en `app/mercado/lote.py`: crear desde la mesa («Cotizar seleccionadas»; una CA en un solo lote no cerrado, validado
+bajo `FOR UPDATE` de la fila de la empresa), agregado en unidad base redondeado al formato de compra menos el stock propio,
+proveedor por `mejor_costo` vigente (con tramos y habitual de desempate), mensaje y XLSX por proveedor (sin CA ni comprador),
+respuesta → `guardar_producto(fuente="solicitud")` (un precio igual se CONFIRMA: deja de estar vencido), «Armar ofertas»
+(`oferta.armar(costos_por_producto=…)`; sin predicción, costo × (1 + margen)), reserva/liberación en `oferta_propia`
+(mueven `reservado`), «En trabajo» (`/trabajo`), tarjeta en «Hoy», filtro «Vencidos» en `/proveedores` y evento de sistema
+`precio_vencido` por lote (`ca_codigo = "lote:{id}"`). La edición de líneas de una CA recalcula sus lotes
+(`catalogo.recalcular_detalle_lineas` → `lote.recalcular_por_cas`). **No** envía WhatsApp ni correo.
+**Pendiente de Boris:** si F-plat-anexos-2 se audita antes, rebase y cambiar `down_revision`; revisar y aplicar
+`alembic upgrade head`; correr `tests/test_plat_lote_pg.py` contra Postgres; fijar vigencia y margen de la empresa.
+
 ## F-plat-anexos-2 (6-nov, commit local sin push; migración `e7c2a9f4b1d8`, cuelga de `a3c8e5d1b7f2`)
 Anexos (`prompt-F-plat-anexos-2.md`). **Esquema:** `ca_lineas.estado` a String(12) (`reemplazada`); `ca_anexos.fuente`
 (manual | masiva | api_externa | api_mp | descarga_directa), `empresa_id`, `extraccion_respaldo` y `UNIQUE (ca_codigo,

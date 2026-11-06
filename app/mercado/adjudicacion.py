@@ -860,17 +860,21 @@ class CostoLinea:
     proveedor: str
     producto_texto: str
     formato_texto: str
-    fuente: str  # manual | planilla | lista_llm (para auditar el margen: Revisión 5-nov §6)
+    fuente: str  # manual | planilla | lista_llm | solicitud (auditar el margen: Revisión 5-nov §6)
     vigente_desde: date
+    # F-plat-lote §1.4: el mejor costo solo quedó con precios vencidos («precio de hace n días»).
+    vencido: bool = False
+    dias: int | None = None
 
 
 class CostosEmpresa:
-    """Mejor costo hoy por producto canónico de UNA empresa (regla 26), con caché."""
+    """Mejor costo hoy por producto canónico de UNA empresa (regla 26), con caché. Con la
+    cantidad de la línea (F-plat-lote §2.3: el tramo por volumen depende de ella)."""
 
     def __init__(self, session: Session, empresa_id: int) -> None:
         self.session = session
         self.empresa_id = empresa_id
-        self._cache: dict[tuple[int, str], CostoLinea | None] = {}
+        self._cache: dict[tuple[int, str, float | None], CostoLinea | None] = {}
 
     def tiene_costos(self) -> bool:
         return (
@@ -886,12 +890,15 @@ class CostosEmpresa:
             is not None
         )
 
-    def costo(self, producto_id: int, unidad_base: str) -> CostoLinea | None:
-        clave = (producto_id, unidad_base)
+    def costo(
+        self, producto_id: int, unidad_base: str, cantidad_base: float | None = None
+    ) -> CostoLinea | None:
+        clave = (producto_id, unidad_base, cantidad_base)
         if clave not in self._cache:
             mc = mejor_costo(
-                self.session, self.empresa_id, producto_id=producto_id, unidad_base=unidad_base
-            )
+                self.session, self.empresa_id, producto_id=producto_id, unidad_base=unidad_base,
+                cantidad_base=cantidad_base,
+            )  # fmt: skip
             if mc is None:
                 self._cache[clave] = None
             else:
@@ -900,6 +907,7 @@ class CostosEmpresa:
                 self._cache[clave] = CostoLinea(
                     g.precio_por_unidad_base, g.proveedor, g.producto_texto, g.formato_texto,
                     pp.fuente if pp else "", pp.vigente_desde if pp else date.min,
+                    vencido=g.vencido, dias=g.dias,
                 )  # fmt: skip
         return self._cache[clave]
 
@@ -1063,7 +1071,7 @@ def evaluar_ca(
         if ln.estado == "ok" and ln.producto_id is not None:
             ref = memoria.referencia(ln.producto_id, ca.comuna_inferida, mes, region=ca.region)
             if ub:
-                costo = costos.costo(ln.producto_id, ub)
+                costo = costos.costo(ln.producto_id, ub, ln.cantidad_base)
             if costo is not None and ln.cantidad_base:
                 costo_tot = costo.precio_por_unidad_base * ln.cantidad_base
         evaluadas.append(

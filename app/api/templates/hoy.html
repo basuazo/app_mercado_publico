@@ -35,6 +35,7 @@
       <p class="tarjeta-numero__etiqueta">Proveedores y productos cargados</p>
       <p class="tarjeta-numero__valor" data-hoy="proveedores">{{ n_proveedores }} <small>proveedores</small></p>
       <p class="tarjeta-numero__nota"><span class="num" data-hoy="productos">{{ n_productos }}</span> productos</p>
+      {% if n_vencidos %}<p class="tarjeta-numero__nota"><a class="text-warning-emphasis" href="/proveedores?vencidos=1" data-hoy="vencidos">{{ n_vencidos }} precio{{ '' if n_vencidos == 1 else 's' }} por actualizar</a></p>{% endif %}
       <a href="/proveedores" class="tarjeta-numero__ver">Ver →</a>
     </div></div>
   </div>
@@ -46,6 +47,16 @@
       <a href="/inventario" class="tarjeta-numero__ver">Ver →</a>
     </div></div>
   </div>
+  {% if en_trabajo %}
+  <div class="col-12 col-md-4">
+    <div class="card h-100"><div class="card-body">
+      <p class="tarjeta-numero__etiqueta">En trabajo</p>
+      <p class="tarjeta-numero__valor" data-hoy="lotes">{{ en_trabajo.lotes }} <small>lote{{ '' if en_trabajo.lotes == 1 else 's' }}</small></p>
+      <p class="tarjeta-numero__nota"><span class="num" data-hoy="lotes-ca">{{ en_trabajo.cas }}</span> CA{% if en_trabajo.cierre %} · cierre más próximo {{ en_trabajo.cierre | fecha_chile }}{% endif %}</p>
+      <a href="/trabajo" class="tarjeta-numero__ver">Ver →</a>
+    </div></div>
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 

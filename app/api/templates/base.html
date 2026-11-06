@@ -52,6 +52,7 @@
     {% if con_empresa or admin %}<li>{{ entrada('/', 'Inicio', 'inicio', ruta == '/') }}</li>{% endif %}
     {% if con_empresa %}
     <li>{{ entrada('/mesa', 'Mesa', 'mesa', ruta == '/mesa' or ruta.startswith('/mesa/')) }}</li>
+    <li>{{ entrada('/trabajo', 'En trabajo', 'trabajo', ruta == '/trabajo' or ruta.startswith('/lotes')) }}</li>
     <li>{{ entrada('/actividad', 'Actividad', 'actividad', ruta == '/actividad') }}</li>
     <li>{{ entrada('/competencia', 'Competencia', 'competencia', ruta == '/competencia' or ruta.startswith('/competencia/')) }}</li>
     <li>{{ entrada('/estrategia', 'Estrategia', 'estrategia', ruta == '/estrategia') }}</li>

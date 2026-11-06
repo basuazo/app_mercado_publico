@@ -148,3 +148,36 @@ vencidos»). `00-estado.md`. `docs/prompt-F-plat-7.md` §1.4: sumar la purga de 
 2. Primer ciclo real con Mario: 3 CA de una familia, un lote, 1–2 solicitudes por WhatsApp, respuesta tipeada,
    ofertas armadas. Medir el tiempo de «mesa → ofertas listas» y anotarlo en `decisiones.md`.
 3. Decidir si el mensaje al proveedor sale por correo desde la plataforma (Brevo, regla 14) en una fase chica.
+
+## 7. Cómo quedó (implementación, 6-nov)
+- **Migración** `b4e7d2a9c3f1`, cuelga de `a3c8e5d1b7f2` (F-plat-capas). Si F-plat-anexos-2 se audita antes, esta hace
+  rebase y cambia su `down_revision`. DDL revisado con `alembic upgrade --sql`; no se aplicó en ninguna base.
+- **Una CA en un solo lote no cerrado:** «lote abierto» = cualquier estado salvo `cerrado`. El `FOR UPDATE` va sobre la
+  fila de la **empresa** (no del lote): dos personas que agregan la misma CA a dos lotes distintos se serializan ahí.
+  Orden de bloqueo siempre empresa → lote → solicitud. `lote_cas.estado_previo` (columna, no solo `datos` del evento)
+  guarda el estado de `ca_trabajo` para devolverla al quitarla; solo se mueve a `cotizando` desde nueva, priorizada o
+  descartada (una `lista`/`enviada` no retrocede).
+- **Agregado:** `lote_lineas` suma por producto (una fila por producto: el formato de compra es uno). Se agregan además
+  `proveedor_producto_id`, `proveedor_fijado`, `precio_vencido` y `dias_precio` (para respetar la elección a mano al
+  recalcular y pintar el ámbar sin otra consulta). `en_stock_base` = lo que el stock cubre (≤ cantidad).
+  `costo_unitario_sugerido` es por unidad base. Ofertado y cerrado no se recalculan. Editar líneas de una CA recalcula
+  sus lotes vía `catalogo.recalcular_detalle_lineas`.
+- **Mejor costo (§2.3):** firma compatible (`producto_id`/`unidad_base` siguen siendo keyword; se suman `cantidad_base`,
+  `permitir_vencidos`, `hoy`). `Candidato` suma `vencido`, `dias`, `tramo_aplicado`, `habitual`. Un tramo solo puede
+  bajar el precio. `tramos.desde` va en unidades del formato del proveedor. `CostosEmpresa.costo` recibe la cantidad de la
+  línea; la caché de la mesa guarda `costo_vencido_dias`.
+- **Respuesta:** `guardar_producto(fuente="solicitud")` con `vigente_desde = hoy`; un precio igual al actual ya no es
+  «igual» sino «confirmado» (actualiza `vigente_desde` y deja historial): sin eso un precio confirmado seguía vencido.
+  La respuesta define los tramos (sin tramos, se borran los viejos).
+- **Desvíos:** (1) «subir la foto de la lista» (extractor de F-plat-2) **no** está: la respuesta se tipea o se sube la XLSX
+  que se descargó (lectura con `importar._filas_xlsx/_como_dicts/_num`, una fila mala no rompe el resto; la columna `id`
+  identifica la línea). (2) «Armar ofertas» se permite en abierto, solicitado y con_precios (no solo con_precios: si todo
+  sale del stock o todos los precios están vigentes no hace falta pedir nada). (3) La alarma de vencidos es un evento de
+  sistema en `ca_eventos` con `ca_codigo = "lote:{id}"` (columna sin FK; idempotente por el índice único parcial) y entra a
+  la campana bajo la preferencia «Actividad del equipo». (4) El cambio de proveedor de una línea (HTMX) responde la pantalla
+  entera y el cliente toma `#lote-contenido` con `hx-select`, para que todas las `version` queden frescas. (5) Margen
+  simple del lote = venta − compra (no descuenta el costo del stock propio ni la logística: lo dice la pantalla).
+  (6) La purga de lotes cerrados (`purgar_cerrados`) existe con test pero no está enganchada al job `retencion` (F-plat-7 §1.4).
+  (7) «Armar ofertas» es todo o nada: si otra persona guarda la oferta de una de las CA a la vez, se responde 409 y no se
+  guarda ninguna (`oferta.guardar` puede revertir la sesión ante el choque). (8) La transición automática a
+  `solicitado`/`con_precios` mira solo las solicitudes enviadas (un borrador nuevo no la retrasa).

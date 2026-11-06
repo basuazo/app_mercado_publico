@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Lotes — Rastrillo{% endblock %}
+{% block content %}
+<nav aria-label="Migas" class="small mb-2"><a href="/trabajo">En trabajo</a></nav>
+<h2>Lotes de cotización</h2>
+<p class="small text-muted">Se crean desde la <a href="/mesa">mesa</a>: marca varias Compras Ágiles y pulsa «Cotizar».</p>
+<div class="table-responsive">
+<table class="table table-sm align-middle" data-lotes>
+  <thead><tr><th>Lote</th><th>Estado</th><th>Cierre más próximo</th><th>Creado</th></tr></thead>
+  <tbody>
+  {% for l in lotes %}
+  <tr>
+    <td><a href="/lotes/{{ l.id }}">{{ l.nombre }}</a></td>
+    <td>{{ estados[l.estado] }}</td>
+    <td class="small">{{ l.fecha_limite | fecha_chile if l.fecha_limite else '—' }}</td>
+    <td class="small">{{ l.creado_en | fecha_chile }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="text-muted">Todavía no hay lotes.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

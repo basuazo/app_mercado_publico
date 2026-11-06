@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}En trabajo — Rastrillo{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="mb-0">En trabajo</h2>
+  <a class="btn btn-outline-secondary btn-sm" href="/lotes">Todos los lotes</a>
+</div>
+<p class="small text-muted">Lo que el equipo está cotizando. La <a href="/mesa">mesa</a> es lo abierto; acá, lo tomado.</p>
+
+<section class="mt-3" aria-labelledby="t-cierran">
+  <h3 class="fs-5" id="t-cierran">Cierran en 24 h</h3>
+  {% if t.cierran_24h %}
+  <ul class="list-unstyled" data-trabajo="cierran">
+    {% for c in t.cierran_24h %}
+    <li class="mb-1"><a href="/oportunidad/compras_agiles/{{ c.codigo }}">{{ c.nombre }}</a>
+      <span class="small text-muted">· {{ estados_ca.get(c.estado, c.estado) }} · cierra {{ c.cierre | fecha_chile }}{% if c.en_lote %} · en lote{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="small text-muted">Ninguna en curso cierra en las próximas 24 horas.</p>{% endif %}
+</section>
+
+<section class="mt-4" aria-labelledby="t-lotes">
+  <h3 class="fs-5" id="t-lotes">Lotes abiertos</h3>
+  {% for lote, cas in t.lotes %}
+  <div class="card mb-2" data-trabajo="lote">
+    <div class="card-body py-2">
+      <a href="/lotes/{{ lote.id }}"><strong>{{ lote.nombre }}</strong></a>
+      <span class="badge text-bg-primary fw-normal">{{ estados[lote.estado] }}</span>
+      <span class="small text-muted">· cierre más próximo: {{ lote.fecha_limite | fecha_chile if lote.fecha_limite else 'sin fecha' }}</span>
+      <ul class="small mb-0 mt-1">
+        {% for codigo, nombre, estado in cas %}<li><a href="/oportunidad/compras_agiles/{{ codigo }}">{{ nombre }}</a> · {{ estados_ca.get(estado, estado) }}</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% else %}
+  <p class="small text-muted">No hay lotes abiertos. En la <a href="/mesa">mesa</a>, marca varias CA y pulsa «Cotizar».</p>
+  {% endfor %}
+</section>
+
+<section class="mt-4" aria-labelledby="t-sin-lote">
+  <h3 class="fs-5" id="t-sin-lote">En curso sin lote</h3>
+  {% if t.sin_lote %}
+  <ul class="list-unstyled" data-trabajo="sin-lote">
+    {% for c in t.sin_lote %}
+    <li class="mb-1"><a href="/oportunidad/compras_agiles/{{ c.codigo }}">{{ c.nombre }}</a>
+      <span class="small text-muted">· {{ estados_ca.get(c.estado, c.estado) }} · cierra {{ c.cierre | fecha_chile if c.cierre else 'sin fecha' }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="small text-muted">Nada priorizado, cotizando o listo fuera de un lote.</p>{% endif %}
+</section>
+<p class="small text-muted mt-3">Fuente: Dirección ChileCompra</p>
+{% endblock %}
