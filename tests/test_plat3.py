@@ -364,6 +364,7 @@ def test_plantilla_descargable_se_lee_y_sus_ejemplos_se_ignoran():
     assert not p.precios and not p.condiciones and not p.logistica and not p.errores
 
 
+@pytest.mark.datos_locales
 def test_plantilla_real_de_boris_se_lee():
     from pathlib import Path
 

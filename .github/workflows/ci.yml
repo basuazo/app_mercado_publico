@@ -75,11 +75,12 @@ jobs:
         run: python -m mypy app
 
       # pytest sale 0 aunque haya saltados: se leen del resumen y se falla aparte.
+      # `datos_locales` leen archivos de data/ que no están en el repo: se deseleccionan (no se saltan).
       - name: pytest
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -rs -p no:cacheprovider | tee pytest.out
+          python -m pytest -rs -p no:cacheprovider -m "not datos_locales" | tee pytest.out
           resumen="$(tail -n 1 pytest.out)"
           if echo "$resumen" | grep -qE '[0-9]+ skipped'; then
             echo "::error::pytest informó tests saltados ($resumen): el criterio es 0 saltados"
