@@ -22,6 +22,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import Select, and_, delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -81,6 +82,17 @@ EV_RESULTADO = "resultado"
 # (columna sin FK), `usuario_id` NULL → idempotente por lote con el índice único parcial.
 EV_PRECIO_VENCIDO = "precio_vencido"
 PREFIJO_LOTE = "lote:"
+
+
+def url_de_evento(ca_codigo: str, datos: dict[str, Any] | None = None) -> str:
+    """Enlace de un evento (campana y /actividad). Un evento de lote (`ca_codigo = "lote:{id}"`,
+    F-plat-lote) lleva a `/lotes/{id}`, nunca a la ficha de una CA inexistente."""
+    if ca_codigo.startswith(PREFIJO_LOTE):
+        lote_id = str((datos or {}).get("lote_id") or ca_codigo[len(PREFIJO_LOTE) :])
+        return f"/lotes/{lote_id}" if lote_id.isdigit() else "/lotes"
+    return f"/oportunidad/compras_agiles/{quote(ca_codigo, safe='')}"
+
+
 TIPOS_USUARIO = (EV_ESTADO, EV_ASIGNADA, EV_COMENTARIO, EV_MENCION)
 TIPOS_SISTEMA = (EV_CIERRE_24H, EV_CIERRE_4H, EV_RESULTADO)
 TIPOS_EVENTO = TIPOS_USUARIO + TIPOS_SISTEMA + (EV_PRECIO_VENCIDO,)
@@ -370,7 +382,12 @@ def asignar(
         )
         _guardar_nueva(session, t, empresa_id, codigo)
         _evento(
-            session, empresa_id, codigo, usuario.id, EV_ESTADO, {"de": NUEVA, "a": PRIORIZADA},
+            session,
+            empresa_id,
+            codigo,
+            usuario.id,
+            EV_ESTADO,
+            {"de": NUEVA, "a": PRIORIZADA},
             creado_en=ahora,
         )
     else:
@@ -443,7 +460,12 @@ def comentar(
     session.add(c)
     session.flush()
     _evento(
-        session, empresa_id, codigo, usuario.id, EV_COMENTARIO, {"comentario_id": c.id},
+        session,
+        empresa_id,
+        codigo,
+        usuario.id,
+        EV_COMENTARIO,
+        {"comentario_id": c.id},
         creado_en=ahora,
     )
     otros = [m for m in miembros(session, empresa_id) if m.id != usuario.id]
@@ -662,7 +684,12 @@ def resultado_de(session: Session, rut: str, ca: CompraAgil, ahora: datetime) ->
 
 
 def _evento_sistema(
-    session: Session, empresa_id: int, codigo: str, tipo: str, datos: dict[str, Any], ahora: datetime
+    session: Session,
+    empresa_id: int,
+    codigo: str,
+    tipo: str,
+    datos: dict[str, Any],
+    ahora: datetime,
 ) -> bool:
     """Inserta un evento de sistema en un savepoint; si ya existía (índice parcial), nada."""
     try:
@@ -1058,7 +1085,11 @@ def describir_eventos(
         elif e.tipo in (EV_COMENTARIO, EV_MENCION):
             c = comentarios.get(int(d.get("comentario_id") or 0))
             if e.tipo == EV_MENCION:
-                quien = "te" if e.destinatario_id == yo else f"a {nombres.get(e.destinatario_id or 0, 'alguien')}"
+                quien = (
+                    "te"
+                    if e.destinatario_id == yo
+                    else f"a {nombres.get(e.destinatario_id or 0, 'alguien')}"
+                )
                 antes = f"{actor} {quien} mencionó en"
             else:
                 antes = f"{actor} comentó en"
@@ -1073,13 +1104,12 @@ def describir_eventos(
             despues = f"· {cuando_cierra(cierre, ahora)}"
         elif e.tipo == EV_RESULTADO:
             antes = _FRASE_RESULTADO.get(d.get("resultado", ""), "Resultado de")
-        url = f"/oportunidad/compras_agiles/{e.ca_codigo}"
+        url = url_de_evento(e.ca_codigo, d)
         if e.tipo == EV_PRECIO_VENCIDO:
             n = int(d.get("n") or 0)
             antes = "El lote"
             nombre_ca = str(d.get("nombre") or e.ca_codigo)
             despues = f"usa {n} precio{'s' if n != 1 else ''} vencido{'s' if n != 1 else ''}"
-            url = f"/lotes/{d.get('lote_id', '')}"
         out.append(
             {
                 "id": e.id,
@@ -1096,9 +1126,7 @@ def describir_eventos(
     return out
 
 
-def hilo(
-    session: Session, empresa_id: int, codigo: str, ahora: datetime
-) -> list[dict[str, Any]]:
+def hilo(session: Session, empresa_id: int, codigo: str, ahora: datetime) -> list[dict[str, Any]]:
     """Comentarios de la CA intercalados con los cambios de estado/asignación/resultado como
     líneas de sistema, del más antiguo al más nuevo."""
     comentarios = list(
@@ -1179,8 +1207,11 @@ def mis_ca(
     """CA en curso con responsable = yo, por cierre (bloque «Equipo» de «Hoy»)."""
     return _ca_en_curso(
         session,
-        [CaTrabajo.empresa_id == empresa_id, CaTrabajo.responsable_id == usuario_id,
-         CaTrabajo.estado.in_(ACTIVOS)],
+        [
+            CaTrabajo.empresa_id == empresa_id,
+            CaTrabajo.responsable_id == usuario_id,
+            CaTrabajo.estado.in_(ACTIVOS),
+        ],
         ahora,
         limite,
     )

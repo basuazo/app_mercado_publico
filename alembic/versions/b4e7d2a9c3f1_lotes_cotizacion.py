@@ -6,7 +6,7 @@ Columnas nuevas con default (ningún dato existente cambia de significado):
 `proveedor_productos.tramos` (JSONB nullable: precio por volumen).
 
 Revision ID: b4e7d2a9c3f1
-Revises: a3c8e5d1b7f2
+Revises: e7c2a9f4b1d8
 Create Date: 2026-11-05 23:59:50.000000
 """
 
@@ -20,7 +20,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "b4e7d2a9c3f1"
-down_revision: str | None = "a3c8e5d1b7f2"
+down_revision: str | None = "e7c2a9f4b1d8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

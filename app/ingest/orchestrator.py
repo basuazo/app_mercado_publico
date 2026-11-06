@@ -114,7 +114,9 @@ def _make_clients(
     )
 
 
-def run_sync_activas(settings: Settings, engine: Engine, limit: int | None = None) -> dict[str, int]:
+def run_sync_activas(
+    settings: Settings, engine: Engine, limit: int | None = None
+) -> dict[str, int]:
     v1, _ = _make_clients(settings, engine)
     with Session(engine) as session:
         return sync_activas(session, v1, settings, limit=limit)
@@ -186,6 +188,10 @@ def run_retencion(engine: Engine, settings: Settings | None = None) -> dict[str,
         if settings is not None
         else None
     )
+    # Las fases con retención propia se registran en `retencion.PURGAS` al importarse: se importan
+    # acá para que el job las vea aunque el proceso no las haya cargado (F-plat-7 §1.4).
+    import app.mercado.lote  # noqa: F401  (registra la purga «lotes»)
+
     with Session(engine) as session:
         resultado = purgar_terminales(session, regiones_protegidas=regiones)
         # Sin commit, el cierre de la sesión revierte la purga entera.
@@ -385,6 +391,7 @@ def _candidatas_detalles_match(
     final. La espera por fallos la aplica :func:`_cola_detalles_match`.
     """
     dialecto = session.get_bind().dialect.name
+
     def _con_match(fuente: str, codigo: Any) -> Any:
         con_match = exists().where(
             OportunidadMatch.fuente == fuente,
@@ -571,9 +578,7 @@ def run_detalles_match(
     `reloj` y `now_fn` son inyectables para tests.
     """
     nocturno = en_ventana_nocturna(now_fn)
-    presupuesto_min = (
-        settings.detalles_minutos_noche if nocturno else settings.detalles_minutos_dia
-    )
+    presupuesto_min = settings.detalles_minutos_noche if nocturno else settings.detalles_minutos_dia
     presupuesto_s = presupuesto_min * 60
     inicio = reloj()
 
@@ -1111,9 +1116,7 @@ def build_scheduler(
             _run_with_lock("ca_incremental", lambda: run_sync_ca(settings, engine), engine),
             _run_with_lock("match_post_ca", lambda: run_match(settings, engine), engine),
             _run_with_lock("alerts_post_ca", lambda: run_alerts(settings, engine), engine),
-            _run_with_lock(
-                "detalles-match", lambda: run_detalles_match(settings, engine), engine
-            ),
+            _run_with_lock("detalles-match", lambda: run_detalles_match(settings, engine), engine),
         ),
         "interval",
         minutes=30,

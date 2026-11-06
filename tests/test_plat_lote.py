@@ -104,8 +104,12 @@ def mundo(engine):
         s.flush()
         f = {
             nom: ProductoFormato(producto_id=bebida.id, nombre=nom, factor_base=fac)
-            for nom, fac in (("litro", 1.0), ("lata 350 ml", 0.35), ("botella 1,5 L", 1.5),
-                             ("pack 6 latas", PACK))  # fmt: skip
+            for nom, fac in (
+                ("litro", 1.0),
+                ("lata 350 ml", 0.35),
+                ("botella 1,5 L", 1.5),
+                ("pack 6 latas", PACK),
+            )  # fmt: skip
         }
         s.add_all(f.values())
         nuestra = Empresa(nombre="Distribuidora Ñuble", rut="76123456-0", regiones_prioritarias=[16],
@@ -443,7 +447,9 @@ def test_evento_precio_vencido_una_vez_por_lote(engine, mundo):
         lt.recalcular_lote(s, mundo["emp"], lote_id)
         lt.recalcular_lote(s, mundo["emp"], lote_id)
         s.commit()
-        evs = s.execute(select(CaEvento).where(CaEvento.tipo == eq.EV_PRECIO_VENCIDO)).scalars().all()
+        evs = (
+            s.execute(select(CaEvento).where(CaEvento.tipo == eq.EV_PRECIO_VENCIDO)).scalars().all()
+        )
         assert len(evs) == 1 and evs[0].ca_codigo == f"lote:{lote_id}" and evs[0].usuario_id is None
         desc = eq.describir_eventos(s, evs, mundo["boris"], ahora_utc())[0]
         assert desc["url"] == f"/lotes/{lote_id}" and "vencido" in desc["despues"]
@@ -675,7 +681,11 @@ def test_en_trabajo_y_resumen_hoy(engine, mundo):
         assert [c["codigo"] for c in t.sin_lote] == ["CA-3"]
         assert t.cierran_24h == []
         r = lt.resumen_hoy(s, mundo["emp"])
-        assert r["lotes"] == 1 and r["cas"] == 2 and r["cierre"] == s.get(CompraAgil, "CA-2").fecha_cierre
+        assert (
+            r["lotes"] == 1
+            and r["cas"] == 2
+            and r["cierre"] == s.get(CompraAgil, "CA-2").fecha_cierre
+        )
         assert lt.resumen_hoy(s, mundo["otra"])["lotes"] == 0
 
 
@@ -818,3 +828,58 @@ def test_admin_edita_vigencia_y_margen(client, settings, mundo, engine):
     with Session(engine) as s:
         e = s.get(Empresa, mundo["emp"])
         assert e.dias_vigencia_precio == 10 and e.margen_objetivo == pytest.approx(0.20)
+
+
+# ---------------------------------------------------------------------------
+# Fix tras el rebase sobre F-plat-anexos-2 y F-plat-7
+# ---------------------------------------------------------------------------
+
+
+def test_lote_suma_solo_la_linea_del_anexo_no_la_reemplazada(engine, mundo):
+    """F-plat-anexos-2: la línea de la API `reemplazada` no entra al agregado; la del anexo sí."""
+    with Session(engine) as s:
+        api = s.execute(select(CaLinea).where(CaLinea.ca_codigo == "CA-1")).scalar_one()
+        api.origen, api.estado = "api", cat.REEMPLAZADA
+        s.add(CaLinea(ca_codigo="CA-1", n=1000, producto_id=mundo["bebida"],
+                      formato_id=mundo["f"]["litro"], cantidad=7.0, cantidad_base=7.0,
+                      texto_origen="Bebida 7 L (anexo)", origen="anexo", estado="ok"))  # fmt: skip
+        s.commit()
+        lote_id = _crear(s, mundo, codigos=("CA-1",))
+        ll = _linea(s, lote_id)
+        assert ll.cantidad_base == pytest.approx(7.0)  # no 7 + 24 × 0,35
+        assert [d["ca"] for d in ll.detalle] == ["CA-1"]
+        vista = lt.vista(s, mundo["emp"], lote_id)
+        assert [c.n_lineas for c in vista.cas] == [1]  # la reemplazada no se cuenta
+
+
+def test_purga_de_lotes_registrada_en_retencion(engine, mundo):
+    from app.core import retencion
+
+    regla = next(p for p in retencion.PURGAS if p.nombre == "lotes")
+    assert regla.fn is lt.purgar_cerrados
+    with Session(engine) as s:
+        lote_id = _crear(s, mundo)
+        lt.cambiar_estado(s, mundo["emp"], _u(s, mundo), lote_id, lt.CERRADO, None)
+        s.commit()
+        assert regla.fn(s, ahora_utc() + timedelta(days=731)) == 1
+        s.commit()
+        assert s.get(Lote, lote_id) is None
+
+
+def test_eventos_de_lote_enlazan_a_lotes_en_campana_y_actividad(client, settings, engine, mundo):
+    with Session(engine) as s:
+        s.get(Proveedor, mundo["tramos"]).activo = False
+        s.commit()
+        lote_id = _crear(s, mundo)
+        lt.recalcular_lote(s, mundo["emp"], lote_id)
+        s.commit()
+    cookies, _h, _csrf = _auth(settings, mundo["gonzalo"])
+    for ruta in ("/actividad/campana", "/actividad"):
+        html = client.get(ruta, cookies=cookies).text
+        assert f'href="/lotes/{lote_id}"' in html, ruta
+        assert (
+            "/oportunidad/compras_agiles/lote:" not in html and "/oportunidad/ca/lote:" not in html
+        )
+    assert eq.url_de_evento(f"lote:{lote_id}") == f"/lotes/{lote_id}"
+    assert eq.url_de_evento("lote:x") == "/lotes"
+    assert eq.url_de_evento("1-1-COT26") == "/oportunidad/compras_agiles/1-1-COT26"

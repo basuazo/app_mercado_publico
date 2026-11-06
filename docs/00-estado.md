@@ -18,7 +18,7 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
-## F-plat-lote (6-nov, rama `F-plat-lote` desde `c4c09ec`, commit local sin push ni merge; migración `b4e7d2a9c3f1`, cuelga de `a3c8e5d1b7f2`)
+## F-plat-lote (6-nov, rama `F-plat-lote` desde `c4c09ec`, commit local sin push ni merge; migración `b4e7d2a9c3f1`, cuelga de `e7c2a9f4b1d8` tras el rebase sobre F-plat-anexos-2 y F-plat-7)
 Cotizar varias CA a la vez (`prompt-F-plat-lote.md`, §7 «Cómo quedó»). **Esquema:** `lotes`, `lote_cas`, `lote_lineas`
 (agregado derivado por producto × formato de compra), `solicitudes_precio`, `solicitud_lineas`; columnas nuevas
 `empresas.dias_vigencia_precio` (15), `empresas.margen_objetivo` (0,15) y `proveedor_productos.tramos` (JSONB).
@@ -30,7 +30,9 @@ respuesta → `guardar_producto(fuente="solicitud")` (un precio igual se CONFIRM
 (mueven `reservado`), «En trabajo» (`/trabajo`), tarjeta en «Hoy», filtro «Vencidos» en `/proveedores` y evento de sistema
 `precio_vencido` por lote (`ca_codigo = "lote:{id}"`). La edición de líneas de una CA recalcula sus lotes
 (`catalogo.recalcular_detalle_lineas` → `lote.recalcular_por_cas`). **No** envía WhatsApp ni correo.
-**Pendiente de Boris:** si F-plat-anexos-2 se audita antes, rebase y cambiar `down_revision`; revisar y aplicar
+**Fix tras el rebase:** las lecturas de líneas del lote excluyen `reemplazada`; purga «lotes» en `retencion.PURGAS`;
+los eventos `lote:{id}` enlazan a `/lotes/{id}`.
+**Pendiente de Boris:** revisar y aplicar
 `alembic upgrade head`; correr `tests/test_plat_lote_pg.py` contra Postgres; fijar vigencia y margen de la empresa.
 
 ## F-plat-anexos-2 (6-nov, commit local sin push; migración `e7c2a9f4b1d8`, cuelga de `a3c8e5d1b7f2`)

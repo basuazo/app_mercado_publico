@@ -89,9 +89,7 @@ class VistaInventario:
 
 
 def _escapar_like(texto: str) -> str:
-    return (
-        texto.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2).replace("%", r"\%").replace("_", r"\_")
-    )
+    return texto.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2).replace("%", r"\%").replace("_", r"\_")
 
 
 def listar(
@@ -158,7 +156,9 @@ def movimientos(
         session.execute(
             select(EmpresaProductoMovimiento)
             .where(EmpresaProductoMovimiento.empresa_producto_id == ep_id)
-            .order_by(EmpresaProductoMovimiento.creado_en.desc(), EmpresaProductoMovimiento.id.desc())
+            .order_by(
+                EmpresaProductoMovimiento.creado_en.desc(), EmpresaProductoMovimiento.id.desc()
+            )
             .limit(limite)
         ).scalars()
     )
@@ -507,9 +507,7 @@ def reservar(
     return round(reservado, 6)
 
 
-def liberar(
-    session: Session, empresa_id: int, referencia: str, usuario_id: int | None
-) -> int:
+def liberar(session: Session, empresa_id: int, referencia: str, usuario_id: int | None) -> int:
     """Libera TODO lo que sigue reservado con esa `referencia` (Σ reserva − Σ liberación por
     formato), sin bajar `reservado` de 0. Movimiento `liberacion` con `delta` negativo. Idempotente:
     una segunda llamada no encuentra nada. Devuelve cuántos formatos liberó."""
@@ -618,7 +616,9 @@ def _cobertura(
         faltante = 0.0 if en_stock else round(cantidad_base - disponible, 6)
     else:
         en_stock, faltante = disponible > _TOL, 0.0
-    plazos = [ep.plazo_reposicion_dias for ep, _, _ in entradas if ep.plazo_reposicion_dias is not None]
+    plazos = [
+        ep.plazo_reposicion_dias for ep, _, _ in entradas if ep.plazo_reposicion_dias is not None
+    ]
     habitual = next((h for _, _, h in entradas if h), None)
     mejor = max(entradas, key=lambda e: max(e[0].disponible, 0.0) * e[1])[0]
     return Cobertura(
@@ -638,6 +638,7 @@ def _lineas_cubribles(session: Session, codigos: Sequence[str]) -> list[CaLinea]
             .where(
                 CaLinea.ca_codigo.in_(list(codigos)),
                 CaLinea.estado.in_(("ok", "dudosa")),
+                CaLinea.estado != "reemplazada",  # F-plat-anexos-2: el anexo manda
                 CaLinea.producto_id.is_not(None),
             )
             .order_by(CaLinea.ca_codigo, CaLinea.n)
@@ -650,7 +651,9 @@ def cobertura_de_ca(session: Session, empresa_id: int, codigo: str) -> dict[int,
     tiene (cualquier formato: se suma en la unidad base con `factor_base`). Cada línea se mide
     sola: dos líneas del mismo producto no se descuentan entre sí."""
     lineas = _lineas_cubribles(session, [codigo])
-    por_producto = _entradas(session, empresa_id, (ln.producto_id for ln in lineas if ln.producto_id))
+    por_producto = _entradas(
+        session, empresa_id, (ln.producto_id for ln in lineas if ln.producto_id)
+    )
     return {
         ln.id: _cobertura(por_producto[ln.producto_id], ln.cantidad_base)
         for ln in lineas
@@ -668,15 +671,21 @@ def resumen_por_ca(
         for ln in _lineas_cubribles(session, codigos[i : i + LOTE_CODIGOS]):
             acumulado.setdefault(ln.ca_codigo, []).append(ln)
     todas = [ln for ls in acumulado.values() for ln in ls]
-    por_producto = _entradas(session, empresa_id, (ln.producto_id for ln in todas if ln.producto_id))
-    nombres: dict[int, tuple[str, str]] = {
-        pid: (nombre, ub)
-        for pid, nombre, ub in session.execute(
-            select(
-                ProductoCanonico.id, ProductoCanonico.nombre, ProductoCanonico.unidad_base
-            ).where(ProductoCanonico.id.in_({ln.producto_id for ln in todas if ln.producto_id}))
-        )
-    } if todas else {}
+    por_producto = _entradas(
+        session, empresa_id, (ln.producto_id for ln in todas if ln.producto_id)
+    )
+    nombres: dict[int, tuple[str, str]] = (
+        {
+            pid: (nombre, ub)
+            for pid, nombre, ub in session.execute(
+                select(
+                    ProductoCanonico.id, ProductoCanonico.nombre, ProductoCanonico.unidad_base
+                ).where(ProductoCanonico.id.in_({ln.producto_id for ln in todas if ln.producto_id}))
+            )
+        }
+        if todas
+        else {}
+    )
     out: dict[str, ResumenCA] = {}
     for codigo, lineas in acumulado.items():
         cubiertas = 0

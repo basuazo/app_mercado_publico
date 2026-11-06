@@ -35,11 +35,13 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.core.retencion import registrar_purga
 from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.mercado import adjudicacion as adj
 from app.mercado import equipo as eq
 from app.mercado import oferta as of
 from app.mercado import oferta_propia as op
+from app.mercado.catalogo import REEMPLAZADA
 from app.mercado.mesa_dia import condiciones_vigente
 from app.mercado.proveedores import (
     MejorCosto,
@@ -476,7 +478,10 @@ def recalcular(session: Session, lote: Lote, *, hoy: date | None = None) -> None
                 select(CaLinea)
                 .where(
                     CaLinea.ca_codigo.in_(codigos),
+                    # `reemplazada` (F-plat-anexos-2): la línea de la API que reemplazó el
+                    # anexo; nunca entra al agregado (ya la deja fuera el `in_`, se explicita).
                     CaLinea.estado.in_(("ok", "dudosa")),
+                    CaLinea.estado != REEMPLAZADA,
                     CaLinea.producto_id.is_not(None),
                 )
                 .order_by(CaLinea.ca_codigo, CaLinea.n)
@@ -1419,7 +1424,7 @@ def vista(session: Session, empresa_id: int, lote_id: int) -> VistaLote:
                 func.count(),
                 func.count().filter(CaLinea.producto_id.is_(None)),
             )
-            .where(CaLinea.ca_codigo.in_(codigos))
+            .where(CaLinea.ca_codigo.in_(codigos), CaLinea.estado != REEMPLAZADA)
             .group_by(CaLinea.ca_codigo)
         )
         if codigos
@@ -1444,7 +1449,7 @@ def vista(session: Session, empresa_id: int, lote_id: int) -> VistaLote:
         session.execute(
             select(func.count()).select_from(CaLinea).where(
                 CaLinea.ca_codigo.in_(codigos), CaLinea.estado.in_(("ok", "dudosa")),
-                CaLinea.producto_id.is_not(None),
+                CaLinea.estado != REEMPLAZADA, CaLinea.producto_id.is_not(None),
                 (CaLinea.cantidad_base.is_(None)) | (CaLinea.cantidad_base <= 0),
             )
         ).scalar_one()
@@ -1607,3 +1612,8 @@ def purgar_cerrados(session: Session, ahora: datetime, dias: int = RETENCION_DIA
     session.execute(delete(LoteCa).where(LoteCa.lote_id.in_(ids)))
     session.execute(delete(Lote).where(Lote.id.in_(ids)))
     return len(ids)
+
+
+# F-plat-7 §1.4: la retención de los lotes es UNA entrada de `retencion.PURGAS` (clave del conteo
+# en el job `retencion`: `lotes_borrados`). El job importa este módulo antes de purgar.
+registrar_purga("lotes", purgar_cerrados)
