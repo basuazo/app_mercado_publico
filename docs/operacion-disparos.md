@@ -42,7 +42,7 @@ Qué **no** puede hacer: leer los secrets, modificar el código ni tocar otros r
 
 ---
 
-## 3. Los 7 crons en cron-job.org
+## 3. Los crons en cron-job.org
 
 Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 
@@ -66,18 +66,18 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 
 | Title | ARCHIVO | Hora de Chile |
 |---|---|---|
-| GH ca | `ca.yml` | cada hora, minuto 05 (todos los días, las 24 h) |
-| GH ciclo-match | `ciclo-match.yml` | 08:50, 10:50, 12:50, 14:50, 16:50, 18:50, 20:50 |
-| GH ciclo-activas | `ciclo-activas.yml` | 10:15, 14:15, 19:15 |
-| GH nocturno | `nocturno.yml` | 01:10 |
+| GH ca | `ca.yml` | cada hora, minuto 05 — **en pausa durante el pivote** |
+| GH ciclo-match | `ciclo-match.yml` | 08:50, 10:50, 12:50, 14:50, 16:50, 18:50, 20:50 — **en pausa durante el pivote** |
+| GH ciclo-activas | `ciclo-activas.yml` | 10:15, 14:15, 19:15 — **en pausa durante el pivote** |
+| GH nocturno | `nocturno.yml` | 01:10 — **en pausa durante el pivote** |
 | GH retencion | `retencion.yml` | 05:40 |
-| GH catalogos | `catalogos.yml` | lunes 06:35 (catalogos + plan-anual + vocabulario-rubros, en ese orden) |
-| GH resumen | `resumen.yml` | 08:30 |
-| GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — **F-merc-1, sin crear todavía** |
-| GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — **F-merc-2, sin crear todavía** (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
-| GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 — **F-merc-1, sin crear todavía** |
-| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — **F-plat-4, sin crear todavía** (sin API; corre `mercado-indices`, `mercado-competencia` y `mercado-demanda`; ver nota abajo) |
-| GH mercado-informe | `mercado-informe.yml` | **día 1 de cada mes, 08:40 Chile** — **F-plat-7, sin crear todavía** (sin API; informe mensual por correo; ver tabla del pivote) |
+| GH catalogos | `catalogos.yml` | lunes 06:35 (catalogos + plan-anual + vocabulario-rubros) — **en pausa durante el pivote** |
+| GH resumen | `resumen.yml` | 08:30 — **en pausa durante el pivote** |
+| GH mercado | `mercado.yml` | cada 15 min (00, 15, 30, 45), todos los días — activo |
+| GH mercado-oc | `mercado-oc.yml` | 07:20 Chile, diario — activo (sin API: no cuenta para la cuota; si `oc-da` da 403 desde Actions, se carga desde el PC) |
+| GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 y 03:40 — activo |
+| GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — activo (sin API; corre `mercado-indices`, `mercado-competencia` y `mercado-demanda`; ver nota abajo) |
+| GH mercado-informe | `mercado-informe.yml` | **día 1 de cada mes, 08:40 Chile** — activo (sin API; informe mensual por correo; ver tabla del pivote) |
 
 ### Disparos del pivote — tabla única (F-plat-7, 6-nov-2026)
 
@@ -193,7 +193,8 @@ Si falla:
 
 ## 5. Qué queda vivo en cron-job.org
 
-- Los 7 crons **GH …** (activos).
+- Los 6 crons **GH …** del pivote (activos, 6-nov-2026): mercado, mercado-nocturno, retencion, mercado-oc, mercado-indices,
+  mercado-informe. Los de la app antigua (ca, ciclo-*, nocturno, resumen, catalogos) creados y en pausa.
 - El monitor de `GET https://app-mercado-publico.onrender.com/api/salud/jobs` (activo). Avisa si
   la ingesta se detiene por cualquier motivo, incluido un token vencido.
 - Los crons viejos que llamaban a `/api/jobs/run` en Render: pausados. Se pueden borrar cuando se
