@@ -1,7 +1,11 @@
 # 19 — Los anexos de Compra Ágil: explicación técnica del problema (para Gonzalo y Conejo)
 
-*5-nov-2026 · Boris (Rastrillo). Escrito para compartir fuera del equipo de desarrollo. [V] = verificado en la
-fuente o en el código; [I] = inferido. Compromiso de la reunión «Revisión CBS» del 5-nov.*
+*5-nov-2026, actualizado el 6-nov-2026 · Boris (Rastrillo). Escrito para compartir fuera del equipo de desarrollo.
+[V] = verificado en la fuente o en el código; [I] = inferido. Compromiso de la reunión «Revisión CBS» del 5-nov.*
+
+> **Resumen del 6-nov.** Ya no hay dudas sobre la API: **no entrega los archivos** [V]. Se eligió que la descarga
+> la haga el navegador de una persona (extensión con un botón) o Claude actuando en ese mismo navegador, a ritmo
+> humano; el resto (extracción y revisión) es automático. Quedan abiertas 3 preguntas (§6).
 
 ## 1. Qué hace la plataforma y dónde se traba
 
@@ -16,89 +20,95 @@ un archivo adjunto («Anexo N°1», «Listado de abarrotes»), y la línea de la
 «ALIMENTOS SEGÚN ANEXO ADJUNTO, cantidad 1» [V: en agosto 2026, 2.577 CA de Ñuble con ofertas; 501 con más
 de un producto; en alimentos el texto «según anexo» es la norma].
 
-## 2. Qué entrega exactamente la API sobre los adjuntos [V]
+## 2. Qué entrega la API sobre los adjuntos y qué hace la ficha pública [V]
 
-El detalle de una CA (`GET /v2/compra-agil/{codigo}`) trae un campo `documentos` que es una lista de objetos
-`{id, nombre}`. Ejemplo real de forma (datos ilustrativos):
+El detalle de una CA (`GET /v2/compra-agil/{codigo}`) trae un campo `documentos`, una lista de objetos
+`{id, nombre}` donde `id` es un **UUID** (texto). Forma (datos ilustrativos):
 
 ```json
 "documentos": [
-  {"id": 123456, "nombre": "Anexo 1 Listado de productos.pdf"},
-  {"id": 123457, "nombre": "Formulario de oferta.docx"}
+  {"id": "3f2a…-…", "nombre": "Anexo 1 Listado de productos.pdf"},
+  {"id": "9c1b…-…", "nombre": "Formulario de oferta.docx"}
 ]
 ```
 
-- Sirve para saber **cuántos** adjuntos tiene la CA y **cómo se llaman**.
-- **No trae el archivo ni una URL de descarga.** La guía oficial de la API (v3.0) documenta ese campo y
-  **no documenta** ningún endpoint para bajar el documento [V en la guía]. Que el servidor no tenga uno es
-  una inferencia [I]: probamos tres rutas plausibles en código (`/v2/compra-agil/{codigo}/documentos/{id}`,
-  `/v2/compra-agil/{codigo}/documento/{id}`, `/v2/documentos/{id}`) y queda pendiente ejecutar la sonda con
-  el ticket para anotar qué responde cada una (`scripts/smoke_test.py --documentos`).
-- La ficha pública de cada CA (`buscador.mercadopublico.cl/compra-agil`, sin login) sí muestra los adjuntos
-  con enlace de descarga. Esa ficha es una aplicación JavaScript servida por CloudFront que **responde 403 a
-  cualquier cliente que no sea un navegador** [V, 4-nov]. Desde un navegador real (DevTools → Network al bajar
-  un adjunto) se puede ver la URL verdadera del archivo; no la hemos capturado todavía.
+- Sirve para saber **cuántos** adjuntos tiene la CA y **cómo se llaman** (Rastrillo los guarda en
+  `compras_agiles.documentos`).
+- **No trae el archivo ni una URL de descarga.** La Guía de Uso API Compra Ágil v2 (v3.0, mayo 2026) documenta solo
+  dos endpoints (`GET /v2/compra-agil` y `GET /v2/compra-agil/{codigo}`) y ninguno de descarga [V, guía]. La sonda
+  con ticket (5-nov) probó tres rutas plausibles (`/documentos/{id}`, `/documento/{id}`, `/v2/documentos/{id}`) y
+  las tres responden **403** [V].
+- La ficha pública (`buscador.mercadopublico.cl/ficha?code={codigo}`, sin login) es una aplicación JavaScript. Al
+  abrirla en un navegador real (6-nov) se vio que **no** enlaza el archivo directo: lo pide a un servicio aparte,
+  `adjunto.mercadopublico.cl/adjunto-compra-agil/v1/adjuntos-compra-agil/{listar|encrypt|descargar}/…`, con una
+  credencial interna de la propia página; sin ella responde **403 «Authentication parameters missing»** [V].
+  No es una URL fija que se pueda guardar, y usar esa credencial desde un servidor sería la vía de más riesgo
+  (queda en reserva, no se usa).
 - Términos de ChileCompra [V, leídos el 5-nov]: los documentos de los procesos «constituyen información pública»
   y su «acceso y uso por parte del público en general, no se encuentra restringido»; el bloqueo se reserva a
-  usuarios «utilizados por BOT y que comprometan la disponibilidad de la plataforma». Nuestra regla interna:
-  nada de scrapear listados ni fichas (eso viene de la API); bajar el adjunto público de una CA concreta por su
-  URL directa es la **última alternativa**, uno a uno y a ritmo humano, si la API no lo entrega.
+  usuarios «utilizados por BOT y que comprometan la disponibilidad de la plataforma».
 
 ## 3. Los cuatro casos que la plataforma tiene que manejar (acordado el 5-nov)
 
 | Caso | Dónde está el detalle | Frecuencia [I] | Qué hace la plataforma hoy |
 |---|---|---|---|
 | A | En la API, línea a línea, sin anexo | minoría en alimentos; común en otros rubros | Línea `api|ok` automática |
-| B | Solo en la descripción de la ficha pública (la API trae un texto más pobre) | ocasional | Hoy no se distingue de A: queda la línea pobre |
-| C | Solo en el anexo (a menudo **escaneado**, sin capa de texto: 15 de 32 en nuestra muestra [V]) | la norma en alimentos | Placeholder «sin detalle»; una persona sube el anexo; el LLM extrae; una persona confirma |
-| D | En el anexo **y** en la ficha | ocasional | Igual que C |
+| B | En la descripción de la CA (la ficha la muestra) | ocasional | [I] Por verificar si la descripción de la API (`compras_agiles.descripcion`) es la misma que muestra la ficha; si lo es, basta con leer ese campo |
+| C | Solo en el anexo (a menudo **escaneado**, sin capa de texto: 15 de 32 en nuestra muestra [V]) | la norma en alimentos | Se consigue el archivo (§4), el modelo extrae, la revisión automática confirma lo seguro y una persona ve solo las excepciones |
+| D | En el anexo **y** en la ficha o la API | ocasional | Igual que C; las líneas de la API quedan `reemplazada` |
 
-**Regla acordada:** si hay anexo, manda el anexo; si no, la ficha; la API es la última fuente. (Está escrita
-como fase `F-plat-anexos-2`.)
+**Regla acordada:** si hay anexo, manda el anexo; si no, la descripción; la API es la última fuente
+(implementada en `F-plat-anexos-2`).
 
-## 4. Lo que ya funciona (para no automatizar de más)
+## 4. Cómo se consigue el archivo (decidido el 6-nov)
 
-Una vez que el archivo **está** en la plataforma, el resto es automático y está probado:
+Rastrillo calcula qué CA **necesitan** anexo: vigentes, de las familias de la empresa, con adjuntos, y cuyas líneas
+de la API no bastan (vacías, pobres o «según anexo»). En alimentos son del orden de 6–10 nuevas por día [I]. Para
+esas hay dos vías, las dos desde el navegador de una persona y a ritmo humano:
 
-1. Se valida por firma y tamaño (PDF, XLSX, DOCX, PNG, JPG; ≤ 10 MB) y nunca se ejecuta.
-2. Se convierte a texto (pdfplumber / openpyxl / python-docx). Un PDF escaneado se renderiza a imagen (las
-   primeras 5 páginas) y va a un modelo con visión.
-3. Un modelo de lenguaje vía **OpenRouter** (elegimos el modelo por variable de entorno; estamos evaluando los
-   más baratos que pasen ≥ 95 % de líneas correctas sobre 30 anexos reales) devuelve las líneas
-   `{texto, cantidad, unidad, formato}`.
-4. Cada línea se cruza con el catálogo canónico y queda «dudosa» hasta que una persona la confirma en una
-   tabla editable. Cada confirmación enseña un alias: la próxima vez esa línea sale sola.
-5. Presupuesto mensual duro en la base de datos, caché por documento (el mismo anexo nunca se paga dos veces),
-   y si no hay modelo o presupuesto, el flujo manual sigue funcionando.
+1. **Extensión de Chrome** (`extension/`, F-plat-anexos-boton): en la ficha aparece «Enviar adjuntos a Rastrillo».
+   La descarga la hace la propia página, por el clic; la extensión toma el archivo y lo sube a Rastrillo. Desde
+   Rastrillo, «Abrir fichas» abre las pendientes en pestañas. Meta: < 15 s por CA [por medir].
+2. **Claude como agente en ese mismo navegador** (tarea programada, en piloto): abre las fichas pendientes, baja los
+   adjuntos y los sube por la misma entrada. Cero minutos de una persona; más frágil y con costo de uso.
 
-El cuello de botella es **solo el paso 0: conseguir el archivo**. Hoy es una persona que abre la ficha pública,
-baja el adjunto y lo sube en la ficha de la CA dentro de Rastrillo (~2–5 minutos por CA).
+Las dos usan las entradas que ya existen: carga masiva (ZIP o varios archivos con el código de la CA al inicio del
+nombre), `POST /api/anexos/{codigo_ca}` con token por empresa (idempotente por sha256) y
+`GET /api/anexos/pendientes`. Si ChileCompra habilita una descarga oficial, un job reemplaza ambas.
 
-## 5. Qué le pediríamos a una automatización externa (y preguntas para Conejo)
+**Histórico.** Para pronósticos, la fuente principal ya no son los anexos: desde el 6-nov cada CA que terminó en
+orden de compra queda cruzada con sus líneas oficiales en datos abiertos (oc-da: producto, cantidad y precio de lo
+comprado) [V: 81 % de las CA de alimentos con oferta seleccionada cruzan; las que faltan son de oct–nov y aparecen
+cuando oc-da las publica]. Solo si las CA sin OC (desiertas) pesan en los pronósticos se completaría una muestra de
+anexos, con el modelo más barato y sin revisión humana.
 
-Si alguien arma algo que obtenga los adjuntos, Rastrillo necesita **recibirlos**, no que los procese. La
-fase `F-plat-anexos-2` deja dos entradas:
+## 5. Qué pasa cuando el archivo está en la plataforma (automático)
 
-- **Carga masiva**: varios archivos o un ZIP cuyos nombres empiecen con el código de la CA
-  (`1234-56-COT26__Anexo 1.pdf`); la plataforma los asocia por código y los procesa como en §4.
-- **Endpoint**: `POST /api/anexos/{codigo_ca}` con un token por empresa (cabecera), mismos validadores y
-  topes. Idempotente: el mismo archivo (sha256) dos veces no se procesa dos veces.
+1. Se valida por firma y tamaño (PDF, XLSX, DOCX, PNG, JPG; ≤ 10 MB; ZIP ≤ 50 MB con tope por archivo) y nunca se
+   ejecuta.
+2. Se convierte a texto (pdfplumber / openpyxl / python-docx). Un PDF escaneado se renderiza a imagen (las primeras
+   5 páginas) y va a un modelo con visión.
+3. Un modelo vía **OpenRouter** devuelve las líneas `{texto, cantidad, unidad, formato}`; si falla, un modelo de
+   respaldo. Los modelos se eligen con 30 anexos reales (602 líneas revisadas a mano) [pendiente de correr].
+4. **Revisión automática por excepción** (F-plat-auto-revision): cada línea recibe un puntaje con varias señales
+   (calce con el catálogo canónico, coherencia con la API y con cantidades históricas, acuerdo entre dos modelos,
+   calidad del documento). Sobre el umbral queda confirmada sola; el resto va a una cola corta. El umbral se
+   calibra para ≥ 98 % de precisión y un 5 % semanal de lo automático se revisa como control. Mientras no se fija
+   el umbral, todo queda «dudosa» como antes.
+5. Presupuesto mensual duro, caché por documento (el mismo anexo nunca se paga dos veces), y si no hay modelo o
+   presupuesto, el flujo manual sigue funcionando.
 
-Con eso, una automatización externa solo tiene que: (1) saber qué CA nos interesan (podemos exponer la lista
-de códigos vigentes «sin detalle» en un `GET` con el mismo token), (2) obtener los archivos, (3) hacer el POST.
+## 6. Preguntas abiertas (para Conejo y para ChileCompra)
 
-**Preguntas técnicas (las que salieron el 5-nov):**
-1. ¿Existe una ruta de descarga en la API v2 que no esté en la guía? ¿Alguien la ha usado con ticket?
-   (Nosotros corremos la sonda esta semana y anotamos el resultado.)
-2. ¿Qué URL real baja el adjunto desde la ficha pública (la que se ve en Network al hacer clic)? ¿Está
-   firmada o expira? ¿Depende de una sesión?
-3. ¿La «API v3» que se licitó traerá los documentos? ¿Plazo? [Boris lo oyó; sin fuente verificada: [I]]
-4. Para OCR de PDF escaneados a volumen (los 200 históricos de una vez): ¿un modelo con visión por página, o
-   OCR tradicional (Tesseract/servicio) y después un modelo de texto barato? ¿Qué costo por página han visto?
-5. Dependencia de un solo proveedor de modelos: ¿qué respaldo recomiendan (segundo modelo en OpenRouter,
-   modelo abierto autoalojado) para el volumen de decenas de documentos al mes?
-6. Para la actualización de precios de proveedores: el caso de los agentes conectados a WhatsApp que actualizan
-   precios con más de 3 meses, ¿cómo resuelve la identidad del producto (el «tornillo autoperforante» exacto)?
-   Nosotros resolvemos eso con el catálogo canónico y queremos saber si usan algo parecido.
+Resueltas desde la versión del 5-nov: si existe ruta de descarga en la API (no, §2), qué URL baja el adjunto
+(§2: servicio aparte con credencial interna), y qué respaldo usar para el modelo (segundo modelo en OpenRouter).
+
+1. **«API v3» licitada:** ¿traerá los documentos? ¿Plazo? [Boris lo oyó; sin fuente verificada: [I]]. Se preguntará
+   a ChileCompra junto con el pedido de un endpoint oficial de descarga de `documentos[].id`.
+2. **OCR para una muestra histórica:** ¿modelo con visión por página, u OCR tradicional (Tesseract o un servicio) y
+   después un modelo de texto barato? ¿Qué costo por página han visto? (Solo aplica si el histórico necesita anexos,
+   §4.)
+3. **Identidad del producto en los agentes de WhatsApp** que actualizan precios de proveedores: ¿cómo resuelven el
+   producto exacto (el «tornillo autoperforante»)? Nosotros usamos un catálogo canónico con alias y formatos.
 
 *Fuente de los datos de dominio: Dirección ChileCompra.*

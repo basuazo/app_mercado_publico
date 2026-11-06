@@ -10,7 +10,7 @@ from alembic import context
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Importar todos los modelos para que autogenerate los detecte
 import app.models.tables  # noqa: E402, F401
