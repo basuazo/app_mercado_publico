@@ -224,6 +224,14 @@ def llm(session: Session, settings: Settings, ahora: datetime) -> dict[str, Any]
     }
 
 
+def auto_revision(session: Session, settings: Settings, ahora: datetime) -> dict[str, Any]:
+    """Confirmación automática de líneas de anexo (F-plat-auto-revision): umbral, auto-confirmadas
+    por semana, cola de control y precisión observada."""
+    from app.mercado.auto_revision import resumen_salud
+
+    return resumen_salud(session, settings.auto_confirmar_umbral, ahora)
+
+
 def _inicio_mes_utc(mes: str) -> datetime:
     a, m = (int(x) for x in mes.split("-"))
     return datetime(a, m, 1, tzinfo=TZ_CHILE).astimezone(UTC).replace(tzinfo=None)
@@ -308,6 +316,7 @@ def salud_pivote(
         "tamano": tamano_pivote(tablas, tam_bd),
         "catalogo": catalogo(session, regiones, ahora),
         "llm": llm(session, settings, ahora),
+        "auto_revision": auto_revision(session, settings, ahora),
         "demanda": demanda(session),
         "sombra": sombra(session),
     }

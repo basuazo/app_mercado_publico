@@ -993,7 +993,15 @@ class CaLinea(Base):
     """
 
     __tablename__ = "ca_lineas"
-    __table_args__ = (UniqueConstraint("ca_codigo", "n", name="uq_ca_linea"),)
+    __table_args__ = (
+        UniqueConstraint("ca_codigo", "n", name="uq_ca_linea"),
+        # F-plat-auto-revision: el muestreo semanal y /salud filtran las auto-confirmadas.
+        Index(
+            "ix_ca_lineas_auto",
+            "creado_en",
+            postgresql_where=text("confirmada_por = 'auto'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
     ca_codigo: Mapped[str] = mapped_column(
@@ -1028,7 +1036,33 @@ class CaLinea(Base):
         BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
     revisado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # F-plat-auto-revision: quién dejó la línea leída de un anexo en `ok`: `auto` (su puntaje
+    # alcanzó `AUTO_CONFIRMAR_UMBRAL`) o `humano` (confirmación en /catalogo). NULL en las de la
+    # API, las manuales y las anteriores a la fase. `puntaje_auto` (0–1) se guarda en toda línea
+    # de anexo puntuada, quede `ok` o `dudosa`. `control_en`: la línea auto-confirmada entró al
+    # muestreo de control semanal (cola de excepciones) en esa fecha; sigue pendiente mientras
+    # `confirmada_por = 'auto'`.
+    confirmada_por: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    puntaje_auto: Mapped[float | None] = mapped_column(Float, nullable=True)
+    control_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+
+class AutoControlSemana(Base):
+    """Resultado del muestreo de control de la auto-confirmación, por semana ISO de Chile
+    (F-plat-auto-revision). `semana` = semana en que se auto-confirmaron las líneas
+    («2026-W45»). Un control revisado sin cambios es acierto; corregido (producto, formato o
+    cantidad) o eliminado, error. Tabla aparte de `ca_lineas` porque «Eliminar fila» borra la
+    línea y el error tiene que seguir contando."""
+
+    __tablename__ = "auto_control_semana"
+
+    semana: Mapped[str] = mapped_column(String(8), primary_key=True)
+    controles: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    errores: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )

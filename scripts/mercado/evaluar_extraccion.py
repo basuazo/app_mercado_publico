@@ -165,8 +165,17 @@ def emparejar(
     esperadas: list[Esperada], extraidas: list[tuple[str, float | None, str]]
 ) -> list[bool]:
     """Por cada esperada, ¿hay una extraída (no usada) con texto parecido, misma cantidad y unidad?"""
+    return [i is not None for i in emparejar_indices(esperadas, extraidas)]
+
+
+def emparejar_indices(
+    esperadas: list[Esperada], extraidas: list[tuple[str, float | None, str]]
+) -> list[int | None]:
+    """Como :func:`emparejar`, pero devuelve el índice de la extraída que calzó con cada esperada
+    (None si ninguna). La calibración de F-plat-auto-revision lo usa al revés: una extraída es
+    correcta si calzó con alguna esperada."""
     usadas: set[int] = set()
-    ok: list[bool] = []
+    ok: list[int | None] = []
     for e in esperadas:
         mejor, idx = 0.0, -1
         for i, (txt, _c, _u) in enumerate(extraidas):
@@ -176,7 +185,7 @@ def emparejar(
             if s > mejor:
                 mejor, idx = s, i
         if idx < 0 or mejor < UMBRAL_TEXTO:
-            ok.append(False)
+            ok.append(None)
             continue
         _txt, cant, uni = extraidas[idx]
         cant_ok = (
@@ -192,9 +201,9 @@ def emparejar(
         uni_ok = not e.unidad or (unidad_norm(uni) or "u") == e.unidad
         if cant_ok and uni_ok:
             usadas.add(idx)
-            ok.append(True)
+            ok.append(idx)
         else:
-            ok.append(False)
+            ok.append(None)
     return ok
 
 

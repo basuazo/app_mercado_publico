@@ -147,6 +147,28 @@
   desde caché: {% if pv.llm.pct_cache is not none %}{{ pv.llm.pct_cache }} % de {{ pv.llm.extracciones }} extracciones{% else %}—{% endif %}
 </p>
 
+{% set ar = pv.auto_revision %}
+<h5>Confirmación automática de líneas de anexo</h5>
+{% if ar.umbral_config is none %}
+<p class="small text-muted mb-3">Apagada: AUTO_CONFIRMAR_UMBRAL sin fijar (todas las líneas de anexo las confirma una persona). Se fija con <code>scripts/mercado/calibrar_auto_revision.py</code>.</p>
+{% else %}
+<p class="small mb-1">Umbral: <strong class="num">{{ '%.3f' | format(ar.umbral_efectivo) }}</strong>
+  {% if ar.subida %}<span class="badge bg-warning text-dark">subido por el job desde {{ '%.3f' | format(ar.subida.desde) }} (semana {{ ar.subida.ultima_semana }})</span>{% else %}(el configurado){% endif %}</p>
+{% if ar.alerta %}<div class="alert alert-warning py-1 small mb-1" role="status">La precisión observada de la última semana cerrada quedó bajo 95 %: revisar la cola de control.</div>{% endif %}
+{% endif %}
+<table class="table table-sm table-bordered w-auto mb-3 small">
+  <thead><tr><th scope="col">Semana</th><th scope="col" class="text-end">Auto-confirmadas</th><th scope="col" class="text-end">En control</th><th scope="col" class="text-end">Pendientes</th><th scope="col" class="text-end">Revisadas</th><th scope="col" class="text-end">Errores</th><th scope="col" class="text-end">Precisión observada</th></tr></thead>
+  <tbody>
+  {% for w in ar.semanas %}
+  <tr><td>{{ w.semana }}{% if loop.first %} <span class="text-muted">(en curso)</span>{% endif %}</td>
+    <td class="text-end num">{{ w.auto | numero }}</td><td class="text-end num">{{ w.control | numero }}</td>
+    <td class="text-end num">{{ w.control_pendiente | numero }}</td><td class="text-end num">{{ w.revisados | numero }}</td>
+    <td class="text-end num">{{ w.errores | numero }}</td>
+    <td class="text-end num">{% if w.precision is not none %}{{ w.precision }} %{% else %}—{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
 <h5>Pronóstico de demanda</h5>
 {% if pv.demanda %}
 <p class="small mb-3">Backtest {{ pv.demanda.mes }}:

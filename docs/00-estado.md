@@ -18,6 +18,15 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-auto-revision (6-nov, rama `F-plat-auto-revision` desde `eed8a0f`, commit local sin push ni merge; migración `d8f1b6c4a2e9`, cuelga de `c6d9a3f1e8b2`)
+Líneas de anexo confirmadas solas (`prompt-F-plat-auto-revision.md`). **Esquema:** `ca_lineas.confirmada_por|puntaje_auto|
+control_en`, índice parcial `ix_ca_lineas_auto`, tabla `auto_control_semana`. **Reglas:** `app/mercado/auto_revision.py`
+(`puntaje_linea` puro, 5 señales); con puntaje ≥ `AUTO_CONFIRMAR_UMBRAL` la línea queda `ok`/`auto`; anexo todo auto (y sin
+páginas omitidas) → «anexo resuelto» (API → `reemplazada`). Segunda lectura con `LLM_MODELO_RESPALDO` solo si el acuerdo es
+lo único que falta. `mercado-catalogo` muestrea el 5 % semanal a control y sube el umbral (+0,05, en `sync_state`) tras dos
+semanas < 95 %. Cola `/catalogo/revision`. **Apagada por defecto** (umbral vacío). **Pendiente de Boris:** migración, fijar
+modelos, `calibrar_auto_revision.py` → `AUTO_CONFIRMAR_UMBRAL` (.env y Render), primera semana de control.
+
 ## F-plat-seguimiento (6-nov, rama `F-plat-seguimiento` desde `ca2b195`, commit local sin push ni merge; migración `c6d9a3f1e8b2`, cuelga de `b4e7d2a9c3f1`)
 Checklist administrativo por CA, cotización formal (DOCX), ventas post-adjudicación y caja (`prompt-F-plat-seguimiento.md`,
 §7 «Revisión 6-nov»). **Esquema:** `empresa_requisitos`, `ca_requisitos`, `ventas`, `venta_compras`; columnas nuevas en

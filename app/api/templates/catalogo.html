@@ -38,7 +38,10 @@
       <li class="nav-item"><a class="nav-link{% if bloque == 'vigentes' %} active{% endif %}" href="/catalogo?tab=pendientes&bloque=vigentes"{% if bloque == 'vigentes' %} aria-current="page"{% endif %}>Vigentes ({{ conteo.vigentes }})</a></li>
       <li class="nav-item"><a class="nav-link{% if bloque == 'historicas' %} active{% endif %}" href="/catalogo?tab=pendientes&bloque=historicas"{% if bloque == 'historicas' %} aria-current="page"{% endif %}>Históricas, muestra ({{ conteo.historicas_muestra }})</a></li>
     </ul>
-    <a class="btn btn-sm btn-outline-primary" href="/catalogo/anexos/carga">Carga masiva de anexos</a>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-primary" href="/catalogo/revision">Cola de excepciones</a>
+      <a class="btn btn-sm btn-outline-primary" href="/catalogo/anexos/carga">Carga masiva de anexos</a>
+    </div>
   </div>
   {% if bloque == 'vigentes' %}
   <p class="small text-muted">{{ total }} línea(s) por revisar de Compras Ágiles que todavía se pueden ofertar, de la que cierra antes a la que cierra después.</p>

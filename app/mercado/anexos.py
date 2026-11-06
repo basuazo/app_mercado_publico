@@ -10,6 +10,10 @@ Dos capas:
   11), pide la extracción a OpenRouter y deja las líneas `dudosa` para que las confirme una
   persona. Flush, sin commit: confirma quien llama.
 
+F-plat-auto-revision: con `AUTO_CONFIRMAR_UMBRAL` fijado, las líneas cuyo puntaje lo alcanza
+pasan solas a `ok` (`confirmada_por = 'auto'`; ver :mod:`app.mercado.auto_revision`). Apagado
+(el default), todo sigue como antes.
+
 El flujo manual nunca depende del modelo: sin clave, sin modelo o sin presupuesto, el anexo
 queda `sin_presupuesto` y la persona agrega las filas a mano.
 
@@ -29,7 +33,7 @@ import stat
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -46,6 +50,9 @@ from app.catalogos.canonico import (
 from app.clients.types import ExtraccionAnexo, LineaExtraida
 from app.core.tiempo import ahora_utc
 from app.models.tables import CaAnexo, CaLinea, CompraAgil
+
+if TYPE_CHECKING:
+    from app.mercado.auto_revision import ConfigAuto
 
 _log = logging.getLogger(__name__)
 
@@ -700,6 +707,7 @@ def procesar_anexo_ca(
     render: Callable[[Any], bytes] = _renderizar_pagina,
     fuente: str = "manual",
     empresa_id: int | None = None,
+    auto: ConfigAuto | None = None,
 ) -> ResultadoCarga:
     """Sube un anexo a una CA. :class:`AnexoInvalido` si el archivo no se acepta; cualquier otro
     problema (PDF roto, sin presupuesto, modelo caído) deja el anexo con su estado y la vista en
@@ -712,8 +720,14 @@ def procesar_anexo_ca(
     recién ahí se escribe; si la CA ya no existe → :class:`AnexoInvalido`.
 
     Idempotente (F-plat-anexos-2): si el mismo archivo (sha256) ya está en la CA, no se lee ni se
-    llama al modelo: devuelve ese anexo con `duplicado=True`."""
+    llama al modelo: devuelve ese anexo con `duplicado=True`.
+
+    F-plat-auto-revision: `auto` = umbral y segunda lectura; None = desde el entorno
+    (:func:`auto_revision.resolver_config`), así todos los caminos (manual, masiva, API externa,
+    descarga) confirman igual. Las señales se leen antes de escribir y la conexión se suelta otra
+    vez antes de la segunda lectura (puede tardar como la primera)."""
     from app.clients.openrouter import LLMError, LLMPresupuestoAgotado
+    from app.mercado import auto_revision
 
     if fuente not in FUENTES:
         raise ValueError(f"fuente desconocida: {fuente}")
@@ -750,6 +764,23 @@ def procesar_anexo_ca(
             if ext.invalida:
                 estado = "error"
                 aviso = "El modelo no devolvió filas legibles: agrega las filas a mano."
+
+    revision: auto_revision.Revision | None = None
+    if ext is not None and not ext.invalida and ext.lineas:
+        config = auto if auto is not None else auto_revision.resolver_config(session, extractor)
+        revision = auto_revision.preparar(
+            session,
+            codigo,
+            ext,
+            mime=mime,
+            escaneado=res.escaneado,
+            paginas_omitidas=bool(res.paginas_omitidas),
+            config=config,
+        )
+        session.rollback()  # solo leyó: suelta la conexión antes de la segunda lectura
+        auto_revision.completar_con_segunda_lectura(
+            revision, config, ext, res.texto or None, res.imagenes
+        )
 
     # Recarga tras el rollback (el objeto quedó expirado): un SELECT en una transacción nueva.
     recargada = session.get(CompraAgil, codigo)
@@ -798,5 +829,19 @@ def procesar_anexo_ca(
         return _cerrar(
             "hecha", "No se encontraron filas de productos en el anexo." + _aviso_paginas(res)
         )
-    aviso = f"Se leyeron {len(lineas)} fila(s): revísalas y confírmalas." + _aviso_paginas(res)
-    return _cerrar("hecha", aviso, lineas)
+    autos = auto_revision.aplicar(session, ca, lineas, revision)
+    if autos == len(lineas) and not res.paginas_omitidas:
+        aviso = (
+            f"Se leyeron {len(lineas)} fila(s) y todas se confirmaron solas: el anexo quedó "
+            "resuelto."
+        )
+    elif autos == len(lineas):
+        aviso = f"Se leyeron {len(lineas)} fila(s) y todas se confirmaron solas."
+    elif autos:
+        aviso = (
+            f"Se leyeron {len(lineas)} fila(s): {autos} se confirmaron solas; revisa y confirma "
+            f"las otras {len(lineas) - autos}."
+        )
+    else:
+        aviso = f"Se leyeron {len(lineas)} fila(s): revísalas y confírmalas."
+    return _cerrar("hecha", aviso + _aviso_paginas(res), lineas)

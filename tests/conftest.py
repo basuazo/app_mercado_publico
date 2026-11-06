@@ -18,6 +18,9 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     # Settings() de la suite, no solo el de un fixture.
     os.environ["OPENROUTER_API_KEY"] = ""
     os.environ["LLM_MODELO_EXTRACCION"] = ""
+    # F-plat-auto-revision: la auto-confirmación de líneas de anexo apagada salvo que el test la
+    # pida (un AUTO_CONFIRMAR_UMBRAL del .env cambiaría los estados que esperan los tests).
+    os.environ["AUTO_CONFIRMAR_UMBRAL"] = ""
     url = pg_url.resolver_url()
     problema = pg_url.motivo_de_aborto(url, pg_url.resolver_url_prod())
     if problema:

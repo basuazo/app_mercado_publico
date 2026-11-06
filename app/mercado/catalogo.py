@@ -678,11 +678,19 @@ def confirmar_linea(
     confirmado pasa a `api` (la persona le dio producto al texto de la API).
 
     Confirmar una línea leída de un anexo deja `reemplazada` las líneas de la API de la CA
-    (F-plat-anexos-2 §2.1: el anexo manda)."""
+    (F-plat-anexos-2 §2.1: el anexo manda).
+
+    F-plat-auto-revision: la línea de anexo queda `confirmada_por = 'humano'`. Si era una línea
+    auto-confirmada en control, cuenta como acierto del auto si la persona no cambió producto,
+    formato ni cantidad, y como error si cambió algo."""
+    from app.mercado import auto_revision
+
     if linea.estado == REEMPLAZADA:
         raise CatalogoError("Esa línea fue reemplazada por el anexo: no se confirma")
     producto = _producto_activo(session, producto_id)
     formato = _formato_valido(session, producto.id, formato_id)
+    era_control = auto_revision.es_control_pendiente(linea)
+    antes = (linea.producto_id, linea.formato_id, linea.cantidad)
     if cantidad is not None:
         if linea.anexo_id is None:
             raise CatalogoError("La cantidad solo se corrige en las líneas leídas de un anexo")
@@ -697,7 +705,14 @@ def confirmar_linea(
     if linea.origen == "anexo" and linea.anexo_id is None:
         linea.origen = "api"
     linea.revisado_por, linea.revisado_en = usuario_id, ahora
+    if linea.anexo_id is not None:
+        linea.confirmada_por = auto_revision.HUMANO
     session.flush()
+    if era_control:
+        despues = (linea.producto_id, linea.formato_id, linea.cantidad)
+        auto_revision.registrar_control(
+            session, linea, error=not _mismos_valores(antes, despues)
+        )
     if linea.anexo_id is not None:
         reemplazar_lineas_api(session, linea.ca_codigo)
     clave = linea.texto_norm or normalizar_texto(linea.texto_origen)
@@ -705,6 +720,17 @@ def confirmar_linea(
     reaplicadas = reaplicar_alias(session, clave, exceptuar_id=linea.id)
     recalcular_detalle_lineas(session, {linea.ca_codigo, *reaplicadas})
     return len(reaplicadas)
+
+
+def _mismos_valores(
+    a: tuple[int | None, int | None, float | None], b: tuple[int | None, int | None, float | None]
+) -> bool:
+    """Producto, formato y cantidad iguales (la cantidad con tolerancia de redondeo)."""
+    if a[0] != b[0] or a[1] != b[1]:
+        return False
+    if a[2] is None or b[2] is None:
+        return a[2] is None and b[2] is None
+    return abs(a[2] - b[2]) <= 1e-6 * max(1.0, abs(a[2]))
 
 
 def reaplicar_alias(
@@ -798,11 +824,17 @@ def agregar_linea_manual(
 
 
 def quitar_linea_manual(session: Session, linea: CaLinea) -> None:
-    """Quita una línea agregada a mano o leída de un anexo (F-plat-2, «Eliminar fila»)."""
+    """Quita una línea agregada a mano o leída de un anexo (F-plat-2, «Eliminar fila»). Una
+    línea auto-confirmada en control que se elimina cuenta como error del auto
+    (F-plat-auto-revision)."""
+    from app.mercado import auto_revision
+
     if linea.origen != "manual" and linea.anexo_id is None:
         raise CatalogoError(
             "Solo se pueden quitar las líneas agregadas a mano o leídas de un anexo"
         )
+    if auto_revision.es_control_pendiente(linea):
+        auto_revision.registrar_control(session, linea, error=True)
     ca_codigo = linea.ca_codigo
     session.delete(linea)
     session.flush()

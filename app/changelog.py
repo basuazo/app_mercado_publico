@@ -16,6 +16,22 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 6),
+        titulo="Líneas de anexo confirmadas solas; el equipo revisa solo las excepciones",
+        descripcion=(
+            "Cuando se lee un anexo (subida, carga masiva, API externa o descarga automática), cada "
+            "línea recibe un puntaje: calce con el catálogo, coherencia con lo que dice la API de la "
+            "Compra Ágil, cantidad y unidad plausibles, acuerdo entre dos lecturas y tipo de "
+            "documento. Las que superan el umbral se confirman solas (marca «auto»); si eso pasa con "
+            "todas las líneas de un anexo, la Compra Ágil queda con el anexo resuelto. Lo demás "
+            "va a la nueva «Cola de excepciones» (Catálogo → Cola de excepciones), por Compra Ágil y "
+            "de la que cierra antes, con «Confirmar todas». Cada semana una muestra de control del "
+            "5 % de lo confirmado solo entra a esa cola: lo que corrijas ahí cuenta como error y "
+            "/salud muestra la precisión observada; si baja de 95 % dos semanas seguidas, el umbral "
+            "sube solo. Mientras no se calibre el umbral, todo sigue como antes (revisión humana)."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 6),
         titulo="Checklist por Compra Ágil, cotización formal, seguimiento de ventas y caja",
         descripcion=(
             "Cada Compra Ágil que priorizas trae un checklist de requisitos administrativos (la "

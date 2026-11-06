@@ -265,12 +265,26 @@ def run_mercado_catalogo(
     """Job `mercado-catalogo` (F-plat-1): siembra la canasta y normaliza a líneas canónicas las
     CA de las regiones activas. Solo base de datos: sin ticket, sin cuota, sin red.
 
-    `inicial=True` recorre todas las CA; si no, solo las que cambiaron desde el cursor."""
+    `inicial=True` recorre todas las CA; si no, solo las que cambiaron desde el cursor.
+
+    F-plat-auto-revision: después, el muestreo de control de lo auto-confirmado y la subida del
+    umbral si la precisión observada cayó. Un error ahí no tumba el catálogo (ya confirmado)."""
+    from app.mercado import auto_revision
     from app.mercado.catalogo import procesar_catalogo
 
     regiones = regiones_activas_engine(engine, settings)
     with Session(engine) as session:
-        return procesar_catalogo(session, regiones, inicial=inicial)
+        resultado = procesar_catalogo(session, regiones, inicial=inicial)
+        try:
+            resultado["auto_revision"] = auto_revision.ciclo_semanal(
+                session, settings.auto_confirmar_umbral
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            _log.error("mercado-catalogo: falló el ciclo de auto-revisión", exc_info=True)
+            resultado["auto_revision"] = {"error": True}
+        return resultado
 
 
 def run_mercado_indices(

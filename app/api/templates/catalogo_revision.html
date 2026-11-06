@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Cola de excepciones — Rastrillo{% endblock %}
+{#
+  Cola de excepciones (F-plat-auto-revision): las líneas que la confirmación automática no
+  alcanzó (`dudosa`) y las auto-confirmadas que el muestreo semanal mandó a control. Agrupadas
+  por Compra Ágil: vigentes primero, por cierre. Las filas usan `_catalogo_linea.html` con
+  vista "revision" (al confirmar, la fila desaparece).
+#}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="mb-0">Cola de excepciones</h2>
+  <a class="btn btn-sm btn-outline-secondary" href="/catalogo">Volver al catálogo</a>
+</div>
+<p class="small text-muted">Las líneas leídas de un anexo que superan el umbral se confirman solas. Acá quedan las que no lo alcanzaron
+  y una muestra de control de las confirmadas solas (<span class="badge bg-primary">control</span>): revísalas y confírmalas tal como están
+  si están bien, o corrígelas. Lo que corrijas en control cuenta como error de la confirmación automática.</p>
+
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<div id="catalogo-aviso" aria-live="polite"></div>
+
+<p class="small">{{ total }} Compra(s) Ágil(es) con líneas por revisar.</p>
+{% for g in grupos %}
+<section class="border rounded p-2 mb-3" aria-labelledby="ca-{{ g.ca.codigo }}">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
+    <div>
+      <h3 class="h6 mb-0" id="ca-{{ g.ca.codigo }}"><a href="/catalogo/ca/{{ g.ca.codigo }}" class="num">{{ g.ca.codigo }}</a> · {{ g.ca.nombre | truncate(90) }}</h3>
+      <div class="small text-muted">
+        {% if g.vigente %}<span class="badge bg-success">vigente</span>{% else %}<span class="badge bg-secondary">cerrada</span>{% endif %}
+        {% if g.ca.fecha_cierre %}cierre {{ g.ca.fecha_cierre | fecha_chile }}{% endif %}
+        {% if g.ca.monto_disponible_clp %} · {{ g.ca.monto_disponible_clp | clp }}{% endif %}
+        {% if g.n_control %} · {{ g.n_control }} en control{% endif %}
+        {% if g.url_ficha %} · <a href="{{ g.url_ficha }}" target="_blank" rel="noopener">Abrir en Mercado Público ↗</a>{% endif %}
+      </div>
+    </div>
+    {% if g.n_confirmables %}
+    <form method="post" action="/catalogo/ca/{{ g.ca.codigo }}/anexo/confirmar-todas" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="volver" value="revision">
+      <button class="btn btn-sm btn-primary">Confirmar todas ({{ g.n_confirmables }})</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr><th scope="col">Línea</th><th scope="col">Texto</th><th scope="col">Producto y formato</th></tr></thead>
+      <tbody>
+        {% set vista = 'revision' %}
+        {% for v in g.lineas %}{% include "_catalogo_linea.html" %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<p class="text-muted">No hay excepciones por revisar.</p>
+{% endfor %}
+
+{% set paginas = ((total + por_pagina - 1) // por_pagina) %}
+{% if paginas > 1 %}
+<nav aria-label="Páginas" class="d-flex gap-2 align-items-center mb-3">
+  {% if pagina > 1 %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo/revision?pagina={{ pagina - 1 }}">← Anterior</a>{% endif %}
+  <span class="small text-muted">Página {{ pagina }} de {{ paginas }}</span>
+  {% if pagina < paginas %}<a class="btn btn-sm btn-outline-secondary" href="/catalogo/revision?pagina={{ pagina + 1 }}">Siguiente →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}
