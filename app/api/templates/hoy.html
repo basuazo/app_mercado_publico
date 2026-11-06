@@ -37,6 +37,14 @@
       <a href="/proveedores" class="tarjeta-numero__ver">Ver →</a>
     </div></div>
   </div>
+  <div class="col-12 col-md-4">
+    <div class="card h-100"><div class="card-body">
+      <p class="tarjeta-numero__etiqueta">{{ nav.INVENTARIO }}</p>
+      <p class="tarjeta-numero__valor" data-hoy="inventario">{{ n_inventario }} <small>productos</small></p>
+      <p class="tarjeta-numero__nota"><span class="num{% if n_bajo_minimo %} text-danger{% endif %}" data-hoy="bajo-minimo">{{ n_bajo_minimo }}</span> bajo el stock mínimo</p>
+      <a href="/inventario" class="tarjeta-numero__ver">Ver →</a>
+    </div></div>
+  </div>
   {% endif %}
 </div>
 

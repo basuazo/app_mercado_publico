@@ -2,7 +2,7 @@
 
 > Para Claude Code. **Modelo: Sonnet** (CRUD por empresa, navegación y una tabla nueva con ownership).
 > Una fase = un commit, **sin push**. **Con migración**: `down_revision` = la cabeza que deje la fase anterior
-> (`alembic heads`, una sola; al 5-nov es `c8f3a1e6d2b4` [V]). Va sobre F-plat-1 y F-plat-3 commiteadas; no necesita F-plat-lote (pero
+> (`alembic heads`, una sola; tras F-plat-6-cruce-2 es `d9a4e2b7c1f6` [V]; si F-plat-anexos-2 se commitea antes, la de ella). Va sobre F-plat-1 y F-plat-3 commiteadas; no necesita F-plat-lote (pero
 > F-plat-lote la necesita: define `stock` y `reservado`).
 > Origen: decisión del equipo (Revisión CBS, 5-nov): «organizar el catálogo en tres capas: la oferta propia, los
 > productos de proveedores y la demanda del mercado» (`docs/18-revision-cbs-y-flujos-operativos.md` §2.1).
@@ -147,3 +147,17 @@ no está vinculado al canónico en producción → §1.3 nuevo; (2) `importar.pa
 `app/api/nav.py` no existe; (6) tests en pares `*.py` / `*_pg.py`. Alcance: sigue siendo una fase, pero §1.3
 la agranda; si Claude Code la ve larga, §1.3 puede ir primero como commit propio (`F-plat-capas-0: vincular
 productos de proveedores al catálogo canónico`) y el resto después, misma migración.
+
+## 9. Cómo quedó (implementación, 5-nov)
+- **Migración** `a3c8e5d1b7f2`, cuelga de `d9a4e2b7c1f6` (una sola cabeza). Solo tablas nuevas; `stock`/`reservado`/`stock_minimo`
+  son `numeric(14,3)` (el modelo usa `Numeric(asdecimal=False)`: llegan como `float` también en SQLite).
+- **Inventario solo XLSX** (decisión de §2): un CSV no dice de qué hoja viene y se confundiría con una lista de precios.
+  `parsear` ya no exige `precios` si el libro trae `inventario` (avisa que se importa desde Inventario).
+- **§1.3** sin migración de datos: `guardar_producto(catalogo=…)` vincula solo con sugerencia única y de confianza alta;
+  las filas ya existentes se vinculan con «Vincular pendientes» (`POST /proveedores/vincular-pendientes`, de la empresa).
+  `canonico.sugerir_vinculo` suma el **nombre canónico exacto** (con números: «Arroz grado 1» ≠ «Arroz grado 2») porque
+  las reglas de palabra clave (0,5) no alcanzan «ok».
+- **Desvíos:** `ajustar_stock` solo acepta `ajuste|compra|entrega` (reserva y liberación mueven `reservado`: F-plat-lote);
+  el filtro `Con stock` y la tarjeta de la mesa usan `resumen_por_ca` (2 consultas por lote); filtro nuevo `cantidad`
+  (`numero` redondea a enteros); `fusionar_productos` también junta el inventario (suma el stock si chocan en el `UNIQUE`).
+

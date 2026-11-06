@@ -56,11 +56,19 @@
     <li>{{ entrada('/competencia', 'Competencia', 'competencia', ruta == '/competencia' or ruta.startswith('/competencia/')) }}</li>
     <li>{{ entrada('/estrategia', 'Estrategia', 'estrategia', ruta == '/estrategia') }}</li>
     <li>{{ entrada('/abastecimiento', 'Abastecimiento', 'abastecimiento', ruta == '/abastecimiento') }}</li>
-    <li>{{ entrada('/catalogo', 'Catálogo', 'catalogo', ruta.startswith('/catalogo')) }}</li>
-    <li>{{ entrada('/proveedores', 'Proveedores', 'proveedores', ruta.startswith('/proveedores') and not ruta.startswith('/proveedores/logistica')) }}</li>
-    <li>{{ entrada('/proveedores/logistica', 'Logística', 'logistica', ruta.startswith('/proveedores/logistica')) }}</li>
     {% endif %}
   </ul>
+  {% if con_empresa %}
+  <p class="nav-lateral__seccion" id="nav-catalogo{{ sufijo }}">{{ nav.GRUPO_CATALOGO }}</p>
+  <ul class="nav-lateral__lista" aria-labelledby="nav-catalogo{{ sufijo }}">
+    <li>{{ entrada(nav.URL_DEMANDA_MP, nav.DEMANDA_MP, 'catalogo', ruta.startswith('/catalogo')) }}</li>
+    <li>{{ entrada(nav.URL_CATALOGO_PROVEEDORES, nav.CATALOGO_PROVEEDORES, 'proveedores', ruta.startswith('/proveedores') and not ruta.startswith('/proveedores/logistica')) }}</li>
+    <li>{{ entrada(nav.URL_INVENTARIO, nav.INVENTARIO, 'inventario', ruta.startswith('/inventario')) }}</li>
+  </ul>
+  <ul class="nav-lateral__lista mt-1">
+    <li>{{ entrada('/proveedores/logistica', 'Logística', 'logistica', ruta.startswith('/proveedores/logistica')) }}</li>
+  </ul>
+  {% endif %}
   {% if admin %}
   <p class="nav-lateral__seccion" id="nav-admin{{ sufijo }}">Administración</p>
   <ul class="nav-lateral__lista" aria-labelledby="nav-admin{{ sufijo }}">

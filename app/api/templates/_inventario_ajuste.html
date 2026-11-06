@@ -1,0 +1,31 @@
+{# «Ajustar stock» en línea (HTMX). Contexto: `v`, `errores`, `valores`, `motivos`, `etiquetas`, `csrf_token`. #}
+{% set ep = v.ep %}
+<tr id="ep-{{ ep.id }}" data-form-422>
+  <td colspan="10">
+    <form method="post" action="/inventario/{{ ep.id }}/stock" hx-post="/inventario/{{ ep.id }}/stock" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-12"><strong>{{ v.producto.nombre }}</strong> · {{ v.formato.nombre }} · hay <span class="num">{{ ep.stock | cantidad }}</span> (en unidades del formato)</div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1" for="delta-{{ ep.id }}">Cantidad (con signo)</label>
+        <input class="form-control form-control-sm{% if errores.get('delta') %} is-invalid{% endif %}" id="delta-{{ ep.id }}" name="delta" inputmode="decimal"
+               value="{{ valores.get('delta', '') }}" placeholder="5 o -2" required>
+        {% if errores.get('delta') %}<div class="invalid-feedback d-block">{{ errores['delta'] }}</div>{% endif %}
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="motivo-{{ ep.id }}">Motivo</label>
+        <select class="form-select form-select-sm" id="motivo-{{ ep.id }}" name="motivo">
+          {% for m in motivos %}<option value="{{ m }}" {% if valores.get('motivo') == m %}selected{% endif %}>{{ etiquetas[m] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label small mb-1" for="ref-{{ ep.id }}">Referencia (opcional)</label>
+        <input class="form-control form-control-sm" id="ref-{{ ep.id }}" name="referencia" maxlength="100" value="{{ valores.get('referencia', '') }}" placeholder="Código de CA, factura…">
+      </div>
+      <div class="col-auto d-flex gap-2">
+        <button class="btn btn-sm btn-primary" type="submit">Guardar ajuste</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button"
+                hx-get="/inventario/{{ ep.id }}/fila" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">Cancelar</button>
+      </div>
+    </form>
+  </td>
+</tr>

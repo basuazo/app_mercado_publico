@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -1432,7 +1433,7 @@ class OfertaPropia(Base):
     usuario_id: Mapped[int | None] = mapped_column(
         BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
-    # [{linea_id, precio_unitario, proveedor_producto_id}]
+    # [{linea_id, precio_unitario, proveedor_producto_id[, origen, empresa_producto_id]}]
     lineas: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     total_neto: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     plazo_entrega_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1557,3 +1558,92 @@ Index("ix_demanda_series_mes_region", DemandaSerie.mes, DemandaSerie.region)
 Index("ix_demanda_series_item", DemandaSerie.nivel, DemandaSerie.item)
 Index("ix_demanda_series_comprador", DemandaSerie.comprador)
 Index("ix_pronosticos_region", Pronostico.region)
+
+
+# ---------------------------------------------------------------------------
+# Catálogo en tres capas (F-plat-capas): la capa «Inventario» (la oferta propia de la
+# empresa). Comparte la llave `producto_canonico × producto_formato` con la demanda
+# (`ca_lineas`) y con el catálogo de proveedores (`proveedor_productos`). Por empresa
+# (regla 26); ninguna se purga (regla 11).
+# ---------------------------------------------------------------------------
+
+# Motivos del log de movimientos: `reserva` y `liberacion` los escribe F-plat-lote.
+MOTIVOS_MOVIMIENTO = ("ajuste", "compra", "entrega", "reserva", "liberacion")
+
+
+class EmpresaProducto(Base):
+    """Un producto (en un formato) que la empresa tiene o vende. `disponible = stock −
+    reservado` (propiedad, no columna), en unidades del formato."""
+
+    __tablename__ = "empresa_productos"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "producto_id", "formato_id", name="uq_empresa_producto"),
+        CheckConstraint("stock >= 0", name="stock_no_negativo"),
+        CheckConstraint("reservado >= 0", name="reservado_no_negativo"),
+        Index("ix_empresa_productos_empresa_activo", "empresa_id", "activo"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_canonico.id"), nullable=False
+    )
+    formato_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("producto_formato.id"), nullable=False
+    )
+    activo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    stock: Mapped[float] = mapped_column(
+        Numeric(14, 3, asdecimal=False), nullable=False, default=0, server_default="0"
+    )
+    reservado: Mapped[float] = mapped_column(
+        Numeric(14, 3, asdecimal=False), nullable=False, default=0, server_default="0"
+    )
+    stock_minimo: Mapped[float | None] = mapped_column(
+        Numeric(14, 3, asdecimal=False), nullable=True
+    )
+    plazo_reposicion_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proveedor_habitual_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("proveedores.id", ondelete="SET NULL"), nullable=True
+    )
+    marca: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+    actualizado_por_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+
+    @property
+    def disponible(self) -> float:
+        return round((self.stock or 0.0) - (self.reservado or 0.0), 3)
+
+
+class EmpresaProductoMovimiento(Base):
+    """Log append-only de cambios de stock (no es inventario contable: es «qué tengo para
+    responder una CA»). `delta` con signo, en unidades del formato."""
+
+    __tablename__ = "empresa_producto_movimientos"
+    __table_args__ = (
+        CheckConstraint(
+            "motivo IN ('ajuste','compra','entrega','reserva','liberacion')", name="motivo"
+        ),
+        Index("ix_empresa_producto_mov_ep", "empresa_producto_id", "creado_en"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    empresa_producto_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("empresa_productos.id", ondelete="CASCADE"), nullable=False
+    )
+    delta: Mapped[float] = mapped_column(Numeric(14, 3, asdecimal=False), nullable=False)
+    motivo: Mapped[str] = mapped_column(String(15), nullable=False)
+    referencia: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)

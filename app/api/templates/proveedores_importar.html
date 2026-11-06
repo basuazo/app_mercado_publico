@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Importar proveedores — Rastrillo{% endblock %}
 {% block content %}
-<p class="mb-2"><a href="/proveedores">← Proveedores</a></p>
+<p class="mb-2"><a href="/proveedores">← {{ nav.CATALOGO_PROVEEDORES }}</a></p>
 <h2 class="mb-3">Importar proveedores y precios</h2>
 
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}

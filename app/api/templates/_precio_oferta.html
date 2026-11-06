@@ -118,15 +118,20 @@
               {% else %}<span class="text-muted">sin referencia</span>{% endif %}
             </td>
             <td>
-              {% if lo.candidatos %}
+              {% if lo.candidatos or lo.stock %}
               <label class="visually-hidden" for="prov-{{ codigo }}-{{ lo.linea_id }}">Proveedor de la línea {{ lo.n }}</label>
               <select class="form-select form-select-sm" name="prov_{{ lo.linea_id }}" id="prov-{{ codigo }}-{{ lo.linea_id }}">
                 <option value="">Mejor costo</option>
+                {% if lo.stock %}
+                {#- F-plat-capas: «Stock propio» primero cuando cubre la línea (`stock:<empresa_producto_id>`). -#}
+                <option value="stock:{{ lo.stock.empresa_producto_id }}" {% if lo.origen == 'stock' %}selected{% endif %}>Stock propio · hay {{ lo.stock.disponible | cantidad }} {{ lo.unidad_base }}{% if lo.stock.costo_por_base is not none %} · {{ lo.stock.costo_por_base | clp }}/{{ lo.unidad_base }}{% else %} · sin costo{% endif %}</option>
+                {% endif %}
                 {% for c in lo.candidatos %}
                 <option value="{{ c.producto_id }}" {% if c.producto_id == lo.proveedor_producto_id %}selected{% endif %}>{{ c.proveedor }} · {{ c.formato_texto or c.producto_texto }} · {{ c.precio_por_unidad_base | clp }}/{{ c.unidad_base }}</option>
                 {% endfor %}
               </select>
               {% if lo.costo_total is not none %}<div class="text-muted">costo línea <span class="num">{{ lo.costo_total | clp }}</span></div>{% endif %}
+              {% if lo.stock %}<div class="text-muted" data-en-stock>en stock: <span class="num">{{ lo.stock.disponible | cantidad }}</span> {{ lo.unidad_base }}</div>{% endif %}
               {% else %}<span class="text-muted">sin costo</span>{% endif %}
             </td>
             <td class="text-end">

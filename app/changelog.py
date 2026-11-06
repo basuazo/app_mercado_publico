@@ -16,6 +16,23 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 5),
+        titulo="Catálogo en tres capas: Demanda MP, Catálogo Proveedores e Inventario",
+        descripcion=(
+            "El catálogo se ordena en tres capas que comparten la misma llave producto × formato: "
+            "«Demanda MP» (lo que piden los compradores; es el catálogo de siempre), «Catálogo "
+            "Proveedores» (lo que te venden y a qué precio) e «Inventario» (lo que tú tienes), una "
+            "sección nueva con stock, stock mínimo, plazo de reposición, marca y proveedor habitual; "
+            "se carga con una planilla Excel o a mano, y cada cambio de stock queda anotado. Los "
+            "productos de tus proveedores ahora se vinculan al catálogo (al guardarlos, si el nombre "
+            "coincide, o con «Vincular pendientes» para los que ya tenías): sin ese vínculo no entran "
+            "al mejor costo ni a «mi oferta». En la mesa, cada tarjeta dice «Tengo: 3 de 5 líneas en "
+            "stock» y qué falta, hay un filtro «Con stock», y en «mi oferta» puedes elegir «Stock "
+            "propio» como origen del costo. «Hoy» suma una tarjeta con los productos bajo el stock "
+            "mínimo. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 5),
         titulo="Abastecimiento: qué van a comprar y cuándo",
         descripcion=(
             "Nueva sección «Abastecimiento» en la barra lateral. A partir de las órdenes de compra "

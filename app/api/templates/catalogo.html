@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Catálogo de productos — Rastrillo{% endblock %}
+{% block title %}{{ nav.DEMANDA_MP }} — Rastrillo{% endblock %}
 {% macro paginacion() %}
 {% set paginas = ((total + por_pagina - 1) // por_pagina) %}
 {% if paginas > 1 %}
@@ -12,7 +12,7 @@
 {% endmacro %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-  <h2 class="mb-0">Catálogo de productos</h2>
+  <h2 class="mb-0">{{ nav.DEMANDA_MP }}</h2>
   <p class="small text-muted mb-0">
     Líneas: <strong>{{ resumen.get('ok', 0) }}</strong> ok ·
     <strong>{{ resumen.get('dudosa', 0) }}</strong> dudosas ·

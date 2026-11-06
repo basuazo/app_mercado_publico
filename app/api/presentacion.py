@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app.api import nav
 from app.catalogos.unspsc import nombre_rubro
 from app.core.settings import VERSION_ESTATICOS
 from app.core.tiempo import TZ_CHILE
@@ -51,6 +52,15 @@ def formato_numero(valor: float | int | None) -> str:
     if valor is None:
         return "—"
     return f"{valor:,.0f}".replace(",", ".")
+
+
+def formato_cantidad(valor: float | int | None) -> str:
+    """Cantidad de stock con hasta 3 decimales, coma decimal y punto de miles: 2.5 → "2,5",
+    1500 → "1.500", 0 → "0". (`formato_numero` redondea a enteros: no sirve para kg ni L.)"""
+    if valor is None:
+        return "—"
+    texto = f"{valor:,.3f}".rstrip("0").rstrip(".")
+    return texto.replace(",", "_").replace(".", ",").replace("_", ".") or "0"
 
 
 def formato_pct(valor: float | None, decimales: int = 0) -> str:
@@ -101,10 +111,12 @@ def registrar_filtros(env: Any) -> None:
     """
     env.filters["clp"] = formato_clp
     env.filters["numero"] = formato_numero
+    env.filters["cantidad"] = formato_cantidad
     env.filters["fecha_chile"] = fecha_chile
     env.filters["pct"] = formato_pct
     env.filters["pct_firmado"] = formato_pct_firmado
     env.globals["version_estaticos"] = VERSION_ESTATICOS
+    env.globals["nav"] = nav
 
 
 def _campo_legible(campo: str) -> str:

@@ -46,6 +46,13 @@ def normalizar_texto(s: str | None) -> str:
     return re.sub(r"\s+", " ", t).strip()[:LARGO_ALIAS].strip()
 
 
+def clave_nombre(s: str | None) -> str:
+    """Clave del nombre de un producto: sin tildes, mayúsculas ni signos, CON los números
+    ("Arroz grado 1" y "Arroz grado 2" siguen siendo distintos; `normalizar_texto` los
+    borraría como cantidades sueltas)."""
+    return re.sub(r"[^a-z0-9]+", " ", norm(s)).strip()
+
+
 # --------------------------------------------------------------------------------------
 # Formato
 # --------------------------------------------------------------------------------------
@@ -186,10 +193,20 @@ class Catalogo:
 
     def __post_init__(self) -> None:
         self._por_clave = {p.clave_semilla: p for p in self.productos.values() if p.clave_semilla}
+        por_nombre: dict[str, list[ProductoInfo]] = {}
+        for p in self.productos.values():
+            por_nombre.setdefault(clave_nombre(p.nombre), []).append(p)
+        self._por_nombre = por_nombre
         self._max_tokens = max((len(k.split()) for k in self.alias), default=0)
 
     def por_clave(self, clave: str) -> ProductoInfo | None:
         return self._por_clave.get(clave)
+
+    def por_nombre(self, texto: str | None) -> ProductoInfo | None:
+        """El producto cuyo nombre canónico es EXACTAMENTE `texto` (sin tildes, mayúsculas ni
+        signos), solo si es único."""
+        candidatos = self._por_nombre.get(clave_nombre(texto), [])
+        return candidatos[0] if len(candidatos) == 1 else None
 
 
 class Sugerencia(NamedTuple):
@@ -299,3 +316,58 @@ def mejor_sugerencia(
         if s is not None and (mejor is None or s.confianza > mejor.confianza):
             mejor = s
     return mejor
+
+
+# --------------------------------------------------------------------------------------
+# Vincular textos de la empresa (proveedores, inventario) al catálogo canónico (F-plat-capas)
+# --------------------------------------------------------------------------------------
+def _productos_en_texto(texto: str | None, catalogo: Catalogo) -> set[int]:
+    """Productos distintos a los que apuntan los alias que aparecen como frase en el texto."""
+    tokens = normalizar_texto(texto).split()
+    tope = min(catalogo._max_tokens, len(tokens))
+    out: set[int] = set()
+    for n in range(tope, 0, -1):
+        for i in range(len(tokens) - n + 1):
+            frase = " ".join(tokens[i : i + n])
+            if n == 1 and len(frase) < 4:
+                continue
+            info = catalogo.alias.get(frase)
+            if info is not None and info.producto_id in catalogo.productos:
+                out.add(info.producto_id)
+    return out
+
+
+def sugerir_vinculo(
+    catalogo: Catalogo,
+    producto_texto: str | None,
+    formato_texto: str | None = None,
+    unspsc: str | None = None,
+) -> tuple[int, int | None] | None:
+    """`(producto_id, formato_id)` para un texto de proveedor o de inventario, o None.
+
+    Solo una sugerencia ÚNICA y de confianza alta (`estado_por_confianza == "ok"`): el nombre
+    canónico exacto, un alias exacto o un alias contenido en el texto (con el producto y el
+    formato; si los alias nombran más de un producto distinto es ambiguo → None). Las
+    sugerencias por palabra clave (0,5) no vinculan solas. El formato sale del alias, del
+    texto del formato o del texto del producto; si no calza ninguno, None (el producto queda
+    vinculado sin formato)."""
+    textos = [t for t in (producto_texto, f"{producto_texto or ''} {formato_texto or ''}") if t]
+    exacto = catalogo.por_nombre(producto_texto)
+    if exacto is not None:
+        producto, via_alias = exacto, None
+    else:
+        s = mejor_sugerencia(textos, unspsc, catalogo)
+        if s is None or estado_por_confianza(s.confianza) != "ok":
+            return None
+        if s.via == "contenido" and any(
+            len(_productos_en_texto(t, catalogo) - {s.producto_id}) for t in textos
+        ):
+            return None  # el texto nombra varios productos
+        producto, via_alias = catalogo.productos[s.producto_id], s.formato_id
+    formato = via_alias
+    if formato is None:
+        for t in (formato_texto, producto_texto):
+            formato = formato_de_texto(producto, t)
+            if formato is not None:
+                break
+    return producto.id, formato

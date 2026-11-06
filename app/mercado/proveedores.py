@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.catalogos.canonico import Catalogo, sugerir_vinculo
 from app.catalogos.mercado import norm
 from app.core.tiempo import TZ_CHILE
 from app.models.tables import (
@@ -98,6 +99,39 @@ def _registrar_costo(
     )
 
 
+def _vinculo_explicito(
+    session: Session, producto_id: int, formato_id: int | None, unidad_base: str | None
+) -> None:
+    """Valida un vínculo al canónico elegido por una persona (ValueError si no calza)."""
+    from app.mercado.catalogo import _formato_valido, _producto_activo
+
+    producto = _producto_activo(session, producto_id)  # CatalogoError ⊂ ValueError
+    _formato_valido(session, producto.id, formato_id)
+    if unidad_base is not None and unidad_base != producto.unidad_base:
+        raise ValueError(
+            f"La unidad base del proveedor ({unidad_base}) no coincide con la del producto "
+            f"del catálogo ({producto.unidad_base})"
+        )
+
+
+def _autovincular(
+    session: Session, pp: ProveedorProducto, catalogo: Catalogo, unspsc: str | None
+) -> bool:
+    """Vincula `pp` al canónico si la sugerencia es única y de confianza alta (F-plat-capas
+    §1.3). Nunca pisa un vínculo existente. Devuelve si vinculó."""
+    if pp.producto_id is not None:
+        return False
+    s = sugerir_vinculo(catalogo, pp.producto_texto, pp.formato_texto, unspsc)
+    if s is None:
+        return False
+    producto_id, formato_id = s
+    ub = catalogo.productos[producto_id].unidad_base
+    if pp.unidad_base is not None and pp.unidad_base != ub:
+        return False  # kg contra L: no competirían igual; queda para vincular a mano
+    pp.producto_id, pp.formato_id = producto_id, formato_id
+    return True
+
+
 def guardar_producto(
     session: Session,
     proveedor: Proveedor,
@@ -112,11 +146,19 @@ def guardar_producto(
     disponible: bool | None = None,
     fuente: str = "manual",
     usuario_id: int | None = None,
+    producto_id: int | None = None,
+    formato_id: int | None = None,
+    catalogo: Catalogo | None = None,
 ) -> tuple[ProveedorProducto, str]:
     """Crea el producto o actualiza su precio. Devuelve (producto, 'nuevo'|'cambiado'|'historico'|'igual').
 
     Nuevo → primera fila de historial. Precio distinto → otra fila (misma transacción).
     Precio igual → sin fila nueva (idempotente). Fecha anterior a la vigente → solo historial. Los demás datos se actualizan siempre.
+
+    Vínculo al catálogo canónico (F-plat-capas §1.3): `producto_id`/`formato_id` explícitos se
+    validan y se guardan (el formato debe ser del producto). Sin ellos, y si viene `catalogo`,
+    se vincula solo cuando la sugerencia es única y de confianza alta; si no, queda NULL
+    («sin vincular»). Un vínculo existente nunca se pisa solo.
     """
     if fuente not in FUENTES:
         raise ValueError(f"fuente inválida: {fuente!r}")
@@ -132,6 +174,10 @@ def guardar_producto(
         raise ValueError("factor_base debe ser mayor que 0")
     if (factor_base is None) != (unidad_base is None):
         raise ValueError("factor_base y unidad_base van juntos o ninguno")
+    if producto_id is not None:
+        _vinculo_explicito(session, producto_id, formato_id, unidad_base)
+    elif formato_id is not None:
+        raise ValueError("formato_id requiere producto_id")
     vigente = vigente_desde or hoy_chile()
 
     pp = buscar_producto(session, proveedor.id, producto_texto, formato_texto)
@@ -148,6 +194,10 @@ def guardar_producto(
             fuente=fuente,
             disponible=True if disponible is None else disponible,
         )
+        if producto_id is not None:
+            pp.producto_id, pp.formato_id = producto_id, formato_id
+        elif catalogo is not None:
+            _autovincular(session, pp, catalogo, codigo_unspsc)
         session.add(pp)
         session.flush()
         _registrar_costo(session, pp, float(precio_neto), vigente, fuente, usuario_id)
@@ -155,6 +205,10 @@ def guardar_producto(
 
     pp.factor_base = factor_base
     pp.unidad_base = unidad_base
+    if producto_id is not None:
+        pp.producto_id, pp.formato_id = producto_id, formato_id
+    elif catalogo is not None:
+        _autovincular(session, pp, catalogo, codigo_unspsc)
     if codigo_unspsc is not None:
         pp.codigo_unspsc = _texto(codigo_unspsc, 20)
     if disponible is not None:

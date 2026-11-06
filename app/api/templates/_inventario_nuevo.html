@@ -1,0 +1,54 @@
+{# Formulario «Agregar producto» al inventario. Contexto: `v` (valores), `errores`, `cat` (selector), `proveedores`, `csrf_token`. #}
+{% set i = cat.destino %}
+<div id="formwrap-{{ i }}" data-form-422 class="border rounded p-3 mb-3 bg-body-tertiary">
+  <form method="post" action="/inventario" hx-post="/inventario" hx-target="#formwrap-{{ i }}" hx-swap="outerHTML" class="row g-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12">
+      <label class="form-label" for="q-{{ i }}">Producto del catálogo ({{ nav.DEMANDA_MP }})</label>
+      <input type="search" id="q-{{ i }}" class="form-control form-control-sm mb-1" placeholder="Buscar producto del catálogo…" autocomplete="off"
+             hx-get="/catalogo/buscar-producto?destino={{ i | urlencode }}" hx-trigger="input changed delay:300ms"
+             hx-target="#sel-{{ i }}" hx-swap="innerHTML" name="q_catalogo">
+      <div id="sel-{{ i }}">
+        {% with destino=i, opcional=false, productos=cat.productos, producto_sel=cat.producto_sel, formatos=cat.formatos, formato_sel=cat.formato_sel %}
+        {% include "_catalogo_selector.html" %}
+        {% endwith %}
+      </div>
+      {% if errores.get('producto_id') %}<div class="invalid-feedback d-block">{{ errores['producto_id'] }}</div>{% endif %}
+      <div class="form-text">Si no lo encuentras, créalo en {{ nav.DEMANDA_MP }} → Productos.</div>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="stock-{{ i }}">Stock inicial</label>
+      <input class="form-control{% if errores.get('stock') %} is-invalid{% endif %}" id="stock-{{ i }}" name="stock" inputmode="decimal" value="{{ v.get('stock', '') }}" placeholder="0">
+      {% if errores.get('stock') %}<div class="invalid-feedback d-block">{{ errores['stock'] }}</div>{% endif %}
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="min-{{ i }}">Stock mínimo</label>
+      <input class="form-control{% if errores.get('stock_minimo') %} is-invalid{% endif %}" id="min-{{ i }}" name="stock_minimo" inputmode="decimal" value="{{ v.get('stock_minimo', '') }}">
+      {% if errores.get('stock_minimo') %}<div class="invalid-feedback d-block">{{ errores['stock_minimo'] }}</div>{% endif %}
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="plazo-{{ i }}">Reposición (días)</label>
+      <input class="form-control{% if errores.get('plazo') %} is-invalid{% endif %}" id="plazo-{{ i }}" name="plazo" inputmode="numeric" value="{{ v.get('plazo', '') }}">
+      {% if errores.get('plazo') %}<div class="invalid-feedback d-block">{{ errores['plazo'] }}</div>{% endif %}
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="prov-{{ i }}">Proveedor habitual</label>
+      <select class="form-select" id="prov-{{ i }}" name="proveedor_id">
+        <option value="">Ninguno</option>
+        {% for p in proveedores %}<option value="{{ p.id }}" {% if v.get('proveedor_id') == p.id|string %}selected{% endif %}>{{ p.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="marca-{{ i }}">Marca</label>
+      <input class="form-control" id="marca-{{ i }}" name="marca" maxlength="100" value="{{ v.get('marca', '') }}" placeholder="Si piden «marca X o similar»">
+    </div>
+    <div class="col-12 col-md-9">
+      <label class="form-label" for="notas-{{ i }}">Notas</label>
+      <input class="form-control" id="notas-{{ i }}" name="notas" maxlength="2000" value="{{ v.get('notas', '') }}">
+    </div>
+    <div class="col-12 d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Guardar</button>
+      <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('formwrap-{{ i }}').remove()">Cancelar</button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,48 @@
+{# Edición en línea de una fila del inventario (HTMX). Contexto: `v`, `proveedores`, `errores`, `csrf_token`. #}
+{% set ep = v.ep %}
+<tr id="ep-{{ ep.id }}" data-form-422>
+  <td colspan="10">
+    <form method="post" action="/inventario/{{ ep.id }}" hx-post="/inventario/{{ ep.id }}" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-12"><strong>{{ v.producto.nombre }}</strong> · {{ v.formato.nombre }}</div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1" for="min-{{ ep.id }}">Stock mínimo</label>
+        <input class="form-control form-control-sm{% if errores.get('stock_minimo') %} is-invalid{% endif %}" id="min-{{ ep.id }}" name="stock_minimo" inputmode="decimal"
+               value="{{ '%g' % ep.stock_minimo if ep.stock_minimo is not none else '' }}">
+        {% if errores.get('stock_minimo') %}<div class="invalid-feedback d-block">{{ errores['stock_minimo'] }}</div>{% endif %}
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1" for="plazo-{{ ep.id }}">Reposición (días)</label>
+        <input class="form-control form-control-sm{% if errores.get('plazo') %} is-invalid{% endif %}" id="plazo-{{ ep.id }}" name="plazo" inputmode="numeric"
+               value="{{ ep.plazo_reposicion_dias if ep.plazo_reposicion_dias is not none else '' }}">
+        {% if errores.get('plazo') %}<div class="invalid-feedback d-block">{{ errores['plazo'] }}</div>{% endif %}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1" for="prov-{{ ep.id }}">Proveedor habitual</label>
+        <select class="form-select form-select-sm" id="prov-{{ ep.id }}" name="proveedor_id">
+          <option value="">Ninguno</option>
+          {% for p in proveedores %}<option value="{{ p.id }}" {% if p.id == ep.proveedor_habitual_id %}selected{% endif %}>{{ p.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1" for="marca-{{ ep.id }}">Marca</label>
+        <input class="form-control form-control-sm" id="marca-{{ ep.id }}" name="marca" maxlength="100" value="{{ ep.marca or '' }}">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="notas-{{ ep.id }}">Notas</label>
+        <input class="form-control form-control-sm" id="notas-{{ ep.id }}" name="notas" maxlength="2000" value="{{ ep.notas or '' }}">
+      </div>
+      <div class="col-auto">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="activo" value="1" id="activo-{{ ep.id }}" {% if ep.activo %}checked{% endif %}>
+          <label class="form-check-label small" for="activo-{{ ep.id }}">Activo</label>
+        </div>
+      </div>
+      <div class="col-auto d-flex gap-2">
+        <button class="btn btn-sm btn-primary" type="submit">Guardar</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button"
+                hx-get="/inventario/{{ ep.id }}/fila" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">Cancelar</button>
+      </div>
+    </form>
+  </td>
+</tr>

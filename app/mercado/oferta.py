@@ -28,11 +28,13 @@ from sqlalchemy.orm import Session
 from app.core.tiempo import ahora_utc
 from app.mercado import adjudicacion as adj
 from app.mercado import equipo as eq
+from app.mercado import oferta_propia as op
 from app.mercado.proveedores import Candidato, mejor_costo
 from app.models.tables import (
     CaLinea,
     CompraAgil,
     Empresa,
+    EmpresaProducto,
     OfertaPropia,
     ProductoCanonico,
     Proveedor,
@@ -44,6 +46,8 @@ NOTAS_MAX = 2000
 PLAZO_MAX_DIAS = 365
 PRECIO_MAX = 1e12
 FUENTE = "Fuente: Dirección ChileCompra"
+ORIGEN_STOCK = "stock"  # F-plat-capas: «Stock propio»; no tiene `proveedor_producto_id`
+PREFIJO_STOCK = "stock:"  # valor del <select> de proveedor: `stock:<empresa_producto_id>`
 
 
 class ErrorOferta(Exception):
@@ -67,10 +71,13 @@ class ConflictoOferta(Exception):
 
 @dataclass(frozen=True)
 class Entrada:
-    """Lo que manda el formulario por línea."""
+    """Lo que manda el formulario por línea. `origen = 'stock'` + `empresa_producto_id` =
+    «Stock propio» (en ese caso `proveedor_producto_id` es None)."""
 
     precio_unitario: float | None
     proveedor_producto_id: int | None
+    origen: str | None = None
+    empresa_producto_id: int | None = None
 
 
 @dataclass
@@ -91,6 +98,10 @@ class LineaOferta:
     costo_por_base: float | None = None
     costo_total: float | None = None
     proveedor: str | None = None
+    # F-plat-capas: el stock propio que cubre la línea (si hay) y si es el origen elegido.
+    stock: op.StockPropio | None = None
+    origen: str | None = None
+    empresa_producto_id: int | None = None
 
     @property
     def total(self) -> float | None:
@@ -160,6 +171,14 @@ def lineas_de(session: Session, codigo: str) -> list[CaLinea]:
     )
 
 
+def validar_empresa_producto(session: Session, empresa_id: int, ep_id: int) -> EmpresaProducto:
+    """El producto del inventario si es de la empresa; si no, `ProveedorAjeno` (→ 404)."""
+    try:
+        return op.obtener(session, empresa_id, ep_id)
+    except op.InventarioAjeno:
+        raise ProveedorAjeno(ep_id) from None
+
+
 def _costo_elegido(
     candidatos: list[Candidato], pp_id: int | None
 ) -> tuple[Candidato | None, int | None]:
@@ -217,22 +236,44 @@ def armar(
         nombre, ub = unidades.get(ln.producto_id, (None, None)) if ln.producto_id else (None, None)
         total_sug = sugeridos.get(ln.n)
         unit_sug = total_sug / ln.cantidad if total_sug is not None and ln.cantidad else None
+        origen: str | None = None
         if entradas is not None and ln.id in entradas:
             precio, pp_id = entradas[ln.id].precio_unitario, entradas[ln.id].proveedor_producto_id
+            origen = entradas[ln.id].origen
         elif ln.id in previas:
             precio = _float(previas[ln.id].get("precio_unitario"))
             pp_id = _int(previas[ln.id].get("proveedor_producto_id"))
+            origen = previas[ln.id].get("origen")
         else:
             precio, pp_id = (round(unit_sug, 2) if unit_sug is not None else None), None
         cands = _candidatos(session, empresa_id, ln.producto_id, ub) if ln.estado == "ok" else []
-        elegido, pp_ok = _costo_elegido(cands, pp_id)
+        # F-plat-capas: el stock propio solo se ofrece si CUBRE la línea; si lo elegido ya no
+        # alcanza (alguien movió el stock), se vuelve al mejor costo.
+        stock = (
+            op.stock_propio(session, empresa_id, ln.producto_id, ub, ln.cantidad_base)
+            if ln.estado == "ok"
+            else None
+        )
+        usa_stock = origen == ORIGEN_STOCK and stock is not None
+        elegido, pp_ok = (None, None) if usa_stock else _costo_elegido(cands, pp_id)
         lo = LineaOferta(
             linea_id=ln.id, n=ln.n, texto=ln.texto_origen, estado=ln.estado,
             producto_id=ln.producto_id, producto=nombre, unidad_base=ub, cantidad=ln.cantidad,
             cantidad_base=ln.cantidad_base, precio_sugerido_unitario=unit_sug,
             precio_unitario=precio, proveedor_producto_id=pp_ok, candidatos=cands,
+            stock=stock,
         )  # fmt: skip
-        if elegido is not None:
+        if usa_stock and stock is not None:
+            # Regla del costo (`oferta_propia.costo_de_reposicion`): el proveedor habitual del
+            # producto o, si no hay, el último `costo_historial` de cualquier proveedor.
+            lo.origen = ORIGEN_STOCK
+            lo.empresa_producto_id = stock.empresa_producto_id
+            lo.proveedor = "Stock propio"
+            if stock.costo_por_base is not None:
+                lo.costo_por_base = stock.costo_por_base
+                if ln.cantidad_base:
+                    lo.costo_total = stock.costo_por_base * ln.cantidad_base
+        elif elegido is not None:
             lo.costo_por_base = elegido.precio_por_unidad_base
             lo.proveedor = elegido.proveedor
             if ln.cantidad_base:
@@ -359,7 +400,15 @@ def validar_entradas(
         if lid not in ids:
             continue
         precio = _precio(precio_txt)
-        pp_id = _int(pp_txt.strip()) if pp_txt and pp_txt.strip() else None
+        valor = (pp_txt or "").strip()
+        if valor.startswith(PREFIJO_STOCK):
+            ep_id = _int(valor[len(PREFIJO_STOCK) :])
+            if ep_id is None:
+                raise ErrorOferta("Origen de costo inválido")
+            validar_empresa_producto(session, empresa_id, ep_id)
+            out[lid] = Entrada(precio, None, ORIGEN_STOCK, ep_id)
+            continue
+        pp_id = _int(valor) if valor else None
         if pp_id is not None:
             validar_proveedor_producto(session, empresa_id, pp_id)
         out[lid] = Entrada(precio, pp_id)
@@ -418,6 +467,12 @@ def guardar(
             "linea_id": lo.linea_id,
             "precio_unitario": lo.precio_unitario,
             "proveedor_producto_id": lo.proveedor_producto_id,
+            # «Stock propio» (F-plat-capas): F-plat-lote reserva a partir de estos campos.
+            **(
+                {"origen": ORIGEN_STOCK, "empresa_producto_id": lo.empresa_producto_id}
+                if lo.origen == ORIGEN_STOCK
+                else {}
+            ),
         }  # fmt: skip
         for lo in lineas
     ]

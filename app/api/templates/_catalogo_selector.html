@@ -1,11 +1,14 @@
-{# Producto + formato de una línea (F-plat-1). Contexto: `linea_id`, `productos` (id, nombre), `producto_sel`, `formatos`, `formato_sel`. #}
+{# Producto + formato del catálogo (F-plat-1; generalizado en F-plat-capas). Contexto: `productos` (id, nombre), `producto_sel`, `formatos`, `formato_sel` y UNA llave para los ids del DOM: `linea_id` (líneas de CA) o `destino` (otro formulario: producto del proveedor, inventario). `opcional`: el producto no es obligatorio (permite «sin vincular»). #}
+{% set d = destino if destino else linea_id %}
+{% set clave = ('destino=' ~ (destino | urlencode)) if destino else ('linea_id=' ~ linea_id) %}
 <div class="d-flex flex-wrap gap-1">
-  <select name="producto_id" class="form-select form-select-sm w-auto" required aria-label="Producto"
-          hx-get="/catalogo/formatos?linea_id={{ linea_id }}" hx-trigger="change" hx-target="#fmt-{{ linea_id }}" hx-swap="innerHTML">
-    {% if not productos %}<option value="">Sin resultados: busca otro nombre</option>{% endif %}
+  <select name="producto_id" class="form-select form-select-sm w-auto" {% if not opcional %}required{% endif %} aria-label="Producto"
+          hx-get="/catalogo/formatos?{{ clave }}" hx-trigger="change" hx-target="#fmt-{{ d }}" hx-swap="innerHTML">
+    {% if opcional %}<option value="">Sin vincular (se sugiere solo)</option>
+    {% elif not productos %}<option value="">Sin resultados: busca otro nombre</option>{% endif %}
     {% for p in productos %}
     <option value="{{ p.id }}" {% if p.id == producto_sel %}selected{% endif %}>{{ p.nombre }}</option>
     {% endfor %}
   </select>
-  <span id="fmt-{{ linea_id }}">{% include "_catalogo_formatos.html" %}</span>
+  <span id="fmt-{{ d }}">{% include "_catalogo_formatos.html" %}</span>
 </div>

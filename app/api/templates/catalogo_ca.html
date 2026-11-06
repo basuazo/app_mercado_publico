@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Líneas de {{ ca.codigo }} — Rastrillo{% endblock %}
 {% block content %}
-<p class="mb-2"><a href="/catalogo">← Catálogo</a> · <a href="/oportunidad/compras_agiles/{{ ca.codigo }}">Ver la Compra Ágil</a></p>
+<p class="mb-2"><a href="/catalogo">← {{ nav.DEMANDA_MP }}</a> · <a href="/oportunidad/compras_agiles/{{ ca.codigo }}">Ver la Compra Ágil</a></p>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
   <h2 class="mb-0 fs-4">{{ ca.nombre }} <span class="text-muted num fs-6">{{ ca.codigo }}</span></h2>
   <span class="badge bg-{{ bandera[1] }} fs-6">{{ bandera[0] }}</span>

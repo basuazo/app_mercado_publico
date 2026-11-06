@@ -18,6 +18,25 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-capas (5-nov, rama `F-plat-capas` desde `8dd16c8`, commit local sin push ni merge; migración `a3c8e5d1b7f2`, cuelga de `d9a4e2b7c1f6`)
+Catálogo en tres capas (`prompt-F-plat-capas.md`): **Demanda MP** (`/catalogo`, solo renombrada), **Catálogo Proveedores**
+(`/proveedores`) e **Inventario** (`/inventario`, nueva). Comparten la llave `producto_canonico × producto_formato`.
+**Esquema:** `empresa_productos` (stock, reservado, mínimo, plazo de reposición, proveedor habitual, marca; `UNIQUE
+(empresa, producto, formato)`, `CHECK stock/reservado ≥ 0`) y `empresa_producto_movimientos` (log append-only: ajuste,
+compra, entrega; reserva y liberación son de F-plat-lote). Solo tablas nuevas.
+**§1.3 enganche de `proveedor_productos` al canónico:** `guardar_producto` acepta `producto_id`/`formato_id` (validados) y,
+si recibe el catálogo, vincula solo cuando la sugerencia es única y de confianza alta (`canonico.sugerir_vinculo`: nombre
+canónico exacto, alias exacto o alias contenido sin otro producto en el texto; las palabras clave no vinculan solas).
+Formulario, importación de precios y lista por foto ya pasan por ahí. Las filas que **ya existen en producción** siguen sin
+vincular hasta que alguien pulse «Vincular pendientes» (`POST /proveedores/vincular-pendientes`, por empresa, idempotente,
+nunca pisa un vínculo): no hay migración de datos.
+**Inventario:** `app/mercado/oferta_propia.py` (CRUD con ownership, `ajustar_stock`, `cobertura_de_ca`, `resumen_por_ca`
+por lote, costo del stock propio), hoja `inventario` solo en XLSX (`importar.parsear_inventario/aplicar_inventario`; vista
+previa = aplicar + rollback), mesa con «Tengo: n de m» y filtro «Con stock», «Stock propio» como origen de costo en mi
+oferta (`origen: "stock"` + `empresa_producto_id` en `ofertas_propias.lineas`) y tarjeta en «Hoy».
+**Pendiente de Boris:** revisar y aplicar `alembic upgrade head`, correr los tests de Postgres, push, y cargar el inventario
+(planilla) y pulsar «Vincular pendientes» en producción.
+
 ## F-plat-6-fix (5-nov, commit local sin push; sin migración)
 `mercado-demanda --completo` desde el PC no terminó en 24 min: el executemany de psycopg hacía un viaje Chile →
 Neon por fila. Cambios:

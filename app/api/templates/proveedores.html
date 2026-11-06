@@ -1,10 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Proveedores — Rastrillo{% endblock %}
+{% block title %}{{ nav.CATALOGO_PROVEEDORES }} — Rastrillo{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h2 class="mb-0">Proveedores</h2>
+  <h2 class="mb-0">{{ nav.CATALOGO_PROVEEDORES }}</h2>
   <div class="d-flex flex-wrap gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="/proveedores/logistica">Logística</a>
+    {% if sin_vincular %}<form method="post" action="/proveedores/vincular-pendientes" class="m-0 d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="volver" value="/proveedores">
+      <button class="btn btn-outline-secondary btn-sm" title="Aplica el producto del catálogo cuando la sugerencia es única y de confianza alta. No cambia los que ya tienen producto.">Vincular pendientes ({{ sin_vincular }})</button>
+    </form>{% endif %}
     <a class="btn btn-outline-secondary btn-sm" href="/proveedores/importar">Importar planilla</a>
     <button class="btn btn-primary btn-sm" type="button"
             hx-get="/proveedores/nuevo/form" hx-target="#form-proveedor" hx-swap="innerHTML">Nuevo proveedor</button>

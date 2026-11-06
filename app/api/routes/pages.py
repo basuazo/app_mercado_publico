@@ -489,6 +489,7 @@ async def portada(
         .where(CompraAgil.region.in_(regiones), CaLinea.estado.in_(("pendiente", "dudosa")))
     ).scalar_one()
     n_proveedores = n_productos = 0
+    n_inventario = n_bajo_minimo = 0
     equipo_hoy: dict[str, Any] | None = None
     if empresa_id is not None:
         from app.mercado import equipo as eq
@@ -508,6 +509,9 @@ async def portada(
             .join(Proveedor, Proveedor.id == ProveedorProducto.proveedor_id)
             .where(Proveedor.empresa_id == empresa_id)
         ).scalar_one()
+        from app.mercado import oferta_propia as op
+
+        n_inventario, n_bajo_minimo = op.resumen(session, empresa_id)
     return _TEMPLATES.TemplateResponse(
         request,
         "hoy.html",
@@ -521,6 +525,8 @@ async def portada(
             lineas_por_revisar=lineas_por_revisar,
             n_proveedores=n_proveedores,
             n_productos=n_productos,
+            n_inventario=n_inventario,
+            n_bajo_minimo=n_bajo_minimo,
             equipo_hoy=equipo_hoy,
         ),
     )

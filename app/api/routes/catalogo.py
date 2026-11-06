@@ -8,6 +8,7 @@ regiones activas. Los mensajes de error no filtran datos de otras empresas: no h
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -73,6 +74,17 @@ def _ca_o_404(session: Session, codigo: str, regiones: list[int]) -> CompraAgil:
     if ca is None or ca.region not in regiones:
         raise HTTPException(status_code=404, detail="Compra Ágil no encontrada")
     return ca
+
+
+_DESTINO = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+
+
+def _destino(destino: str, linea_id: int) -> str:
+    """Prefijo de los ids del DOM del selector: `destino` (otros formularios, F-plat-capas) o
+    el `linea_id` de siempre. Solo [A-Za-z0-9_-]: va dentro de ids y de URLs."""
+    if destino and not _DESTINO.fullmatch(destino):
+        raise HTTPException(status_code=422, detail="destino inválido")
+    return destino
 
 
 def _productos_activos(session: Session, q: str = "", limite: int = 30) -> list[ProductoCanonico]:
@@ -252,13 +264,19 @@ async def catalogo_get(
 @router.get("/catalogo/buscar-producto", response_class=HTMLResponse)
 async def catalogo_buscar_producto(
     request: Request,
-    linea_id: int,
+    linea_id: int = 0,
+    destino: str = "",
+    opcional: str = "",
     q: str = "",
     ctx: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
+    """Selector de producto + formato. Sirve a las líneas de CA (`linea_id`) y a otros
+    formularios (`destino`: producto del proveedor, inventario). Con `opcional`, el campo no es
+    obligatorio y, sin texto de búsqueda, no preselecciona el primero."""
     user, _ = ctx
     productos = _productos_activos(session, q, 30)
+    sel = productos[0].id if productos and (q.strip() or not opcional) else None
     return _TEMPLATES.TemplateResponse(
         request,
         "_catalogo_selector.html",
@@ -266,9 +284,11 @@ async def catalogo_buscar_producto(
             request,
             user,
             linea_id=linea_id,
+            destino=_destino(destino, linea_id),
+            opcional=bool(opcional),
             productos=productos,
-            producto_sel=productos[0].id if productos else None,
-            formatos=_formatos_de(session, productos[0].id if productos else None),
+            producto_sel=sel,
+            formatos=_formatos_de(session, sel),
             formato_sel=None,
         ),
     )
@@ -277,7 +297,8 @@ async def catalogo_buscar_producto(
 @router.get("/catalogo/formatos", response_class=HTMLResponse)
 async def catalogo_formatos(
     request: Request,
-    linea_id: int,
+    linea_id: int = 0,
+    destino: str = "",
     producto_id: int | None = None,
     ctx: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
@@ -290,6 +311,7 @@ async def catalogo_formatos(
             request,
             user,
             linea_id=linea_id,
+            destino=_destino(destino, linea_id),
             formatos=_formatos_de(session, producto_id),
             formato_sel=None,
         ),

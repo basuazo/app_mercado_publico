@@ -3,6 +3,7 @@
     <ul class="mb-3">
       <li>Proveedores nuevos: <strong>{{ resumen.proveedores_nuevos }}</strong>{% if resumen.proveedores_actualizados %} · con datos actualizados: {{ resumen.proveedores_actualizados }}{% endif %}</li>
       <li>Productos nuevos: <strong>{{ resumen.productos_nuevos }}</strong></li>
+      {% if resumen.productos_vinculados or resumen.sin_vincular %}<li>Vinculados al catálogo ({{ nav.DEMANDA_MP }}): <strong>{{ resumen.productos_vinculados }}</strong> · sin vincular: {{ resumen.sin_vincular }}</li>{% endif %}
       <li>Precios cambiados: <strong>{{ resumen.precios_cambiados }}</strong></li>
       {% if resumen.precios_historicos %}<li>Precios históricos agregados (fecha anterior a la vigente; el precio actual no cambia): <strong>{{ resumen.precios_historicos }}</strong></li>{% endif %}
       <li>Filas sin cambios: {{ resumen.sin_cambios }}</li>

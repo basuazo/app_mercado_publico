@@ -43,6 +43,20 @@
           <label class="form-check-label" for="{{ i }}_disponible">Disponible</label>
         </div>
       </div>
+      <div class="col-12">
+        {#- F-plat-capas §1.3: la misma llave que la demanda (producto × formato del catálogo). -#}
+        <label class="form-label" for="q-{{ i }}">Producto del catálogo ({{ nav.DEMANDA_MP }})</label>
+        <input type="search" id="q-{{ i }}" class="form-control form-control-sm mb-1" placeholder="Buscar producto del catálogo…" autocomplete="off"
+               hx-get="/catalogo/buscar-producto?destino={{ i | urlencode }}&opcional=1" hx-trigger="input changed delay:300ms"
+               hx-target="#sel-{{ i }}" hx-swap="innerHTML" name="q_catalogo">
+        <div id="sel-{{ i }}">
+          {% with destino=i, opcional=true, productos=f.cat.productos, producto_sel=f.cat.producto_sel, formatos=f.cat.formatos, formato_sel=f.cat.formato_sel %}
+          {% include "_catalogo_selector.html" %}
+          {% endwith %}
+        </div>
+        {% if e.get('producto_id') %}<div class="invalid-feedback d-block">{{ e['producto_id'] }}</div>{% endif %}
+        <div class="form-text">Sin elegir, se vincula solo si el nombre coincide con un producto del catálogo; si no es único, queda «sin vincular».</div>
+      </div>
       <div class="col-12 d-flex gap-2">
         <button type="submit" class="btn btn-primary">Guardar</button>
         <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('formwrap-{{ i }}').remove()">Cancelar</button>

@@ -79,6 +79,11 @@
                {% if filtros.con_prediccion %}checked{% endif %}>
         <label class="form-check-label small" for="mesa-con-prediccion">Con predicción</label>
       </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="con_stock" value="1" id="mesa-con-stock"
+               {% if filtros.con_stock %}checked{% endif %}>
+        <label class="form-check-label small" for="mesa-con-stock">Con stock</label>
+      </div>
     </div>
     <div class="col-12 col-md-auto">
       <div class="form-check">
@@ -149,6 +154,12 @@
       <span class="badge text-bg-light border fw-normal">{{ it.n_anexos }} anexo{{ '' if it.n_anexos == 1 else 's' }}</span>
       <span class="badge text-bg-light border fw-normal">Entrega: {% if it.plazo_dias is not none %}{{ it.plazo_dias }} día{{ '' if it.plazo_dias == 1 else 's' }}{% else %}plazo no informado{% endif %}</span>
     </div>
+    {% if it.stock %}
+    <p class="small mt-2 mb-0" data-mesa="stock">
+      <span class="badge text-bg-{{ 'success' if it.stock.en_stock == it.stock.total else ('info' if it.stock.en_stock else 'light border') }} fw-normal">Tengo: {{ it.stock.en_stock }} de {{ it.stock.total }} línea{{ '' if it.stock.total == 1 else 's' }} en stock</span>
+      {% if it.stock.faltan %}<span class="text-muted">· falta: {{ it.stock.texto_faltan }}</span>{% endif %}
+    </p>
+    {% endif %}
     {% include "_mesa_precio.html" %}
     <div class="d-flex flex-wrap gap-2 mt-2">
       <a class="btn btn-sm btn-outline-primary" href="/oportunidad/compras_agiles/{{ it.codigo }}">Precio, mi oferta y líneas</a>

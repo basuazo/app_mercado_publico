@@ -24,6 +24,7 @@ from app.api.routes.mesa import _sin_empresa
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.core.tiempo import ahora_utc
 from app.mercado import equipo as eq
+from app.mercado import oferta_propia as op
 from app.mercado.comprador import historial_comprador
 from app.mercado.mesa_dia import (
     CIERRES,
@@ -60,6 +61,7 @@ def _filtros(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     margen_min: str = "",
     con_prediccion: str = "",
     orden: str = "",
+    con_stock: str = "",
 ) -> FiltrosMesa:
     """Parámetros GET → filtros; un valor inválido se ignora (nunca rompe la pantalla)."""
     try:
@@ -83,6 +85,7 @@ def _filtros(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         margen_min=margen / 100 if margen is not None else None,
         con_prediccion=con_prediccion == "1",
         orden=orden if orden in ORDENES else "",
+        con_stock=con_stock == "1",
     )
 
 
@@ -113,6 +116,7 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     margen_min: str = "",
     con_prediccion: str = "",
     orden: str = "",
+    con_stock: str = "",
     pagina: int = 1,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
@@ -126,7 +130,8 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     regiones = regiones_activas(session, request.app.state.settings)
     comunas = _comunas(session, empresa_id)
     filtros = _filtros(
-        familia, cierre, detalle, anexos, monto_min, q, con_costo, margen_min, con_prediccion, orden
+        familia, cierre, detalle, anexos, monto_min, q, con_costo, margen_min, con_prediccion,
+        orden, con_stock,
     )
     familias = familias_por_ca(session, regiones, ahora)
     cache = evaluaciones_de(session, empresa_id)
@@ -136,6 +141,13 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         valor=None if filtros.orden == "cierre" else valor_orden(cache),
     )  # fmt: skip
     codigos = filtrar_precio(codigos, filtros, cache, predichas)
+    # F-plat-capas: cobertura del inventario (una consulta por lote de CA, nunca por tarjeta).
+    # El filtro «Con stock» la calcula para todas; sin filtro, solo para la página.
+    hay_inventario = op.tiene_inventario(session, empresa_id)
+    cobertura: dict[str, op.ResumenCA] = {}
+    if filtros.con_stock:
+        cobertura = op.resumen_por_ca(session, empresa_id, codigos) if hay_inventario else {}
+        codigos = op.filtrar_con_stock(codigos, cobertura)
     # F-equipo: filtro «Equipo»; las descartadas se ocultan salvo que se pidan.
     codigos = eq.filtrar_equipo(session, empresa_id, user.id, codigos, equipo, ver_descartadas)
     total = len(codigos)
@@ -144,7 +156,10 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
     items = tarjetas(
         session, codigos[(pagina - 1) * PAGINA : pagina * PAGINA], comunas, familias, ahora
     )
+    if hay_inventario and not filtros.con_stock:
+        cobertura = op.resumen_por_ca(session, empresa_id, [it["codigo"] for it in items])
     for it in items:
+        it["stock"] = cobertura.get(it["codigo"]) if hay_inventario else None
         it["url_publica"] = _url_ficha("compras_agiles", it["codigo"])
         ev = cache.get(it["codigo"])
         it["precio"] = ev.datos if ev else None
@@ -165,6 +180,7 @@ async def mesa(  # noqa: PLR0913 - una dimensión filtrable = un parámetro
         "margen_min": _margen_texto(filtros),
         "con_prediccion": "1" if filtros.con_prediccion else "",
         "orden": filtros.orden,
+        "con_stock": "1" if filtros.con_stock else "",
     }
     empresa = session.get(Empresa, empresa_id)
     return _TEMPLATES.TemplateResponse(
@@ -211,6 +227,7 @@ async def mesa_conteo(  # noqa: PLR0913
     margen_min: str = "",
     con_prediccion: str = "",
     orden: str = "",
+    con_stock: str = "",
     sesion: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -219,7 +236,8 @@ async def mesa_conteo(  # noqa: PLR0913
     ahora = ahora_utc()
     regiones = regiones_activas(session, request.app.state.settings)
     filtros = _filtros(
-        familia, cierre, detalle, anexos, monto_min, q, con_costo, margen_min, con_prediccion, orden
+        familia, cierre, detalle, anexos, monto_min, q, con_costo, margen_min, con_prediccion,
+        orden, con_stock,
     )
     codigos = buscar_codigos(session, regiones, [], filtros, ahora)
     if filtros.con_costo or filtros.margen_min is not None or filtros.con_prediccion:
@@ -229,6 +247,8 @@ async def mesa_conteo(  # noqa: PLR0913
             evaluaciones_de(session, empresa_id),
             predichas_de(session, empresa_id),
         )
+    if filtros.con_stock:
+        codigos = op.filtrar_con_stock(codigos, op.resumen_por_ca(session, empresa_id, codigos))
     codigos = eq.filtrar_equipo(
         session,
         empresa_id,

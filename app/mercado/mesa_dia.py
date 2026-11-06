@@ -63,6 +63,8 @@ class FiltrosMesa:
     margen_min: float | None = None  # fracción: 0.1 = 10 %
     con_prediccion: bool = False
     orden: str = ""  # "" = valor (margen esperado) | "cierre"
+    # F-plat-capas: al menos una línea cubierta por el inventario (`oferta_propia.resumen_por_ca`).
+    con_stock: bool = False
 
 
 ORDENES = ("", "cierre")

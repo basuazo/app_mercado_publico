@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Logística — Rastrillo{% endblock %}
 {% block content %}
-<p class="mb-2"><a href="/proveedores">← Proveedores</a></p>
+<p class="mb-2"><a href="/proveedores">← {{ nav.CATALOGO_PROVEEDORES }}</a></p>
 <h2 class="mb-3">Tarifas de logística</h2>
 
 {% if mensaje %}<div class="alert alert-success" role="status">{{ mensaje }}</div>{% endif %}

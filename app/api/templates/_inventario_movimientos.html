@@ -1,0 +1,15 @@
+{# Últimos movimientos de stock de un producto del inventario. #}
+<tr id="mov-{{ ep_id }}"><td colspan="10" class="small bg-body-tertiary">
+  {% if filas %}
+  <table class="table table-sm mb-0">
+    <thead><tr><th scope="col">Cuándo</th><th scope="col">Motivo</th><th scope="col" class="text-end">Cantidad</th><th scope="col">Referencia</th></tr></thead>
+    <tbody>
+      {% for m in filas %}
+      <tr><td>{{ m.creado_en | fecha_chile }}</td><td>{{ etiquetas.get(m.motivo, m.motivo) }}</td>
+          <td class="text-end num">{{ ('+' if m.delta > 0 else '') ~ (m.delta | cantidad) }}</td><td>{{ m.referencia or "—" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<span class="text-muted">Sin movimientos todavía.</span>{% endif %}
+  <button class="btn btn-sm btn-link p-0 mt-1" type="button" onclick="this.closest('tr').remove()">Cerrar</button>
+</td></tr>

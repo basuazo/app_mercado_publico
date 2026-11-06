@@ -1,0 +1,23 @@
+{# Una fila del inventario. Contexto: `v` (VistaInventario), `csrf_token`. #}
+{% set ep = v.ep %}
+<tr id="ep-{{ ep.id }}"{% if not ep.activo %} class="text-muted"{% elif v.bajo_minimo %} class="table-danger"{% endif %} data-ep="{{ ep.id }}">
+  <td>{{ v.producto.nombre }}{% if not ep.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}
+    {% if ep.activo and v.bajo_minimo %}<span class="badge text-bg-danger fw-normal" data-bajo-minimo>bajo mínimo</span>{% endif %}</td>
+  <td>{{ v.formato.nombre }}</td>
+  <td>{{ ep.marca or "—" }}</td>
+  <td class="text-end num">{{ ep.stock | cantidad }}</td>
+  <td class="text-end num">{{ ep.reservado | cantidad }}</td>
+  <td class="text-end num">{{ ep.disponible | cantidad }}</td>
+  <td class="text-end num">{{ ep.stock_minimo | cantidad if ep.stock_minimo is not none else "—" }}</td>
+  <td class="text-end">{% if ep.plazo_reposicion_dias is not none %}{{ ep.plazo_reposicion_dias }} d{% else %}—{% endif %}</td>
+  <td>{{ v.proveedor.nombre if v.proveedor else "—" }}</td>
+  <td class="text-end text-nowrap">
+    <button class="btn btn-sm btn-outline-primary" type="button"
+            hx-get="/inventario/{{ ep.id }}/ajuste" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">Ajustar stock</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button"
+            hx-get="/inventario/{{ ep.id }}/form" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">Editar</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button"
+            hx-get="/inventario/{{ ep.id }}/movimientos" hx-trigger="click[!document.getElementById('mov-{{ ep.id }}')]"
+            hx-target="#ep-{{ ep.id }}" hx-swap="afterend">Movimientos</button>
+  </td>
+</tr>

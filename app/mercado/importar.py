@@ -1,7 +1,10 @@
 """Importación de proveedores, precios, condiciones y logística desde XLSX o CSV (F-plat-3).
 
-Formato = `data/mercado/proveedores_plantilla.xlsx`: hojas `precios` (obligatoria),
-`condiciones` y `logistica` (opcionales). CSV: solo `precios`. Dos pasos sobre el MISMO
+Formato = `data/mercado/proveedores_plantilla.xlsx`: hojas `precios`, `condiciones` y
+`logistica` (opcionales cuando el libro trae `inventario`). CSV: solo `precios`. La hoja
+`inventario` (F-plat-capas) tiene su propio par `parsear_inventario` / `aplicar_inventario`
+y SOLO se lee de un .xlsx (decisión: un CSV no distingue la hoja y se prestaría a confundir
+una lista de precios con inventario). Dos pasos sobre el MISMO
 código: :func:`parsear` (puro, sin base) y :func:`aplicar` (escribe con flush, sin commit);
 la vista previa es `aplicar` seguido de rollback, así los conteos nunca difieren de la
 confirmación. Idempotente: la misma fila dos veces no duplica ni genera historial.
@@ -19,15 +22,22 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.catalogos.canonico import Catalogo, formato_de_texto, normalizar_texto, sugerir_vinculo
 from app.catalogos.mercado import norm
+from app.mercado.catalogo import cargar_catalogo
 from app.mercado.proveedores import (
     PROVINCIAS_NUBLE,
+    buscar_producto,
     guardar_producto,
     hoy_chile,
     normalizar_rut,
     normalizar_unidad,
 )
-from app.models.tables import Proveedor, TarifaLogistica
+from app.models.tables import (
+    ProductoFormato,
+    Proveedor,
+    TarifaLogistica,
+)
 
 # La confirmación reenvía el archivo en base64 en un campo de formulario y Starlette corta cada
 # campo en 1 MB (`max_part_size`, defensa de memoria: no se sube). 700 KB * 4/3 < 1 MB.
@@ -43,6 +53,10 @@ COLUMNAS_CONDICIONES = [
     "minimo_compra_clp", "despacha (si/no)", "notas",
 ]  # fmt: skip
 COLUMNAS_LOGISTICA = ["ambito", "nombre", "costo_fijo_clp", "costo_por_kg_clp", "dias", "notas"]
+COLUMNAS_INVENTARIO = [
+    "producto", "formato", "stock", "stock_minimo", "plazo_reposicion_dias", "marca",
+    "proveedor_habitual", "notas",
+]  # fmt: skip
 
 
 class PlanillaInvalida(ValueError):
@@ -103,6 +117,8 @@ class Resumen:
     proveedores_nuevos: int = 0
     proveedores_actualizados: int = 0
     productos_nuevos: int = 0
+    productos_vinculados: int = 0  # al catálogo canónico (F-plat-capas §1.3)
+    sin_vincular: int = 0
     precios_cambiados: int = 0
     precios_historicos: int = 0
     sin_cambios: int = 0
@@ -117,7 +133,7 @@ class Resumen:
         return any(
             (
                 self.proveedores_nuevos, self.proveedores_actualizados, self.productos_nuevos,
-                self.precios_cambiados, self.precios_historicos, self.condiciones_actualizadas, self.tarifas_nuevas,
+                self.productos_vinculados, self.precios_cambiados, self.precios_historicos, self.condiciones_actualizadas, self.tarifas_nuevas,
                 self.tarifas_actualizadas,
             )
         )  # fmt: skip
@@ -274,13 +290,19 @@ def parsear(data: bytes, nombre_archivo: str) -> Planilla:
         hojas = _filas_xlsx(data)
     else:
         raise PlanillaInvalida("Sube un archivo .xlsx o .csv")
-    if "precios" not in hojas:
+    if "precios" not in hojas and "inventario" not in hojas:
         raise PlanillaInvalida("Falta la hoja 'precios'")
 
     p = Planilla()
     ejemplos: set[str] = set()
+    if "precios" not in hojas:
+        # F-plat-capas: un libro con solo `inventario` no es de precios; sus filas se
+        # importan desde «Inventario» (`parsear_inventario`).
+        p.errores.append(
+            "El archivo trae la hoja 'inventario' y no 'precios': impórtalo desde Inventario"
+        )
 
-    for linea, f in _como_dicts(hojas["precios"]):
+    for linea, f in _como_dicts(hojas.get("precios", [])):
         nombre = _txt(f.get("proveedor"))
         if nombre is None:
             p.errores.append(f"precios, fila {linea}: falta el proveedor")
@@ -489,6 +511,13 @@ def _set_si_cambia(obj: Any, campo: str, valor: Any) -> bool:
     return True
 
 
+def _catalogo_si_hay(session: Session, planilla: Planilla) -> Catalogo | None:
+    """El catálogo canónico en memoria, una sola vez por importación (solo si hay precios)."""
+    if not planilla.precios:
+        return None
+    return cargar_catalogo(session)
+
+
 def aplicar(
     session: Session,
     empresa_id: int,
@@ -506,6 +535,7 @@ def aplicar(
         raise ValueError("El proveedor no es de la empresa")
     r = Resumen(ejemplos=list(planilla.ejemplos), errores=list(planilla.errores))
     indice = _Indice(session, empresa_id)
+    catalogo = _catalogo_si_hay(session, planilla)
 
     for fila in planilla.precios:
         prov: Proveedor | None
@@ -530,8 +560,10 @@ def aplicar(
                 r.proveedores_actualizados += 1
                 if prov.rut:
                     indice.por_rut[prov.rut] = prov
+        previo = buscar_producto(session, prov.id, fila.producto, fila.formato)
+        tenia_vinculo = previo is not None and previo.producto_id is not None
         try:
-            _, estado = guardar_producto(
+            pp, estado = guardar_producto(
                 session,
                 prov,
                 producto_texto=fila.producto,
@@ -542,10 +574,15 @@ def aplicar(
                 unidad_base=fila.unidad_base,
                 fuente=fuente,
                 usuario_id=usuario_id,
+                catalogo=catalogo,
             )
         except ValueError as exc:  # no debería: parsear ya validó
             r.errores.append(f"precios, fila {fila.linea}: {exc}")
             continue
+        if pp.producto_id is None:
+            r.sin_vincular += 1
+        elif not tenia_vinculo:
+            r.productos_vinculados += 1
         if estado == "nuevo":
             r.productos_nuevos += 1
         elif estado == "cambiado":
@@ -663,6 +700,258 @@ def generar_plantilla_xlsx() -> bytes:
         ws.append([linea])
     ws.column_dimensions["A"].width = 120
 
+    salida = io.BytesIO()
+    wb.save(salida)
+    return salida.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Inventario (F-plat-capas): hoja `inventario`, solo XLSX
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FilaInventario:
+    linea: int
+    producto: str
+    formato: str
+    stock: float | None
+    stock_minimo: float | None
+    plazo: int | None
+    marca: str | None
+    proveedor_habitual: str | None
+    notas: str | None
+
+
+@dataclass
+class PlanillaInventario:
+    filas: list[FilaInventario] = field(default_factory=list)
+    ejemplos: int = 0
+    errores: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ResumenInventario:
+    nuevos: int = 0
+    actualizados: int = 0
+    sin_cambios: int = 0
+    ejemplos: int = 0
+    errores: list[str] = field(default_factory=list)
+    avisos: list[str] = field(default_factory=list)
+
+    @property
+    def hay_cambios(self) -> bool:
+        return bool(self.nuevos or self.actualizados)
+
+
+def parsear_inventario(data: bytes, nombre_archivo: str) -> PlanillaInventario:
+    """Lee la hoja `inventario` de un .xlsx y valida fila a fila (los errores se acumulan).
+    Solo XLSX: un CSV no dice de qué hoja viene y se confundiría con una lista de precios."""
+    if len(data) > MAX_BYTES:
+        raise PlanillaInvalida(
+            f"El archivo supera {MAX_BYTES // 1024} KB; quita imágenes o formato, o divídelo"
+        )
+    if not nombre_archivo.lower().endswith((".xlsx", ".xlsm")):
+        raise PlanillaInvalida("El inventario se importa desde un .xlsx con la hoja 'inventario'")
+    hojas = _filas_xlsx(data)
+    if "inventario" not in hojas:
+        raise PlanillaInvalida("Falta la hoja 'inventario'")
+    p = PlanillaInventario()
+    for linea, f in _como_dicts(hojas["inventario"]):
+        producto = _txt(f.get("producto"))
+        if producto is None:
+            p.errores.append(f"inventario, fila {linea}: falta el producto")
+            continue
+        if norm(producto).startswith("ejemplo"):
+            p.ejemplos += 1
+            continue
+        try:
+            stock = _num(f.get("stock"))
+            minimo = _num(f.get("stock_minimo"))
+            plazo = _entero(f.get("plazo_reposicion_dias"))
+            if stock is not None and not 0 <= stock <= 1e9:
+                raise ValueError("stock debe ser un número entre 0 y 1.000.000.000")
+            if minimo is not None and not 0 <= minimo <= 1e9:
+                raise ValueError("stock_minimo debe ser un número entre 0 y 1.000.000.000")
+            if plazo is not None and not 0 <= plazo <= 365:
+                raise ValueError("plazo_reposicion_dias debe estar entre 0 y 365")
+            p.filas.append(
+                FilaInventario(
+                    linea=linea,
+                    producto=producto[:300],
+                    formato=(_txt(f.get("formato")) or "")[:200],
+                    stock=stock,
+                    stock_minimo=minimo,
+                    plazo=plazo,
+                    marca=_recortar(_txt(f.get("marca")), 100),
+                    proveedor_habitual=_txt(f.get("proveedor_habitual")),
+                    notas=_recortar(_txt(f.get("notas")), 2000),
+                )
+            )
+        except ValueError as exc:
+            p.errores.append(f"inventario, fila {linea}: {exc}")
+    return p
+
+
+def _opciones_de_producto(catalogo: Catalogo, texto: str, maximo: int = 5) -> list[str]:
+    """Nombres del catálogo que comparten una palabra (4+ letras) con el texto."""
+    palabras = {w for w in normalizar_texto(texto).split() if len(w) >= 4}
+    if not palabras:
+        return []
+    return sorted(
+        p.nombre
+        for p in catalogo.productos.values()
+        if palabras & set(normalizar_texto(p.nombre).split())
+    )[:maximo]
+
+
+def _resolver_formato(
+    catalogo: Catalogo,
+    formatos: list[tuple[int, str, float]],
+    producto_id: int,
+    texto: str,
+    del_alias: int | None,
+) -> int | None:
+    """Formato del producto que nombra `texto` (por nombre exacto o por su factor); sin texto,
+    el que dio la sugerencia o, si no, el formato base. None = no existe."""
+    if not texto:
+        if del_alias is not None:
+            return del_alias
+        return next((i for i, _n, fac in formatos if abs(fac - 1.0) < 1e-9), None)
+    clave = norm(texto)
+    for i, nombre, _fac in formatos:
+        if norm(nombre) == clave:
+            return i
+    return formato_de_texto(catalogo.productos[producto_id], texto)
+
+
+def aplicar_inventario(
+    session: Session,
+    empresa_id: int,
+    planilla: PlanillaInventario,
+    usuario_id: int | None = None,
+) -> ResumenInventario:
+    """Escribe el inventario (flush, sin commit); la vista previa es esto + rollback.
+
+    Cada producto se resuelve al canónico con las reglas de §1.3 (nombre exacto o sugerencia
+    única y de confianza alta): si es ambiguo o no hay, la fila es un error CON las opciones y no
+    rompe el lote. El stock de la planilla es el stock final: la diferencia queda como
+    movimiento `ajuste` (referencia «planilla»). `proveedor_habitual` se busca por RUT o nombre
+    entre los proveedores de la empresa; si no existe, aviso y queda sin proveedor habitual."""
+    from app.mercado import oferta_propia as op  # lazy: oferta_propia no importa este módulo
+
+    r = ResumenInventario(ejemplos=planilla.ejemplos, errores=list(planilla.errores))
+    if not planilla.filas:
+        return r
+    catalogo = cargar_catalogo(session)
+    formatos: dict[int, list[tuple[int, str, float]]] = {}
+    for fid, pid, nombre, factor in session.execute(
+        select(
+            ProductoFormato.id,
+            ProductoFormato.producto_id,
+            ProductoFormato.nombre,
+            ProductoFormato.factor_base,
+        ).where(ProductoFormato.producto_id.in_(list(catalogo.productos)))
+    ):
+        formatos.setdefault(pid, []).append((fid, nombre, factor))
+    indice = _Indice(session, empresa_id)
+
+    for fila in planilla.filas:
+        s = sugerir_vinculo(catalogo, fila.producto, fila.formato)
+        if s is None:
+            opciones = _opciones_de_producto(catalogo, fila.producto)
+            sugerencia = (
+                f"; opciones: {', '.join(opciones)}"
+                if opciones
+                else "; escríbelo como en el catálogo (Demanda MP) o créalo ahí"
+            )
+            r.errores.append(
+                f"inventario, fila {fila.linea}: no pude identificar el producto "
+                f"{fila.producto!r} en el catálogo{sugerencia}"
+            )
+            continue
+        producto_id, del_alias = s
+        formato_id = _resolver_formato(
+            catalogo, formatos.get(producto_id, []), producto_id, fila.formato, del_alias
+        )
+        if formato_id is None:
+            nombres = ", ".join(n for _i, n, _f in formatos.get(producto_id, []))
+            r.errores.append(
+                f"inventario, fila {fila.linea}: el formato {fila.formato!r} no existe para "
+                f"{catalogo.productos[producto_id].nombre!r} (formatos: {nombres or 'ninguno'}); "
+                "agrégalo en Demanda MP → Productos"
+            )
+            continue
+        habitual: int | None | op._Sin = op.SIN
+        if fila.proveedor_habitual:
+            try:
+                rut: str | None = normalizar_rut(fila.proveedor_habitual)
+            except ValueError:
+                rut = None
+            prov, _ = indice.resolver(fila.proveedor_habitual, rut)
+            if prov is None:
+                r.avisos.append(
+                    f"inventario, fila {fila.linea}: el proveedor habitual "
+                    f"{fila.proveedor_habitual!r} no está en tu empresa; "
+                    "quedó sin proveedor habitual"
+                )
+                habitual = None
+            else:
+                habitual = prov.id
+        try:
+            _, estado = op.guardar(
+                session,
+                empresa_id,
+                usuario_id,
+                producto_id=producto_id,
+                formato_id=formato_id,
+                stock=fila.stock,
+                stock_minimo=op.SIN if fila.stock_minimo is None else fila.stock_minimo,
+                plazo=op.SIN if fila.plazo is None else fila.plazo,
+                proveedor_habitual_id=habitual,
+                marca=op.SIN if fila.marca is None else fila.marca,
+                notas=op.SIN if fila.notas is None else fila.notas,
+                referencia="planilla",
+            )
+        except (op.ErrorInventario, op.InventarioAjeno) as exc:
+            r.errores.append(f"inventario, fila {fila.linea}: {exc}")
+            continue
+        if estado == "nuevo":
+            r.nuevos += 1
+        elif estado == "actualizado":
+            r.actualizados += 1
+        else:
+            r.sin_cambios += 1
+    return r
+
+
+def generar_plantilla_inventario_xlsx() -> bytes:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "inventario"
+    ws.append(COLUMNAS_INVENTARIO)
+    ws.append(["EJEMPLO Arroz grado 1 (borrar)", "saco 25 kg", 4, 2, 7, "Tucapel",
+               "EJEMPLO Distribuidora X", "Se pide los lunes"])  # fmt: skip
+    ws = wb.create_sheet("Instrucciones")
+    for linea in (
+        "Hoja 'inventario': una fila por producto y formato que TIENES o vendes.",
+        "producto: como se llama en el catálogo (Demanda MP). Si no lo reconoce, la fila "
+        "queda con error y te propone opciones.",
+        "formato: como se llama el formato en el catálogo ('saco 25 kg') o como se escribiría "
+        "('25 kg'). En blanco = la unidad base del producto (kilo, litro o unidad).",
+        "stock: cuántas UNIDADES DEL FORMATO tienes ahora (4 sacos de 25 kg = 4). Es el stock "
+        "final: la diferencia con el actual queda anotada como ajuste. En blanco = no cambia.",
+        "stock_minimo: bajo ese disponible el producto se marca en rojo. plazo_reposicion_dias: "
+        "lo que tarda tu proveedor habitual en entregarte.",
+        "proveedor_habitual: nombre o RUT de un proveedor ya cargado en Catálogo Proveedores.",
+        "Las filas cuyo producto empieza con EJEMPLO se ignoran. Subir el mismo archivo dos "
+        "veces no duplica nada.",
+    ):
+        ws.append([linea])
+    ws.column_dimensions["A"].width = 120
     salida = io.BytesIO()
     wb.save(salida)
     return salida.getvalue()

@@ -707,7 +707,7 @@ def quitar_linea_manual(session: Session, linea: CaLinea) -> None:
 
 def fusionar_productos(session: Session, origen_id: int, destino_id: int) -> dict[str, int]:
     """Fusiona `origen` en `destino` (solo admin, lo valida la ruta): mueve líneas, alias,
-    costos de proveedores y formatos; el origen queda INACTIVO (no se borra: así la semilla no
+    costos de proveedores, inventario de las empresas y formatos; el origen queda INACTIVO (no se borra: así la semilla no
     lo resucita). Los formatos con el mismo factor se unifican con los del destino."""
     if origen_id == destino_id:
         raise CatalogoError("Elige dos productos distintos")
@@ -751,6 +751,9 @@ def fusionar_productos(session: Session, origen_id: int, destino_id: int) -> dic
             session.execute(
                 update(tabla).where(tabla.formato_id == viejo).values(formato_id=nuevo_id)
             )
+    from app.mercado.oferta_propia import fusionar_inventario  # lazy: importa este módulo
+
+    fusionar_inventario(session, origen.id, destino.id, mapa)  # F-plat-capas: capa «Inventario»
     factores: dict[int, float] = {
         fid: fac
         for fid, fac in session.execute(

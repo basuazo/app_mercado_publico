@@ -247,7 +247,7 @@ def test_menu_usuario_con_empresa(client, engine, settings):
     uid = _usuario(engine, "u@t.cl")
     cookies, _ = _sesion(settings, uid)
     nav = _hrefs(client.get("/cuenta", cookies=cookies).text)
-    assert {"/", "/catalogo", "/proveedores", "/proveedores/logistica", "/cuenta"} <= nav
+    assert {"/", "/catalogo", "/proveedores", "/inventario", "/proveedores/logistica", "/cuenta"} <= nav
     assert not nav & {"/archivo", "/perfiles", "/registro", "/plan-anual", "/admin/empresas", "/salud"}
 
 
@@ -267,3 +267,4 @@ def test_menu_sin_empresa_no_ofrece_plataforma(client, engine, settings):
     cookies, _ = _sesion(settings, uid)
     nav = _hrefs(client.get("/cuenta", cookies=cookies).text)
     assert "/catalogo" not in nav and "/proveedores" not in nav and "/archivo" not in nav
+    assert "/inventario" not in nav

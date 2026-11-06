@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 from datetime import date
 from typing import Any
 from urllib.parse import quote
@@ -27,8 +28,10 @@ from app.api.deps import (
     html_require_user,
 )
 from app.api.routes.pages import _TEMPLATES, _ctx, _es_htmx
+from app.api.selector import contexto_selector, entero_o_none
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
-from app.mercado import importar
+from app.mercado import importar, vinculo
+from app.mercado.catalogo import cargar_catalogo
 from app.mercado.proveedores import (
     UNIDADES,
     asegurar_tarifas_iniciales,
@@ -43,6 +46,7 @@ from app.models.seeds import REGIONES
 from app.models.tables import (
     CostoHistorial,
     Empresa,
+    ProductoCanonico,
     Proveedor,
     ProveedorProducto,
     TarifaLogistica,
@@ -420,11 +424,46 @@ async def proveedores_lista(
             )
         ).scalars():
             n_productos[pid] = n_productos.get(pid, 0) + 1
+    sin_vincular, _total = vinculo.contar_sin_vincular(session, empresa_id)
     return _TEMPLATES.TemplateResponse(
         request,
         "proveedores.html",
-        _ctx(request, user, proveedores=todos, n_productos=n_productos, q=q, mensaje=mensaje),
+        _ctx(
+            request,
+            user,
+            proveedores=todos,
+            n_productos=n_productos,
+            q=q,
+            mensaje=mensaje,
+            sin_vincular=sin_vincular,
+        ),
     )
+
+
+_VOLVER = re.compile(r"^/proveedores(/\d+)?$")
+
+
+@router.post("/proveedores/vincular-pendientes", response_model=None)
+async def proveedores_vincular_pendientes(
+    request: Request,
+    volver: str = Form("/proveedores"),
+    csrf_token: str = Form(""),
+    ue: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """«Vincular pendientes» (F-plat-capas §1.3): aplica la sugerencia única y de confianza alta
+    a los productos de proveedores de LA EMPRESA que no tienen producto del catálogo.
+    Idempotente: no pisa vínculos. No es una migración: la pulsa una persona."""
+    check_csrf(request, csrf_token)
+    _, empresa_id = ue
+    r = vinculo.vincular_pendientes(session, empresa_id)
+    session.commit()
+    texto = (
+        f"Vinculados al catálogo: {r['vinculados']}. "
+        f"Siguen sin vincular: {r['sin_vincular']} (elige el producto a mano al editarlos)."
+    )
+    destino = volver if _VOLVER.fullmatch(volver) else "/proveedores"
+    return RedirectResponse(url=f"{destino}?mensaje={quote(texto)}", status_code=303)
 
 
 # --- Plantilla, importación y logística (antes de /proveedores/{id}) ----------
@@ -891,6 +930,7 @@ async def proveedor_lista_precios_confirmar(
 async def proveedor_ficha(
     request: Request,
     proveedor_id: int,
+    mensaje: str = "",
     ue: tuple[Usuario, int] = Depends(html_require_empresa),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -904,9 +944,24 @@ async def proveedor_ficha(
         ).scalars()
     )
     variaciones = variaciones_de(session, productos)
+    ids_canonicos = {pp.producto_id for pp in productos if pp.producto_id is not None}
+    nombres_canonicos: dict[int, str] = (
+        {
+            i: n
+            for i, n in session.execute(
+                select(ProductoCanonico.id, ProductoCanonico.nombre).where(
+                    ProductoCanonico.id.in_(ids_canonicos)
+                )
+            )
+        }
+        if ids_canonicos
+        else {}
+    )
+    sin_vincular, _total = vinculo.contar_sin_vincular(session, empresa_id, prov.id)
     filas = [
         {
             "pp": pp,
+            "catalogo": nombres_canonicos.get(pp.producto_id) if pp.producto_id else None,
             "v": variaciones[pp.id],
             "por_unidad": (
                 pp.precio_neto_actual / pp.factor_base
@@ -919,7 +974,15 @@ async def proveedor_ficha(
     return _TEMPLATES.TemplateResponse(
         request,
         "proveedor_ficha.html",
-        _ctx(request, user, p=prov, filas=filas, rubros_texto=", ".join(prov.rubros or [])),
+        _ctx(
+            request,
+            user,
+            p=prov,
+            filas=filas,
+            rubros_texto=", ".join(prov.rubros or []),
+            sin_vincular=sin_vincular,
+            mensaje=mensaje,
+        ),
     )
 
 
@@ -931,7 +994,7 @@ def _valores_producto(pp: ProveedorProducto | None) -> dict[str, Any]:
         return {
             "producto_texto": "", "formato_texto": "", "factor_base": "", "unidad_base": "",
             "precio_neto": "", "vigente_desde": hoy_chile().isoformat(), "disponible": True,
-            "codigo_unspsc": "",
+            "codigo_unspsc": "", "producto_id": "", "formato_id": "",
         }  # fmt: skip
     return {
         "producto_texto": pp.producto_texto,
@@ -942,12 +1005,15 @@ def _valores_producto(pp: ProveedorProducto | None) -> dict[str, Any]:
         "vigente_desde": hoy_chile().isoformat(),
         "disponible": pp.disponible,
         "codigo_unspsc": pp.codigo_unspsc or "",
+        "producto_id": pp.producto_id or "",
+        "formato_id": pp.formato_id or "",
     }
 
 
 def _form_producto(
     request: Request,
     user: Usuario,
+    session: Session,
     prov: Proveedor,
     pp: ProveedorProducto | None,
     valores: dict[str, Any] | None = None,
@@ -955,6 +1021,8 @@ def _form_producto(
     status_code: int = 200,
 ) -> HTMLResponse:
     base = f"/proveedores/{prov.id}/productos"
+    form_id = f"prod-{prov.id}-{pp.id if pp else 'nuevo'}"
+    vals = valores if valores is not None else _valores_producto(pp)
     return _TEMPLATES.TemplateResponse(
         request,
         "_producto_form.html",
@@ -962,12 +1030,19 @@ def _form_producto(
             request,
             user,
             f={
-                "form_id": f"prod-{prov.id}-{pp.id if pp else 'nuevo'}",
+                "form_id": form_id,
                 "action": base if pp is None else f"{base}/{pp.id}",
                 "editando": pp is not None,
-                "valores": valores if valores is not None else _valores_producto(pp),
+                "valores": vals,
                 "errores": errores or {},
                 "unidades": UNIDADES,
+                # F-plat-capas §1.3: «producto del catálogo» con el selector de las líneas de CA.
+                "cat": contexto_selector(
+                    session,
+                    entero_o_none(vals.get("producto_id")),
+                    entero_o_none(vals.get("formato_id")),
+                    form_id,
+                ),
             },
         ),
         status_code=status_code,
@@ -982,7 +1057,7 @@ async def producto_form_nuevo(
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     prov = _proveedor_o_404(session, ue[1], proveedor_id)
-    return _form_producto(request, ue[0], prov, None)
+    return _form_producto(request, ue[0], session, prov, None)
 
 
 @router.get("/proveedores/{proveedor_id}/productos/{producto_id}/form", response_class=HTMLResponse)
@@ -995,7 +1070,7 @@ async def producto_form_editar(
 ) -> HTMLResponse:
     prov = _proveedor_o_404(session, ue[1], proveedor_id)
     pp = _producto_o_404(session, prov, producto_id)
-    return _form_producto(request, ue[0], prov, pp)
+    return _form_producto(request, ue[0], session, prov, pp)
 
 
 async def _guardar_producto_form(
@@ -1009,8 +1084,10 @@ async def _guardar_producto_form(
     check_csrf(request, str(form.get("csrf_token", "")))
     campos = {
         k: str(form.get(k, ""))
-        for k in ["producto_texto", "formato_texto", "factor_base", "unidad_base", "precio_neto", "vigente_desde", "codigo_unspsc"]
+        for k in ["producto_texto", "formato_texto", "factor_base", "unidad_base", "precio_neto", "vigente_desde", "codigo_unspsc", "producto_id", "formato_id"]
     }
+    producto_id = entero_o_none(campos["producto_id"])
+    formato_id = entero_o_none(campos["formato_id"])
     disponible = bool(form.get("disponible"))
     errores: dict[str, str] = {}
     producto = pp.producto_texto if pp else campos["producto_texto"].strip()
@@ -1039,23 +1116,34 @@ async def _guardar_producto_form(
         errores["producto_texto"] = "Ese producto con ese formato ya existe: edítalo en la tabla"
     if errores:
         return _form_producto(
-            request, user, prov, pp, {**campos, "disponible": disponible}, errores, 422
+            request, user, session, prov, pp, {**campos, "disponible": disponible}, errores, 422
         )
     assert precio is not None
-    guardar_producto(
-        session,
-        prov,
-        producto_texto=producto,
-        formato_texto=formato,
-        precio_neto=precio,
-        vigente_desde=vigente,
-        factor_base=factor,
-        unidad_base=unidad,
-        codigo_unspsc=campos["codigo_unspsc"],
-        disponible=disponible,
-        fuente="manual",
-        usuario_id=user.id,
-    )
+    try:
+        guardar_producto(
+            session,
+            prov,
+            producto_texto=producto,
+            formato_texto=formato,
+            precio_neto=precio,
+            vigente_desde=vigente,
+            factor_base=factor,
+            unidad_base=unidad,
+            codigo_unspsc=campos["codigo_unspsc"],
+            disponible=disponible,
+            fuente="manual",
+            usuario_id=user.id,
+            producto_id=producto_id,
+            formato_id=formato_id if producto_id is not None else None,
+            # Sin producto elegido: se vincula solo si la sugerencia es única y de confianza alta.
+            catalogo=cargar_catalogo(session) if producto_id is None else None,
+        )
+    except ValueError as exc:  # el vínculo elegido no calza (formato ajeno, unidad distinta)
+        session.rollback()
+        return _form_producto(
+            request, user, session, prov, pp,
+            {**campos, "disponible": disponible}, {"producto_id": str(exc)}, 422,
+        )  # fmt: skip
     session.commit()
     url = f"/proveedores/{prov.id}"
     if _es_htmx(request):

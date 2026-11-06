@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ p.nombre }} — Proveedores — Rastrillo{% endblock %}
+{% block title %}{{ p.nombre }} — {{ nav.CATALOGO_PROVEEDORES }} — Rastrillo{% endblock %}
 {% macro variacion(pct) -%}
   {%- if pct is none %}<span class="text-muted">—</span>
   {%- elif pct > 0 %}<span class="text-danger">▲ {{ "%.1f"|format(pct) }}%</span>
@@ -7,7 +7,7 @@
   {%- else %}<span class="text-muted">0%</span>{% endif -%}
 {%- endmacro %}
 {% block content %}
-<p class="mb-2"><a href="/proveedores">← Proveedores</a></p>
+<p class="mb-2"><a href="/proveedores">← {{ nav.CATALOGO_PROVEEDORES }}</a></p>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h2 class="mb-0">{{ p.nombre }}{% if not p.activo %} <span class="badge bg-secondary">inactivo</span>{% endif %}</h2>
   <div class="d-flex gap-2">
@@ -20,6 +20,7 @@
   </div>
 </div>
 
+{% if mensaje %}<div class="alert alert-success">{{ mensaje }}</div>{% endif %}
 <div id="form-proveedor"></div>
 
 <div class="card mb-4">
@@ -41,9 +42,18 @@
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <h3 class="h5 mb-0">Productos y precios</h3>
-  <button class="btn btn-primary btn-sm" type="button"
-          hx-get="/proveedores/{{ p.id }}/productos/form" hx-target="#form-producto" hx-swap="innerHTML">Agregar producto</button>
+  <h3 class="h5 mb-0">Productos y precios
+    {% if sin_vincular %}<span class="badge text-bg-warning fw-normal align-middle" data-sin-vincular="{{ sin_vincular }}"
+          title="Sin producto del catálogo: no entran al mejor costo ni a «mi oferta» por producto">{{ sin_vincular }} sin vincular</span>{% endif %}</h3>
+  <div class="d-flex gap-2">
+    {% if sin_vincular %}<form method="post" action="/proveedores/vincular-pendientes" class="m-0 d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="volver" value="/proveedores/{{ p.id }}">
+      <button class="btn btn-outline-secondary btn-sm" title="Aplica el producto del catálogo cuando la sugerencia es única y de confianza alta. No cambia los que ya tienen producto.">Vincular pendientes ({{ sin_vincular }})</button>
+    </form>{% endif %}
+    <button class="btn btn-primary btn-sm" type="button"
+            hx-get="/proveedores/{{ p.id }}/productos/form" hx-target="#form-producto" hx-swap="innerHTML">Agregar producto</button>
+  </div>
 </div>
 <div id="form-producto"></div>
 
@@ -66,7 +76,7 @@
 <table class="table table-sm align-middle">
   <thead class="table-dark">
     <tr>
-      <th scope="col">Producto</th><th scope="col">Formato</th>
+      <th scope="col">Producto</th><th scope="col">Formato</th><th scope="col">{{ nav.DEMANDA_MP }}</th>
       <th scope="col" class="text-end">Precio neto</th><th scope="col" class="text-end">Por kg/L/u</th>
       <th scope="col">vs anterior</th><th scope="col">vs 90 días</th><th scope="col">Desde</th><th scope="col"><span class="visually-hidden">Acciones</span></th>
     </tr>
@@ -77,6 +87,7 @@
     <tr{% if not pp.disponible %} class="text-muted"{% endif %}>
       <td>{{ pp.producto_texto }}{% if not pp.disponible %} <span class="badge bg-secondary">no disponible</span>{% endif %}</td>
       <td>{{ pp.formato_texto or "—" }}</td>
+      <td>{% if fila.catalogo %}{{ fila.catalogo }}{% else %}<span class="badge text-bg-warning fw-normal" data-sin-vincular-fila>sin vincular</span>{% endif %}</td>
       <td class="text-end">{{ pp.precio_neto_actual|clp }}</td>
       <td class="text-end">{% if fila.por_unidad is not none %}{{ fila.por_unidad|clp }}/{{ pp.unidad_base }}{% else %}<span class="text-muted" title="Sin factor y unidad base: no compite">—</span>{% endif %}</td>
       <td>{{ variacion(fila.v.pct_vs_anterior) }}</td>
@@ -89,9 +100,9 @@
                 hx-get="/proveedores/{{ p.id }}/productos/{{ pp.id }}/historial" hx-target="#hist-{{ pp.id }}" hx-swap="innerHTML">Historial</button>
       </td>
     </tr>
-    <tr><td colspan="8" class="p-0 border-0"><div id="hist-{{ pp.id }}"></div></td></tr>
+    <tr><td colspan="9" class="p-0 border-0"><div id="hist-{{ pp.id }}"></div></td></tr>
     {% else %}
-    <tr><td colspan="8" class="text-muted">Sin productos todavía.</td></tr>
+    <tr><td colspan="9" class="text-muted">Sin productos todavía.</td></tr>
     {% endfor %}
   </tbody>
 </table>
