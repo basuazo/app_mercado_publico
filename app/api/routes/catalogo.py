@@ -2,7 +2,7 @@
 
 Usuarios con empresa activa (el admin sin empresa no entra: regla 26). El catálogo es COMÚN:
 las correcciones son compartidas y `revisado_por` deja la huella. Crear y editar productos:
-cualquier usuario con empresa; fusionar: solo admin. Las líneas se ven solo para CA de las
+cualquier usuario con empresa; fusionar y los impuestos específicos (F-plat-impuestos): solo admin. Las líneas se ven solo para CA de las
 regiones activas. Los mensajes de error no filtran datos de otras empresas: no hay ninguno.
 """
 
@@ -25,12 +25,15 @@ from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
 from app.core.tiempo import ahora_utc
 from app.mercado import anexos, auto_revision
 from app.mercado import catalogo as cat
+from app.mercado import impuestos as imp
+from app.mercado.proveedores import hoy_chile
 from app.mercado.territorio import regiones_activas
 from app.models.enums import RolUsuario
 from app.models.tables import (
     CaAnexo,
     CaLinea,
     CompraAgil,
+    FamiliaImpuesto,
     ProductoAlias,
     ProductoCanonico,
     ProductoFormato,
@@ -40,7 +43,7 @@ from app.models.tables import (
 router = APIRouter()
 
 POR_PAGINA = 25
-_TABS = ("pendientes", "productos", "alias")
+_TABS = ("pendientes", "productos", "alias", "impuestos")
 _BLOQUES = ("vigentes", "historicas")
 ETIQUETA_BANDERA = {
     "completo": ("Completo", "success"),
@@ -239,6 +242,28 @@ async def catalogo_get(
             "total": total,
             "n_lineas": conteo_lineas,
             "familias": sorted(set(FAMILIAS_ALIMENTOS.values())),
+        }
+    elif tab == "impuestos":
+        tabla = imp.cargar(session)
+        datos = {
+            "imp_tasas": [i for filas in tabla.tasas.values() for i in filas],
+            "imp_codigos": tabla.codigos,
+            "imp_reglas": list(
+                session.execute(select(FamiliaImpuesto).order_by(FamiliaImpuesto.familia)).scalars()
+            ),
+            "imp_por_clasificar": imp.por_clasificar(session, tabla),
+            "familias": sorted(
+                set(FAMILIAS_ALIMENTOS.values())
+                | {
+                    f
+                    for f in session.execute(
+                        select(ProductoCanonico.familia).where(ProductoCanonico.familia.is_not(None))
+                    ).scalars()
+                    if f
+                }
+            ),
+            "sin_impuesto": imp.SIN_IMPUESTO,
+            "total": 0,
         }
     else:
         nq = normalizar_texto(q)
@@ -891,6 +916,8 @@ async def catalogo_producto_get(
         for o in _productos_activos(session, "", 400)
         if o.id != p.id and o.unidad_base == p.unidad_base
     ]
+    tabla = imp.cargar(session)
+    regla = tabla.regla(p.familia)
     return _TEMPLATES.TemplateResponse(
         request,
         "catalogo_producto.html",
@@ -909,6 +936,11 @@ async def catalogo_producto_get(
             ).scalar_one(),
             fusionables=otros,
             es_admin=user.rol == RolUsuario.ADMIN,
+            imp_resuelto=imp.etiqueta(tabla.de_producto(p.impuesto_codigo, p.familia, hoy_chile()))
+            or "sin impuesto específico",
+            imp_regla=regla,
+            imp_codigos=tabla.codigos,
+            sin_impuesto=imp.SIN_IMPUESTO,
             familias=sorted(set(FAMILIAS_ALIMENTOS.values())),
             mensaje=mensaje,
             error=error,
@@ -1028,3 +1060,79 @@ def lineas_para_ficha(
         "sin_detalle": ca.detalle_lineas == "sin_detalle",
         "n_documentos": ca.n_documentos,
     }
+
+
+# ===========================================================================
+# Impuestos específicos (F-plat-impuestos): el catálogo es común → solo admin
+# ===========================================================================
+
+
+def _solo_admin(user: Usuario) -> None:
+    if user.rol != RolUsuario.ADMIN:
+        raise HTTPException(
+            status_code=403, detail="Solo un administrador edita los impuestos del catálogo"
+        )
+
+
+@router.post("/catalogo/impuestos/familia", response_model=None)
+async def catalogo_impuesto_familia(
+    request: Request,
+    familia: str = Form(""),
+    impuesto_codigo: str = Form(""),
+    modo: str = Form("aplica"),
+    quitar: str = Form(""),
+    csrf_token: str = Form(""),
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """Regla de una familia: su impuesto y su modo (`aplica` | `clasificar`); `quitar` la borra."""
+    check_csrf(request, csrf_token)
+    user, _ = ctx
+    _solo_admin(user)
+    try:
+        if quitar:
+            imp.quitar_regla_familia(session, familia)
+            texto = f"Regla de «{familia}» quitada"
+        else:
+            r = imp.guardar_regla_familia(session, familia, impuesto_codigo, modo, user.id)
+            texto = f"«{r.familia}»: {r.impuesto_codigo} ({r.modo})"
+    except imp.ErrorImpuesto as exc:
+        session.rollback()
+        return _redir_catalogo("impuestos", "error", str(exc))
+    session.commit()
+    return _redir_catalogo("impuestos", "mensaje", texto)
+
+
+@router.post("/catalogo/impuestos/productos", response_model=None)
+async def catalogo_impuesto_productos(
+    request: Request,
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """Asignación en bloque: `producto_id` (varios) + `impuesto_codigo` (vacío = según familia).
+    `volver = ficha` regresa a la ficha del (único) producto."""
+    form = await request.form()
+    check_csrf(request, str(form.get("csrf_token", "")))
+    user, _ = ctx
+    _solo_admin(user)
+    ids = [int(str(v)) for v in form.getlist("producto_id") if str(v).isdigit()]
+    codigo = str(form.get("impuesto_codigo", ""))
+    ficha = str(form.get("volver", "")) == "ficha" and len(ids) == 1
+    try:
+        if not ids:
+            raise imp.ErrorImpuesto("Marca al menos un producto")
+        n = imp.asignar_a_productos(session, ids, codigo)
+    except imp.ErrorImpuesto as exc:
+        session.rollback()
+        if ficha:
+            return RedirectResponse(
+                f"/catalogo/productos/{ids[0]}?error={quote(str(exc))}", status_code=303
+            )
+        return _redir_catalogo("impuestos", "error", str(exc))
+    session.commit()
+    texto = f"Impuesto asignado a {n} producto(s)"
+    if ficha:
+        return RedirectResponse(
+            f"/catalogo/productos/{ids[0]}?mensaje={quote(texto)}", status_code=303
+        )
+    return _redir_catalogo("impuestos", "mensaje", texto)

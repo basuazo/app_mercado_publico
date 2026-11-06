@@ -30,7 +30,7 @@ from app.api.deps import (
 from app.api.routes.pages import _TEMPLATES, _ctx, _es_htmx
 from app.api.selector import contexto_selector, entero_o_none
 from app.catalogos.mercado import FAMILIAS_ALIMENTOS, norm
-from app.mercado import importar, vinculo
+from app.mercado import importar, impuestos, vinculo
 from app.mercado import requisitos as rq
 from app.mercado.catalogo import cargar_catalogo
 from app.mercado.proveedores import (
@@ -465,6 +465,7 @@ async def proveedores_lista(
     q: str = "",
     mensaje: str = "",
     vencidos: str = "",
+    por_clasificar: str = "",
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
@@ -478,6 +479,10 @@ async def proveedores_lista(
     n_vencidos = vencidos_por_proveedor(session, empresa_id)
     if vencidos == "1":
         todos = [p for p in todos if n_vencidos.get(p.id)]
+    # F-plat-impuestos: productos de la empresa cuyo impuesto está por clasificar.
+    n_por_clasificar = impuestos.por_clasificar_por_proveedor(session, empresa_id)
+    if por_clasificar == "1":
+        todos = [p for p in todos if n_por_clasificar.get(p.id)]
     if termino:
         t = norm(termino)
         todos = [
@@ -511,6 +516,9 @@ async def proveedores_lista(
             total_vencidos=sum(n_vencidos.values()),
             solo_vencidos=vencidos == "1",
             dias_vigencia=dias_vigencia(session, empresa_id),
+            n_por_clasificar=n_por_clasificar,
+            total_por_clasificar=sum(n_por_clasificar.values()),
+            solo_por_clasificar=por_clasificar == "1",
         ),
     )
 
@@ -1033,8 +1041,20 @@ async def proveedor_ficha(
         else {}
     )
     sin_vincular, _total = vinculo.contar_sin_vincular(session, empresa_id, prov.id)
+    # F-plat-impuestos: neto y bruto (en la fecha de cada costo) y la pista que el catálogo contradice.
+    tabla_imp = impuestos.cargar(session)
+    por_pp = impuestos.de_proveedor_productos(session, productos, tabla_imp)
+    canon_imp = impuestos.datos_productos(session, ids_canonicos)
     filas = [
         {
+            "impuesto": por_pp.get(pp.id),
+            "bruto": impuestos.bruto(pp.precio_neto_actual, por_pp.get(pp.id)),
+            "por_clasificar": por_pp.get(pp.id) is impuestos.POR_CLASIFICAR,
+            "etiqueta_impuesto": impuestos.etiqueta(por_pp.get(pp.id)),
+            "contradice": pp.producto_id is not None
+            and impuestos.pista_contradice(
+                tabla_imp, pp.impuesto_codigo, *canon_imp.get(pp.producto_id, (None, None))
+            ),
             "pp": pp,
             "catalogo": nombres_canonicos.get(pp.producto_id) if pp.producto_id else None,
             "v": variaciones[pp.id],

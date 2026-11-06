@@ -14,6 +14,10 @@ proveedores, ofertas pre-llenadas, reserva de stock y «En trabajo».
   planilla nunca llevan el código de la CA ni el comprador (no revelar qué se cotiza).
 - La respuesta vuelve a `proveedor_productos` por `proveedores.guardar_producto` (fuente
   `solicitud`, vigente hoy, con historial) y el lote se recalcula.
+- F-plat-impuestos: el mensaje y la planilla piden el precio CON IVA e impuestos (así cotiza el
+  proveedor). Al anotar la respuesta se guarda el NETO calculado con el impuesto del catálogo
+  (`impuestos.neto_desde_bruto`), en `solicitud_lineas` y en el costo; la pantalla y la planilla
+  lo vuelven a mostrar en bruto. Un producto «impuesto por clasificar» se guarda neto solo de IVA.
 
 Estados: abierto → solicitado (≥ 1 enviada) → con_precios (todas respondidas o sin respuesta) →
 ofertado (reserva el stock) → cerrado (libera). Hacia atrás es libre salvo desde `cerrado`.
@@ -39,6 +43,7 @@ from app.core.retencion import registrar_purga
 from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.mercado import adjudicacion as adj
 from app.mercado import equipo as eq
+from app.mercado import impuestos as imp
 from app.mercado import oferta as of
 from app.mercado import oferta_propia as op
 from app.mercado.catalogo import REEMPLAZADA
@@ -681,9 +686,9 @@ _PLANTILLA_MENSAJE = _ENTORNO_TEXTO.from_string(
     "\n"
     "{% for l in lineas %}- {{ l.producto }} · {{ l.formato }} · {{ l.cantidad }}\n{% endfor %}"
     "\n"
-    "¿Nos puede enviar{% if fecha %}, antes del {{ fecha }},{% endif %} el precio neto (sin IVA) "
-    "por formato, la disponibilidad y el plazo de entrega de cada uno? Si tiene precio por "
-    "volumen, indíquenos desde qué cantidad aplica.\n"
+    "¿Nos puede enviar{% if fecha %}, antes del {{ fecha }},{% endif %} el precio final por "
+    "formato, con IVA e impuestos incluidos (ILA si corresponde), la disponibilidad y el plazo "
+    "de entrega de cada uno? Si tiene precio por volumen, indíquenos desde qué cantidad aplica.\n"
     "\n"
     "Gracias.\n"
 )
@@ -708,19 +713,33 @@ class FilaSolicitud:
     producto: str
     formato: str
     unidad_base: str
+    impuesto: imp.Resolucion = None  # F-plat-impuestos: el del catálogo, hoy
+
+    @property
+    def por_clasificar(self) -> bool:
+        return self.impuesto is imp.POR_CLASIFICAR
+
+    @property
+    def precio_bruto(self) -> float | None:
+        """Lo guardado es neto; se muestra y se pide en bruto (con IVA e impuestos)."""
+        p = self.solicitud_linea.precio_respuesta
+        return None if p is None else round(imp.bruto(p, self.impuesto), 2)
 
     @property
     def tramos_txt(self) -> str:
-        """«10:950; 50:900» (el mismo formato que se tipea y que trae la planilla)."""
+        """«10:950; 50:900» en BRUTO (el mismo formato que se tipea y que trae la planilla)."""
         return "; ".join(
-            f"{float(t['desde']):g}:{float(t['precio']):g}"
+            f"{float(t['desde']):g}:{round(imp.bruto(float(t['precio']), self.impuesto)):g}"
             for t in (self.solicitud_linea.tramos or [])
             if isinstance(t, dict) and "desde" in t and "precio" in t
         )
 
 
-def filas_de(session: Session, solicitud: SolicitudPrecio) -> list[FilaSolicitud]:
+def filas_de(
+    session: Session, solicitud: SolicitudPrecio, hoy: date | None = None
+) -> list[FilaSolicitud]:
     out: list[FilaSolicitud] = []
+    dia = hoy or hoy_chile()
     for sl, ll, pnom, ub, fnom in session.execute(
         select(
             SolicitudLinea,
@@ -736,7 +755,12 @@ def filas_de(session: Session, solicitud: SolicitudPrecio) -> list[FilaSolicitud
         .order_by(ProductoCanonico.nombre, SolicitudLinea.id)
     ).all():
         out.append(FilaSolicitud(sl, ll, pnom, fnom, ub))
-    return out
+    impuestos = imp.de_productos(session, [f.lote_linea.producto_id for f in out], dia)
+    return [
+        FilaSolicitud(f.solicitud_linea, f.lote_linea, f.producto, f.formato, f.unidad_base,
+                      impuestos.get(f.lote_linea.producto_id))  # fmt: skip
+        for f in out
+    ]
 
 
 def generar_texto(session: Session, solicitud: SolicitudPrecio, lote: Lote) -> str:
@@ -919,16 +943,23 @@ def marcar_sin_respuesta(
 
 @dataclass(frozen=True)
 class Respuesta:
-    """Lo que respondió el proveedor por línea (precio neto por formato de compra)."""
+    """Lo que respondió el proveedor por línea, por formato de compra. `bruto = True` (pantalla y
+    planilla nueva): precio y tramos vienen con IVA e impuestos y se guardan en neto."""
 
     precio: float | None
     tramos: list[dict[str, float]] | None = None
     disponible: bool | None = None
     plazo_dias: int | None = None
+    bruto: bool = False
 
 
 def validar_respuesta(
-    precio: Any, tramos_txt: str = "", disponible: Any = None, plazo: Any = None
+    precio: Any,
+    tramos_txt: str = "",
+    disponible: Any = None,
+    plazo: Any = None,
+    *,
+    bruto: bool = False,
 ) -> Respuesta:
     """Del formulario o la planilla a una `Respuesta` válida (ErrorLote si no). `tramos_txt`:
     «desde:precio» separados por `;` o salto de línea (p. ej. «10:950; 50:900»)."""
@@ -955,7 +986,7 @@ def validar_respuesta(
             raise ErrorLote(f"Plazo inválido: {plazo!r}") from None
         if not 0 <= pl <= PLAZO_MAX_DIAS:
             raise ErrorLote(f"Plazo: de 0 a {PLAZO_MAX_DIAS} días")
-    return Respuesta(p, tramos, disp, pl)
+    return Respuesta(p, tramos, disp, pl, bruto)
 
 
 def _precio(valor: Any) -> float | None:
@@ -1018,10 +1049,15 @@ def registrar_respuesta(
         raise LoteAjeno(s.proveedor_id)
     ahora = ahora_utc()
     con_precio = 0
-    for fila in filas_de(session, s):
+    for fila in filas_de(session, s, dia):
         r = respuestas.get(fila.solicitud_linea.id)
         if r is None:
             continue
+        if r.bruto:  # F-plat-impuestos: se guarda el neto calculado con el impuesto del catálogo
+            r = Respuesta(
+                None if r.precio is None else imp.neto_desde_bruto(r.precio, fila.impuesto),
+                imp.tramos_a_neto(r.tramos, fila.impuesto), r.disponible, r.plazo_dias,
+            )  # fmt: skip
         sl, ll = fila.solicitud_linea, fila.lote_linea
         sl.precio_respuesta, sl.tramos = r.precio, r.tramos
         sl.disponible, sl.plazo_dias, sl.respondida_en = r.disponible, r.plazo_dias, ahora
@@ -1051,7 +1087,7 @@ def registrar_respuesta(
 
 # --- Planilla para el proveedor (ida y vuelta) -------------------------------------------------
 
-COLUMNAS_XLSX = ["id", "producto", "formato", "cantidad", "precio_neto", "disponible",
+COLUMNAS_XLSX = ["id", "producto", "formato", "cantidad", "precio_bruto", "disponible",
                  "plazo_dias", "tramos"]  # fmt: skip
 
 
@@ -1065,20 +1101,22 @@ def xlsx_solicitud(session: Session, empresa_id: int, solicitud_id: int) -> byte
     wb = Workbook()
     ws = wb.active
     ws.title = "precios"
-    ws.append(["id", "producto", "formato", "cantidad", "precio_neto (sin IVA, por formato)",
+    ws.append(["id", "producto", "formato", "cantidad",
+               "precio_bruto (con IVA e impuestos, por formato)",
                "disponible (si/no)", "plazo_dias", "tramos (desde:precio; …)"])  # fmt: skip
     for f in filas_de(session, s):
         sl = f.solicitud_linea
-        ws.append([sl.id, f.producto, f.formato, sl.cantidad_formato, sl.precio_respuesta,
+        ws.append([sl.id, f.producto, f.formato, sl.cantidad_formato, f.precio_bruto,
                    None if sl.disponible is None else ("si" if sl.disponible else "no"),
-                   sl.plazo_dias,
-                   "; ".join(f"{t['desde']:g}:{t['precio']:g}" for t in (sl.tramos or []))])  # fmt: skip
+                   sl.plazo_dias, f.tramos_txt or None])  # fmt: skip
     info = wb.create_sheet("instrucciones")
     info.append([f"Solicitud de precios de {empresa.nombre if empresa else ''}"])
     fecha = _fecha_respuesta(lote)
     info.append([f"Responder antes del {fecha}" if fecha else "Responder lo antes posible"])
-    info.append(["Completa precio_neto (sin IVA, por formato), disponible (si/no), plazo_dias y, "
-                 "si tienes precio por volumen, tramos «desde:precio» separados por punto y coma."])  # fmt: skip
+    info.append(["Completa precio_bruto (precio final por formato, con IVA e impuestos incluidos, "
+                 "ILA si corresponde), disponible (si/no), plazo_dias y, si tienes precio por "
+                 "volumen, tramos «desde:precio» (también con impuestos) separados por punto y "
+                 "coma."])  # fmt: skip
     info.append(["No cambies la columna id."])
     ws.column_dimensions["B"].width = 40
     ws.column_dimensions["C"].width = 22
@@ -1114,11 +1152,15 @@ def leer_xlsx_respuesta(
             if sl_id is None or sl_id not in validas:
                 errores.append(f"Fila {n}: id {fila.get('id')!r} no es de esta solicitud")
                 continue
+            # F-plat-impuestos: la planilla nueva trae `precio_bruto`; una descargada antes,
+            # `precio_neto` (se respeta como neto).
+            es_bruto = "precio_bruto" in fila
             r = validar_respuesta(
-                importar._num(fila.get("precio_neto")),
+                importar._num(fila.get("precio_bruto" if es_bruto else "precio_neto")),
                 importar._txt(fila.get("tramos")) or "",
                 importar._si_no(fila.get("disponible")),
                 importar._entero(fila.get("plazo_dias")),
+                bruto=es_bruto,
             )
         except (ValueError, ErrorLote) as exc:
             errores.append(f"Fila {n}: {exc}")
@@ -1300,6 +1342,7 @@ class VistaLinea:
     proveedor: str | None
     opciones: list[OpcionProveedor]
     valor_elegido: str
+    por_clasificar: bool = False  # F-plat-impuestos: señal, no bloquea el margen
 
     @property
     def subtotal(self) -> float | None:
@@ -1477,6 +1520,7 @@ def vista(session: Session, empresa_id: int, lote_id: int) -> VistaLote:
         ).scalars()
     )
     nombres_prov = {p.id: p.nombre for p in provs}
+    sin_clasificar = imp.ids_por_clasificar(session)
     lineas: list[VistaLinea] = []
     for ll, pnom, ub, fnom, factor in session.execute(
         select(
@@ -1496,7 +1540,8 @@ def vista(session: Session, empresa_id: int, lote_id: int) -> VistaLote:
         if prov_nombre is None and ll.proveedor_sugerido_id is not None:
             p = session.get(Proveedor, ll.proveedor_sugerido_id)
             prov_nombre = p.nombre if p else None
-        lineas.append(VistaLinea(ll, pnom, fnom, float(factor), ub, prov_nombre, opciones, elegido))
+        lineas.append(VistaLinea(ll, pnom, fnom, float(factor), ub, prov_nombre, opciones, elegido,
+                                 ll.producto_id in sin_clasificar))  # fmt: skip
     solicitudes: list[VistaSolicitud] = []
     for s, p in session.execute(
         select(SolicitudPrecio, Proveedor)

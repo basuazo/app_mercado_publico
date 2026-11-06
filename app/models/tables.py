@@ -864,6 +864,9 @@ class ProveedorProducto(Base):
     # F-plat-lote: precio por volumen `[{desde, precio}]`; `desde` en unidades de ESTE formato y
     # `precio` neto por formato. `mejor_costo(cantidad_base=…)` usa el tramo que cubre la cantidad.
     tramos: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    # F-plat-impuestos: código de `impuesto_especifico` que trajo la planilla. Es solo una PISTA
+    # mientras no hay vínculo al catálogo; con vínculo manda el catálogo (`app.mercado.impuestos`).
+    impuesto_codigo: Mapped[str | None] = mapped_column(String(40), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
@@ -934,6 +937,9 @@ class ProductoCanonico(Base):
     activo: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    # F-plat-impuestos: impuesto específico del producto (código de `impuesto_especifico`). NULL =
+    # lo decide la regla de su familia (`familia_impuesto`) o no lleva.
+    impuesto_codigo: Mapped[str | None] = mapped_column(String(40), nullable=True)
     creado_por: Mapped[int | None] = mapped_column(
         BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
@@ -944,6 +950,54 @@ class ProductoCanonico(Base):
 
     formatos: Mapped[list[ProductoFormato]] = relationship(
         "ProductoFormato", back_populates="producto", cascade="all, delete-orphan"
+    )
+
+
+class ImpuestoEspecifico(Base):
+    """Un impuesto específico (ILA u otro) con su tasa y desde cuándo rige (F-plat-impuestos).
+
+    Común a todas las empresas, como el catálogo. Una tasa nueva es una FILA nueva con el mismo
+    `codigo` y otra `vigente_desde`: nunca se edita la vieja, así un costo anterior conserva su
+    tasa. `recuperable` = funciona con débito y crédito como el IVA: va al bruto y no al neto.
+    Con `false` el impuesto es un costo: queda dentro del neto y la cotización no lo cobra aparte.
+    Sin seed: las tasas se cargan verificadas en la fuente (`scripts/mercado/sembrar_impuestos.py`).
+    """
+
+    __tablename__ = "impuesto_especifico"
+    __table_args__ = (
+        UniqueConstraint("codigo", "vigente_desde", name="uq_impuesto_codigo_vigencia"),
+        CheckConstraint("tasa >= 0 AND tasa < 1", name="tasa"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    codigo: Mapped[str] = mapped_column(String(40), nullable=False)
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    tasa: Mapped[float] = mapped_column(Float, nullable=False)  # fracción: 0.10 = 10 %
+    recuperable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    vigente_desde: Mapped[date] = mapped_column(Date, nullable=False)
+    fuente_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
+
+
+class FamiliaImpuesto(Base):
+    """Regla del catálogo: los productos de `familia` llevan `impuesto_codigo`. `modo = aplica`:
+    todos lo llevan; `clasificar`: lo llevan pero la tasa depende de cada producto (p. ej. ILA bajo
+    o alto según el azúcar), y un producto sin código propio queda «impuesto por clasificar»."""
+
+    __tablename__ = "familia_impuesto"
+    __table_args__ = (CheckConstraint("modo IN ('aplica','clasificar')", name="modo"),)
+
+    familia: Mapped[str] = mapped_column(String(100), primary_key=True)
+    impuesto_codigo: Mapped[str] = mapped_column(String(40), nullable=False)
+    modo: Mapped[str] = mapped_column(String(10), nullable=False, default="aplica")
+    actualizado_por: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
     )
 
 

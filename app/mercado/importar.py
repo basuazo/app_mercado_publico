@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.catalogos.canonico import Catalogo, formato_de_texto, normalizar_texto, sugerir_vinculo
 from app.catalogos.mercado import norm
+from app.mercado import impuestos as imp
 from app.mercado.catalogo import cargar_catalogo
 from app.mercado.proveedores import (
     PROVINCIAS_NUBLE,
@@ -32,10 +33,12 @@ from app.mercado.proveedores import (
     hoy_chile,
     normalizar_rut,
     normalizar_unidad,
+    vinculo_previsto,
 )
 from app.models.tables import (
     ProductoFormato,
     Proveedor,
+    ProveedorProducto,
     TarifaLogistica,
 )
 
@@ -46,7 +49,7 @@ MAX_FILAS = 5000  # tope por hoja: evita planillas desproporcionadas
 
 COLUMNAS_PRECIOS = [
     "proveedor", "rut", "comuna", "contacto", "telefono", "producto", "formato",
-    "factor_base", "unidad_base", "precio_neto", "vigente_desde",
+    "factor_base", "unidad_base", "precio_neto", "vigente_desde", "precio_bruto", "impuesto",
 ]  # fmt: skip
 COLUMNAS_CONDICIONES = [
     "proveedor", "email", "direccion", "rubros (separados por coma)", "plazo_pago_dias",
@@ -75,8 +78,11 @@ class FilaPrecio:
     formato: str
     factor_base: float | None
     unidad_base: str | None
-    precio_neto: float
+    precio_neto: float | None
     vigente_desde: date
+    # F-plat-impuestos: precio final con IVA e impuestos y el código de impuesto (una pista).
+    precio_bruto: float | None = None
+    impuesto: str | None = None
 
 
 @dataclass
@@ -122,6 +128,11 @@ class Resumen:
     precios_cambiados: int = 0
     precios_historicos: int = 0
     sin_cambios: int = 0
+    # F-plat-impuestos: filas con precio_bruto cuyo neto se calculó solo sin IVA (familia
+    # `clasificar` sin código) y avisos fila por fila (bruto y neto que no cuadran, pista que el
+    # catálogo contradice). Los avisos no omiten la fila.
+    por_clasificar: int = 0
+    avisos: list[str] = field(default_factory=list)
     condiciones_actualizadas: int = 0
     tarifas_nuevas: int = 0
     tarifas_actualizadas: int = 0
@@ -315,8 +326,14 @@ def parsear(data: bytes, nombre_archivo: str) -> Planilla:
             if producto is None:
                 raise ValueError("falta el producto")
             precio = _num(f.get("precio_neto"))
-            if precio is None or precio <= 0:
-                raise ValueError("precio_neto debe ser un número mayor que 0")
+            precio_bruto = _num(f.get("precio_bruto"))
+            if precio_bruto is not None and precio_bruto <= 0:
+                raise ValueError("precio_bruto debe ser un número mayor que 0")
+            if precio_bruto is None and (precio is None or precio <= 0):
+                raise ValueError("precio_neto (o precio_bruto) debe ser un número mayor que 0")
+            if precio is not None and precio <= 0:
+                precio = None  # manda precio_bruto
+            impuesto = _txt(f.get("impuesto"))
             factor = _num(f.get("factor_base"))
             unidad_txt = _txt(f.get("unidad_base"))
             unidad = normalizar_unidad(unidad_txt)
@@ -340,6 +357,8 @@ def parsear(data: bytes, nombre_archivo: str) -> Planilla:
                     unidad_base=unidad,
                     precio_neto=precio,
                     vigente_desde=_fecha(f.get("vigente_desde")) or hoy_chile(),
+                    precio_bruto=precio_bruto,
+                    impuesto=impuesto.strip().lower() if impuesto else None,
                 )
             )
         except ValueError as exc:
@@ -518,6 +537,57 @@ def _catalogo_si_hay(session: Session, planilla: Planilla) -> Catalogo | None:
     return cargar_catalogo(session)
 
 
+def _neto_de_fila(
+    session: Session,
+    fila: FilaPrecio,
+    previo: ProveedorProducto | None,
+    catalogo: Catalogo | None,
+    tabla: imp.Tabla,
+    r: Resumen,
+) -> tuple[float | None, bool]:
+    """(neto a guardar, ¿quedó «impuesto por clasificar»?). None = la fila es un error.
+
+    Con `precio_bruto` el neto se calcula con el impuesto del catálogo (vía el vínculo que ya
+    tiene el producto o el que tendrá al guardarlo) o, sin vínculo, con la pista `impuesto` de la
+    fila. En una familia `clasificar`, un producto sin código usa la pista si la fila la trae; si
+    no, el neto es solo sin IVA y la fila queda por clasificar. Si también viene `precio_neto` y no
+    cuadra (±1 %), manda `precio_bruto` y se avisa."""
+    donde = f"precios, fila {fila.linea}"
+    if fila.impuesto is not None and not tabla.existe(fila.impuesto):
+        r.errores.append(
+            f"{donde}: impuesto {fila.impuesto!r} desconocido (usa uno de: "
+            f"{', '.join([*tabla.codigos, imp.SIN_IMPUESTO])}, o déjalo vacío)"
+        )
+        return None, False
+    producto_id: int | None = previo.producto_id if previo is not None else None
+    if producto_id is None and catalogo is not None:
+        previsto = vinculo_previsto(catalogo, fila.producto, fila.formato, fila.unidad_base)
+        producto_id = previsto[0] if previsto else None
+    pista = tabla.tasa(fila.impuesto, fila.vigente_desde)
+    impuesto: imp.Resolucion
+    if producto_id is None:
+        impuesto = pista
+    else:
+        cod, fam = imp.datos_productos(session, [producto_id]).get(producto_id, (None, None))
+        impuesto = tabla.de_producto(cod, fam, fila.vigente_desde)
+        if impuesto is imp.POR_CLASIFICAR and fila.impuesto is not None:
+            impuesto = pista
+        elif imp.pista_contradice(tabla, fila.impuesto, cod, fam):
+            r.avisos.append(
+                f"{donde}: la planilla dice {fila.impuesto!r} pero el catálogo dice otra cosa "
+                f"({tabla.codigo_resuelto(cod, fam)}): manda el catálogo"
+            )
+    if fila.precio_bruto is None:
+        return fila.precio_neto, False
+    neto = imp.neto_desde_bruto(fila.precio_bruto, impuesto)
+    if fila.precio_neto is not None and not imp.cuadran(fila.precio_neto, fila.precio_bruto, impuesto):
+        r.avisos.append(
+            f"{donde}: precio_neto {fila.precio_neto:g} no cuadra con precio_bruto "
+            f"{fila.precio_bruto:g} (neto calculado {neto:g}): manda precio_bruto"
+        )
+    return neto, impuesto is imp.POR_CLASIFICAR
+
+
 def aplicar(
     session: Session,
     empresa_id: int,
@@ -536,6 +606,7 @@ def aplicar(
     r = Resumen(ejemplos=list(planilla.ejemplos), errores=list(planilla.errores))
     indice = _Indice(session, empresa_id)
     catalogo = _catalogo_si_hay(session, planilla)
+    tabla = imp.cargar(session) if planilla.precios else imp.Tabla()
 
     for fila in planilla.precios:
         prov: Proveedor | None
@@ -562,13 +633,16 @@ def aplicar(
                     indice.por_rut[prov.rut] = prov
         previo = buscar_producto(session, prov.id, fila.producto, fila.formato)
         tenia_vinculo = previo is not None and previo.producto_id is not None
+        neto, sin_clasificar = _neto_de_fila(session, fila, previo, catalogo, tabla, r)
+        if neto is None:
+            continue
         try:
             pp, estado = guardar_producto(
                 session,
                 prov,
                 producto_texto=fila.producto,
                 formato_texto=fila.formato,
-                precio_neto=fila.precio_neto,
+                precio_neto=neto,
                 vigente_desde=fila.vigente_desde,
                 factor_base=fila.factor_base,
                 unidad_base=fila.unidad_base,
@@ -579,6 +653,10 @@ def aplicar(
         except ValueError as exc:  # no debería: parsear ya validó
             r.errores.append(f"precios, fila {fila.linea}: {exc}")
             continue
+        if fila.impuesto is not None:
+            pp.impuesto_codigo = fila.impuesto  # la pista es de la empresa (su proveedor)
+        if sin_clasificar:
+            r.por_clasificar += 1
         if pp.producto_id is None:
             r.sin_vincular += 1
         elif not tenia_vinculo:
@@ -665,6 +743,8 @@ def generar_plantilla_xlsx() -> bytes:
     ws.append([*ejemplo, "Leche entera", "caja 1 L", 1, "L", 890, "2026-11-03"])
     ws.append([*ejemplo, "Leche entera", "pack 12 cajas 1 L", 12, "L", 9900, "2026-11-03"])
     ws.append([*ejemplo, "Arroz grado 1", "saco 25 kg", 25, "kg", 27500, "2026-11-03"])
+    ws.append([*ejemplo, "Bebida cola light", "botella 1,5 L", 1.5, "L", None, "2026-11-03",
+               1290, "ila_analcoholica_baja"])  # fmt: skip
 
     ws = wb.create_sheet("condiciones")
     ws.append(COLUMNAS_CONDICIONES)
@@ -688,8 +768,17 @@ def generar_plantilla_xlsx() -> bytes:
         "('caja 1 L', 'saco 25 kg', 'unidad').",
         "factor_base y unidad_base (kg, L o u): cuántos kg, L o unidades trae UN formato. Con eso "
         "se compara el precio por kg/L/u entre proveedores. Sin ellos, el producto no compite.",
-        "precio_neto: SIN IVA y por FORMATO (no por kg). vigente_desde: AAAA-MM-DD "
-        "(vacío = hoy).",
+        "precio_neto: SIN IVA y SIN impuestos específicos (ILA), por FORMATO (no por kg). "
+        "vigente_desde: AAAA-MM-DD (vacío = hoy).",
+        "precio_bruto (opcional): el precio FINAL por formato, con IVA y con impuestos específicos "
+        "(como cotiza el proveedor). Si viene, el neto se calcula con el impuesto del catálogo; "
+        "si vienen los dos y no cuadran (±1 %), manda precio_bruto. Basta uno de los dos.",
+        "impuesto (opcional): código del impuesto específico (p. ej. ila_analcoholica_baja, "
+        "ila_analcoholica_alta, o ninguno). Es una pista: si el producto ya está en el catálogo, "
+        "manda el catálogo. Sin código, una bebida de una familia «por clasificar» entra con el "
+        "neto calculado solo sin IVA y queda marcada «impuesto por clasificar».",
+        "Si el contador indica que un impuesto no se recupera, el catálogo lo marca así y ese "
+        "impuesto queda dentro del neto (es costo).",
         "Hoja 'condiciones' (opcional): una fila por proveedor, identificado por su nombre. "
         "rubros separados por coma; despacha = si/no.",
         "Hoja 'logistica' (opcional): costo de llevar UN pedido a una provincia o comuna. "

@@ -20,6 +20,23 @@
   <p class="small text-muted mt-2 mb-0">Unidad base: <strong>{{ p.unidad_base }}</strong> (no se cambia) · {{ n_lineas }} línea(s) · {{ n_alias }} alias.</p>
 </div></div>
 
+<h3 class="h5">Impuesto específico</h3>
+<p class="small mb-2" data-producto="impuesto">Hoy: <strong>{{ imp_resuelto }}</strong>{% if p.impuesto_codigo %} (propio del producto){% elif imp_regla %} (regla de la familia «{{ p.familia }}»: {{ imp_regla[0] }}, {{ 'todos lo llevan' if imp_regla[1] == 'aplica' else 'clasificar cada producto' }}){% endif %}. Va al bruto, no al neto. <a href="/catalogo?tab=impuestos">Impuestos del catálogo</a></p>
+{% if es_admin %}
+<form method="post" action="/catalogo/impuestos/productos" class="row g-2 align-items-end mb-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="producto_id" value="{{ p.id }}">
+  <input type="hidden" name="volver" value="ficha">
+  <div class="col-md-4"><label class="form-label" for="p-imp">Impuesto del producto</label>
+    <select class="form-select" id="p-imp" name="impuesto_codigo">
+      <option value="" {% if not p.impuesto_codigo %}selected{% endif %}>Según su familia</option>
+      {% for c in imp_codigos %}<option value="{{ c }}" {% if p.impuesto_codigo == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      <option value="{{ sin_impuesto }}" {% if p.impuesto_codigo == sin_impuesto %}selected{% endif %}>{{ sin_impuesto }} (no lleva)</option>
+    </select></div>
+  <div class="col-md-2"><button class="btn btn-outline-primary">Guardar impuesto</button></div>
+</form>
+{% endif %}
+
 <h3 class="h5">Formatos</h3>
 <div class="table-responsive">
   <table class="table table-sm align-middle w-auto">

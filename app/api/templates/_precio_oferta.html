@@ -133,6 +133,7 @@
               </select>
               {% if lo.costo_total is not none %}<div class="text-muted">costo línea <span class="num">{{ lo.costo_total | clp }}</span></div>{% endif %}
               {% if lo.vencido_dias %}<div><span class="badge text-bg-warning fw-normal" data-precio="vencido">precio de hace {{ lo.vencido_dias }} días</span></div>{% endif %}
+              {% if lo.por_clasificar %}<div><span class="badge text-bg-warning fw-normal" data-impuesto="por-clasificar" title="El margen se calcula en neto; el bruto de la cotización aún no lleva el ILA de esta línea">impuesto por clasificar</span></div>{% elif lo.impuesto and lo.impuesto.recuperable %}<div class="small text-muted" data-impuesto="{{ lo.impuesto.codigo }}">+ {{ lo.impuesto.etiqueta }} en el bruto</div>{% endif %}
               {% if lo.stock %}<div class="text-muted" data-en-stock>en stock: <span class="num">{{ lo.stock.disponible | cantidad }}</span> {{ lo.unidad_base }}</div>{% endif %}
               {% else %}<span class="text-muted">sin costo</span>{% endif %}
             </td>

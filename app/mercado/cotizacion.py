@@ -7,6 +7,8 @@
   (regla 11). Las mismas filas que el XLSX (`oferta.filas_cotizacion`).
 - Generar el documento NO marca cumplido el requisito «Cotización formal adjunta»: adjuntarla en
   el portal lo hace una persona.
+- F-plat-impuestos: totales = Neto, IVA 19 %, una fila por impuesto específico recuperable (solo si
+  existe, con el impuesto que guardó cada línea) y Total bruto. `total_neto` sigue siendo neto.
 Fuente de los datos de la CA: Dirección ChileCompra.
 """
 
@@ -20,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.mercado import impuestos as imp
 from app.mercado import oferta as of
 from app.models.tables import CompraAgil, Empresa, OfertaPropia
 
@@ -74,10 +77,15 @@ def asignar_numero(session: Session, empresa_id: int, oferta: OfertaPropia) -> s
 
 
 def totales(filas: list[of.FilaCotizacion]) -> tuple[int, int, int]:
-    """(neto, IVA 19 %, bruto) en pesos enteros: se redondea el IVA del total, no el de cada línea."""
-    neto = round(sum(f.total or 0.0 for f in filas))
-    iva = round(neto * IVA)
-    return neto, iva, neto + iva
+    """(neto, IVA 19 %, bruto) en pesos enteros: se redondea el IVA del total, no el de cada línea.
+    El bruto incluye los impuestos específicos recuperables (ver `desglose`)."""
+    t = desglose(filas)
+    return t.neto, t.iva, t.bruto
+
+
+def desglose(filas: list[of.FilaCotizacion]) -> imp.Totales:
+    """Neto, IVA, una fila por impuesto específico y bruto (`impuestos.totales`)."""
+    return imp.totales((f.total, f.impuesto) for f in filas)
 
 
 def _clp(valor: float | None) -> str:
@@ -112,7 +120,7 @@ def docx(
     from docx.shared import Pt
 
     filas = of.filas_cotizacion(lineas)
-    neto, iva, bruto = totales(filas)
+    tot = desglose(filas)
     hoy = (fecha or datetime.now(TZ_CHILE)).strftime("%d-%m-%Y")
 
     d: Any = Document()
@@ -167,7 +175,10 @@ def docx(
 
     d.add_paragraph()
     totales_doc: tuple[tuple[str, float], ...] = (
-        ("Total neto", neto), ("IVA 19 %", iva), ("Total bruto", bruto),
+        ("Total neto", tot.neto),
+        (f"IVA {IVA * 100:g} %", tot.iva),
+        *((e.etiqueta, e.monto) for e in tot.especificos),
+        ("Total bruto", tot.bruto),
     )
     for rotulo, importe in totales_doc:
         q = d.add_paragraph()

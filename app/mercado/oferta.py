@@ -28,8 +28,9 @@ from sqlalchemy.orm import Session
 from app.core.tiempo import ahora_utc
 from app.mercado import adjudicacion as adj
 from app.mercado import equipo as eq
+from app.mercado import impuestos as imp
 from app.mercado import oferta_propia as op
-from app.mercado.proveedores import Candidato, mejor_costo
+from app.mercado.proveedores import Candidato, hoy_chile, mejor_costo
 from app.models.tables import (
     CaLinea,
     CompraAgil,
@@ -107,6 +108,10 @@ class LineaOferta:
     aviso: str | None = None  # p. ej. el stock propio elegido ya no cubre la línea
     vencido_dias: int | None = None  # F-plat-lote: el costo elegido es un precio vencido
     formato: str | None = None  # F-plat-seguimiento: formato pedido (para la cotización formal)
+    # F-plat-impuestos: el impuesto específico de la línea (se guarda con la oferta) y la señal
+    # «impuesto por clasificar». El precio y el margen siguen en neto.
+    impuesto: imp.Impuesto | None = None
+    por_clasificar: bool = False
 
     @property
     def total(self) -> float | None:
@@ -259,6 +264,9 @@ def armar(
     unidades = _unidades(session, lineas)
     formatos = _formatos(session, lineas)
     sugeridos = precios_sugeridos_por_linea(ev)
+    impuestos = imp.de_productos(
+        session, [ln.producto_id for ln in lineas if ln.producto_id is not None], hoy_chile()
+    )
     previas: dict[int, dict[str, Any]] = {}
     if guardada is not None:
         for d in guardada.lineas or []:
@@ -308,6 +316,16 @@ def armar(
             precio_unitario=precio, proveedor_producto_id=pp_ok, candidatos=cands,
             stock=stock, formato=formatos.get(ln.formato_id) if ln.formato_id else None,
         )  # fmt: skip
+        # F-plat-impuestos: lo guardado manda (las líneas guardan su impuesto); lo que manda el
+        # formulario o una línea sin impuesto guardado se resuelve hoy en el catálogo.
+        guardado = previas.get(ln.id) if entradas is None or ln.id not in entradas else None
+        if guardado is not None and "impuesto" in guardado:
+            lo.impuesto = imp.Impuesto.de_dict(guardado.get("impuesto"))
+            lo.por_clasificar = bool(guardado.get("impuesto_por_clasificar"))
+        else:
+            r = impuestos.get(ln.producto_id) if ln.producto_id is not None else None
+            lo.impuesto = r if isinstance(r, imp.Impuesto) else None
+            lo.por_clasificar = r is imp.POR_CLASIFICAR
         if origen == ORIGEN_STOCK and stock is None:
             lo.aviso = AVISO_SIN_STOCK
         if usa_stock and stock is not None:
@@ -515,6 +533,8 @@ def guardar(
             "linea_id": lo.linea_id,
             "precio_unitario": lo.precio_unitario,
             "proveedor_producto_id": lo.proveedor_producto_id,
+            "impuesto": lo.impuesto.a_dict() if lo.impuesto is not None else None,
+            "impuesto_por_clasificar": lo.por_clasificar,
             # «Stock propio» (F-plat-capas): F-plat-lote reserva a partir de estos campos.
             **(
                 {"origen": ORIGEN_STOCK, "empresa_producto_id": lo.empresa_producto_id}
@@ -585,13 +605,16 @@ class FilaCotizacion:
     cantidad: float | None
     precio_unitario: float | None
     total: float | None
+    impuesto: imp.Impuesto | None = None  # F-plat-impuestos
 
 
 def filas_cotizacion(lineas: list[LineaOferta]) -> list[FilaCotizacion]:
     """UNA función arma las filas para el XLSX y el DOCX (F-plat-seguimiento §1.3): mismas líneas,
     mismos precios. `armar` ya excluye las `reemplazada` (F-plat-anexos-2)."""
     return [
-        FilaCotizacion(lo.n, lo.texto, lo.formato, lo.cantidad, lo.precio_unitario, lo.total)
+        FilaCotizacion(
+            lo.n, lo.texto, lo.formato, lo.cantidad, lo.precio_unitario, lo.total, lo.impuesto
+        )
         for lo in lineas
     ]
 

@@ -450,6 +450,7 @@ async def solicitud_respuesta(
             r = lt.validar_respuesta(
                 str(form.get(f"precio_{i}", "")), str(form.get(f"tramos_{i}", "")),
                 _si_no(str(form.get(f"disp_{i}", ""))), str(form.get(f"plazo_{i}", "")),
+                bruto=True,  # F-plat-impuestos: la pantalla pide el precio con impuestos
             )  # fmt: skip
             respuestas[i] = r
         n = lt.registrar_respuesta(session, empresa_id, user, sid, respuestas,

@@ -16,6 +16,25 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 6),
+        titulo="Impuestos específicos (ILA) en el catálogo: neto sin impuestos, bruto con todos",
+        descripcion=(
+            "El ILA de las bebidas se maneja como el IVA: va al precio bruto y no al neto. El "
+            "margen, el precio sugerido y P(ganar) siguen calculándose en neto. El impuesto se "
+            "asigna en el catálogo (Demanda MP → Impuestos, solo administradores): por familia, "
+            "con el modo «clasificar» para las bebidas (tasa de 10 % o 18 % según el azúcar), y "
+            "por producto, con una lista «Impuesto por clasificar» para asignarlo en bloque. La "
+            "planilla de precios acepta la columna precio_bruto (precio final con IVA e impuestos) "
+            "y la columna impuesto: el neto se calcula solo y la vista previa avisa si el neto y el "
+            "bruto no cuadran. Catálogo Proveedores muestra el neto y el bruto, y tiene un filtro "
+            "«Impuesto por clasificar». El mensaje y la planilla para pedir precios a un proveedor "
+            "piden ahora el precio con impuestos, y al anotar la respuesta se guarda el neto. La "
+            "cotización formal desglosa el neto, el IVA, cada impuesto específico y el total "
+            "bruto. La caja muestra el neto y el bruto de cada movimiento, y los totales van en "
+            "bruto. Tasas según el DL 825, art. 42 (Ley Chile y SII)."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 6),
         titulo="Adjuntos a Rastrillo con un clic desde la ficha pública",
         descripcion=(
             "Nueva lista «CA que necesitan anexo» (Catálogo): las Compras Ágiles vigentes con "

@@ -880,13 +880,16 @@ def test_caja_tres_numeros_y_neto_a_30_y_60_dias(engine, mundo):
                           precio_neto=999999.0, fecha=hoy, pagada=True))
         s.commit()
         c = vt.caja(s, mundo["emp"], hoy)
-        assert c.por_cobrar_total == 100000.0
-        assert c.comprometido_total == 90000.0  # 2 × 10.000 + 70.000 (la pagada no cuenta)
-        assert c.sin_facturar_total == 60000.0
+        # F-plat-impuestos: la caja va en BRUTO (sin impuestos específicos aquí: solo IVA 19 %);
+        # cada movimiento conserva su neto.
+        assert c.por_cobrar_total == pytest.approx(119000.0)
+        assert c.por_cobrar[0].neto == 100000.0
+        assert c.comprometido_total == pytest.approx(107100.0)  # (2 × 10.000 + 70.000) × 1,19
+        assert c.sin_facturar_total == pytest.approx(71400.0)
         # a 30 días: cobros 100.000 + 60.000 (hoy + 30) − pagos 20.000 (el de 45 días no entra)
-        assert c.neto[30] == 140000.0
+        assert c.neto[30] == pytest.approx(140000.0 * 1.19)
         # a 60 días: cobros 160.000 − pagos 90.000 (ahora sí entra el de 45 días)
-        assert c.neto[60] == 70000.0
+        assert c.neto[60] == pytest.approx(70000.0 * 1.19)
         assert [m.venta_id for m in c.por_cobrar] == [a.id]
         assert vt.caja(s, mundo["otra"], hoy).por_cobrar_total == 0.0
 
@@ -897,7 +900,7 @@ def test_caja_marca_vencidos(engine, mundo):
         _venta(s, mundo, "CA-1", estado="facturada", factura_monto=1000.0,
                pago_esperado_en=hoy - timedelta(days=3))  # fmt: skip
         c = vt.caja(s, mundo["emp"], hoy)
-        assert c.por_cobrar[0].vencido and c.neto[30] == 1000.0  # lo vencido cuenta de inmediato
+        assert c.por_cobrar[0].vencido and c.neto[30] == pytest.approx(1190.0)  # vencido: de inmediato, en bruto
 
 
 def test_resumen_de_hoy(engine, mundo):

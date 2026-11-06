@@ -7,11 +7,21 @@
       <li>Precios cambiados: <strong>{{ resumen.precios_cambiados }}</strong></li>
       {% if resumen.precios_historicos %}<li>Precios históricos agregados (fecha anterior a la vigente; el precio actual no cambia): <strong>{{ resumen.precios_historicos }}</strong></li>{% endif %}
       <li>Filas sin cambios: {{ resumen.sin_cambios }}</li>
+      {% if resumen.por_clasificar %}<li data-importar="por-clasificar"><span class="badge text-bg-warning fw-normal">impuesto por clasificar</span> <strong>{{ resumen.por_clasificar }}</strong> fila(s) con precio_bruto: el neto se calculó solo sin IVA. Clasifícalas en {{ nav.DEMANDA_MP }} → Impuestos y vuelve a subir la planilla.</li>{% endif %}
       <li>Condiciones de proveedor actualizadas: {{ resumen.condiciones_actualizadas }}</li>
       <li>Tarifas de logística: {{ resumen.tarifas_nuevas }} nuevas, {{ resumen.tarifas_actualizadas }} actualizadas</li>
     </ul>
     {% if resumen.ejemplos %}
     <p class="small text-muted">Filas de ejemplo ignoradas ({{ resumen.ejemplos|length }} proveedor(es)): {{ resumen.ejemplos|join(", ") }}.</p>
+    {% endif %}
+    {% if resumen.avisos %}
+    <div class="alert alert-info" data-importar="avisos">
+      <div class="fw-semibold">{{ resumen.avisos|length }} aviso(s) (las filas entran igual):</div>
+      <ul class="mb-0">
+        {% for a in resumen.avisos[:50] %}<li>{{ a }}</li>{% endfor %}
+        {% if resumen.avisos|length > 50 %}<li>…y {{ resumen.avisos|length - 50 }} más</li>{% endif %}
+      </ul>
+    </div>
     {% endif %}
     {% if resumen.errores %}
     <div class="alert alert-warning">

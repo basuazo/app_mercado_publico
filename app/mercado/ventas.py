@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.core.tiempo import TZ_CHILE, ahora_utc
 from app.mercado import equipo as eq
+from app.mercado import impuestos as imp
 from app.mercado import lote as lt
 from app.mercado import oferta as of
 from app.mercado import oferta_propia as op
@@ -865,11 +866,14 @@ def productos_de_proveedores(session: Session, empresa_id: int, venta: Venta) ->
 
 @dataclass
 class MovimientoCaja:
+    """`monto` es BRUTO (lo que entra o sale de la caja, con IVA e impuestos); `neto`, sin ellos."""
+
     fecha: date
     concepto: str
     monto: float
     venta_id: int | None = None
     vencido: bool = False
+    neto: float | None = None
 
 
 @dataclass
@@ -880,48 +884,66 @@ class Caja:
     comprometido_total: float
     sin_facturar: list[MovimientoCaja]  # adjudicadas aún sin facturar (monto de la OC o la oferta)
     sin_facturar_total: float
-    neto: dict[int, float] = field(default_factory=dict)  # horizonte (días) → cobros − pagos
+    # horizonte (días) → cobros − pagos, en BRUTO (antes de pagar al SII el IVA y el ILA netos)
+    neto: dict[int, float] = field(default_factory=dict)
 
 
 def caja(session: Session, empresa_id: int, hoy: date | None = None) -> Caja:
-    """Por cobrar al Estado, comprometido con proveedores, adjudicado sin facturar y el neto a 30 y
-    60 días. Montos NETOS. El neto del horizonte = cobros esperados con fecha ≤ horizonte
-    (facturas por su `pago_esperado_en`; lo no facturado por entrega comprometida + plazo de pago)
-    menos las compras impagas con fecha de pago ≤ horizonte; lo ya vencido cuenta de inmediato."""
+    """Por cobrar al Estado, comprometido con proveedores, adjudicado sin facturar y el saldo a 30
+    y 60 días. F-plat-impuestos: cada movimiento lleva su NETO y su BRUTO, y los totales y el saldo
+    son BRUTOS (es caja: se cobra y se paga con IVA e impuestos). Una compra pasa a bruto con el
+    impuesto del catálogo en su fecha; un cobro (factura, OC u oferta, que se anotan netos) con la
+    proporción bruto/neto de las líneas de la oferta (sin oferta: solo IVA). El saldo del horizonte
+    = cobros esperados con fecha ≤ horizonte (facturas por su `pago_esperado_en`; lo no facturado
+    por entrega comprometida + plazo de pago) menos las compras impagas con fecha de pago ≤
+    horizonte; lo ya vencido cuenta de inmediato."""
     hoy = hoy or hoy_chile()
+    tabla = imp.cargar(session)
     por_cobrar: list[MovimientoCaja] = []
     sin_facturar: list[MovimientoCaja] = []
-    for v, nombre, total in session.execute(
-        select(Venta, CompraAgil.nombre, OfertaPropia.total_neto)
+    ventas = session.execute(
+        select(Venta, CompraAgil.nombre, OfertaPropia.total_neto, OfertaPropia.lineas)
         .join(CompraAgil, CompraAgil.codigo == Venta.ca_codigo)
         .outerjoin(OfertaPropia, OfertaPropia.id == Venta.oferta_id)
         .where(Venta.empresa_id == empresa_id, Venta.estado.in_(PENDIENTES_DE_ENTREGA + (ENTREGADA, FACTURADA)))
-    ):
-        monto = monto_de(v, total) or 0.0
+    ).all()
+    cantidades = _cantidades_de_lineas(session, [lineas for *_r, lineas in ventas])
+    for v, nombre, total, lineas in ventas:
+        neto_v = monto_de(v, total) or 0.0
+        monto = round(neto_v * _factor_bruto_oferta(lineas, cantidades), 2)
         concepto = f"{nombre or v.ca_codigo}" + (f" · factura {v.factura_numero}" if v.factura_numero else "")
         if v.estado == FACTURADA:
             fecha = v.pago_esperado_en or hoy
-            por_cobrar.append(MovimientoCaja(fecha, concepto, monto, v.id, fecha < hoy))
+            por_cobrar.append(MovimientoCaja(fecha, concepto, monto, v.id, fecha < hoy, neto_v))
         else:
             base = v.entrega_fecha_comprometida or hoy
             sin_facturar.append(
-                MovimientoCaja(base + timedelta(days=v.plazo_pago_dias), concepto, monto, v.id)
+                MovimientoCaja(
+                    base + timedelta(days=v.plazo_pago_dias), concepto, monto, v.id, neto=neto_v
+                )
             )
-    comprometido = [
-        MovimientoCaja(
-            c.pagar_en or c.fecha,
-            f"{c.descripcion or 'Compra'}" + (f" · {prov or ''}" if prov else ""),
-            round(c.cantidad * c.precio_neto, 2),
-            v.id,
-            (c.pagar_en or c.fecha) < hoy,
+    compras = session.execute(
+        select(VentaCompra, Venta, Proveedor.nombre)
+        .join(Venta, Venta.id == VentaCompra.venta_id)
+        .outerjoin(Proveedor, Proveedor.id == VentaCompra.proveedor_id)
+        .where(Venta.empresa_id == empresa_id, Venta.estado != ANULADA, VentaCompra.pagada.is_(False))
+    ).all()
+    canon = imp.datos_productos(session, [c.producto_id for c, _v, _p in compras if c.producto_id])
+    comprometido: list[MovimientoCaja] = []
+    for c, v, prov in compras:
+        neto_c = round(c.cantidad * c.precio_neto, 2)
+        cod, fam = canon.get(c.producto_id, (None, None)) if c.producto_id else (None, None)
+        impuesto = tabla.de_producto(cod, fam, c.fecha) if c.producto_id else None
+        comprometido.append(
+            MovimientoCaja(
+                c.pagar_en or c.fecha,
+                f"{c.descripcion or 'Compra'}" + (f" · {prov or ''}" if prov else ""),
+                round(imp.bruto(neto_c, impuesto), 2),
+                v.id,
+                (c.pagar_en or c.fecha) < hoy,
+                neto_c,
+            )
         )
-        for c, v, prov in session.execute(
-            select(VentaCompra, Venta, Proveedor.nombre)
-            .join(Venta, Venta.id == VentaCompra.venta_id)
-            .outerjoin(Proveedor, Proveedor.id == VentaCompra.proveedor_id)
-            .where(Venta.empresa_id == empresa_id, Venta.estado != ANULADA, VentaCompra.pagada.is_(False))
-        )
-    ]
     for lista in (por_cobrar, sin_facturar, comprometido):
         lista.sort(key=lambda m: m.fecha)
     neto: dict[int, float] = {}
@@ -935,6 +957,44 @@ def caja(session: Session, empresa_id: int, hoy: date | None = None) -> Caja:
         comprometido, round(sum(m.monto for m in comprometido), 2),
         sin_facturar, round(sum(m.monto for m in sin_facturar), 2), neto,
     )  # fmt: skip
+
+
+def _cantidades_de_lineas(session: Session, ofertas: list[Any]) -> dict[int, float]:
+    """`{ca_lineas.id: cantidad}` de las líneas de esas ofertas, con UNA consulta."""
+    ids = {
+        d.get("linea_id")
+        for lineas in ofertas
+        if isinstance(lineas, list)
+        for d in lineas
+        if isinstance(d, dict) and isinstance(d.get("linea_id"), int)
+    }
+    if not ids:
+        return {}
+    return {
+        int(i): float(c or 0)
+        for i, c in session.execute(select(CaLinea.id, CaLinea.cantidad).where(CaLinea.id.in_(ids)))
+    }
+
+
+def _factor_bruto_oferta(lineas: Any, cantidades: dict[int, float]) -> float:
+    """Bruto ÷ neto de una oferta según el impuesto que guardó cada línea, ponderado por su total
+    (precio × cantidad). Sin oferta o sin líneas con precio: solo IVA. Parseo defensivo: una línea
+    rota no rompe la caja."""
+    if not isinstance(lineas, list):
+        return imp.factor_bruto(None)
+    neto = bruto = 0.0
+    for d in lineas:
+        if not isinstance(d, dict):
+            continue
+        try:
+            total = float(d.get("precio_unitario") or 0) * cantidades.get(int(d.get("linea_id") or 0), 0.0)
+        except (TypeError, ValueError):
+            continue
+        if total <= 0:
+            continue
+        neto += total
+        bruto += total * imp.factor_bruto(imp.Impuesto.de_dict(d.get("impuesto")))
+    return bruto / neto if neto > 0 else imp.factor_bruto(None)
 
 
 def resumen_hoy(session: Session, empresa_id: int, hoy: date | None = None) -> dict[str, Any]:

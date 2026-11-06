@@ -501,11 +501,15 @@ def test_xlsx_ida_y_vuelta(engine, mundo):
         respuestas, errores = lt.leer_xlsx_respuesta(s, mundo["emp"], sol.id, buf.getvalue())
         assert len(respuestas) == 1 and len(errores) == 1 and "999999" in errores[0]
         r = next(iter(respuestas.values()))
-        assert r.precio == 1950 and r.disponible is True and r.plazo_dias == 2
+        assert r.precio == 1950 and r.disponible is True and r.plazo_dias == 2 and r.bruto
         assert r.tramos == [{"desde": 20, "precio": 1900}]
         lt.registrar_respuesta(s, mundo["emp"], u, sol.id, respuestas, None)
         s.commit()
-        assert s.get(ProveedorProducto, mundo["pp_t"]).precio_neto_actual == 1950
+        # F-plat-impuestos: la planilla pide el precio con IVA (sin impuesto específico: solo IVA)
+        # y se guarda el neto calculado.
+        pp = s.get(ProveedorProducto, mundo["pp_t"])
+        assert pp.precio_neto_actual == round(1950 / 1.19, 2)
+        assert pp.tramos == [{"desde": 20, "precio": round(1900 / 1.19, 2)}]
 
 
 # ---------------------------------------------------------------------------

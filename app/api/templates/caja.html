@@ -4,16 +4,17 @@
 <h3 class="fs-6 mt-4">{{ titulo }}</h3>
 <div class="table-responsive">
 <table class="table table-sm align-middle" data-caja="{{ id_tabla }}">
-  <thead><tr><th>Fecha</th><th>Concepto</th><th class="text-end">Monto neto</th></tr></thead>
+  <thead><tr><th>Fecha</th><th>Concepto</th><th class="text-end">Neto</th><th class="text-end">Bruto (caja)</th></tr></thead>
   <tbody>
   {% for m in filas %}
   <tr>
     <td class="small{% if m.vencido %} text-danger fw-semibold{% endif %}">{{ m.fecha.strftime('%d-%m-%Y') }}{% if m.vencido %} · vencido{% endif %}</td>
     <td>{% if m.venta_id %}<a href="/ventas/{{ m.venta_id }}">{{ m.concepto }}</a>{% else %}{{ m.concepto }}{% endif %}</td>
+    <td class="text-end text-muted">{{ m.neto | clp if m.neto is not none else '—' }}</td>
     <td class="text-end">{{ m.monto | clp }}</td>
   </tr>
   {% else %}
-  <tr><td colspan="3" class="text-muted">Nada por ahora.</td></tr>
+  <tr><td colspan="4" class="text-muted">Nada por ahora.</td></tr>
   {% endfor %}
   </tbody>
 </table>
@@ -22,7 +23,8 @@
 {% block content %}
 <h2>Caja</h2>
 <p class="small text-muted">Los plazos de pago del sector público tensionan la caja: acá se ve lo que falta cobrar, lo que debes a
-  proveedores y lo adjudicado que aún no se factura. Todo en montos <strong>netos</strong>. <a href="/ventas">Ventas</a></p>
+  proveedores y lo adjudicado que aún no se factura. Los totales y el saldo van en montos <strong>brutos</strong> (con IVA e impuestos
+  específicos como el ILA: es lo que entra y sale de la caja); cada fila muestra también su neto. <a href="/ventas">Ventas</a></p>
 
 <div class="row g-3">
   <div class="col-12 col-md-4"><div class="card h-100"><div class="card-body">
@@ -42,7 +44,7 @@
   </div></div></div>
 </div>
 
-<p class="mt-3 mb-1"><strong>Neto esperado</strong> (cobros − pagos a proveedores):
+<p class="mt-3 mb-1"><strong>Saldo esperado, bruto</strong> (cobros − pagos a proveedores, antes de pagar al SII el IVA y el ILA):
   {% for h in horizontes %}<span class="me-3" data-caja-neto="{{ h }}">a {{ h }} días: <strong>{{ c.neto[h] | clp }}</strong></span>{% endfor %}</p>
 <p class="small text-muted">Cobros: facturas por su fecha de pago esperada; lo no facturado, por la entrega comprometida más el plazo de
   pago. Pagos: compras impagas por su fecha de pago. Lo ya vencido cuenta de inmediato.</p>

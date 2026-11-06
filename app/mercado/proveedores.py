@@ -127,15 +127,30 @@ def _autovincular(
     §1.3). Nunca pisa un vínculo existente. Devuelve si vinculó."""
     if pp.producto_id is not None:
         return False
-    s = sugerir_vinculo(catalogo, pp.producto_texto, pp.formato_texto, unspsc)
+    s = vinculo_previsto(catalogo, pp.producto_texto, pp.formato_texto, pp.unidad_base, unspsc)
     if s is None:
         return False
+    pp.producto_id, pp.formato_id = s
+    return True
+
+
+def vinculo_previsto(
+    catalogo: Catalogo,
+    producto_texto: str,
+    formato_texto: str,
+    unidad_base: str | None,
+    unspsc: str | None = None,
+) -> tuple[int, int | None] | None:
+    """(producto, formato) del canónico al que `_autovincular` vincularía; None si a ninguno.
+    Pura: la importación la usa para saber el impuesto ANTES de guardar (F-plat-impuestos)."""
+    s = sugerir_vinculo(catalogo, producto_texto, formato_texto, unspsc)
+    if s is None:
+        return None
     producto_id, formato_id = s
     ub = catalogo.productos[producto_id].unidad_base
-    if pp.unidad_base is not None and pp.unidad_base != ub:
-        return False  # kg contra L: no competirían igual; queda para vincular a mano
-    pp.producto_id, pp.formato_id = producto_id, formato_id
-    return True
+    if unidad_base is not None and unidad_base != ub:
+        return None  # kg contra L: no competirían igual; queda para vincular a mano
+    return producto_id, formato_id
 
 
 def guardar_producto(

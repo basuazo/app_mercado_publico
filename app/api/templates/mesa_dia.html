@@ -161,6 +161,7 @@
       <span class="badge text-bg-danger fw-normal">Sin detalle de líneas</span>
       {% endif %}
       <span class="badge text-bg-light border fw-normal">{{ it.n_anexos }} anexo{{ '' if it.n_anexos == 1 else 's' }}</span>
+      {% if it.n_por_clasificar %}<span class="badge text-bg-warning fw-normal" data-impuesto="por-clasificar" title="Bebidas sin tasa de ILA asignada en el catálogo: el margen (neto) vale; el bruto aún no lleva el ILA">impuesto por clasificar · {{ it.n_por_clasificar }}</span>{% endif %}
       <span class="badge text-bg-light border fw-normal">Entrega: {% if it.plazo_dias is not none %}{{ it.plazo_dias }} día{{ '' if it.plazo_dias == 1 else 's' }}{% else %}plazo no informado{% endif %}</span>
     </div>
     {% if it.stock %}

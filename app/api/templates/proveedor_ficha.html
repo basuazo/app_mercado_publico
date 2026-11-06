@@ -77,7 +77,7 @@
   <thead class="table-dark">
     <tr>
       <th scope="col">Producto</th><th scope="col">Formato</th><th scope="col">{{ nav.DEMANDA_MP }}</th>
-      <th scope="col" class="text-end">Precio neto</th><th scope="col" class="text-end">Por kg/L/u</th>
+      <th scope="col" class="text-end">Precio neto</th><th scope="col" class="text-end">Bruto</th><th scope="col" class="text-end">Por kg/L/u</th>
       <th scope="col">vs anterior</th><th scope="col">vs 90 días</th><th scope="col">Desde</th><th scope="col"><span class="visually-hidden">Acciones</span></th>
     </tr>
   </thead>
@@ -89,6 +89,10 @@
       <td>{{ pp.formato_texto or "—" }}</td>
       <td>{% if fila.catalogo %}{{ fila.catalogo }}{% else %}<span class="badge text-bg-warning fw-normal" data-sin-vincular-fila>sin vincular</span>{% endif %}</td>
       <td class="text-end">{{ pp.precio_neto_actual|clp }}</td>
+      <td class="text-end" data-bruto="{{ pp.id }}">{{ fila.bruto|clp }}
+        {% if fila.por_clasificar %}<div><span class="badge text-bg-warning fw-normal" data-impuesto="por-clasificar">impuesto por clasificar</span></div>
+        {% elif fila.etiqueta_impuesto %}<div class="small text-muted">IVA + {{ fila.etiqueta_impuesto }}</div>{% endif %}
+        {% if fila.contradice %}<div><span class="badge text-bg-info fw-normal" data-impuesto="contradice" title="La planilla trajo {{ pp.impuesto_codigo }}">el catálogo dice otra cosa</span></div>{% endif %}</td>
       <td class="text-end">{% if fila.por_unidad is not none %}{{ fila.por_unidad|clp }}/{{ pp.unidad_base }}{% else %}<span class="text-muted" title="Sin factor y unidad base: no compite">—</span>{% endif %}</td>
       <td>{{ variacion(fila.v.pct_vs_anterior) }}</td>
       <td>{{ variacion(fila.v.pct_vs_90) }}</td>
@@ -100,12 +104,12 @@
                 hx-get="/proveedores/{{ p.id }}/productos/{{ pp.id }}/historial" hx-target="#hist-{{ pp.id }}" hx-swap="innerHTML">Historial</button>
       </td>
     </tr>
-    <tr><td colspan="9" class="p-0 border-0"><div id="hist-{{ pp.id }}"></div></td></tr>
+    <tr><td colspan="10" class="p-0 border-0"><div id="hist-{{ pp.id }}"></div></td></tr>
     {% else %}
-    <tr><td colspan="9" class="text-muted">Sin productos todavía.</td></tr>
+    <tr><td colspan="10" class="text-muted">Sin productos todavía.</td></tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
-<p class="text-muted small">Precios netos (sin IVA) por formato. Cada cambio de precio queda en el historial.</p>
+<p class="text-muted small">Precios por formato. Neto: sin IVA y sin impuestos específicos (con él se calcula el margen). Bruto: con IVA e impuestos como el ILA (lo que pagas), según el catálogo. Cada cambio de precio queda en el historial.</p>
 {% endblock %}

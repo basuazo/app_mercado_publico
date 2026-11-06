@@ -331,6 +331,20 @@ def tarjetas(
             .group_by(CaLinea.ca_codigo)
         )
     }
+    # F-plat-impuestos: líneas cuyo producto está «impuesto por clasificar» (señal, no bloquea).
+    from app.mercado.impuestos import ids_por_clasificar  # lazy: mesa_dia es import liviano
+
+    sin_clasificar = ids_por_clasificar(session)
+    n_por_clasificar: dict[str, int] = {}
+    if sin_clasificar:
+        for ca, _pid in session.execute(
+            select(CaLinea.ca_codigo, CaLinea.producto_id).where(
+                CaLinea.ca_codigo.in_(codigos),
+                CaLinea.estado != "reemplazada",
+                CaLinea.producto_id.in_(sin_clasificar),
+            )
+        ):
+            n_por_clasificar[ca] = n_por_clasificar.get(ca, 0) + 1
     out: list[dict[str, Any]] = []
     for codigo in codigos:
         f = filas.get(codigo)
@@ -354,6 +368,7 @@ def tarjetas(
                 "plazo_dias": f.plazo_entrega_dias,
                 "familia": etiqueta_familia(familias.get(codigo, [])),
                 "total_ofertas": f.total_ofertas,
+                "n_por_clasificar": n_por_clasificar.get(codigo, 0),
             }
         )
     return out

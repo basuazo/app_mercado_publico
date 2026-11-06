@@ -289,3 +289,36 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   `GET /api/anexos/pendientes` (que antes exigía `sin_detalle`: ahora también incluye el caso D).
 - **Si ChileCompra da un endpoint oficial** para bajar `documentos[].id` (se pide por `ayuda.mercadopublico.cl`), la
   extensión se reemplaza por un job.
+
+## Impuestos específicos (6-nov, Boris)
+- **Un impuesto específico (ej. ILA de bebidas analcohólicas) es parte del costo bruto, no del neto**, igual que el
+  IVA. `precio_neto` = sin IVA y sin impuestos específicos; margen, precio sugerido y P(ganar) siempre sobre neto;
+  el bruto es lo que se paga al proveedor y se cobra en la cotización. [Decisión; mecánica débito/crédito y tasas a
+  verificar en el SII antes de sembrar — `prompt-F-plat-impuestos.md` §0]
+- **Verificado en la fuente primaria el 6-nov-2026** (DL 825, texto vigente en Ley Chile, versión del
+  5-feb-2026: https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=6369; pregunta frecuente del SII
+  https://www.sii.cl/preguntas_frecuentes/impuestos_mensuales/001_130_1250.htm):
+  - ILA de bebidas analcohólicas (art. 42 a): **10 %**; **18 %** con «más de 15 g de azúcar por cada
+    240 ml» (Ley 20.606, art. 5°). Las aguas minerales pagan solo si tienen colorante, sabor o edulcorante
+    agregado. [V] Los jugos caben en «bebidas analcohólicas naturales o artificiales». [I]
+  - Bebidas alcohólicas: **31,5 %** para licores, pisco, whisky y destilados (art. 42 b), y **20,5 %**
+    para vinos, cervezas, chichas y sidras (art. 42 c). [V]
+  - El ILA usa la misma base imponible que el IVA (art. 42, inc. 1°), y el IVA no incluye el ILA en su
+    base (art. 15, inc. final). Por eso los dos se calculan sobre el mismo neto:
+    `bruto = neto × (1 + 0,19 + tasa)`. [V]
+  - Débito y crédito: los contribuyentes del art. 43 (importadores, productores, distribuidoras y todo
+    vendedor que vende a otro vendedor) tienen crédito fiscal por el ILA que se les recargó (art. 44).
+    La venta del comerciante minorista al consumidor no está afecta (art. 43, inc. final). [V] **Duda
+    abierta:** si Aralia vende a un organismo público como distribuidora (cobra ILA y lo recupera) o como
+    minorista (no lo cobra y le queda como costo). No encontré pronunciamiento del SII sobre esto. Lo
+    decide el contador; se aplica cambiando `recuperable`, sin otra fase. [I]
+  - Vigencia de estas tasas: desde el **1-oct-2014** (Ley 20.780, art. 2° N° 10, más el art.
+    vigesimoprimero transitorio). [V]
+- **Mecánica en el código (F-plat-impuestos):** las tasas viven en `impuesto_especifico`. Cuando una tasa
+  cambia se agrega una fila con otra `vigente_desde`, y la que aplica es la vigente en la fecha del
+  costo. La resolución va del producto canónico a la regla de su familia, y si ninguno define impuesto
+  el producto no lleva. Un producto sin vínculo al catálogo usa la pista de la planilla. Con
+  `recuperable = false` el impuesto queda dentro del neto y la cotización no lo cobra aparte.
+- **Si una categoría tiene impuesto específico, se maneja en el catálogo** (familia → producto canónico), no por
+  proveedor ni por planilla. Familias donde la tasa depende del producto (azúcar) quedan «por clasificar», sin suponer
+  tasa.

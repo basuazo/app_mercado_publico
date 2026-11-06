@@ -100,7 +100,7 @@
   <tbody>
   {% for l in v.lineas %}
   <tr{% if l.ll.precio_vencido and l.ll.a_comprar_base > 0 %} class="table-warning"{% endif %}>
-    <td>{{ l.producto }}</td>
+    <td>{{ l.producto }}{% if l.por_clasificar %} <span class="badge text-bg-warning fw-normal" data-impuesto="por-clasificar" title="El costo vale si se cargó en neto; el bruto que pagas aún no considera el ILA">impuesto por clasificar</span>{% endif %}</td>
     <td class="small">{{ l.formato }}</td>
     <td class="text-end num">{{ l.ll.cantidad_base | cantidad }} {{ l.unidad_base }}<div class="small text-muted">{{ l.ll.cantidad_formato | cantidad }} × {{ l.formato }}</div></td>
     <td class="text-end num">{{ l.ll.en_stock_base | cantidad }} {{ l.unidad_base }}</td>
@@ -178,13 +178,13 @@
         <input type="hidden" name="version" value="{{ s.version }}">
         <div class="table-responsive">
         <table class="table table-sm align-middle mb-2">
-          <thead><tr><th>Producto</th><th class="text-end">Cantidad</th><th>Precio neto por formato</th><th>Tramos (desde:precio; …)</th><th>Disponible</th><th>Plazo (días)</th></tr></thead>
+          <thead><tr><th>Producto</th><th class="text-end">Cantidad</th><th>Precio con IVA e impuestos, por formato</th><th>Tramos (desde:precio; …)</th><th>Disponible</th><th>Plazo (días)</th></tr></thead>
           <tbody>
           {% for f in vs.filas %}{%- set sl = f.solicitud_linea -%}
           <tr>
-            <td class="small">{{ f.producto }} · {{ f.formato }}</td>
+            <td class="small">{{ f.producto }} · {{ f.formato }}{% if f.por_clasificar %} <span class="badge text-bg-warning fw-normal" data-impuesto="por-clasificar">impuesto por clasificar</span>{% endif %}</td>
             <td class="text-end num small">{{ sl.cantidad_formato | cantidad }}</td>
-            <td><input class="form-control form-control-sm num" inputmode="decimal" name="precio_{{ sl.id }}" aria-label="Precio de {{ f.producto }}" value="{{ '%.2f' | format(sl.precio_respuesta) if sl.precio_respuesta is not none else '' }}"></td>
+            <td><input class="form-control form-control-sm num" inputmode="decimal" name="precio_{{ sl.id }}" aria-label="Precio de {{ f.producto }}" value="{{ '%.2f' | format(f.precio_bruto) if f.precio_bruto is not none else '' }}"></td>
             <td><input class="form-control form-control-sm" name="tramos_{{ sl.id }}" aria-label="Tramos de {{ f.producto }}" placeholder="10:950; 50:900" value="{{ f.tramos_txt }}"></td>
             <td>
               <select class="form-select form-select-sm" name="disp_{{ sl.id }}" aria-label="Disponible {{ f.producto }}">

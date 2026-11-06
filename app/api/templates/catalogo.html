@@ -27,7 +27,7 @@
 <div id="catalogo-aviso" aria-live="polite"></div>
 
 <ul class="nav nav-tabs mb-3">
-  {% for clave, etiqueta in [('pendientes', 'Pendientes'), ('productos', 'Productos'), ('alias', 'Alias')] %}
+  {% for clave, etiqueta in [('pendientes', 'Pendientes'), ('productos', 'Productos'), ('alias', 'Alias'), ('impuestos', 'Impuestos')] %}
   <li class="nav-item"><a class="nav-link{% if tab == clave %} active{% endif %}" href="/catalogo?tab={{ clave }}"{% if tab == clave %} aria-current="page"{% endif %}>{{ etiqueta }}</a></li>
   {% endfor %}
 </ul>
@@ -100,6 +100,70 @@
     </table>
   </div>
   {{ paginacion() }}
+
+{% elif tab == 'impuestos' %}
+  <p class="small text-muted">Impuestos específicos como el ILA: van al <strong>bruto</strong>, igual que el IVA, y no al neto (el margen y el precio sugerido siguen en neto). Un producto toma el impuesto propio o el de su familia. En una familia «clasificar» (p. ej. bebidas: tasa baja o alta según el azúcar) cada producto necesita su código; mientras no lo tenga queda «impuesto por clasificar».{% if not es_admin %} Solo un administrador los edita.{% endif %}</p>
+  <h3 class="h5">Tasas cargadas</h3>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle" data-impuestos="tasas">
+      <thead class="table-dark"><tr><th scope="col">Código</th><th scope="col">Nombre</th><th scope="col" class="text-end">Tasa</th><th scope="col">Se recupera</th><th scope="col">Desde</th></tr></thead>
+      <tbody>
+        {% for i in imp_tasas %}
+        <tr><td><code>{{ i.codigo }}</code></td><td>{{ i.nombre }}</td><td class="text-end num">{{ '%g' | format(i.tasa * 100) }} %</td>
+          <td>{% if i.recuperable %}sí (va al bruto){% else %}no (queda en el costo){% endif %}</td><td>{{ i.vigente_desde.strftime('%d-%m-%Y') }}</td></tr>
+        {% else %}<tr><td colspan="5" class="text-muted">Todavía no hay tasas: se cargan con <code>scripts/mercado/sembrar_impuestos.py</code> después de verificarlas en el SII.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="h5 mt-4">Reglas por familia</h3>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle w-auto" data-impuestos="reglas">
+      <thead class="table-dark"><tr><th scope="col">Familia</th><th scope="col">Impuesto</th><th scope="col">Modo</th>{% if es_admin %}<th scope="col"><span class="visually-hidden">Acciones</span></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for r in imp_reglas %}
+        <tr><td>{{ r.familia }}</td><td><code>{{ r.impuesto_codigo }}</code></td><td>{{ 'todos lo llevan' if r.modo == 'aplica' else 'clasificar cada producto' }}</td>
+          {% if es_admin %}<td><form method="post" action="/catalogo/impuestos/familia" class="m-0"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="familia" value="{{ r.familia }}"><input type="hidden" name="quitar" value="1"><button class="btn btn-sm btn-outline-danger">Quitar</button></form></td>{% endif %}</tr>
+        {% else %}<tr><td colspan="4" class="text-muted">Ninguna familia tiene impuesto todavía.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if es_admin and imp_codigos %}
+  <form method="post" action="/catalogo/impuestos/familia" class="row g-2 align-items-end mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-md-4"><label class="form-label" for="if-fam">Familia</label>
+      <input class="form-control" id="if-fam" name="familia" list="familias-imp" required maxlength="100">
+      <datalist id="familias-imp">{% for f in familias %}<option value="{{ f }}">{% endfor %}</datalist></div>
+    <div class="col-md-3"><label class="form-label" for="if-cod">Impuesto</label>
+      <select class="form-select" id="if-cod" name="impuesto_codigo" required>{% for c in imp_codigos %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label" for="if-modo">Modo</label>
+      <select class="form-select" id="if-modo" name="modo"><option value="aplica">Todos lo llevan</option><option value="clasificar">Clasificar cada producto</option></select></div>
+    <div class="col-md-2"><button class="btn btn-primary">Guardar regla</button></div>
+  </form>
+  {% endif %}
+
+  <h3 class="h5 mt-4">Impuesto por clasificar <span class="badge text-bg-warning fw-normal" data-impuestos="n-por-clasificar">{{ imp_por_clasificar|length }}</span></h3>
+  <form method="post" action="/catalogo/impuestos/productos">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle" data-impuestos="por-clasificar">
+        <thead class="table-dark"><tr>{% if es_admin %}<th scope="col"><span class="visually-hidden">Marcar</span></th>{% endif %}<th scope="col">Producto</th><th scope="col">Familia</th></tr></thead>
+        <tbody>
+          {% for p in imp_por_clasificar %}
+          <tr>{% if es_admin %}<td><input class="form-check-input" type="checkbox" name="producto_id" value="{{ p.id }}" id="pc-{{ p.id }}" aria-label="Marcar {{ p.nombre }}"></td>{% endif %}
+            <td><a href="/catalogo/productos/{{ p.id }}">{{ p.nombre }}</a></td><td>{{ p.familia }}</td></tr>
+          {% else %}<tr><td colspan="3" class="text-muted">Nada por clasificar.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if es_admin and imp_por_clasificar %}
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4"><label class="form-label" for="ip-cod">Asignar a los marcados</label>
+        <select class="form-select" id="ip-cod" name="impuesto_codigo" required>{% for c in imp_codigos %}<option value="{{ c }}">{{ c }}</option>{% endfor %}<option value="{{ sin_impuesto }}">{{ sin_impuesto }} (no lleva)</option></select></div>
+      <div class="col-md-2"><button class="btn btn-primary">Asignar</button></div>
+    </div>
+    {% endif %}
+  </form>
 
 {% else %}
   <form method="get" action="/catalogo" class="row g-2 mb-3" role="search">
