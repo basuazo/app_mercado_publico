@@ -44,8 +44,9 @@ MAX_BYTES_VISTA = 2048
 
 # Lista blanca: pantalla → claves que se recuerdan. Las fases de pantalla agregan las suyas.
 CLAVES_POR_PANTALLA: dict[str, frozenset[str]] = {
-    # Hoy (Main.dc.html): período de las cifras y filtro de «Te necesita».
-    "hoy": frozenset({"periodo", "filtro"}),
+    # Hoy (Main.dc.html): período de las cifras y filtro de «Te necesita». `visto_en` (F-dis-datos):
+    # ISO UTC naive de la última vez que marcó «Desde tu última visita» como visto.
+    "hoy": frozenset({"periodo", "filtro", "visto_en"}),
 }
 
 

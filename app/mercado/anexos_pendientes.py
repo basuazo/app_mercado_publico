@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -22,8 +22,10 @@ from sqlalchemy.orm import Session
 
 from app.catalogos.canonico import detectar_sin_detalle
 from app.catalogos.mercado import G_ALIM, grupo_de
+from app.core.tiempo import TZ_CHILE
 from app.mercado.mesa_dia import condiciones_vigente
-from app.models.tables import CaAnexo, CaLinea, CaProducto, CompraAgil
+from app.models.enums import EstadoOportunidad
+from app.models.tables import CaAnexo, CaLinea, CaProducto, CompraAgil, Empresa
 
 LIMITE_CANDIDATAS = 1000  # tope de CA que se miran por consulta (regla 12: nada sin cota)
 LIMITE_LISTA = 200  # máx. de la lista y de la API
@@ -147,31 +149,10 @@ def pendientes(
     )
     if not candidatas:
         return []
-    codigos = [c.codigo for c in candidatas]
-    lineas: dict[str, list[LineaInfo]] = defaultdict(list)
-    for codigo, origen, estado, texto, cantidad in session.execute(
-        select(
-            CaLinea.ca_codigo, CaLinea.origen, CaLinea.estado, CaLinea.texto_origen,
-            CaLinea.cantidad,
-        ).where(CaLinea.ca_codigo.in_(codigos))
-    ):  # fmt: skip
-        lineas[codigo].append(LineaInfo(origen, estado, texto, cantidad))
-    productos: dict[str, list[tuple[str | None, str | None]]] = defaultdict(list)
-    for codigo, cod, nombre in session.execute(
-        select(CaProducto.ca_codigo, CaProducto.codigo_producto, CaProducto.nombre).where(
-            CaProducto.ca_codigo.in_(codigos)
-        )
-    ):
-        productos[codigo].append((cod, nombre))
+    motivos = _motivos(session, candidatas)
     salida: list[Pendiente] = []
     for ca in candidatas:
-        motivo = motivo_anexo(
-            n_documentos=ca.n_documentos,
-            vigente=True,  # ya filtrado en SQL con la definición única de «vigente»
-            alimentos=_es_alimentos(productos.get(ca.codigo, ())),
-            resuelta=False,  # ídem: sin «Anexo resuelto» y sin anexos
-            lineas=lineas.get(ca.codigo, ()),
-        )
+        motivo = motivos.get(ca.codigo)
         if motivo is None:
             continue
         docs: list[Any] = ca.documentos if isinstance(ca.documentos, list) else []
@@ -189,3 +170,90 @@ def pendientes(
         if len(salida) >= limite:
             break
     return salida
+
+
+def _motivos(session: Session, candidatas: Sequence[Any]) -> dict[str, str]:
+    """`{codigo: motivo}` de las candidatas que necesitan anexo. Las candidatas ya pasaron el
+    filtro barato en SQL (vigentes, con documentos, sin «Anexo resuelto» ni anexos cargados); acá
+    se decide el resto con :func:`motivo_anexo`, con líneas y productos en dos consultas para el
+    lote (no una por CA)."""
+    codigos = [c.codigo for c in candidatas]
+    lineas: dict[str, list[LineaInfo]] = defaultdict(list)
+    for codigo, origen, estado, texto, cantidad in session.execute(
+        select(
+            CaLinea.ca_codigo, CaLinea.origen, CaLinea.estado, CaLinea.texto_origen,
+            CaLinea.cantidad,
+        ).where(CaLinea.ca_codigo.in_(codigos))
+    ):  # fmt: skip
+        lineas[codigo].append(LineaInfo(origen, estado, texto, cantidad))
+    productos: dict[str, list[tuple[str | None, str | None]]] = defaultdict(list)
+    for codigo, cod, nombre in session.execute(
+        select(CaProducto.ca_codigo, CaProducto.codigo_producto, CaProducto.nombre).where(
+            CaProducto.ca_codigo.in_(codigos)
+        )
+    ):
+        productos[codigo].append((cod, nombre))
+    out: dict[str, str] = {}
+    for ca in candidatas:
+        motivo = motivo_anexo(
+            n_documentos=ca.n_documentos,
+            vigente=True,  # ya filtrado en SQL con la definición única de «vigente»
+            alimentos=_es_alimentos(productos.get(ca.codigo, ())),
+            resuelta=False,  # ídem: sin «Anexo resuelto» y sin anexos
+            lineas=lineas.get(ca.codigo, ()),
+        )
+        if motivo is not None:
+            out[ca.codigo] = motivo
+    return out
+
+
+def motivos_de(session: Session, codigos: Sequence[str], ahora: datetime) -> dict[str, str]:
+    """`{codigo: motivo}` de las CA de `codigos` que esperan su anexo: el mismo criterio de
+    :func:`pendientes`, sin filtrar por región (quien llama ya validó el territorio). Tres
+    consultas como máximo sin importar cuántos códigos (regla 12; señales de la mesa)."""
+    if not codigos:
+        return {}
+    con_anexo = select(CaAnexo.id).where(CaAnexo.ca_codigo == CompraAgil.codigo).exists()
+    # Solo columnas livianas: nunca `raw_json` (regla 12).
+    candidatas = list(
+        session.execute(
+            select(CompraAgil.codigo, CompraAgil.n_documentos).where(
+                CompraAgil.codigo.in_(list(codigos)),
+                CompraAgil.estado == EstadoOportunidad.PUBLICADA.value,
+                CompraAgil.fecha_cierre > ahora,
+                CompraAgil.n_documentos > 0,
+                CompraAgil.anexo_resuelto_en.is_(None),
+                ~con_anexo,
+            )
+        ).all()
+    )
+    return _motivos(session, candidatas) if candidatas else {}
+
+
+def filas_pendientes(session: Session, empresa_id: int, ahora: datetime) -> list[dict[str, Any]]:
+    """Las CA que esperan anexo en las regiones de la EMPRESA, listas para pintar (la lista web
+    `/catalogo/anexos/pendientes`, «Hoy» y «Te necesita»). Movida desde `routes/anexos.py`
+    (F-dis-datos) para que ninguna pantalla importe una función de otra ruta."""
+    from app.api.query import url_ficha_ca  # lazy: la capa web solo arma el enlace público
+
+    empresa = session.get(Empresa, empresa_id)
+    regiones = [int(r) for r in (empresa.regiones_prioritarias or [])] if empresa else []
+    return [
+        {
+            "codigo": p.codigo,
+            "nombre": p.nombre,
+            "comprador": p.comprador,
+            "cierre": _cierre_chile(p.fecha_cierre),
+            "fecha_cierre": p.fecha_cierre,
+            "n_documentos": p.n_documentos,
+            "motivo": p.motivo,
+            "url_ficha": url_ficha_ca(p.codigo),
+        }
+        for p in pendientes(session, regiones, ahora)
+    ]
+
+
+def _cierre_chile(valor: datetime | None) -> str:
+    if valor is None:
+        return "—"
+    return str(valor.replace(tzinfo=UTC).astimezone(TZ_CHILE).strftime("%d-%m %H:%M"))

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{# Vista previa de los datos de «Hoy» (F-dis-datos, solo admin, fuera del menú): tablas y listas
+   planas para comparar los números con la realidad antes de vestirlos. Sin CSS propio. #}
+{% block title %}Hoy · vista previa — Rastrillo{% endblock %}
+{% block content %}
+<h1>Hoy · vista previa de datos</h1>
+<p>Solo para validar las cifras. La portada no cambia.</p>
+
+<section aria-labelledby="t-novedades">
+  <h2 id="t-novedades">Desde tu última visita ({{ desde }})</h2>
+  {% if novedades %}
+  <ul>{% for n in novedades %}<li><a href="{{ n.url }}">{{ n.texto }}</a></li>{% endfor %}</ul>
+  {% else %}<p>Sin novedades.</p>{% endif %}
+</section>
+
+<section aria-labelledby="t-cifras">
+  <h2 id="t-cifras">Cifras</h2>
+  <nav aria-label="Período">
+    {% for clave, nombre in periodos.items() %}
+    <a href="?periodo={{ clave }}{% if tipo %}&tipo={{ tipo }}{% endif %}"{% if clave == periodo %} aria-current="page"{% endif %}>{{ nombre }}</a>
+    {% endfor %}
+  </nav>
+  <table>
+    <thead><tr><th>Cifra</th><th>Valor</th><th>Nota</th><th>Delta</th></tr></thead>
+    <tbody>
+      {% for c in cifras %}
+      <tr>
+        <td>{{ c.etiqueta }}</td>
+        <td>{% if c.unidad == "clp" %}{{ c.valor | clp }}{% else %}{{ c.valor | numero }}{% endif %}</td>
+        <td>{{ c.nota or "" }}</td>
+        <td>{% if c.delta is not none %}{{ "%+.0f" | format(c.delta * 100) }} %{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section aria-labelledby="t-necesita">
+  <h2 id="t-necesita">Te necesita ({{ total }})</h2>
+  <nav aria-label="Filtro">
+    <a href="?periodo={{ periodo }}"{% if not tipo %} aria-current="page"{% endif %}>Todo {{ total }}</a>
+    {% for clave, nombre in tipos.items() %}
+    <a href="?periodo={{ periodo }}&tipo={{ clave }}"{% if clave == tipo %} aria-current="page"{% endif %}>{{ nombre }} {{ conteo[clave] }}</a>
+    {% endfor %}
+  </nav>
+  {% if pendientes %}
+  <table>
+    <thead><tr><th>Señal</th><th>Qué</th><th>Detalle</th><th>Acción</th></tr></thead>
+    <tbody>
+      {% for p in pendientes %}
+      <tr data-tipo="{{ p.tipo }}">
+        <td><span class="r-senal r-senal--{{ p.nivel }}"><span>{{ p.senal }}</span></span></td>
+        <td>{{ p.titulo }}</td>
+        <td>{{ p.detalle }}</td>
+        <td><a href="{{ p.url }}">{{ p.accion }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>Nada pendiente.</p>{% endif %}
+</section>
+
+<section aria-labelledby="t-embudo">
+  <h2 id="t-embudo">Embudo del equipo</h2>
+  <table>
+    <thead><tr><th>Etapa</th><th>CA</th><th>Monto disponible</th><th>Nota</th></tr></thead>
+    <tbody>
+      {% for e in embudo %}
+      <tr><td>{{ e.etiqueta }}</td><td>{{ e.n | numero }}</td><td>{{ e.monto | clp }}</td><td>{{ e.nota }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section aria-labelledby="t-actividad">
+  <h2 id="t-actividad">Actividad</h2>
+  {% if actividad %}
+  <ul>{% for a in actividad %}<li><a href="{{ a.url }}">{{ a.antes }} {{ a.ca }} {{ a.despues }}</a> · {{ a.cuando }}</li>{% endfor %}</ul>
+  {% else %}<p>Sin actividad.</p>{% endif %}
+</section>
+
+<p>{{ fuente }}</p>
+{% endblock %}

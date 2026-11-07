@@ -297,3 +297,23 @@ async def mesa_comprador(
             "url_competencia": "/competencia?" + urlencode(qs),
         },
     )
+
+
+@router.get("/mesa/ca/{codigo}/panel", response_class=HTMLResponse)
+async def mesa_panel(
+    request: Request,
+    codigo: str,
+    sesion: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Panel lateral de la CA (F-dis-datos): datos que ya existen, sin evaluar en el GET. Una CA
+    inexistente o fuera del territorio es 404 (el mismo `_ca_o_404` de la ficha de precio)."""
+    from app.api.routes.mesa_precio import _ca_o_404
+    from app.mercado.panel_ca import panel
+
+    _, empresa_id = sesion
+    _ca_o_404(request, session, codigo)
+    datos = panel(session, empresa_id, codigo, ahora_utc())
+    if datos is None:
+        raise HTTPException(status_code=404, detail="Compra Ágil no encontrada")
+    return _TEMPLATES.TemplateResponse(request, "_mesa_panel.html", {"p": datos})

@@ -1030,18 +1030,23 @@ def resumen_hoy(session: Session, empresa_id: int, hoy: date | None = None) -> d
 # ---------------------------------------------------------------------------
 
 
-def generar_alarmas_seguimiento(session: Session, empresa_id: int, ahora: datetime) -> dict[str, int]:
-    """`req_pendientes`, `oc_sin_registrar`, `entrega_vence`, `factura_pendiente` y `pago_atrasado`
-    de la empresa. Idempotentes como las de F-equipo (índice único parcial: un evento por empresa ×
-    CA × tipo). No hace commit. Solo columnas livianas (regla 12)."""
-    cuenta = dict.fromkeys(eq.TIPOS_SEGUIMIENTO, 0)
+def condiciones_seguimiento(
+    session: Session, empresa_id: int, ahora: datetime
+) -> list[tuple[str, str, dict[str, Any]]]:
+    """Las condiciones de seguimiento VIGENTES de la empresa, como `(tipo, ca_codigo, datos)`.
+
+    Única verdad (F-dis-datos): la usan `generar_alarmas_seguimiento` (que las convierte en eventos
+    idempotentes) y «Te necesita» de `app.mercado.hoy` (que las muestra en vivo). Pura lectura,
+    sin escribir nada. Solo columnas livianas (regla 12).
+
+    - `req_pendientes`: CA `cotizando|lista` con obligatorios sin cumplir y cierre en < 24 h.
+    - `oc_sin_registrar`: venta `adjudicada` creada hace más de `DIAS_OC_SIN_REGISTRAR` días.
+    - `entrega_vence`: pendiente de entrega con fecha comprometida en ≤ `DIAS_ENTREGA_VENCE` días.
+    - `factura_pendiente`: `entregada` hace más de `DIAS_FACTURA_PENDIENTE` días.
+    - `pago_atrasado`: `facturada` con pago esperado anterior a hoy (día de Chile).
+    """
     hoy = hoy_de(ahora)
-
-    def _emitir(tipo: str, codigo: str, datos: dict[str, Any]) -> None:
-        if eq._evento_sistema(session, empresa_id, codigo, tipo, datos, ahora):
-            cuenta[tipo] += 1
-
-    # Requisitos obligatorios sin cumplir y cierre en menos de 24 h.
+    out: list[tuple[str, str, dict[str, Any]]] = []
     for (codigo,) in session.execute(
         select(CaTrabajo.ca_codigo)
         .join(CompraAgil, CompraAgil.codigo == CaTrabajo.ca_codigo)
@@ -1060,7 +1065,13 @@ def generar_alarmas_seguimiento(session: Session, empresa_id: int, ahora: dateti
             .exists(),
         )
     ):
-        _emitir(eq.EV_REQ_PENDIENTES, codigo, {"pendientes": len(rq.pendientes(session, empresa_id, codigo))})
+        out.append(
+            (
+                eq.EV_REQ_PENDIENTES,
+                codigo,
+                {"pendientes": len(rq.pendientes(session, empresa_id, codigo))},
+            )
+        )
 
     ventas = session.execute(
         select(Venta).where(Venta.empresa_id == empresa_id, Venta.estado.in_(EN_CURSO))
@@ -1068,18 +1079,29 @@ def generar_alarmas_seguimiento(session: Session, empresa_id: int, ahora: dateti
     for v in ventas:
         datos = {"venta_id": v.id, "estado": v.estado}
         if v.estado == ADJUDICADA and v.creado_en < ahora - timedelta(days=DIAS_OC_SIN_REGISTRAR):
-            _emitir(eq.EV_OC_SIN_REGISTRAR, v.ca_codigo, datos)
+            out.append((eq.EV_OC_SIN_REGISTRAR, v.ca_codigo, dict(datos)))
         if (
             v.estado in PENDIENTES_DE_ENTREGA
             and v.entrega_fecha_comprometida is not None
             and v.entrega_fecha_comprometida <= hoy + timedelta(days=DIAS_ENTREGA_VENCE)
         ):
-            _emitir(eq.EV_ENTREGA_VENCE, v.ca_codigo, datos)
+            out.append((eq.EV_ENTREGA_VENCE, v.ca_codigo, dict(datos)))
         if v.estado == ENTREGADA:
             entregada = v.entrega_fecha_real or hoy_de(v.actualizado_en)
             if entregada < hoy - timedelta(days=DIAS_FACTURA_PENDIENTE):
-                _emitir(eq.EV_FACTURA_PENDIENTE, v.ca_codigo, datos)
+                out.append((eq.EV_FACTURA_PENDIENTE, v.ca_codigo, dict(datos)))
         if v.estado == FACTURADA and v.pago_esperado_en is not None and v.pago_esperado_en < hoy:
-            _emitir(eq.EV_PAGO_ATRASADO, v.ca_codigo, datos)
+            out.append((eq.EV_PAGO_ATRASADO, v.ca_codigo, dict(datos)))
+    return out
+
+
+def generar_alarmas_seguimiento(session: Session, empresa_id: int, ahora: datetime) -> dict[str, int]:
+    """`req_pendientes`, `oc_sin_registrar`, `entrega_vence`, `factura_pendiente` y `pago_atrasado`
+    de la empresa. Idempotentes como las de F-equipo (índice único parcial: un evento por empresa ×
+    CA × tipo). No hace commit. Las condiciones salen de `condiciones_seguimiento` (F-dis-datos)."""
+    cuenta = dict.fromkeys(eq.TIPOS_SEGUIMIENTO, 0)
+    for tipo, codigo, datos in condiciones_seguimiento(session, empresa_id, ahora):
+        if eq._evento_sistema(session, empresa_id, codigo, tipo, datos, ahora):
+            cuenta[tipo] += 1
     session.flush()
     return cuenta

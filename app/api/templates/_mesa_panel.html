@@ -1,0 +1,67 @@
+{# Panel lateral de la CA (F-dis-datos). HTML semántico mínimo, sin CSS propio: lo viste F-dis-mesa.
+   Costos y precios en NETO; el bruto va en `title` (explicativo). Los fragmentos existentes se cargan
+   con hx-get diferido; su lógica no se duplica. #}
+<section class="r-panel" aria-labelledby="panel-{{ p.codigo }}">
+  <header>
+    <p class="r-codigo">{{ p.codigo }}</p>
+    <h2 id="panel-{{ p.codigo }}">{{ p.nombre }}</h2>
+    <p>{{ p.organismo or "Comprador sin nombre" }}{% if p.unidad %} · {{ p.unidad }}{% endif %}{% if p.comuna %} · {{ p.comuna }} [I]{% endif %}</p>
+    {% if p.senales %}
+    <ul aria-label="Señales">
+      {% for s in p.senales %}<li class="r-senal r-senal--{{ s.nivel }}" data-tipo="{{ s.tipo }}"><span>{{ s.texto }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+  </header>
+
+  <dl>
+    <div class="r-dato"><dt>Oferta {{ "propia" if p.cifras.oferta_propia else "sugerida" }} (neto)</dt>
+      <dd>{% if p.cifras.oferta is not none %}{{ p.cifras.oferta | clp }}{% if p.cifras.pct_disponible is not none %} · {{ (p.cifras.pct_disponible * 100) | round | int }} % del disponible{% endif %}{% else %}— {{ p.cifras.motivo or "" }}{% endif %}</dd></div>
+    <div class="r-dato"><dt>Margen esperado</dt>
+      <dd>{% if p.cifras.margen_pct is not none %}{{ (p.cifras.margen_pct * 100) | round(1) }} %{% else %}—{% endif %}{% if p.cifras.costos_de is not none %} · {{ p.cifras.costos_con }} de {{ p.cifras.costos_de }} costos{% endif %}</dd></div>
+    <div class="r-dato"><dt>P(ganar)</dt>
+      <dd>{% if p.cifras.p_ganar is not none %}{{ (p.cifras.p_ganar * 100) | round | int }} %{% else %}—{% endif %}{% if p.cifras.p_nota %} · {{ p.cifras.p_nota }}{% endif %}</dd></div>
+    <div class="r-dato"><dt>Cierre</dt><dd>{{ p.cierre }} · {{ p.cuenta_regresiva }}</dd></div>
+    <div class="r-dato"><dt>Monto disponible</dt><dd>{{ p.monto | clp }}</dd></div>
+  </dl>
+
+  <section aria-label="Líneas">
+    {% if p.lineas %}
+    <table>
+      <thead><tr><th>Producto</th><th>Cantidad</th><th>Costo unitario (neto)</th><th>Precio unitario (neto)</th><th></th></tr></thead>
+      <tbody>
+        {% for l in p.lineas %}
+        <tr>
+          <td>{{ l.producto or l.texto }}{% if l.proveedor %} · {{ l.proveedor }}{% endif %}</td>
+          <td>{% if l.cantidad is not none %}{{ l.cantidad | cantidad }}{% endif %} {{ l.unidad or "" }}</td>
+          <td{% if l.costo_unitario_bruto is not none %} title="Bruto {{ l.costo_unitario_bruto | clp }}{% if l.impuesto %} · {{ l.impuesto }}{% endif %}"{% endif %}>{{ l.costo_unitario | clp if l.costo_unitario is not none else "—" }}</td>
+          <td{% if l.precio_unitario_bruto is not none %} title="Bruto {{ l.precio_unitario_bruto | clp }}"{% endif %}>{{ l.precio_unitario | clp if l.precio_unitario is not none else "—" }}</td>
+          <td>{% if l.marca == "sin_costo" %}<span class="r-senal r-senal--atencion"><span>Falta costo</span></span>{% elif l.marca == "vencido" %}<span class="r-senal r-senal--atencion"><span>Precio desactualizado · {{ l.dias_vencido }} días</span></span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% elif p.espera_anexo %}
+    <p>Sin líneas: la CA espera su anexo ({{ p.espera_anexo }}).</p>
+    {% else %}
+    <p>Sin líneas.</p>
+    {% endif %}
+  </section>
+
+  <dl aria-label="Trabajo">
+    <div class="r-dato"><dt>Estado</dt><dd><span class="r-estado" data-estado="{{ p.trabajo.estado }}"><span>{{ p.trabajo.etiqueta }}</span></span></dd></div>
+    <div class="r-dato"><dt>Responsable</dt><dd>{{ p.trabajo.responsable or "Sin responsable" }}</dd></div>
+    {% if p.trabajo.lote_id %}<div class="r-dato"><dt>Lote</dt><dd><a href="/lotes/{{ p.trabajo.lote_id }}">{{ p.trabajo.lote_nombre }}</a></dd></div>{% endif %}
+    {% if p.trabajo.venta_id %}<div class="r-dato"><dt>Venta</dt><dd><a href="/ventas/{{ p.trabajo.venta_id }}">{{ p.trabajo.venta_etiqueta }}</a></dd></div>{% endif %}
+    {% if p.trabajo.requisitos_pendientes %}<div class="r-dato"><dt>Requisitos pendientes</dt><dd><ul>{% for r in p.trabajo.requisitos_pendientes %}<li>{{ r }}</li>{% endfor %}</ul></dd></div>{% endif %}
+  </dl>
+
+  <section aria-label="Comprador" hx-get="{{ p.url_comprador }}" hx-trigger="revealed" hx-swap="innerHTML"></section>
+  <section aria-label="Competidores" hx-get="{{ p.url_competidores }}" hx-trigger="revealed" hx-swap="innerHTML"></section>
+
+  <nav aria-label="Enlaces">
+    <a href="{{ p.url_ficha }}">Abrir ficha</a>
+    <a href="{{ p.url_ficha }}#precio" data-fragmento="{{ p.url_precio }}">Precio y mi oferta</a>
+    {% if p.url_publica %}<a href="{{ p.url_publica }}" target="_blank" rel="noopener">Ver en Mercado Público</a>{% endif %}
+  </nav>
+  <p>{{ p.fuente }}</p>
+</section>

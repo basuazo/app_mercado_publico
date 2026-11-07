@@ -521,12 +521,12 @@ async def portada(
     ventas_hoy: dict[str, Any] | None = None
     equipo_hoy: dict[str, Any] | None = None
     if empresa_id is not None:
-        from app.api.routes.anexos import filas_pendientes
         from app.mercado import equipo as eq
+        from app.mercado.anexos_pendientes import filas_pendientes
 
         ahora = ahora_utc()
         # F-plat-anexos-boton §2: CA vigentes que esperan su anexo (el mismo criterio de la lista).
-        n_anexos_pendientes = len(filas_pendientes(session, empresa_id))
+        n_anexos_pendientes = len(filas_pendientes(session, empresa_id, ahora))
         equipo_hoy = {
             "mias": eq.mis_ca(session, empresa_id, user.id, ahora),
             "urgentes": eq.cierran_sin_enviar(session, empresa_id, ahora),

@@ -18,6 +18,19 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-dis-datos (7-nov, rama `F-dis-datos` desde `7f3796b`, PR a `main`; sin migración)
+Capa de datos de «Hoy» y del panel lateral de la Mesa (`prompt-F-dis-datos.md`); nadie la ve todavía (sin changelog).
+**`app/mercado/hoy.py`:** `te_necesita` (cierres < 24 h con lo que falta; precios desactualizados solo de productos que
+pide una CA de lote activo o en trabajo; falta costo por lote editable; líneas por revisar y anexos agrupados; ventas desde
+`ventas.condiciones_seguimiento`, sin repetir `req_pendientes`, que ya va en su cierre), `conteo_por_tipo`, `cifras`
+(hoy · semana lun–dom · mes, en días de Chile; `delta` contra el período anterior completo; «cierran» = lo que queda del
+período; tasa = ganadas / (ganadas + perdidas), solo con ≥ 5), `embudo`, `senales_por_ca` (consultas fijas) y `novedades`
+(«CA nuevas que calzan» = vigentes del territorio con una línea de un producto que la empresa cotiza o tiene en inventario).
+**Refactor:** `ventas.condiciones_seguimiento` (una verdad para alarmas y «Te necesita»), `proveedores.mejores_costos` (el
+criterio de `mejor_costo` en lote) y `anexos_pendientes.filas_pendientes` (movida desde `routes/anexos.py`). **Rutas:**
+`GET /mesa/ca/{c}/panel` (`_mesa_panel.html`), `GET /hoy/previa` (solo admin, fuera del menú) y `POST /hoy/visto`
+(`usuario_vista.hoy.visto_en`). **Pendiente de Boris:** abrir `/hoy/previa` en producción y contrastar las definiciones.
+
 ## F-plat-auto-revision (6-nov, rama `F-plat-auto-revision` desde `eed8a0f`, commit local sin push ni merge; migración `d8f1b6c4a2e9`, cuelga de `c6d9a3f1e8b2`)
 Líneas de anexo confirmadas solas (`prompt-F-plat-auto-revision.md`). **Esquema:** `ca_lineas.confirmada_por|puntaje_auto|
 control_en`, índice parcial `ix_ca_lineas_auto`, tabla `auto_control_semana`. **Reglas:** `app/mercado/auto_revision.py`
