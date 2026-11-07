@@ -111,23 +111,25 @@ def test_enlaces_de_orden_y_agrupacion_conservan_el_texto_codificado(
 # ---------------------------------------------------------------------------
 
 
-def test_menu_movil_es_offcanvas_con_etiqueta(client, settings, usuario) -> None:
-    """F-plat-ui: la barra de arriba se volvió barra lateral; en móvil es un offcanvas."""
+def test_menu_movil_es_dialog_con_etiqueta(client, settings, usuario) -> None:
+    """F-plat-ui: la barra de arriba se volvió barra lateral. F-dis-1: en móvil es un <dialog>
+    propio (sin offcanvas de Bootstrap)."""
     html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
-    assert 'class="app-lateral"' in html
-    assert 'data-bs-toggle="offcanvas"' in html
-    assert 'data-bs-target="#menu-movil"' in html
+    assert 'class="app-lateral m-lateral"' in html
+    assert "data-abre-menu" in html
     assert 'aria-controls="menu-movil"' in html
     assert 'aria-label="Abrir navegación"' in html
-    assert 'id="menu-movil" aria-label="Menú principal"' in html
+    assert '<dialog class="m-dialogo-menu" id="menu-movil" aria-label="Menú principal"' in html
+    assert 'data-bs-target="#menu-movil"' not in html
     assert "navbar" not in html
 
 
 def test_item_activo_de_la_barra_lateral_tiene_aria_current(client, settings, usuario) -> None:
     html = client.get("/salud", cookies=_cookie(settings, usuario)).text
-    activos = re.findall(r'<a class="nav-lateral__item active" href="([^"]+)" aria-current="page"', html)
-    # Una vez en la barra fija y otra en el offcanvas: siempre la misma entrada.
-    assert activos == ["/salud", "/salud"]
+    activos = re.findall(r'<a class="m-item[^"]*" href="([^"]+)" aria-current="page"', html)
+    # Una vez en la barra fija y otra en el menú móvil: siempre la misma entrada (F-dis-1: Salud
+    # vive dentro de Configuración).
+    assert activos == ["/cuenta", "/cuenta"]
 
 
 def test_base_no_referencia_fuentes_externas_y_los_woff2_existen(client, settings, usuario) -> None:
@@ -196,7 +198,7 @@ def test_landmark_main_y_enlace_de_salto(client, settings, usuario) -> None:
     html = client.get("/archivo", cookies=_cookie(settings, usuario)).text
     assert '<main id="contenido"' in html
     assert 'href="#contenido">Saltar al contenido</a>' in html
-    assert "visually-hidden-focusable" in html
+    assert 'class="m-saltar"' in html  # F-dis-1: visible solo con foco
     # El salto debe venir antes del nav para ser lo primero que recibe foco.
     assert html.index("Saltar al contenido") < html.index("<nav")
 
@@ -211,14 +213,14 @@ def test_region_de_anuncios_aria_live(client, settings, usuario) -> None:
 
 def test_pagina_actual_marcada_en_la_navegacion(client, settings, usuario) -> None:
     html = client.get("/cuenta", cookies=_cookie(settings, usuario)).text
-    i = html.index('href="/cuenta"')
+    i = html.index("<span>Configuración</span>")
     enlace = html[html.rindex("<a", 0, i) : html.index("</a>", i)]
+    assert 'href="/cuenta"' in enlace
     assert 'aria-current="page"' in enlace
-    assert "active" in enlace
 
     # En otra página el mismo enlace no debe declararse actual.
     html_otra = client.get("/proveedores", cookies=_cookie(settings, usuario)).text
-    j = html_otra.index('href="/cuenta"')
+    j = html_otra.index("<span>Configuración</span>")
     enlace_perfiles = html_otra[
         html_otra.rindex("<a", 0, j) : html_otra.index("</a>", j)
     ]

@@ -1,0 +1,131 @@
+/* Rastrillo — átomos (F-dis-1). Escritos desde los tokens de rastrillo/tokens.css; los colores,
+ * radios y duraciones salen siempre de un token. Tres gramáticas que no se mezclan:
+ *   se aprieta (r-btn, r-seg, r-filtro) · se lee (r-estado) · te necesita (r-senal, r-contador).
+ * Regla 10 del rediseño: en los átomos inline-flex con gap la frase va en un solo <span>. */
+
+.r-raiz { font-family: var(--font-sans); color: var(--tinta); background: var(--fondo); font-size: 14px; line-height: 20px;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 1; }
+.r-etiqueta { font: 500 13px/16px var(--font-sans); color: var(--tinta-2); }
+.r-codigo { font: 400 12px/16px var(--font-mono); color: var(--tinta-2); }
+.r-tarjeta { background: var(--superficie); color: var(--tinta); border: 1px solid var(--borde); border-radius: var(--radio-panel);
+  box-shadow: var(--sombra-tarjeta); }
+.r-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* ---- Botón (se aprieta) ---- */
+.r-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; box-sizing: border-box;
+  border-radius: var(--radio-control); border: 1px solid transparent; font: 500 14px/20px var(--font-sans);
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  transition: background var(--dur-rapida) ease, box-shadow var(--dur-rapida) ease, transform var(--dur-rapida) ease,
+    border-color var(--dur-rapida) ease, color var(--dur-rapida) ease; }
+.r-btn:active { transform: translateY(1px); }
+.r-btn:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.r-btn svg { width: 16px; height: 16px; flex: none; stroke-width: 1.75; }
+.r-btn .r-flecha { transition: transform var(--dur-rapida) ease; }
+.r-btn:hover .r-flecha { transform: translateX(3px); }
+.r-btn--primario { background: var(--accion); color: var(--sobre-accion); box-shadow: var(--sombra-tarjeta); }
+.r-btn--primario:hover { background: var(--accion-hover); color: var(--sobre-accion); box-shadow: var(--sombra-elevada); }
+.r-btn--secundario { background: var(--superficie); color: var(--tinta); border-color: var(--borde-control); }
+.r-btn--secundario:hover { background: var(--superficie-2); color: var(--tinta); }
+.r-btn--terciario { background: transparent; color: var(--accion); padding: 0 8px; }
+.r-btn--terciario:hover { background: var(--accion-suave); color: var(--accion); }
+.r-btn--peligro { background: var(--urgente); color: var(--sobre-urgente); }
+.r-btn--peligro:hover { color: var(--sobre-urgente); box-shadow: var(--sombra-elevada); }
+.r-btn--icono { width: 34px; padding: 0; justify-content: center; background: var(--superficie); color: var(--tinta-2); border-color: var(--borde); }
+.r-btn--icono:hover { color: var(--tinta); border-color: var(--borde-control); }
+.r-btn--sm { height: 28px; padding: 0 10px; font-size: 13px; }
+.r-btn--sm.r-btn--icono { width: 28px; padding: 0; }
+.r-btn--sm.r-btn--terciario { padding: 0 6px; }
+.r-btn[disabled], .r-btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }
+.r-btn[aria-busy="true"] { cursor: progress; }
+.r-giro { width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 2px solid currentColor;
+  border-right-color: transparent; animation: r-giro .8s linear infinite; }
+@keyframes r-giro { to { transform: rotate(360deg); } }
+
+/* ---- Tecla (atajo visible) ---- */
+.r-tecla { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box;
+  border-radius: 5px; font: 500 11px/1 var(--font-mono); color: var(--tinta-2); background: var(--superficie-2);
+  border: 1px solid var(--borde); }
+.r-btn--primario .r-tecla { background: transparent; color: inherit; border-color: currentColor; opacity: .7; }
+
+/* ---- Estado (se lee: tenue, con punto, sin hover) ---- */
+.r-estado { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; box-sizing: border-box;
+  border-radius: 6px; font: 500 12px/16px var(--font-sans); background: var(--superficie-2); color: var(--tinta-2);
+  cursor: default; white-space: nowrap; }
+.r-estado::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .8; }
+.r-estado--curso { background: var(--accion-suave); color: var(--tinta); }
+.r-estado--curso::before { background: var(--accion); }
+.r-estado--ok { background: var(--ok-fondo); color: var(--ok); }
+.r-estado--sin-punto::before { display: none; }
+
+/* ---- Segmentado y filtro (se aprietan) ---- */
+.r-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radio-pildora); background: var(--superficie-2); }
+.r-seg button, .r-seg a { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 0;
+  border-radius: var(--radio-pildora); background: transparent; font: 500 13px/1 var(--font-sans); color: var(--tinta-2);
+  cursor: pointer; text-decoration: none; transition: background var(--dur-media) ease, color var(--dur-media) ease; }
+.r-seg button:hover, .r-seg a:hover { color: var(--tinta); }
+.r-seg [aria-pressed="true"], .r-seg [aria-current="true"] { background: var(--accion); color: var(--sobre-accion);
+  box-shadow: var(--sombra-tarjeta); }
+.r-seg button:focus-visible, .r-seg a:focus-visible { outline: 2px solid var(--foco); outline-offset: 1px; }
+.r-seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.r-seg label { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: var(--radio-pildora);
+  font: 500 13px/1 var(--font-sans); color: var(--tinta-2); cursor: pointer;
+  transition: background var(--dur-media) ease, color var(--dur-media) ease; }
+.r-seg label:hover { color: var(--tinta); }
+.r-seg input:checked + label { background: var(--accion); color: var(--sobre-accion); box-shadow: var(--sombra-tarjeta); }
+.r-seg input:focus-visible + label { outline: 2px solid var(--foco); outline-offset: 1px; }
+.r-filtro { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; box-sizing: border-box;
+  border-radius: var(--radio-control); border: 1px dashed var(--borde-control); background: transparent; color: var(--tinta-2);
+  font: 500 13px/1 var(--font-sans); cursor: pointer; text-decoration: none; transition: background var(--dur-rapida) ease; }
+.r-filtro:hover { background: var(--superficie-2); color: var(--tinta); }
+.r-filtro[aria-pressed="true"] { border-style: solid; border-color: var(--accion); background: var(--accion-suave); color: var(--accion); }
+.r-filtro:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.r-filtro svg { width: 14px; height: 14px; }
+
+/* ---- Señal (te necesita) y contador ---- */
+.r-senal { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; box-sizing: border-box;
+  border-radius: var(--radio-control); font: 500 13px/1 var(--font-sans); white-space: nowrap; }
+.r-senal svg { width: 14px; height: 14px; flex: none; stroke-width: 2; }
+.r-senal--urgente { background: var(--urgente-fondo); color: var(--urgente); }
+.r-senal--atencion { background: var(--atencion-fondo); color: var(--atencion); }
+.r-senal--nuevo { padding: 0; color: var(--tinta); }
+.r-senal--nuevo::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accion);
+  box-shadow: 0 0 0 3px var(--accion-suave); }
+.r-contador { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  border-radius: var(--radio-pildora); background: var(--urgente); color: var(--sobre-urgente); font: 600 11px/1 var(--font-sans); }
+.r-contador--atencion { background: var(--atencion-marca); color: var(--sobre-atencion); }
+.r-contador[hidden] { display: none; }
+
+/* ---- Brillo: texto que recorre mientras la IA trabaja ---- */
+.r-brillo { background: linear-gradient(90deg, var(--tinta-2) 0%, var(--tinta) 45%, var(--tinta-2) 90%); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: r-brillo 1.6s linear infinite; }
+@keyframes r-brillo { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* ---- Dato ---- */
+.r-dato { display: grid; gap: 4px; min-width: 0; }
+.r-dato__valor { font: 500 22px/28px var(--font-sans); letter-spacing: -.01em; color: var(--tinta); font-variant-numeric: tabular-nums; }
+.r-dato--xl .r-dato__valor { font-size: 32px; line-height: 36px; letter-spacing: -.02em; }
+.r-dato--fila .r-dato__valor { font-size: 14px; line-height: 20px; letter-spacing: 0; }
+.r-dato__valor small { font-size: .55em; font-weight: 500; color: var(--tinta-2); margin-left: 2px; letter-spacing: 0; }
+.r-dato__nota { display: inline-flex; flex-wrap: wrap; gap: 6px; font: 400 13px/18px var(--font-sans); color: var(--tinta-2); }
+.r-delta--sube { color: var(--ok); font-weight: 500; }
+.r-delta--baja { color: var(--urgente); font-weight: 500; }
+.r-dato--vacio .r-dato__valor { color: var(--tinta-2); font-size: 15px; font-weight: 400; }
+
+/* ---- Ícono suelto y baldosa dúo ---- */
+.r-ico { flex: none; }
+.r-icono { display: inline-grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 10px;
+  background: var(--accion-suave); color: var(--accion); }
+.r-icono svg { width: 18px; height: 18px; stroke-width: 1.75; }
+.r-icono svg :nth-child(2n) { color: var(--acento-2); stroke: var(--acento-2); }
+.r-icono--sm { width: 28px; height: 28px; border-radius: var(--radio-control); }
+.r-icono--sm svg { width: 15px; height: 15px; }
+.r-icono--neutro { background: var(--superficie-2); color: var(--tinta-2); }
+.r-icono--neutro svg :nth-child(2n) { stroke: currentColor; }
+
+/* Movimiento con propósito: nada se mueve si la persona lo pidió así. */
+@media (prefers-reduced-motion: reduce) {
+  .r-raiz *, .r-raiz *::before, .r-raiz *::after { transition: none !important; animation: none !important; }
+  .r-brillo { animation: none; background: none; color: var(--tinta-2); }
+  .r-giro { animation-duration: 2.4s !important; }
+}

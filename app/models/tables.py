@@ -69,6 +69,16 @@ class Usuario(Base):
     # leyó la actividad del equipo (todo evento posterior es «no leído» para él).
     nombre: Mapped[str | None] = mapped_column(String(100), nullable=True)
     actividad_leida_hasta: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # F-dis-1: apariencia (valores válidos en app/mercado/preferencias.py).
+    tema: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="claro", server_default="claro"
+    )
+    densidad: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="comoda", server_default="comoda"
+    )
+    inicio: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="hoy", server_default="hoy"
+    )
     creado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
     perfiles: Mapped[list[PerfilBusqueda]] = relationship(
@@ -1480,6 +1490,22 @@ class PreferenciaAlarma(Base):
     )
     tipo: Mapped[str] = mapped_column(String(30), nullable=False)
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class UsuarioVista(Base):
+    """Filtros recordados de una pantalla (F-dis-1). Solo claves de la lista blanca de
+    `app/mercado/preferencias.py`; `datos` ≤ 2 KB. Uno por usuario y pantalla."""
+
+    __tablename__ = "usuario_vista"
+    __table_args__ = (UniqueConstraint("usuario_id", "pantalla", name="uq_usuario_vista"),)
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    usuario_id: Mapped[int] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False
+    )
+    pantalla: Mapped[str] = mapped_column(String(40), nullable=False)
+    datos: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=ahora_utc)
 
 
 # Registro de la empresa, lo más nuevo primero (campana, /actividad, no leídos).

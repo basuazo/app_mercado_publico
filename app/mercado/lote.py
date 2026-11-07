@@ -1654,6 +1654,45 @@ def resumen_hoy(session: Session, empresa_id: int) -> dict[str, Any]:
     return {"lotes": int(n_lotes or 0), "cas": int(n_ca or 0), "cierre": cierre}
 
 
+def contadores_menu(session: Session, empresa_id: int, ahora: datetime) -> dict[str, int]:
+    """Contadores del menú lateral (F-dis-1), dos `count` sin traer filas:
+
+    - `hoy`: CA en curso (sin enviar) que cierran en menos de 24 h; las mismas que lista
+      «Cierran en menos de 24 h sin enviar» en la portada (`equipo.cierran_sin_enviar`).
+      F-dis-datos lo cambia por el total de «Te necesita».
+    - `trabajo`: CA en curso, vigentes, que no están en un lote abierto; las mismas que lista
+      «En curso sin lote» de En trabajo (`en_trabajo().sin_lote`).
+    """
+    hoy = session.execute(
+        select(func.count())
+        .select_from(CaTrabajo)
+        .join(CompraAgil, CompraAgil.codigo == CaTrabajo.ca_codigo)
+        .where(
+            CaTrabajo.empresa_id == empresa_id,
+            CaTrabajo.estado.in_(eq.ACTIVOS),
+            CompraAgil.fecha_cierre > ahora,
+            CompraAgil.fecha_cierre <= ahora + timedelta(hours=24),
+        )
+    ).scalar_one()
+    en_lote_abierto = (
+        select(LoteCa.ca_codigo)
+        .join(Lote, Lote.id == LoteCa.lote_id)
+        .where(Lote.empresa_id == empresa_id, Lote.estado.in_(ACTIVOS))
+    )
+    trabajo = session.execute(
+        select(func.count())
+        .select_from(CaTrabajo)
+        .join(CompraAgil, CompraAgil.codigo == CaTrabajo.ca_codigo)
+        .where(
+            CaTrabajo.empresa_id == empresa_id,
+            CaTrabajo.estado.in_(eq.ACTIVOS),
+            CompraAgil.fecha_cierre.is_(None) | (CompraAgil.fecha_cierre > ahora),
+            CaTrabajo.ca_codigo.not_in(en_lote_abierto),
+        )
+    ).scalar_one()
+    return {"hoy": int(hoy or 0), "trabajo": int(trabajo or 0)}
+
+
 def purgar_cerrados(session: Session, ahora: datetime, dias: int = RETENCION_DIAS) -> int:
     """Retención (F-plat-7 §1.4): borra los lotes `cerrado` sin cambios hace más de `dias` con sus
     hijas (explícito: SQLite no aplica el CASCADE sin PRAGMA). Devuelve cuántos lotes borró."""

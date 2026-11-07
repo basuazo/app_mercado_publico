@@ -1,0 +1,118 @@
+{#- Macros del sistema visual Rastrillo (F-dis-1). Una por átomo y por patrón; las clases viven en
+    static/rastrillo/atomos.css y estacion.css. Las fases F-dis-* las usan en vez de Bootstrap.
+    Regla 10: en los átomos inline-flex con gap el texto va SIEMPRE en un solo <span>.
+    Uso: {% import "_r.html" as r %}{{ r.boton("Cotizar", "primario", icono="flecha") }}
+    Ojo: los nombres de nivel superior de una plantilla llegan a los bloques de sus hijas. base.html
+    lo importa como «rz»; una pantalla que reciba un dato «r» en su contexto debe usar otro alias. -#}
+{% from "_iconos.html" import icono as _icono %}
+
+{#- Atributos extra como dict: {"hx-post": "/x", "data-accion": "y"}. True → atributo sin valor. -#}
+{% macro _attrs(attrs) -%}
+{%- for k, v in (attrs or {}).items() -%}
+{%- if v is sameas true %} {{ k }}{% elif v is not none and v is not sameas false %} {{ k }}="{{ v }}"{% endif -%}
+{%- endfor -%}
+{%- endmacro %}
+
+{#- Botón (se aprieta). tipo: primario | secundario | terciario | peligro | icono. tam: None | 'sm'.
+    Con href es un <a>; si no, <button type="button"> (pasa {"type": "submit"} en attrs para enviar).
+    En tipo 'icono' el texto va a aria-label. `tecla` muestra el atajo dentro del botón. -#}
+{% macro boton(texto, tipo='secundario', icono=None, href=None, tam=None, attrs={}, tecla=None) -%}
+{%- set clase = 'r-btn r-btn--' ~ tipo ~ (' r-btn--sm' if tam == 'sm' else '') -%}
+{%- set extra = attrs or {} -%}
+{%- if href -%}
+<a class="{{ clase }}{% if extra.get('class') %} {{ extra['class'] }}{% endif %}" href="{{ href }}"{% if tipo == 'icono' %} aria-label="{{ texto }}" title="{{ texto }}"{% endif %}{{ _attrs(extra | dict_sin('class')) }}>
+{%- else -%}
+<button class="{{ clase }}{% if extra.get('class') %} {{ extra['class'] }}{% endif %}"{% if 'type' not in extra %} type="button"{% endif %}{% if tipo == 'icono' %} aria-label="{{ texto }}" title="{{ texto }}"{% endif %}{{ _attrs(extra | dict_sin('class')) }}>
+{%- endif -%}
+{%- if icono %}{{ _icono(icono) }}{% endif -%}
+{%- if tipo != 'icono' %}<span>{{ texto }}</span>{% endif -%}
+{%- if tecla %}<span class="r-tecla"{% if '⌘' in tecla %} data-tecla-mod{% endif %} aria-hidden="true">{{ tecla }}</span>{% endif -%}
+{%- if href %}</a>{% else %}</button>{% endif -%}
+{%- endmacro %}
+
+{#- Estado (se lee). tipo: None (neutro) | 'curso' | 'ok' | 'sin-punto'. -#}
+{% macro estado(texto, tipo=None) -%}
+<span class="r-estado{% if tipo %} r-estado--{{ tipo }}{% endif %}"><span>{{ texto }}</span></span>
+{%- endmacro %}
+
+{#- Señal (te necesita) con explicativo accesible (foco o mouse; sin botones).
+    nivel: 'urgente' | 'atencion' | 'nuevo'. que_pasa: frase de «Qué pasa»; se_resuelve: opcional. -#}
+{% macro senal(texto, nivel, que_pasa, se_resuelve=None, icono=None, derecha=False) -%}
+{%- set id_ayuda = uid('ayuda') -%}
+{%- set ico = icono if icono else ({'urgente': 'alarma', 'atencion': 'alerta'}.get(nivel)) -%}
+<span class="m-ayuda{% if derecha %} m-ayuda--der{% endif %}" tabindex="0" aria-describedby="{{ id_ayuda }}">
+<span class="r-senal r-senal--{{ nivel }}">{% if ico and nivel != 'nuevo' %}{{ _icono(ico, 14) }}{% endif %}<span>{{ texto }}</span></span>
+<span class="m-ayuda__texto" role="tooltip" id="{{ id_ayuda }}"><strong>Qué pasa</strong><span>{{ que_pasa }}</span>
+{%- if se_resuelve %}<span class="m-ayuda__resuelve">Se resuelve: {{ se_resuelve }}</span>{% endif %}</span>
+</span>
+{%- endmacro %}
+
+{#- Dato: etiqueta, valor y nota opcional. xl=True para el número del día (uno por pantalla). -#}
+{% macro dato(etiqueta, valor, nota=None, xl=False) -%}
+<div class="r-dato{% if xl %} r-dato--xl{% endif %}"><span class="r-etiqueta">{{ etiqueta }}</span><span class="r-dato__valor">{{ valor }}</span>
+{%- if nota %}<span class="r-dato__nota"><span>{{ nota }}</span></span>{% endif %}</div>
+{%- endmacro %}
+
+{#- Segmentado (2–5 opciones excluyentes), como radios de formulario: `nombre` es el campo.
+    opciones: lista de (valor, texto). -#}
+{% macro segmentado(opciones, actual, nombre, etiqueta=None) -%}
+{%- set base_id = uid('seg-' ~ nombre) -%}
+<div class="r-seg" role="radiogroup"{% if etiqueta %} aria-label="{{ etiqueta }}"{% endif %}>
+{%- for valor, texto in opciones %}
+<input type="radio" name="{{ nombre }}" id="{{ base_id }}-{{ loop.index }}" value="{{ valor }}"{% if valor == actual %} checked{% endif %}><label for="{{ base_id }}-{{ loop.index }}">{{ texto }}</label>
+{%- endfor %}
+</div>
+{%- endmacro %}
+
+{#- Contador (junto a un ítem del menú): rojo para urgentes; atencion=True para pendientes tuyos. -#}
+{% macro contador(n, atencion=False, texto=None) -%}
+<span class="r-contador{% if atencion %} r-contador--atencion{% endif %}"{% if texto %} aria-hidden="true"{% endif %}>{{ n if n < 100 else '99+' }}</span>
+{%- if texto %}<span class="r-oculto">{{ texto }}</span>{% endif -%}
+{%- endmacro %}
+
+{#- Tecla (atajo visible). -#}
+{% macro tecla(t) -%}
+<span class="r-tecla">{{ t }}</span>
+{%- endmacro %}
+
+{#- Estado vacío, con «Limpiar filtros» si la lista está filtrada. -#}
+{% macro vacio(texto, url_limpiar=None) -%}
+<div class="m-vacio" role="status"><p>{{ texto }}</p>
+{%- if url_limpiar %}{{ boton('Limpiar filtros', 'secundario', href=url_limpiar, tam='sm') }}{% endif %}</div>
+{%- endmacro %}
+
+{#- Aviso con «Deshacer» (role=status). La URL de deshacer se llama con hx-post (CSRF por hx-headers). -#}
+{% macro aviso(texto, url_deshacer=None) -%}
+<div class="m-aviso" role="status"><span class="m-aviso__texto">{{ texto }}</span>
+{%- if url_deshacer %}{{ boton('Deshacer', 'terciario', icono='deshacer', tam='sm', attrs={'hx-post': url_deshacer, 'data-deshacer': true}) }}{% endif %}</div>
+{%- endmacro %}
+
+{#- Panel lateral (lista + panel): `Esc` o «Cerrar» lo cierran ([data-cerrable]). -#}
+{% macro panel_lateral(titulo, etiqueta) -%}
+{%- set id_titulo = uid('panel-titulo') -%}
+<aside class="m-panel r-tarjeta" role="complementary" aria-labelledby="{{ id_titulo }}" data-cerrable data-panel>
+<div class="m-panel__cabeza"><div><span class="r-etiqueta">{{ etiqueta }}</span><h2 class="m-panel__titulo" id="{{ id_titulo }}">{{ titulo }}</h2></div>
+{{ boton('Cerrar (Esc)', 'icono', icono='cerrar', tam='sm', attrs={'data-cerrar': true}) }}</div>
+<div class="m-panel__cuerpo">{{ caller() }}</div>
+</aside>
+{%- endmacro %}
+
+{#- Modal (<dialog>): se abre con showModal(); `Esc` lo cierra (nativo). -#}
+{% macro modal(titulo, id=None) -%}
+{%- set id_titulo = uid('modal-titulo') -%}
+<dialog class="m-modal"{% if id %} id="{{ id }}"{% endif %} aria-labelledby="{{ id_titulo }}" data-cerrable>
+<div class="m-modal__cabeza"><h2 class="m-modal__titulo" id="{{ id_titulo }}">{{ titulo }}</h2>
+{{ boton('Cerrar (Esc)', 'icono', icono='cerrar', tam='sm', attrs={'data-cerrar': true}) }}</div>
+<div class="m-modal__cuerpo">{{ caller() }}</div>
+</dialog>
+{%- endmacro %}
+
+{#- Cabecera de una lista: columnas como texto o como {"texto": ..., "num": True} (alineado a la derecha). -#}
+{% macro cabecera_lista(columnas) -%}
+<div class="m-cabecera-lista" role="row">
+{%- for c in columnas %}
+{%- if c is mapping %}<span class="m-cab{% if c.num %} m-cab--num{% endif %}" role="columnheader">{{ c.texto }}</span>
+{%- else %}<span class="m-cab" role="columnheader">{{ c }}</span>{% endif %}
+{%- endfor %}
+</div>
+{%- endmacro %}

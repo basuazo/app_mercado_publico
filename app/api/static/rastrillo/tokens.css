@@ -1,0 +1,68 @@
+/* Rastrillo — tokens (F-dis-1). Copia de docs/diseno/maquetas/tokens.css.
+ * Claro por defecto; oscuro con [data-tema="oscuro"]; «Según el sistema» con
+ * [data-tema="sistema"] + prefers-color-scheme. Fuentes Geist autoalojadas
+ * (licencia OFL: static/fonts/geist-LICENSE.txt), solo latín. */
+@font-face { font-family: "Geist"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/static/fonts/geist-latin-400.woff2") format("woff2"); }
+@font-face { font-family: "Geist"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/geist-latin-500.woff2") format("woff2"); }
+@font-face { font-family: "Geist"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/static/fonts/geist-latin-600.woff2") format("woff2"); }
+@font-face { font-family: "Geist Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/static/fonts/geist-mono-latin-400.woff2") format("woff2"); }
+@font-face { font-family: "Geist Mono"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/geist-mono-latin-500.woff2") format("woff2"); }
+
+:root, [data-tema="claro"] {
+  color-scheme: light;
+  --fondo: #F6F8FB; --superficie: #FFFFFF; --superficie-2: #EEF2F7; --borde: #E3E8EF; --borde-control: #7D8AA0;
+  --tinta: #0B2340; --tinta-2: #4A5B73;
+  --accion: #5B4CF0; --accion-hover: #4A3BD6; --accion-suave: #EEECFF; --sobre-accion: #FFFFFF;
+  --acento-2: #0E8FB0;
+  --atencion: #8A4300; --atencion-fondo: #FFF1DE; --atencion-marca: #D97A0F; --sobre-atencion: #0B0F0D;
+  --urgente: #B3261E; --urgente-fondo: #FDECEB; --sobre-urgente: #FFFFFF;
+  --ok: #0E7346; --ok-fondo: #E3F5EC;
+  --foco: #5B4CF0;
+  --velo: rgba(9, 9, 11, 0.55);
+  --sombra-tarjeta: 0 1px 2px rgba(11, 35, 64, 0.06), 0 2px 6px -2px rgba(50, 50, 93, 0.10);
+  --sombra-elevada: 0 6px 12px -2px rgba(50, 50, 93, 0.18), 0 3px 7px -3px rgba(0, 0, 0, 0.20);
+}
+[data-tema="oscuro"] {
+  color-scheme: dark;
+  --fondo: #0B0B0C; --superficie: #151517; --superficie-2: #1E1E21; --borde: #2A2A2E; --borde-control: #5E5E66;
+  --tinta: #EDEDEF; --tinta-2: #A1A1AA;
+  --accion: #8F86FF; --accion-hover: #A9A2FF; --accion-suave: #23213F; --sobre-accion: #0B0A1F;
+  --acento-2: #4FD0EE;
+  --atencion: #F4B266; --atencion-fondo: #33240F; --atencion-marca: #F4A340; --sobre-atencion: #1A1205;
+  --urgente: #FF8F87; --urgente-fondo: #3A1716; --sobre-urgente: #2A0B09;
+  --ok: #5FD39A; --ok-fondo: #0F2E22;
+  --foco: #8F86FF;
+  --velo: rgba(0, 0, 0, 0.65);
+  --sombra-tarjeta: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --sombra-elevada: 0 12px 32px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* «Según el sistema»: los mismos valores del oscuro cuando el sistema lo pide. */
+@media (prefers-color-scheme: dark) {
+  [data-tema="sistema"] {
+    color-scheme: dark;
+    --fondo: #0B0B0C; --superficie: #151517; --superficie-2: #1E1E21; --borde: #2A2A2E; --borde-control: #5E5E66;
+    --tinta: #EDEDEF; --tinta-2: #A1A1AA;
+    --accion: #8F86FF; --accion-hover: #A9A2FF; --accion-suave: #23213F; --sobre-accion: #0B0A1F;
+    --acento-2: #4FD0EE;
+    --atencion: #F4B266; --atencion-fondo: #33240F; --atencion-marca: #F4A340; --sobre-atencion: #1A1205;
+    --urgente: #FF8F87; --urgente-fondo: #3A1716; --sobre-urgente: #2A0B09;
+    --ok: #5FD39A; --ok-fondo: #0F2E22;
+    --foco: #8F86FF;
+    --velo: rgba(0, 0, 0, 0.65);
+    --sombra-tarjeta: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --sombra-elevada: 0 12px 32px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+}
+:root {
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --esp-1: 4px; --esp-2: 8px; --esp-3: 12px; --esp-4: 16px; --esp-6: 24px; --esp-8: 32px;
+  --radio-control: 8px; --radio-panel: 12px; --radio-modal: 16px; --radio-pildora: 999px;
+  --dur-rapida: 120ms; --dur-media: 200ms;
+  --ancho-menu: 232px;
+}

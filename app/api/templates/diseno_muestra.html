@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{#- F-dis-1: muestra del sistema visual Rastrillo. Solo admin; no va en el menú. Cada átomo y patrón
+    de `_r.html` en un lienzo claro y otro oscuro (los tokens se resuelven por [data-tema]). -#}
+{% import "_r.html" as r %}
+{% from "_iconos.html" import icono %}
+{% block title %}Sistema visual — Rastrillo{% endblock %}
+
+{% macro catalogo(tema_lienzo) -%}
+<section class="m-muestra__lienzo r-raiz" data-tema="{{ tema_lienzo }}" aria-label="Lienzo {{ tema_lienzo }}">
+  <h2 class="m-seccion">{{ 'Claro' if tema_lienzo == 'claro' else 'Oscuro' }}</h2>
+
+  <div class="m-muestra__fila" aria-label="Botones">
+    {{ r.boton('Ir a la mesa', 'primario', icono='flecha', href='/mesa') }}
+    {{ r.boton('Armar ofertas', 'primario', tecla='↵') }}
+    {{ r.boton('Pedir precio', 'secundario', icono='historia') }}
+    {{ r.boton('Marcar como visto', 'terciario') }}
+    {{ r.boton('Descartar', 'peligro') }}
+    {{ r.boton('Buscar', 'icono', icono='buscar') }}
+    {{ r.boton('Abrir lote', 'secundario', tam='sm') }}
+    {{ r.boton('Cerrar', 'icono', icono='cerrar', tam='sm') }}
+    {{ r.boton('Enviar', 'primario', attrs={'disabled': true}) }}
+    <button class="r-btn r-btn--secundario" type="button" aria-busy="true"><span class="r-giro" aria-hidden="true"></span><span>Calculando…</span></button>
+  </div>
+
+  <div class="m-muestra__fila" aria-label="Estados">
+    {{ r.estado('Nueva') }} {{ r.estado('Cotizando', 'curso') }} {{ r.estado('Ganada', 'ok') }} {{ r.estado('Sin oferta', 'sin-punto') }}
+  </div>
+
+  <div class="m-muestra__fila m-muestra__fila--top" aria-label="Señales">
+    {{ r.senal('Cierra hoy 15:00', 'urgente', 'La CA cierra en menos de 4 horas y la oferta no está lista.', 'enviando la oferta desde En trabajo.') }}
+    {{ r.senal('Precio desactualizado · 23 días', 'atencion', 'El último costo del proveedor tiene más de 15 días.', 'pidiendo precio o actualizando la lista.', icono='historia') }}
+    {{ r.senal('Impuesto por clasificar', 'atencion', 'El producto no tiene impuesto asignado: el bruto puede quedar mal.', 'asignándolo en Demanda MP → Impuestos.', icono='costo') }}
+    {{ r.senal('Cambió desde tu última visita', 'nuevo', 'Llegaron líneas nuevas o cambió su estado.', derecha=True) }}
+  </div>
+
+  <div class="m-muestra__fila" aria-label="Contadores, teclas y textos">
+    {{ r.contador(10, texto='10 pendientes') }} {{ r.contador(2, atencion=True, texto='2 CA sin lote') }} {{ r.contador(140) }}
+    {{ r.tecla('⌘K') }} {{ r.tecla('G') }} {{ r.tecla('Esc') }}
+    <span class="r-etiqueta">Etiqueta</span> <span class="r-codigo">1057510-1996-COT26</span>
+    <span class="r-brillo">Leyendo el anexo con IA…</span>
+  </div>
+
+  <div class="m-muestra__fila" aria-label="Segmentado y filtros">
+    {{ r.segmentado([('hoy', 'Hoy'), ('semana', 'Semana'), ('mes', 'Mes')], 'hoy', 'periodo-' ~ tema_lienzo, 'Período') }}
+    <button class="r-filtro" type="button" aria-pressed="false">{{ icono('mas', 14) }}<span>Cierra hoy</span></button>
+    <button class="r-filtro" type="button" aria-pressed="true">{{ icono('check', 14) }}<span>Con anexo</span></button>
+  </div>
+
+  <div class="r-tarjeta" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 24px 32px; padding: 20px 24px;">
+    {{ r.dato('En juego en la mesa priorizada', '$ 6,2 M', '9 CA priorizadas', xl=True) }}
+    <div class="r-dato"><span class="r-etiqueta">CA nuevas</span><span class="r-dato__valor">27</span><span class="r-dato__nota"><span class="r-delta--sube">+5</span><span>vs. ayer</span></span></div>
+    <div class="r-dato"><span class="r-etiqueta">Margen</span><span class="r-dato__valor">17,9 <small>%</small></span><span class="r-dato__nota"><span class="r-delta--baja">−1,2 %</span><span>vs. octubre</span></span></div>
+    <div class="r-dato r-dato--vacio"><span class="r-etiqueta">Costo</span><span class="r-dato__valor">Sin costo</span><span class="r-dato__nota"><span>Falta precio de 2 líneas</span></span></div>
+    <div class="r-dato r-dato--fila"><span class="r-etiqueta">Dato en fila</span><span class="r-dato__valor">$ 714.000</span></div>
+  </div>
+
+  <div class="m-muestra__fila" aria-label="Íconos">
+    <span class="r-icono">{{ icono('mesa', 18) }}</span>
+    <span class="r-icono">{{ icono('ia', 18) }}</span>
+    <span class="r-icono r-icono--sm">{{ icono('trabajo') }}</span>
+    <span class="r-icono r-icono--sm r-icono--neutro">{{ icono('configuracion') }}</span>
+    {% for n in ['hoy', 'mesa', 'trabajo', 'ventas', 'actividad', 'competencia', 'estrategia', 'abastecimiento', 'catalogo', 'proveedores', 'inventario', 'logistica', 'documentos', 'configuracion', 'empresas', 'usuarios', 'salud', 'archivo', 'campana', 'buscar', 'alarma', 'historia', 'costo', 'lista', 'anexo', 'ia', 'accion', 'deshacer', 'alerta', 'info'] %}<span title="{{ n }}">{{ icono(n) }}</span>{% endfor %}
+  </div>
+
+  <div class="r-tarjeta" aria-label="Lista">
+    {{ r.cabecera_lista(['CA', 'Comprador', 'Cierre', {'texto': 'Monto', 'num': True}]) }}
+    {% for nombre, comprador, cierre, monto in [('Guantes de nitrilo y alcohol gel', 'Hospital de San Carlos', 'hoy 15:00', 714000), ('Resmas carta y artículos de escritorio', 'DAEM Bulnes', 'hoy 18:00', 412000), ('Arroz, legumbres y aceite', 'Liceo Bicentenario de Coihueco', 'mañana 12:00', 1290000)] %}
+    <div class="m-fila" data-fila style="display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 16px; padding: 12px 20px; border-top: 1px solid var(--borde);">
+      <button class="m-fila__abrir" type="button" data-abrir><span class="m-fila__nombre">{{ nombre }}</span></button>
+      <span class="m-sub" style="margin: 0;">{{ comprador }}</span>
+      <span>{{ cierre }}</span>
+      <span class="m-num">{{ monto | clp }}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  {{ r.vacio('No hay CA con esos filtros.', url_limpiar='/admin/diseno') }}
+  {{ r.aviso('Descartada: Resmas carta y artículos de escritorio', url_deshacer='/admin/diseno') }}
+
+  <div class="m-muestra__fila m-muestra__fila--top">
+    {% call r.panel_lateral('Guantes de nitrilo y alcohol gel', 'CA · 1057510-1996-COT26') %}
+      <p class="m-sub">Contenido del panel lateral (lista + panel). <span class="r-codigo">Esc</span> lo cierra.</p>
+    {% endcall %}
+  </div>
+  <p class="m-fuente">Fuente: Dirección ChileCompra</p>
+</section>
+{%- endmacro %}
+
+{% block content %}
+<div class="m-muestra">
+  <header>
+    <h1 class="m-titulo">Sistema visual</h1>
+    <p class="m-sub">Átomos y patrones de <span class="r-codigo">_r.html</span> en claro y oscuro. Solo administradores; no está en el menú.</p>
+  </header>
+  <div class="m-muestra__fila">
+    {{ r.boton('Abrir un modal', 'secundario', attrs={'onclick': "document.getElementById('modal-muestra').showModal()"}) }}
+    {{ r.boton('Mostrar un aviso', 'secundario', attrs={'onclick': "window.rastrilloAviso && window.rastrilloAviso({texto: 'Guardado. Así se ve un aviso con deshacer.', deshacer: '/admin/diseno'})"}) }}
+    {{ r.boton('Abrir la paleta', 'secundario', icono='buscar', tecla='⌘K', attrs={'data-abre-paleta': true}) }}
+  </div>
+  {{ catalogo('claro') }}
+  {{ catalogo('oscuro') }}
+  {% call r.modal('Un modal de ejemplo', id='modal-muestra') %}
+    <p class="m-sub">Se abre con <span class="r-codigo">showModal()</span> y se cierra con Esc o con el botón.</p>
+  {% endcall %}
+</div>
+{% endblock %}

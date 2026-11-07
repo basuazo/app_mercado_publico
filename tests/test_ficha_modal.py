@@ -162,7 +162,7 @@ def test_sin_hx_request_sigue_la_pagina_completa_con_volver(engine, settings):
     client, _ = _cliente(engine, settings, uid)
     r = client.get("/oportunidad/licitaciones/LIC-M1")
     assert r.status_code == 200
-    assert "<html" in r.text and 'class="app-lateral"' in r.text
+    assert "<html" in r.text and 'class="app-lateral m-lateral"' in r.text
     assert ">Volver</a>" in r.text
     assert 'data-ficha-nav="prev"' not in r.text
 

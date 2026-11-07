@@ -180,15 +180,36 @@ def _empresa_activa(request: Request, user: Usuario) -> bool:
         return tiene_empresa_activa(s, user)
 
 
+def _contadores_menu(request: Request, user: Usuario) -> dict[str, int]:
+    """Contadores del menú lateral (F-dis-1). Se llama desde `base.html` (perezoso): un parcial
+    HTMX que no pinta el menú no paga las dos consultas."""
+    from app.mercado.lote import contadores_menu
+
+    if user.empresa_id is None:
+        return {}
+    with Session(request.app.state.engine) as s:
+        empresa_id = empresa_activa_id(s, user)
+        return contadores_menu(s, empresa_id, ahora_utc()) if empresa_id is not None else {}
+
+
 def _ctx(request: Request, user: Usuario, **extra: Any) -> dict[str, Any]:
+    from app.mercado import equipo as eq
+    from app.mercado.preferencias import apariencia
+
     settings = request.app.state.settings
     ultima_novedad = fecha_ultima_novedad()
+    nombre = eq.nombre_visible(user)
     return {
         "current_user": user,
         "tiene_empresa_activa": _empresa_activa(request, user),
         "csrf_token": generate_csrf_token(settings.secret_key, request.state.csrf_nonce),
         "changelog_entries": entradas_changelog(),
         "ultima_novedad_fecha": ultima_novedad,
+        # F-dis-1: apariencia (`<html data-tema data-densidad>`) y pie del menú.
+        **apariencia(user),
+        "usuario_nombre": nombre,
+        "usuario_iniciales": eq.iniciales(nombre),
+        "contadores_menu": lambda: _contadores_menu(request, user),
         **extra,
     }
 
@@ -467,7 +488,7 @@ async def portada(
     request: Request,
     user: Usuario = Depends(html_require_user),
     session: Session = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Portada «Hoy» (F-plat-nav): un conteo por pieza de la plataforma. F-plat-5 la cambia por la mesa."""
     from sqlalchemy import func
 
@@ -480,6 +501,12 @@ async def portada(
         return _TEMPLATES.TemplateResponse(
             request, "proveedores_sin_empresa.html", _ctx(request, user)
         )
+    # F-dis-1: pantalla de inicio elegida. El menú enlaza «Hoy» con ?hoy=1 para no rebotar.
+    from app.mercado.preferencias import url_inicio
+
+    destino = url_inicio(user)
+    if empresa_id is not None and destino != "/" and request.query_params.get("hoy") != "1":
+        return RedirectResponse(url=destino, status_code=303)
     regiones = regiones_activas(session, request.app.state.settings)
     ca_abiertas, ca_cierran_hoy = contar_vigentes(session, regiones, ahora_utc())
     from app.mercado.catalogo import conteo_por_revisar
@@ -1060,7 +1087,7 @@ def _contexto_ficha(
         volver_etiqueta=(
             "Explorar Compras Ágiles"
             if volver.startswith("/compras-agiles")
-            else ("Archivo" if admin else "Inicio")
+            else ("Archivo" if admin else "Hoy")
         ),
         en_modal=en_modal,
         desde=desde,
@@ -2249,6 +2276,36 @@ async def cuenta_novedades_visto(
     return RedirectResponse(url="/", status_code=303)
 
 
+@router.post("/cuenta/apariencia", response_model=None)
+async def cuenta_apariencia(
+    request: Request,
+    tema: str = Form(""),
+    densidad: str = Form(""),
+    inicio: str = Form(""),
+    csrf_token: str = Form(""),
+    user: Usuario = Depends(html_require_user),
+    session: Session = Depends(get_db),
+) -> Response:
+    """Tema, densidad y pantalla de inicio (F-dis-1). Con HTMX responde `HX-Refresh` (el tema
+    cambia en toda la página); sin HTMX, vuelve a la cuenta con un mensaje."""
+    from app.mercado.preferencias import PreferenciaInvalida, guardar_apariencia
+
+    check_csrf(request, csrf_token)
+    try:
+        guardar_apariencia(user, tema, densidad, inicio)
+    except PreferenciaInvalida:
+        session.rollback()
+        if _es_htmx(request):
+            return HTMLResponse("Valor de apariencia inválido", status_code=422)
+        return RedirectResponse(
+            url=f"/cuenta?error={quote('Valor de apariencia inválido')}", status_code=303
+        )
+    session.commit()
+    if _es_htmx(request):
+        return Response(status_code=200, headers={"HX-Refresh": "true"})
+    return RedirectResponse(url="/cuenta?mensaje=Apariencia+actualizada", status_code=303)
+
+
 @router.post("/cuenta/password")
 async def cuenta_password_cambiar(
     request: Request,
@@ -2602,6 +2659,16 @@ async def admin_usuario_desactivar(
 # ---------------------------------------------------------------------------
 # Salud del sistema (admin)
 # ---------------------------------------------------------------------------
+
+
+@router.get("/admin/diseno", response_class=HTMLResponse)
+async def admin_diseno(
+    request: Request,
+    user: Usuario = Depends(html_require_admin),
+) -> HTMLResponse:
+    """Muestra del sistema visual Rastrillo (F-dis-1): todos los átomos y patrones en claro y
+    oscuro. Solo admin (mismo patrón que /salud); no va en el menú."""
+    return _TEMPLATES.TemplateResponse(request, "diseno_muestra.html", _ctx(request, user))
 
 
 @router.get("/salud", response_class=HTMLResponse)

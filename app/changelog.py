@@ -16,6 +16,22 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 7),
+        titulo="Nuevo menú y modo oscuro",
+        descripcion=(
+            "Empieza el rediseño «Rastrillo». El menú lateral es nuevo: «Inicio» ahora se llama "
+            "«Hoy» y muestra cuántas CA cierran en menos de 24 horas sin enviar; «En trabajo» "
+            "cuenta las CA en curso que todavía no están en un lote; el grupo Catálogo suma "
+            "Logística y Documentos, y Configuración lleva a tu cuenta. La campana de actividad "
+            "queda junto al nombre de la app. Con ⌘K (Ctrl K en Windows) se abre una paleta para "
+            "ir a cualquier pantalla escribiendo su nombre, y con G seguida de H, M, T, V o D "
+            "vas directo a Hoy, Mesa, En trabajo, Ventas o Demanda MP. En Cuenta → Apariencia "
+            "eliges tema claro, oscuro o según el sistema, densidad cómoda o compacta, y la "
+            "pantalla con la que abre la app. Las pantallas se irán rediseñando de a una en las "
+            "próximas semanas; mientras tanto conservan su aspecto actual."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 7),
         titulo="Licitaciones archivadas y CA de otras regiones fuera de la base",
         descripcion=(
             "Para administradores. Para liberar espacio en la base (estaba al 75 % de su límite), "
