@@ -254,12 +254,13 @@ def test_menu_usuario_con_empresa(client, engine, settings):
 def test_menu_admin_incluye_archivo(client, engine, settings):
     uid = _usuario(engine, "a@t.cl", RolUsuario.ADMIN)
     cookies, _ = _sesion(settings, uid)
-    nav = _hrefs(client.get("/cuenta", cookies=cookies).text)
-    esperado = {
-        "/archivo", "/perfiles", "/registro", "/compras-agiles", "/plan-anual",
-        "/admin/empresas", "/admin/usuarios", "/salud",
-    }
-    assert esperado <= nav
+    # F-dis-1: «Archivo» es un enlace discreto al final de Administración; sus pantallas se
+    # despliegan dentro de Archivo, y Empresas/Usuarios/Salud viven en Configuración (/cuenta).
+    html = client.get("/cuenta", cookies=cookies).text
+    assert "/archivo" in _hrefs(html)
+    assert {"/admin/empresas", "/admin/usuarios", "/salud"} <= set(re.findall(r'href="([^"]+)"', html))
+    nav = _hrefs(client.get("/archivo", cookies=cookies).text)
+    assert {"/archivo", "/perfiles", "/registro", "/compras-agiles", "/plan-anual"} <= nav
 
 
 def test_menu_sin_empresa_no_ofrece_plataforma(client, engine, settings):

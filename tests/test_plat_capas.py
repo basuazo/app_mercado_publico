@@ -723,15 +723,15 @@ def test_menu_tiene_las_tres_capas_bajo_el_encabezado_catalogo(client, settings,
     cookies, _, _ = _auth(settings, mundo["boris"])
     html = client.get("/cuenta", cookies=cookies).text
     nav = _nav(html)
-    assert 'nav-lateral__seccion" id="nav-catalogo">Catálogo<' in nav
-    pos = [nav.index(t) for t in ("Demanda MP", "Catálogo Proveedores", "Inventario", "Logística")]
+    assert 'class="m-grupo" id="nav-catalogo">Catálogo<' in nav
+    # F-dis-1: dentro del grupo «Catálogo» la entrada se llama «Proveedores» (maqueta y prompt);
+    # los títulos de página siguen con los nombres de nav.py.
+    pos = [nav.index(t) for t in ("Demanda MP", "<span>Proveedores</span>", "Inventario", "Logística")]
     assert pos == sorted(pos)
     hrefs = set(re.findall(r'href="([^"]+)"', nav))
     assert {"/catalogo", "/proveedores", "/inventario", "/proveedores/logistica"} <= hrefs
-    # la versión móvil también (offcanvas)
+    # la versión móvil también (<dialog>)
     assert 'id="nav-catalogo-m"' in html
-    # y las entradas ya no se llaman «Proveedores» a secas
-    assert ">Proveedores<" not in nav
 
 
 def test_menu_marca_la_entrada_activa_y_titulos(client, settings, mundo):
@@ -741,7 +741,7 @@ def test_menu_marca_la_entrada_activa_y_titulos(client, settings, mundo):
         r = client.get(ruta, cookies=cookies)
         assert r.status_code == 200
         assert f"<title>{titulo} — Rastrillo</title>" in r.text and f"<h2 class=\"mb-0\">{titulo}</h2>" in r.text
-        activa = re.findall(r'class="nav-lateral__item active" href="([^"]+)"', _nav(r.text))
+        activa = re.findall(r'class="m-item" href="([^"]+)" aria-current="page"', _nav(r.text))
         assert activa == [ruta]
 
 

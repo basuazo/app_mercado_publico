@@ -358,7 +358,7 @@ def test_tarjeta_guardada_lleva_chip_con_texto(client, engine, settings, usuario
     html = client.get("/archivo", cookies=cookies).text
     # (El changelog del modal de novedades sí nombra los botones viejos.)
     assert "Me sirve</button>" not in html and "Activar alertas</button>" not in html
-    assert ">Mi registro</a>" in html
+    assert "<span>Mi registro</span></a>" in html  # F-dis-1: texto del menú en <span>
 
 
 def test_modal_descartar_muestra_que_la_trajo(client, engine, settings, usuario, otro):

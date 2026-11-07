@@ -7,6 +7,7 @@ directamente.
 
 from __future__ import annotations
 
+import itertools
 from datetime import UTC, datetime
 from typing import Any
 
@@ -101,6 +102,20 @@ def banda_relevancia(score: float, corte_alta: int, corte_media: int) -> str:
     return "baja"
 
 
+_CONTADOR_IDS = itertools.count(1)
+
+
+def id_unico(prefijo: str = "r") -> str:
+    """Id HTML único en el proceso (`prefijo-17`): los explicativos de `_r.html` lo usan para
+    `aria-describedby`. Basta con que no se repita dentro de una página."""
+    return f"{prefijo}-{next(_CONTADOR_IDS)}"
+
+
+def dict_sin(datos: dict[str, Any], *claves: str) -> dict[str, Any]:
+    """Copia de `datos` sin esas claves (las macros de `_r.html` separan `class` de los atributos)."""
+    return {k: v for k, v in datos.items() if k not in claves}
+
+
 def registrar_filtros(env: Any) -> None:
     """Prepara el entorno Jinja: filtros `clp` y `numero`, más la versión de
     los estáticos, que `base.html` necesita en TODAS las páginas (incluida la
@@ -116,6 +131,8 @@ def registrar_filtros(env: Any) -> None:
     env.filters["pct"] = formato_pct
     env.filters["pct_firmado"] = formato_pct_firmado
     env.globals["version_estaticos"] = VERSION_ESTATICOS
+    env.globals["uid"] = id_unico
+    env.filters["dict_sin"] = dict_sin
     env.globals["nav"] = nav
 
 

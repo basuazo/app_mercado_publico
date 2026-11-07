@@ -1,28 +1,30 @@
-{#- Contenido del menú de la campana: los últimos 20 no leídos (F-equipo). -#}
+{#- Panel de la campana (F-equipo; diseño de Campana.dc.html en F-dis-1): los últimos 20 no leídos.
+    «Ir a…» con destino por tipo llega en F-dis-paleta-campana. -#}
 {% include "_campana_contador.html" %}
-<div class="campana__cabecera d-flex justify-content-between align-items-center px-3 py-2">
-  <strong class="small">Actividad del equipo</strong>
+<div class="m-campana__cabeza">
+  <strong>Actividad del equipo</strong>
   {% if items %}
-  <form method="post" action="/actividad/leido" class="m-0"
-        hx-post="/actividad/leido" hx-target="closest .campana__menu" hx-swap="innerHTML">
+  <form method="post" action="/actividad/leido"
+        hx-post="/actividad/leido" hx-target="closest [data-campana-lista]" hx-swap="innerHTML">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" class="btn btn-link btn-sm p-0">Marcar todo como leído</button>
+    <button type="submit" class="r-btn r-btn--terciario r-btn--sm"><span>Marcar todo como leído</span></button>
   </form>
   {% endif %}
 </div>
-<ul class="list-unstyled mb-0 campana__lista">
+<ul class="m-campana__lista">
   {% for it in items %}
-  <li class="campana__item campana__item--{{ it.tipo }}">
-    <a href="{{ it.url }}" class="d-block px-3 py-2 text-decoration-none text-body">
-      {{ it.antes }} <em>{{ it.ca }}</em> {{ it.despues }}
-      <span class="d-block small text-muted">{{ it.cuando }}</span>
+  <li>
+    <a href="{{ it.url }}" class="m-campana__item m-campana__item--{{ it.tipo }}">
+      <span class="m-campana__punto" aria-hidden="true"></span>
+      <span class="m-campana__texto"><span>{{ it.antes }} <em>{{ it.ca }}</em> {{ it.despues }}</span>
+        <span class="m-campana__cuando">{{ it.cuando }}</span></span>
     </a>
   </li>
   {% else %}
-  <li class="px-3 py-2 small text-muted">Nada nuevo. Estás al día.</li>
+  <li class="m-campana__vacio">Nada nuevo. Estás al día.</li>
   {% endfor %}
 </ul>
-<div class="d-flex justify-content-between px-3 py-2 border-top small">
-  <a href="/actividad">Ver todo el registro</a>
-  <span class="text-muted">Fuente: Dirección ChileCompra</span>
+<div class="m-campana__pie">
+  <a class="m-enlace" href="/actividad">Ver todo el registro</a>
+  <span class="m-fuente">Fuente: Dirección ChileCompra</span>
 </div>

@@ -7,6 +7,35 @@
 {% if mensaje %}<div class="alert alert-success" role="status">{{ mensaje }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 
+{#- F-dis-1: bloque mínimo de apariencia (la pantalla Configuración completa es F-dis-config). -#}
+{% import "_r.html" as r %}
+<section class="r-tarjeta m-apariencia mb-4" aria-labelledby="t-apariencia" data-apariencia>
+  <h3 class="m-seccion" id="t-apariencia">Apariencia</h3>
+  <form method="post" action="/cuenta/apariencia" hx-post="/cuenta/apariencia" hx-swap="none" class="m-apariencia__form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="m-apariencia__campo"><span class="r-etiqueta" id="et-tema">Tema</span>
+      {{ r.segmentado([('claro', 'Claro'), ('oscuro', 'Oscuro'), ('sistema', 'Según el sistema')], tema, 'tema', 'Tema') }}</div>
+    <div class="m-apariencia__campo"><span class="r-etiqueta" id="et-densidad">Densidad</span>
+      {{ r.segmentado([('comoda', 'Cómoda'), ('compacta', 'Compacta')], densidad, 'densidad', 'Densidad') }}</div>
+    <div class="m-apariencia__campo"><span class="r-etiqueta">Pantalla de inicio</span>
+      {{ r.segmentado([('hoy', 'Hoy'), ('mesa', 'Mesa'), ('trabajo', 'En trabajo'), ('ventas', 'Ventas')], inicio, 'inicio', 'Pantalla de inicio') }}</div>
+    <div>{{ r.boton('Guardar apariencia', 'primario', attrs={'type': 'submit'}) }}</div>
+  </form>
+  <p class="m-sub">Atajos: <span class="r-tecla" data-tecla-mod>⌘K</span> abre la paleta · {{ r.tecla('G') }} y luego {{ r.tecla('H') }}, {{ r.tecla('M') }}, {{ r.tecla('T') }}, {{ r.tecla('V') }} o {{ r.tecla('D') }} van a Hoy, Mesa, En trabajo, Ventas o Demanda MP · {{ r.tecla('/') }} busca · {{ r.tecla('J') }} {{ r.tecla('K') }} recorren una lista · {{ r.tecla('Esc') }} cierra.</p>
+</section>
+
+{% if current_user.rol == 'admin' %}
+{#- Administración: vive aquí hasta que F-dis-config la lleve dentro de Configuración. -#}
+<nav class="r-tarjeta m-apariencia mb-4" aria-labelledby="t-administracion">
+  <h3 class="m-seccion" id="t-administracion">Administración</h3>
+  <div class="m-muestra__fila">
+    {{ r.boton('Empresas', 'secundario', icono='empresas', href='/admin/empresas') }}
+    {{ r.boton('Usuarios', 'secundario', icono='usuarios', href='/admin/usuarios') }}
+    {{ r.boton('Salud del sistema', 'secundario', icono='salud', href='/salud') }}
+  </div>
+</nav>
+{% endif %}
+
 <div class="row g-4">
   <div class="col-lg-6">
     <div class="card h-100">
