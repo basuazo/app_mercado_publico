@@ -199,6 +199,19 @@ La información necesaria está disponible vía API oficial y los términos exig
   está escrita y apagada: `URL_ADJUNTO` sigue en None hasta la captura en el navegador. La sonda de la URL del
   adjunto sigue **pendiente**. La URL de la ficha de una CA (`buscador.mercadopublico.cl/ficha?code=…`) tampoco se
   pudo verificar sin navegador (403 de CloudFront) **[I]**.
+  **F-plat-anexos-auto (6–7-nov):** servicio de adjuntos de la ficha, verificado en el navegador de Boris **[V]**:
+  `https://adjunto.mercadopublico.cl/adjunto-compra-agil/v1/adjuntos-compra-agil/` con `listar/{codigo}`,
+  `encrypt/{id}`, `descargar/{n}` y `cotizacion/listar/{codigo}` en el bundle; sin credenciales, 403 «Authentication
+  parameters missing». La descarga es UN `GET …/descargar/{UUID}` con `Authorization: Bearer <JWT>` y `user_key`
+  (clave pública del frontend); el JWT es anónimo (Keycloak `heimdall.mercadopublico.cl/auth/realms/chilecomprarealm`,
+  `azp` `mercadoPublicoClient`, `preferred_username` `anonymouser`, ~8 h). Cliente: `app/clients/mp_documentos.py`;
+  job `mercado-anexos`. **Paso 0 completo [V, Boris 6–7-nov, ficha `2467-760-COT26`]:** token con `GET
+  https://servicios-prd.mercadopublico.cl/v1/auth/publico` (sin payload ni `user_key`; envelope con
+  `payload.access_token`, `expires_in` 28800) → `GET …/listar/{codigo}` (`payload.files[] = {id, nombreArchivo}`; 3
+  archivos con UUID en mayúsculas) → `GET …/descargar/{id}` (200, 213/541/515 kB, content-disposition). No existe
+  `encrypt`. En producción ninguna CA vigente tiene `documentos[].id` guardados (88 de 88 [V, Neon 7-nov]): listar
+  es obligatorio (pendiente de anexos-2 en `decisiones.md`). Falta la sonda desde nuestro cliente, sin headers de
+  navegador: `python scripts/smoke_test.py --adjuntos 2467-760-COT26`; anotar acá el resultado con [V].
 
 ---
 

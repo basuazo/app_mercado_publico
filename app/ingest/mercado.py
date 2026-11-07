@@ -733,12 +733,8 @@ def sync_mercado_ca(
         bajar_anexos(settings, engine, v2, regiones, resultado, documentos)
         if resultado.get("cortado_por") != corte_del_listado:
             return resultado
-    # F-plat-anexos-2 §2.7: descarga directa del adjunto público, última alternativa (regla 9).
-    # Sin ticket ni cuota de la API: su corte (403/429) no corta las cerradas.
-    if settings.anexos_descarga_directa:
-        from app.ingest.anexos_directo import bajar_anexos_directo
-
-        bajar_anexos_directo(settings, engine, regiones, resultado, documentos)
+    # La descarga directa del adjunto público (regla 9) es su propio job desde
+    # F-plat-anexos-auto: `mercado-anexos` (app/ingest/anexos_directo.py).
 
     with Session(engine) as session:
         cola = cola_mercado_ca(

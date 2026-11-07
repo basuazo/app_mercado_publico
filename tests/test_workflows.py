@@ -124,6 +124,8 @@ _PROGRAMADOS = {
     "mercado-indices.yml",
     # F-plat-7: informe mensual por correo, día 1 a las 08:40 Chile.
     "mercado-informe.yml",
+    # F-plat-anexos-auto: adjuntos de CA, cada hora hábil + una pasada nocturna.
+    "mercado-anexos.yml",
 }
 
 

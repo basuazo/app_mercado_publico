@@ -14,6 +14,7 @@ Uso:
     python scripts/smoke_test.py --mercado            # F-merc-1: antigüedad (mar-2026, oct-2024) y horizonte 2025 (6 req)
     python scripts/smoke_test.py --detalle-ca COD [COD ...]  # sonda: ofertas repetidas del mismo RUT (1 req/código)
     python scripts/smoke_test.py --documentos [--ruta /v2/...{codigo}...{id}]  # F-plat-2: ¿descarga de anexos? (~3–5 req)
+    python scripts/smoke_test.py --adjuntos 2467-760-COT26  # F-plat-anexos-auto: token + listar + 1 adjunto (3 req, sin ticket)
 """
 
 from __future__ import annotations
@@ -1116,6 +1117,90 @@ def sonda_documentos(engine: Engine, v2: MercadoPublicoV2Client, rutas_extra: li
     print("\n3. Anotar el resultado en docs/01-analisis-api-mercado-publico.md §8 con [V].")
 
 
+# ---------------------------------------------------------------------------
+# Sonda de F-plat-anexos-auto — servicio de adjuntos de la ficha pública
+# ---------------------------------------------------------------------------
+#
+# 1 request de token + 1 de listar + 1 de descarga (máx. 3 si hay redirects), 1 req/s. Imprime solo status,
+# claves de la respuesta del token (sin valores), vencimiento, content-type y tamaño del archivo.
+# Ningún token, clave ni header sale por pantalla. Un 403/429 se informa y NO se reintenta
+# (regla 9: si con los headers da 403, parar y reportar; no probar otras formas de entrar).
+
+
+def sonda_adjuntos(engine: Engine, settings: Settings, codigo: str) -> None:
+    import httpx
+
+    from app.clients import mp_documentos as md
+
+    print(f"=== Sonda adjuntos (F-plat-anexos-auto §1) — {codigo} ===\n")
+    print("Requests: 1 token + 1 listar + 1 descarga (1 req/s). Sin ticket ni cuota de la API.\n")
+    if not settings.mp_adjuntos_user_key:
+        print("Falta MP_ADJUNTOS_USER_KEY en el .env.")
+        return
+    guardados: list[str] = []
+    try:
+        with engine.connect() as c:
+            fila = c.execute(
+                text("SELECT documentos FROM compras_agiles WHERE codigo = :c"), {"c": codigo}
+            ).first()
+        if fila is not None:
+            guardados = [
+                str(d.get("id")) for d in (fila[0] or []) if isinstance(d, dict) and d.get("id")
+            ]
+    except Exception as exc:
+        print(f"(no se pudo leer la base: {type(exc).__name__}; sigo sin comparar ids)")
+
+    class _Espia(httpx.Client):
+        """Anota status, content-type, tamaño y nombres de headers enviados, sin valores."""
+
+        def send(self, request: httpx.Request, **kw: object) -> httpx.Response:  # type: ignore[override]
+            r = super().send(request, **kw)  # type: ignore[arg-type]
+            es_token = str(request.url) == md.URL_TOKEN
+            ruta = request.url.path if es_token else request.url.path.rsplit("/", 1)[0] + "/…"
+            largo = r.headers.get("content-length", "?")
+            print(f"  {request.method} {request.url.host}{ruta}: HTTP {r.status_code}"
+                  f"  content-type={r.headers.get('content-type', '(ninguno)')}  largo={largo}")  # fmt: skip
+            print(f"    headers enviados: {sorted(k.lower() for k in request.headers)}")
+            if r.status_code in (400, 401, 403):
+                print("    rechazado: anotar el status; NO agregar origin/referer por cuenta propia")
+            return r
+
+    cliente = md.DocumentosClient.desde_settings(
+        settings, http=_Espia(timeout=md.TIMEOUT_S, follow_redirects=False)
+    )
+    try:
+        print("1. listar (pide antes el token):")
+        lst = cliente.listar(codigo)
+        if lst.archivos is None:
+            print(f"\nSin listado: {lst.motivo}.")
+            return
+        print(f"   {len(lst.archivos)} archivo(s): "
+              + "; ".join(f"{i[:8]}… «{n}»" for i, n in lst.archivos))  # fmt: skip
+        if guardados:
+            iguales = {g.upper() for g in guardados} == {i.upper() for i, _ in lst.archivos}
+            print(f"   ids guardados en la base: {len(guardados)}; ¿iguales a listar? {iguales}")
+        else:
+            print("   la base no tiene documentos[].id de esta CA (se usa listar, como el job)")
+        if not lst.archivos:
+            return
+        doc_id, nombre = lst.archivos[0]
+        print(f"\n2. descargar «{nombre}»:")
+        d = cliente.descargar_adjunto(codigo, doc_id)
+    except md.DescargaBloqueada as exc:
+        print(f"\nBLOQUEADO (HTTP {exc.status}). Parar y reportar: no probar otras formas (regla 9).")
+        return
+    except (md.TokenNoDisponible, md.DescargaTransitoria) as exc:
+        print(f"\nSin archivo: {type(exc).__name__} ({exc}).")
+        return
+    if d.data is None:
+        print(f"\nSin archivo: {d.motivo}.")
+        return
+    from app.mercado.anexos import detectar_mime
+
+    print(f"\nOK: {len(d.data):,} bytes, tipo detectado {detectar_mime(d.data) or 'desconocido'}.")
+    print("Anotar el resultado en docs/01-analisis-api-mercado-publico.md R8 con [V].")
+
+
 def main() -> None:
     load_dotenv()
     settings = Settings()  # type: ignore[call-arg]
@@ -1128,6 +1213,16 @@ def main() -> None:
     v2 = MercadoPublicoV2Client(settings, engine)
 
     args = sys.argv[1:]
+    if args[:1] == ["--adjuntos"]:
+        if len(args) < 2:
+            print("Uso: --adjuntos CODIGO")
+            return
+        try:
+            sonda_adjuntos(engine, settings, args[1])
+        except Exception as exc:
+            print(f"Sonda cortada: {type(exc).__name__}")
+        return
+
     if args[:1] == ["--documentos"]:
         extra = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--ruta"]
         try:

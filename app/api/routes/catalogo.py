@@ -624,7 +624,11 @@ ETIQUETA_EXTRACCION = {
 
 
 def _estado_anexos(session: Session, ca: CompraAgil, lineas: list[CaLinea]) -> dict[str, Any]:
+    from app.mercado import adjuntos
+
     return {
+        "puede_rebajar": adjuntos.puede_rebajar(session, ca),
+        "rebajar_pedido": adjuntos.hay_pedido(session, ca.codigo),
         "anexos": list(
             session.execute(
                 select(CaAnexo).where(CaAnexo.ca_codigo == ca.codigo).order_by(CaAnexo.id.desc())
@@ -768,6 +772,36 @@ async def anexo_confirmar_todas(
         texto += f" El anexo reemplazó {n_api_antes} línea(s) de la API."
     destino = "/catalogo/revision" if volver == "revision" else f"/catalogo/ca/{quote(ca.codigo)}"
     return RedirectResponse(f"{destino}?mensaje={quote(texto)}", status_code=303)
+
+
+@router.post("/catalogo/ca/{codigo}/anexo/volver-a-bajar", response_model=None)
+async def anexo_volver_a_bajar(
+    request: Request,
+    codigo: str,
+    csrf_token: str = Form(""),
+    ctx: tuple[Usuario, int] = Depends(html_require_empresa),
+    session: Session = Depends(get_db),
+) -> Response:
+    """«Volver a bajar y leer» (F-plat-anexos-auto): encola para el job `mercado-anexos` los
+    documentos de la CA cuyo anexo quedó `sin_presupuesto` o `error`, o que no se pudieron bajar.
+    No llama a nadie desde la web: la descarga la hace el job (regla 9, regla 12)."""
+    from app.core.tiempo import ahora_utc
+    from app.mercado import adjuntos
+
+    check_csrf(request, csrf_token)
+    user, _ = ctx
+    ca = _ca_o_404(session, codigo, regiones_activas(session, request.app.state.settings))
+    base = f"/catalogo/ca/{quote(ca.codigo)}"
+    if not adjuntos.puede_rebajar(session, ca):
+        texto = "No hay adjuntos que volver a bajar en esta Compra Ágil."
+        return RedirectResponse(f"{base}?error={quote(texto)}", status_code=303)
+    n = adjuntos.pedir_de_nuevo(session, ca, user.id, ahora_utc())
+    session.commit()
+    texto = (
+        f"{n} adjunto(s) en cola: se bajan y se leen en la próxima corrida automática "
+        "(cada hora en horario hábil)."
+    )
+    return RedirectResponse(f"{base}?mensaje={quote(texto)}", status_code=303)
 
 
 @router.post("/catalogo/ca/{codigo}/anexo-resuelto", response_model=None)

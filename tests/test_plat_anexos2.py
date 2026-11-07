@@ -24,9 +24,7 @@ from sqlalchemy.orm import Session
 from app.api.main import create_app
 from app.clients import openrouter as orc
 from app.clients.base import RateLimiter
-from app.clients.mp_documentos import DocumentosClient
 from app.core.tiempo import ahora_utc
-from app.ingest import anexos_directo as ad
 from app.mercado import adjudicacion as adj
 from app.mercado import anexos, oferta
 from app.mercado import anexos_carga as carga
@@ -113,9 +111,6 @@ def mundo(engine):
         s.commit()
         cat.procesar_catalogo(s, [16], inicial=True)
     return ids
-
-
-_URL_ADJ = "https://adjuntos.test/{codigo}/{id}"
 
 
 def _xlsx_con(*filas: str) -> bytes:
@@ -724,186 +719,8 @@ def test_salud_cuenta_anexos_por_modelo_y_no_mezcla_la_cuota(session, settings):
     assert ax["gasto_mes_usd"] == pytest.approx(0.5)
 
 
-# ---------------------------------------------------------------------------
-# §2.7 Descarga directa (apagada; URL pendiente de captura)
-# ---------------------------------------------------------------------------
-
-
-def _vigente_con_docs(session, codigo="1-1-COT26", docs=None):
-    cat.sembrar_canasta(session)
-    _ca(
-        session, codigo, productos=_ANEXO, n_documentos=len(docs or [1]), estado="publicada",
-        fecha_cierre=ahora_utc() + timedelta(days=2),
-        documentos=docs or [{"id": "d1", "nombre": "Anexo 1.xlsx"}],
-    )  # fmt: skip
-    session.commit()
-    cat.procesar_catalogo(session, [16], inicial=True)
-
-
-@pytest.fixture()
-def dormidos() -> list[float]:
-    return []
-
-
-@pytest.fixture()
-def documentos(dormidos) -> DocumentosClient:
-    return DocumentosClient(url=_URL_ADJ, limiter=RateLimiter(1000.0), dormir=dormidos.append)
-
-
-def _directa(**extra: Any):
-    return _settings(anexos_descarga_directa=True, **extra)
-
-
-@respx.mock
-def test_directa_baja_procesa_y_no_repite(session, engine, cliente, documentos):
-    _vigente_con_docs(session)
-    respx.post(_URL_OR).mock(return_value=_respuesta(_DOS_LINEAS))
-    ruta = respx.get("https://adjuntos.test/1-1-COT26/d1").mock(
-        return_value=httpx.Response(
-            200, content=_xlsx_con("arroz"), headers={"Content-Type": "application/octet-stream"}
-        )
-    )
-    resultado: dict[str, Any] = {}
-    ad.bajar_anexos_directo(_directa(), engine, [16], resultado, cliente=documentos,
-                            extractor=cliente)  # fmt: skip
-    assert resultado["anexos_directa_bajados"] == 1
-    assert resultado["anexos_directa_procesados"] == 1
-    pedido = ruta.calls.last.request
-    assert pedido.headers["User-Agent"].startswith("Rastrillo/") and "cookie" not in pedido.headers
-    session.expire_all()
-    (a,) = session.execute(select(CaAnexo)).scalars()
-    assert (a.fuente, a.subido_por, a.extraccion_estado) == ("descarga_directa", None, "hecha")
-    assert ad.descargas_del_dia(session, ahora_utc()) == 1
-    ad.bajar_anexos_directo(_directa(), engine, [16], {}, cliente=documentos, extractor=cliente)
-    assert ruta.call_count == 1  # ya tiene anexo: fuera de la cola
-
-
-@respx.mock
-def test_directa_html_no_es_archivo_y_no_se_parsea(session, engine, cliente, documentos):
-    _vigente_con_docs(session)
-    respx.get("https://adjuntos.test/1-1-COT26/d1").mock(
-        return_value=httpx.Response(200, text="<html>login</html>",
-                                    headers={"Content-Type": "text/html; charset=utf-8"})
-    )  # fmt: skip
-    resultado: dict[str, Any] = {}
-    ad.bajar_anexos_directo(_directa(), engine, [16], resultado, cliente=documentos,
-                            extractor=cliente)  # fmt: skip
-    assert resultado["anexos_directa_sin_archivo"] == {"no_archivo": 1}
-    assert not list(session.execute(select(CaAnexo)).scalars())
-
-
-@pytest.mark.parametrize("status", [403, 429])
-@respx.mock
-def test_directa_403_o_429_corta_y_persiste_la_pausa(session, engine, cliente, documentos, status):
-    _vigente_con_docs(session, docs=[{"id": "d1", "nombre": "a"}, {"id": "d2", "nombre": "b"}])
-    ruta = respx.get(url__startswith="https://adjuntos.test/").mock(
-        return_value=httpx.Response(status)
-    )
-    resultado: dict[str, Any] = {}
-    ad.bajar_anexos_directo(_directa(), engine, [16], resultado, cliente=documentos,
-                            extractor=cliente)  # fmt: skip
-    assert ruta.call_count == 1 and resultado["anexos_directa_cortado_por"] == f"http_{status}"
-    session.expire_all()
-    hasta = ad.pausa_hasta(session)
-    assert hasta is not None and hasta > ahora_utc() + timedelta(minutes=55)
-    assert ad.cortes_recientes(session, ahora_utc()) == 1
-    # Mientras dure la pausa, la corrida siguiente no pide nada.
-    otro: dict[str, Any] = {}
-    ad.bajar_anexos_directo(_directa(), engine, [16], otro, cliente=documentos, extractor=cliente)
-    assert otro == {"anexos_directa": "pausa"} and ruta.call_count == 1
-
-
-@respx.mock
-def test_directa_504_enfria_60_s(session, engine, cliente, documentos, dormidos):
-    _vigente_con_docs(session)
-    respx.get("https://adjuntos.test/1-1-COT26/d1").mock(return_value=httpx.Response(504))
-    resultado: dict[str, Any] = {}
-    ad.bajar_anexos_directo(_directa(), engine, [16], resultado, cliente=documentos,
-                            extractor=cliente)  # fmt: skip
-    assert dormidos == [60.0] and resultado["anexos_directa_sin_archivo"] == {"504": 1}
-
-
-@respx.mock
-def test_directa_timeout_enfria(documentos, dormidos):
-    from app.clients.mp_documentos import DescargaTransitoria
-
-    respx.get("https://adjuntos.test/X/1").mock(side_effect=httpx.ReadTimeout("lento"))
-    with pytest.raises(DescargaTransitoria):
-        documentos.descargar_adjunto("X", "1")
-    assert dormidos == [60.0]
-
-
-@respx.mock
-def test_directa_mas_de_10_mb_se_corta(documentos):
-    def _grande(_request: httpx.Request) -> httpx.Response:
-        trozos = (b"0" * (1024 * 1024) for _ in range(11))  # sin Content-Length: streaming
-        return httpx.Response(200, headers={"Content-Type": "application/pdf"}, content=trozos)
-
-    respx.get("https://adjuntos.test/X/1").mock(side_effect=_grande)
-    d = documentos.descargar_adjunto("X", "1")
-    assert d.data is None and d.motivo == "muy_grande"
-
-
-@respx.mock
-def test_directa_sigue_2_redirects_sin_mandar_cookies(documentos):
-    respx.get("https://adjuntos.test/X/1").mock(
-        return_value=httpx.Response(302, headers={"Location": "/r1", "Set-Cookie": "s=1; Path=/"})
-    )
-    r1 = respx.get("https://adjuntos.test/r1").mock(
-        return_value=httpx.Response(302, headers={"Location": "/r2"})
-    )
-    respx.get("https://adjuntos.test/r2").mock(
-        return_value=httpx.Response(302, headers={"Location": "/r3"})
-    )
-    d = documentos.descargar_adjunto("X", "1")
-    assert d.motivo == "demasiados_redirects" and "cookie" not in r1.calls.last.request.headers
-
-
-@respx.mock
-def test_directa_tope_diario(session, engine, cliente, documentos):
-    _vigente_con_docs(session, docs=[{"id": "d1", "nombre": "a"}, {"id": "d2", "nombre": "b"}])
-    ruta = respx.get(url__startswith="https://adjuntos.test/").mock(
-        return_value=httpx.Response(
-            200, text="<html></html>", headers={"Content-Type": "text/html"}
-        )
-    )
-    ad.bajar_anexos_directo(_directa(mercado_anexos_max_dia=1), engine, [16], {},
-                            cliente=documentos, extractor=cliente)  # fmt: skip
-    assert ruta.call_count == 1
-    ad.bajar_anexos_directo(_directa(mercado_anexos_max_dia=1), engine, [16], {},
-                            cliente=documentos, extractor=cliente)  # fmt: skip
-    assert ruta.call_count == 1  # el día ya usó su tope
-
-
-@respx.mock
-def test_directa_apagada_o_sin_url_no_pide_nada(session, engine, cliente, documentos):
-    _vigente_con_docs(session)
-    ruta = respx.get(url__startswith="https://adjuntos.test/").mock(
-        return_value=httpx.Response(200)
-    )
-    resultado: dict[str, Any] = {}
-    ad.bajar_anexos_directo(_settings(), engine, [16], resultado, cliente=documentos,
-                            extractor=cliente)  # fmt: skip
-    assert resultado == {} and ruta.call_count == 0
-    sin_url = DocumentosClient(limiter=RateLimiter(1000.0))
-    assert not sin_url.configurado  # URL_ADJUNTO sigue pendiente de la captura (R8)
-    ad.bajar_anexos_directo(_directa(), engine, [16], resultado, cliente=sin_url,
-                            extractor=cliente)  # fmt: skip
-    assert resultado == {"anexos_directa": "sin_url"} and ruta.call_count == 0
-
-
-def test_mercado_ca_llama_a_la_directa_solo_con_la_bandera(monkeypatch, engine):
-    from app.ingest import anexos_directo, mercado
-
-    llamadas: list[Any] = []
-    monkeypatch.setattr(mercado, "_sync_en_ventanas", lambda *a, **k: {"ventanas": 0})
-    monkeypatch.setattr(mercado, "cola_vigentes", lambda *a, **k: [])
-    monkeypatch.setattr(mercado, "cola_mercado_ca", lambda *a, **k: [])
-    monkeypatch.setattr(anexos_directo, "bajar_anexos_directo", lambda *a, **k: llamadas.append(a))
-    mercado.sync_mercado_ca(_settings(), engine, object())  # type: ignore[arg-type]
-    assert not llamadas
-    mercado.sync_mercado_ca(_directa(), engine, object())  # type: ignore[arg-type]
-    assert len(llamadas) == 1
+# §2.7 Descarga directa: desde F-plat-anexos-auto es el job `mercado-anexos`; sus tests viven en
+# tests/test_plat_anexos_auto.py.
 
 
 def test_documentos_del_detalle_se_guardan():

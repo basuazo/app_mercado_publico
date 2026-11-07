@@ -342,6 +342,15 @@ def run_mercado_mesa(settings: Settings, engine: Engine) -> dict[str, Any]:
         return run_mesa(session, tasa=settings.costo_financiero_mensual)
 
 
+def run_mercado_anexos(settings: Settings, engine: Engine) -> dict[str, Any]:
+    """Job `mercado-anexos` (F-plat-anexos-auto): baja el adjunto público de las CA vigentes del
+    territorio y lo lee con el modelo. Sin ticket ni cuota de la API; servicio de adjuntos de la
+    ficha a ≤ 1 req/s, tope diario propio y pausa persistida ante 403/429 (regla 9)."""
+    from app.ingest.anexos_directo import run_mercado_anexos as correr
+
+    return correr(settings, engine)
+
+
 def run_mercado_informe(settings: Settings, engine: Engine) -> dict[str, Any]:
     """Job `mercado-informe` (F-plat-7): informe mensual por empresa, por correo (Brevo). Sin ticket,
     sin cuota, sin API. Día 1 a las 08:40 Chile (`mercado-indices` empieza 07:45 con el mismo lock).

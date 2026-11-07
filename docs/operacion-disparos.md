@@ -78,6 +78,7 @@ Para cada fila de la tabla, en cron-job.org → **Create cronjob**:
 | GH mercado-nocturno | `mercado-nocturno.yml` | 22:30 y 03:40 — activo |
 | GH mercado-indices | `mercado-indices.yml` | 07:45 Chile, diario — activo (sin API; corre `mercado-indices`, `mercado-competencia` y `mercado-demanda`; ver nota abajo) |
 | GH mercado-informe | `mercado-informe.yml` | **día 1 de cada mes, 08:40 Chile** — activo (sin API; informe mensual por correo; ver tabla del pivote) |
+| GH mercado-anexos | `mercado-anexos.yml` | cada hora de 08:50 a 20:50 + 21:50, todos los días — **por crear** (F-plat-anexos-auto; sin API ni ticket) |
 
 ### Disparos del pivote — tabla única (F-plat-7, 6-nov-2026)
 
@@ -92,6 +93,14 @@ disparos de cron-job.org deben estar activos. Todos usan el mismo advisory lock.
 | `GH mercado-oc` | `mercado-oc.yml` → `mercado-oc` | 07:20 | no (datos abiertos) |
 | `GH mercado-indices` | `mercado-indices.yml` → `mercado-indices`, `mercado-competencia`, `mercado-demanda` | 07:45 | no |
 | `GH mercado-informe` | `mercado-informe.yml` → `mercado-informe` | **día 1 de cada mes, 08:40** | no (correo por Brevo) |
+| `GH mercado-anexos` | `mercado-anexos.yml` → `mercado-anexos` | cada hora 08:50–20:50 y 21:50 | no (servicio de adjuntos de la ficha, regla 9; tope propio `ANEXOS_DESCARGA_MAX`) |
+
+**`mercado-anexos` (F-plat-anexos-auto).** Corre ≤ 10 min (`ANEXOS_DESCARGA_MINUTOS`) para no dejar a `mercado-ca` sin
+lock más de una vuelta; espera el lock 5 min. No hay pasada a las 02:50: de 22:30 a 06:45 el lock es de
+`mercado-nocturno` y saldría `omitido`; la de las 21:50 hace de pasada nocturna. Necesita en GitHub: variable
+`ANEXOS_DESCARGA_DIRECTA=true`, `LLM_MODELO_EXTRACCION` (y opcionales `LLM_*`, `ANEXOS_DESCARGA_*`) y los secrets
+`OPENROUTER_API_KEY`, `MP_ADJUNTOS_USER_KEY` (y `MP_ADJUNTOS_HEADERS_EXTRA` si la sonda lo pide). Sin la bandera sale
+`omitido: apagado` sin pedir nada.
 
 **Apagados** (deben seguir en pausa o sin crear): `ca`, `ciclo-ca`, `ciclo-match`, `ciclo-activas`, `nocturno`, `resumen` y
 `catalogos` (que incluye `plan-anual` y `vocabulario-rubros`). Si uno de ellos corre y gasta ticket, `/salud` → Pivote

@@ -1190,6 +1190,42 @@ class CaAnexo(Base):
     )
 
 
+class CaAdjuntoDescarga(Base):
+    """Un adjunto de CA según `listar` del servicio de adjuntos, y qué hizo con él el job
+    `mercado-anexos` (F-plat-anexos-auto). Una fila por archivo, más una fila marcador por CA
+    (`documento_id = "(listar)"`) con el estado del listado. Así la cola sabe qué falta sin volver
+    a pedir lo bajado, deja de insistir con lo que falla siempre y el botón «Volver a bajar y leer»
+    lo encola de nuevo. Dato público del territorio: sin empresa (regla 26 es lo comercial).
+
+    estado: `listado` (falta bajarlo) | `bajado` (llegó y pasó por la lectura; `anexo_id` lo
+    apunta) | `fallido` (`motivo`, `intentos`) | `pedido` (una persona pidió bajarlo de nuevo)."""
+
+    __tablename__ = "ca_adjunto_descargas"
+    __table_args__ = (
+        CheckConstraint("estado IN ('listado', 'bajado', 'fallido', 'pedido')", name="estado"),
+        UniqueConstraint("ca_codigo", "documento_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInt, primary_key=True, autoincrement=True)
+    ca_codigo: Mapped[str] = mapped_column(
+        String(50), ForeignKey("compras_agiles.codigo", ondelete="CASCADE"), nullable=False
+    )
+    documento_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    nombre: Mapped[str | None] = mapped_column(String(200), nullable=True)  # nombreArchivo
+    estado: Mapped[str] = mapped_column(String(10), nullable=False)
+    intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    motivo: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    anexo_id: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("ca_anexos.id", ondelete="SET NULL"), nullable=True
+    )
+    pedido_por: Mapped[int | None] = mapped_column(
+        BigInt, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=ahora_utc, onupdate=ahora_utc
+    )
+
+
 class LlmUso(Base):
     """Gasto del mes en OpenRouter (regla 10: el presupuesto vive en Postgres). Upsert por mes."""
 

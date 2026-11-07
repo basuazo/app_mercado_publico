@@ -57,9 +57,18 @@
   <li>{{ a.nombre_original }} · <span class="badge bg-{{ et[1] }}">{{ et[0] }}</span>
     {% if a.paginas %}· {{ a.paginas }} pág.{% endif %}{% if a.escaneado %} · escaneado{% endif %}
     {% if a.extraccion_detalle %}<span class="text-muted">— {{ a.extraccion_detalle }}</span>{% endif %}
-    {% if a.extraccion_estado in ('sin_presupuesto', 'error') and a.mime != 'desconocido' and (a.paginas or a.texto_extraido) %}<span class="text-muted">· Vuelve a subir el archivo para leerlo.</span>{% endif %}</li>
+    {% if a.extraccion_estado in ('sin_presupuesto', 'error') and a.mime != 'desconocido' and (a.paginas or a.texto_extraido) %}<span class="text-muted">· Vuelve a subir el archivo para leerlo{% if puede_rebajar %} o usa «Volver a bajar y leer»{% endif %}.</span>{% endif %}</li>
   {% endfor %}
 </ul>
+{% endif %}
+{% if puede_rebajar %}
+<form method="post" action="/catalogo/ca/{{ ca.codigo }}/anexo/volver-a-bajar" class="mt-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="btn btn-sm btn-outline-primary"
+          title="La descarga automática baja de nuevo el adjunto público y lo vuelve a leer en su próxima corrida">Volver a bajar y leer</button>
+</form>
+{% elif rebajar_pedido %}
+<p class="small text-muted mt-2">Adjunto en cola: la descarga automática lo baja y lo lee en su próxima corrida (cada hora en horario hábil).</p>
 {% endif %}
 
 <h3 class="h5 mt-4" id="agregar">Agregar línea a mano</h3>

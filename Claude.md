@@ -52,15 +52,22 @@ Render solo sirve la web; correo por API REST de Brevo.
    los *_llamado es falsa (verificado 22-sep-2026): ignorarla.
 7. Compra Ágil NO filtra por organismo: filtrar por region y luego localmente.
 8. Toda publicación de datos lleva "Fuente: Dirección ChileCompra".
-9. Prohibido scrapear HTML de mercadopublico.cl para listar o leer procesos, ofertas u OC: eso viene
-   de la API oficial o de datos abiertos. Única excepción (5-nov-2026, Boris; términos de ChileCompra
-   leídos: los documentos de los procesos son información pública y el bloqueo es por BOT que
-   comprometa disponibilidad): descargar el ADJUNTO PÚBLICO de una CA en alcance por su URL directa,
-   y solo como ÚLTIMA ALTERNATIVA, en este orden: (1) la API, si la sonda `--documentos` confirma una
-   ruta; (2) subida manual o carga masiva en la plataforma; (3) descarga directa. La descarga directa va
-   uno a uno, ≤ 1 req/s, tope diario propio (`MERCADO_ANEXOS_MAX`), solo CA vigentes `sin_detalle`
-   con `n_documentos > 0`, cliente identificado, sin eludir ninguna protección (un 403/429 corta la
-   corrida y persiste una pausa como la del 429 de la API), sin parsear HTML. Fuente siempre citada.
+9. Prohibido scrapear HTML de mercadopublico.cl para listar o leer procesos, ofertas u OC: eso viene de la API
+   oficial o de datos abiertos. Única excepción (5-nov-2026, Boris; términos de ChileCompra leídos: los
+   documentos de los procesos son información pública y el bloqueo es por BOT que comprometa disponibilidad):
+   bajar el ADJUNTO PÚBLICO de una CA. Desde el 6-nov-2026 (Boris: «sin automatizar los anexos la app es
+   inviable») lo hace solo el job `mercado-anexos` (F-plat-anexos-auto) con el servicio de adjuntos que usa la
+   ficha pública: token ANÓNIMO (`GET servicios-prd…/v1/auth/publico`, el que la ficha entrega a cualquier
+   visitante, sin cuenta) → `listar/{codigo}` → `descargar/{id}`, con la `user_key` del frontend solo en entorno
+   y enmascarada como `MP_TICKET` (el token vive solo en memoria). Headers: solo `Authorization`, `user_key` y
+   `User-Agent: Rastrillo/1.0`; no se imitan origin, referer, sec-* ni el user-agent del navegador (si hiciera
+   falta `origin`, se agrega solo ese, vía `MP_ADJUNTOS_HEADERS_EXTRA`, documentado). Límites: todas las CA
+   vigentes del territorio con adjunto, uno a uno, ≤ 1 req/s, tope diario propio contado en Postgres
+   (`ANEXOS_DESCARGA_MAX`: token + listar + descargas), sin parsear HTML, sin listar procesos fuera de la API.
+   Un 403/429 corta la corrida y persiste una pausa de 60 min; si se repiten (más de 2 cortes en 7 días,
+   /salud), se apaga y se escala a ChileCompra. **Prohibido** rotar IP, proxies, cuentas o headers para eludir
+   un bloqueo. Si ChileCompra da un endpoint oficial, se cambia el cliente y se apaga esta vía. Fuente siempre
+   citada.
 
 ## Free tier — reglas duras
 10. Cero estado en memoria o disco local que importe: el proceso es DESECHABLE

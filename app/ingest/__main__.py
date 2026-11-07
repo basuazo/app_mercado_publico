@@ -29,6 +29,7 @@ from app.ingest.orchestrator import (
     run_estados_vencidos,
     run_lifecycle,
     run_match,
+    run_mercado_anexos,
     run_mercado_backfill,
     run_mercado_ca,
     run_mercado_catalogo,
@@ -73,6 +74,7 @@ _JOBS = (
     "mercado-demanda",
     "mercado-mesa",
     "mercado-informe",
+    "mercado-anexos",
 )
 
 _log = get_logger(__name__)
@@ -240,6 +242,11 @@ def cmd_run_once(
         # cuota. Día 1 a las 08:40 Chile; idempotente por (empresa, mes).
         "mercado-informe": _locked(
             "mercado-informe", lambda: run_mercado_informe(settings, engine)
+        ),
+        # F-plat-anexos-auto: servicio de adjuntos de la ficha pública (regla 9), sin ticket ni
+        # cuota de la API. Workflow propio cada hora hábil + una pasada nocturna; lock de siempre.
+        "mercado-anexos": _locked(
+            "mercado-anexos", lambda: run_mercado_anexos(settings, engine)
         ),
         # NO se envuelve: _ciclo_nocturno ya toma el lock por cada paso interno
         # (envolverlo por fuera volvería el ciclo entero un no-op silencioso) y

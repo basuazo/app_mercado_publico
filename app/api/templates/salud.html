@@ -256,9 +256,12 @@
 {% endif %}
 <p class="small mb-1">Anexos del mes por fuente:
   {% for f, n in ax.por_fuente.items() %}{{ f }} {{ n }}{% if not loop.last %} · {% endif %}{% else %}ninguno{% endfor %}</p>
-<p class="small mb-4">Descarga directa del adjunto público: {% if ax.directa.habilitada %}<span class="badge bg-warning text-dark">encendida</span>{% else %}<span class="badge bg-secondary">apagada</span>{% endif %}
-  · hoy {{ ax.directa.descargas_hoy }} de {{ ax.directa.tope_dia }}
-  · cortes por 403/429 en 7 días: <strong{% if ax.directa.cortes_7_dias > 2 %} class="text-danger"{% endif %}>{{ ax.directa.cortes_7_dias }}</strong>{% if ax.directa.cortes_7_dias > 2 %} (más de 2: apagar y volver al flujo manual){% endif %}
+{% set uc = ax.directa.ultima_corrida %}
+<p class="small mb-4">Descarga automática de adjuntos (job <code>mercado-anexos</code>, corre en Actions):
+  {% if uc %}última corrida {{ uc.iniciado_en }} (UTC) <span class="badge bg-{{ 'success' if uc.estado == 'ok' and not uc.omitido and not uc.cortado_por else 'warning text-dark' if uc.estado != 'error' else 'danger' }}">{{ uc.estado }}{% if uc.omitido %} · {{ uc.omitido }}{% endif %}{% if uc.cortado_por %} · cortada por {{ uc.cortado_por }}{% endif %}</span>{% if uc.requests is not none %} · {{ uc.requests }} request(s), {{ uc.extraidos or 0 }} leído(s){% endif %}{% else %}<span class="badge bg-secondary">nunca ha corrido</span>{% endif %}
+  · hoy {{ ax.directa.descargas_hoy }} de {{ ax.directa.tope_dia }} requests
+  · pendientes: {{ ax.directa.ca_pendientes }} CA vigente(s) ({{ ax.directa.ca_por_listar }} por listar, {{ ax.directa.archivos_en_cola }} archivo(s) en cola)
+  · cortes por 403/429 en 7 días: <strong{% if ax.directa.cortes_7_dias > 2 %} class="text-danger"{% endif %}>{{ ax.directa.cortes_7_dias }}</strong>{% if ax.directa.cortes_7_dias > 2 %} (más de 2: apagar y escalar a ChileCompra){% endif %}
   {% if ax.directa.pausa_hasta %}· en pausa hasta {{ ax.directa.pausa_hasta }} (UTC){% endif %}</p>
 
 <!-- Vocabulario por rubro (F-ca-explorar) -->

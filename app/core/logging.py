@@ -1,8 +1,23 @@
 """Logging estructurado con enmascaramiento de secretos."""
 
+import json
 import logging
 import os
 import re
+
+# Secretos que nacen en memoria durante la corrida (el token anónimo del servicio de adjuntos,
+# F-plat-anexos-auto): nunca van a un log, pero si algo los arrastra, quedan enmascarados.
+_DINAMICOS: list[str] = []
+_MAX_DINAMICOS = 20
+
+
+def enmascarar_tambien(valor: str) -> None:
+    """Agrega `valor` a lo que todos los filtros de secretos enmascaran (solo en memoria)."""
+    valor = (valor or "").strip()
+    if len(valor) < 8 or valor in _DINAMICOS:
+        return
+    _DINAMICOS.append(valor)
+    del _DINAMICOS[:-_MAX_DINAMICOS]
 
 
 class _SecretFilter(logging.Filter):
@@ -19,7 +34,11 @@ class _SecretFilter(logging.Filter):
         "DATABASE_URL_PROD",
         "ADMIN_PASSWORD",
         "OPENROUTER_API_KEY",
+        "MP_ADJUNTOS_USER_KEY",
+        "MP_ADJUNTOS_HEADERS_EXTRA",
     )
+    # JSON de headers: además del texto entero se enmascara cada valor por separado.
+    _ENV_JSON = ("MP_ADJUNTOS_HEADERS_EXTRA",)
 
     def __init__(self) -> None:
         super().__init__()
@@ -27,10 +46,19 @@ class _SecretFilter(logging.Filter):
         self._reload()
 
     def _reload(self) -> None:
-        self._secrets = [v for var in self._ENV_VARS if (v := os.getenv(var, "").strip())]
+        secretos = [v for var in self._ENV_VARS if (v := os.getenv(var, "").strip())]
+        for var in self._ENV_JSON:
+            try:
+                datos = json.loads(os.getenv(var, "") or "{}")
+            except ValueError:
+                continue
+            if isinstance(datos, dict):
+                secretos += [s for v in datos.values() if (s := str(v).strip())]
+        # Los largos primero: un secreto que contiene a otro no queda a medio enmascarar.
+        self._secrets = sorted(set(secretos), key=len, reverse=True)
 
     def _mask(self, text: str) -> str:
-        for secret in self._secrets:
+        for secret in (*self._secrets, *_DINAMICOS):
             if secret:
                 text = text.replace(secret, self._PLACEHOLDER)
         return text

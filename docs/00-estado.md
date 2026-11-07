@@ -18,6 +18,18 @@ quedó en `archivo/00-estado-actual.md` y los handoffs de sep en `archivo/`.*
   Compras Ágiles con rubros favoritos, Plan Anual con búsqueda inversa, competencia al adjudicar,
   resumen diario + alertas de guardadas, `/salud` y admin.
 
+## F-plat-anexos-auto (7-nov, rama `F-plat-anexos-auto` desde `7f3796b`, PR a `main`; migración `c4e8a2f6d0b3`, cuelga de `a7c3e9d1f5b2`)
+Descarga y lectura automática de adjuntos (`prompt-F-plat-anexos-auto.md`). **Esquema:** tabla `ca_adjunto_descargas` (una
+fila por archivo: listado | bajado | fallido | pedido, más un marcador por CA listada). **Job** `mercado-anexos` (`app/ingest/anexos_directo.py`, workflow propio
+`mercado-anexos.yml`, cada hora 08:50–20:50 + 21:50): todas las CA vigentes del territorio con `n_documentos > 0` (los ids salen de `listar`), cola en
+`app/mercado/adjuntos.py`, cliente `app/clients/mp_documentos.py` (token anónimo + `user_key`, ≤ 1 req/s, tope diario
+`ANEXOS_DESCARGA_MAX` = 300 en `sync_state`, 403/429 → pausa de 60 min), archivo en memoria →
+`anexos_carga.procesar_archivo(fuente="descarga_directa", empresa_id=None)`. Sale de `mercado-ca`. **Ficha:** botón «Volver a
+bajar y leer». **/salud:** última corrida, requests del día vs. tope, documentos pendientes, cortes. **Apagado** hasta
+`ANEXOS_DESCARGA_DIRECTA=true` + `MP_ADJUNTOS_USER_KEY`. Flujo [V, paso 0]: token → `listar/{codigo}` → `descargar/{id}`
+(listar obligatorio: 0 `documentos[].id` en producción). **Pendiente de Boris:** sonda `--adjuntos 2467-760-COT26`; migrar; secrets y variables; disparo `GH mercado-anexos`; regla 9 de
+`CLAUDE.md`; pedir a ChileCompra un endpoint oficial.
+
 ## F-plat-auto-revision (6-nov, rama `F-plat-auto-revision` desde `eed8a0f`, commit local sin push ni merge; migración `d8f1b6c4a2e9`, cuelga de `c6d9a3f1e8b2`)
 Líneas de anexo confirmadas solas (`prompt-F-plat-auto-revision.md`). **Esquema:** `ca_lineas.confirmada_por|puntaje_auto|
 control_en`, índice parcial `ix_ca_lineas_auto`, tabla `auto_control_semana`. **Reglas:** `app/mercado/auto_revision.py`

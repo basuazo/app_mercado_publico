@@ -270,7 +270,8 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   todas las empresas con token (3–10); 60 requests/min por token en `sync_state`; 401 idéntico para token inválido,
   revocado o de empresa inactiva, antes de mirar la CA.
 - **Descarga directa (§2.7) apagada e inerte** hasta la captura de la URL del adjunto (R8). Si en una semana hay más
-  de 2 cortes por 403/429 (`/salud` los cuenta), se apaga y se vuelve al flujo manual.
+  de 2 cortes por 403/429 (`/salud` los cuenta), se apaga y se vuelve al flujo manual. *(Reemplazado el 6–7-nov por
+  «Descarga automática de adjuntos», más abajo.)*
 
 
 ## Adjuntos con un clic (F-plat-anexos-boton, 6-nov)
@@ -393,6 +394,78 @@ retención nunca borraba filas, solo vaciaba `raw_json`.
   misma fila de `ca_anexos` (sin duplicar; conserva `subido_por` si la relectura viene sin usuario); `hecha`/`pendiente`
   siguen saliendo «Ya existía». Vale para ficha, carga masiva y `POST /api/anexos/{codigo}`. La descarga automática
   **no relee en la práctica**: `cola_anexos` excluye las CA que ya tienen anexos. El botón «Volver a bajar y leer» queda
-  para anexos-auto. La ficha no invita a releer un archivo rechazado por inválido.
+  para anexos-auto (hecho en F-plat-anexos-auto, ver abajo). La ficha no invita a releer un archivo rechazado por
+  inválido.
 - **Modelo de extracción: pendiente.** Se elige corriendo la evaluación con el juez corregido (§5 del prompt); lo anota
   Boris aquí con el resultado.
+
+## Descarga automática de adjuntos (F-plat-anexos-auto, 6–7-nov, Boris)
+- **Se automatiza la descarga (manda sobre la regla 9 del 5-nov).** «Sin automatizar los anexos la app es inviable; si
+  hay que mezclar API con lectura de la web, se hace» (Boris, 6-nov). Vía A, un job HTTP directo (`mercado-anexos`), y no
+  un navegador automático (vía B), porque carga menos a ChileCompra. NO lee el HTML de las fichas ni lista procesos fuera
+  de la API. Reemplaza la «vía de mayor riesgo, en reserva» de anexos-boton: la extensión sigue como respaldo manual.
+- **Flujo [V, paso 0 de Boris, 6–7-nov, ficha `2467-760-COT26` con 3 anexos]:** (1) token anónimo: `GET
+  servicios-prd.mercadopublico.cl/v1/auth/publico`, sin payload ni `user_key`; responde `{success, trace, payload,
+  errores}` con `payload.access_token` (JWT de Keycloak, realm `chilecomprarealm`, `anonymouser`) y `expires_in` 28800;
+  basta uno por corrida. (2) `GET adjunto.mercadopublico.cl/…/listar/{codigo}` → `payload.files[] = {id, nombreArchivo}`.
+  (3) `GET …/descargar/{id}` → el archivo con content-disposition. No existe `encrypt`. `listar` y `descargar` llevan
+  `Authorization: Bearer` y `user_key` (la `user_key` la pone Boris en `.env` y en el secret; nunca en código ni chat).
+- **Headers (Boris, 7-nov):** token con `Accept` y `User-Agent: Rastrillo/1.0`; `listar` y `descargar` con
+  `Authorization`, `user_key` y el mismo `User-Agent`. **No** se imitan origin, referer, sec-* ni el user-agent del
+  navegador. Si la sonda muestra un rechazo por falta de `origin`, se agrega SOLO ese, vía `MP_ADJUNTOS_HEADERS_EXTRA`, y
+  se anota acá.
+- **`listar` es obligatorio [V, Neon production, 7-nov, Boris]:** 88 CA vigentes de Ñuble con `n_documentos > 0` y 0 con
+  `documentos[].id` guardados. El job lista cada CA (1 request, contado en el tope) y guarda los ids que devuelve; no
+  depende de `compras_agiles.documentos`. La ficha usa los UUID en mayúsculas: el cliente los normaliza [I: si el
+  servicio distingue mayúsculas].
+- **Alcance: todas las CA vigentes del territorio con `n_documentos > 0`**, no solo las `sin_detalle` ni solo las
+  familias de la empresa (~1.300 CA/mes en Ñuble [V, datos abiertos]). El anexo es dato público del territorio:
+  `empresa_id = NULL`, `subido_por = NULL`.
+- **Prioridad y reparto del atraso.** Orden de la cola: lo que una persona pidió de nuevo; después alimentos; después el
+  cierre más próximo. Una CA se lista y sus archivos se bajan enseguida, en la misma corrida, antes de pasar a la
+  siguiente: la que cierra antes queda completa primero. Lo que no alcanza queda `listado` y abre la corrida siguiente
+  sin volver a listar. Cuenta del atraso del 7-nov (88 CA, ~3 archivos cada una, ~350 requests con los listados):
+  cada CA cuesta ~4 requests (1 listar + ~3 descargas), así que con 40 requests por corrida caben ~9 CA; con 14
+  corridas al día manda el tope diario (300 − ~14 tokens ≈ 286 → ~70 CA/día). El atraso se pone al día en 1–2 días
+  y después alcanza para el flujo nuevo (~60 CA/día hábil [I]). [I] El límite de 10 min por corrida puede pesar más
+  que los requests, porque cada archivo pasa por el modelo (~30–60 s): si `job_runs` muestra `cortado_por_tiempo` en
+  casi todas las corridas, subir `ANEXOS_DESCARGA_MINUTOS` en las horas sin `mercado-ca` pesado o separar la lectura.
+- **Una fila por archivo** (`ca_adjunto_descargas`: listado | bajado | fallido | pedido) y una fila marcador
+  `(listar)` por CA con el estado del listado: la cola sabe qué falta, no reintenta lo que no es un archivo (HTML,
+  > 10 MB, inválido, 404, CA sin archivos), reintenta lo transitorio hasta 3 veces y deja encolar de nuevo desde la
+  ficha.
+- **Si una persona ya cargó un anexo que se leyó**, la CA queda fuera de la cola (salvo que alguien pida bajarla de
+  nuevo): el archivo de la persona puede no ser idéntico al público y leer los dos duplicaría líneas. Si esa lectura
+  falló (`sin_presupuesto`/`error`), la descarga automática sí la intenta.
+- **«Volver a bajar y leer»** (ficha de líneas de la CA): visible si la CA está vigente, el job ya listó sus archivos y
+  alguno falló o quedó con lectura `sin_presupuesto`/`error` (con archivo aceptado). Encola esos archivos (`pedido`);
+  la web no llama a nadie, lo baja el job en su próxima corrida y la relectura cae en la misma fila de `ca_anexos`
+  (F-plat-lectura). El job **no** relee solo lo que quedó `sin_presupuesto`: al agotarse el presupuesto del mes corta la
+  corrida para no gastar requests en archivos que no se leerían.
+- **Límites:** ≤ 1 req/s con jitter; tope diario `ANEXOS_DESCARGA_MAX` = 300 requests (token + listar + descargas),
+  contado en `sync_state` antes de cada request; por corrida `ANEXOS_DESCARGA_MAX_CORRIDA` = 40 y
+  `ANEXOS_DESCARGA_MINUTOS` = 10 (el job comparte el advisory lock con `mercado-ca`, que corre cada 15 min). 403/429 →
+  pausa persistida de 60 min y corte; un 401 renueva el token una sola vez; un fallo del token corta sin pausa. Más de 2
+  cortes en 7 días (`/salud`) → apagar `ANEXOS_DESCARGA_DIRECTA` y escalar a ChileCompra. **Prohibido** rotar IP,
+  proxies, cuentas o headers.
+- **Sale de `mercado-ca`:** la descarga directa ya no corre dentro de la ingesta (anexos-2 §2.7); es su workflow propio
+  (`mercado-anexos.yml`, cada hora 08:50–20:50 + 21:50; a las 02:50 el lock es de `mercado-nocturno`). `/salud` muestra
+  la última corrida desde `job_runs`: la bandera y las claves viven en Actions, no en Render.
+- **En paralelo:** pedir a ChileCompra un endpoint oficial de documentos de Compra Ágil; si lo dan, se cambia el cliente
+  y se apaga esta vía.
+- **PENDIENTE (fuera de esta fase): `compras_agiles.documentos` vacío en producción.** F-plat-anexos-2 debía guardar
+  `documentos[].{id, nombre}` del detalle v2 y hoy no hay ninguno (88 de 88 sin ids [V, Neon, 7-nov]). Revisión del
+  código (sin datos de producción, así que la causa es [I]):
+  - `mp_v2.py:315-321` cuenta `n_documentos = len(documentos)` sobre la lista cruda, pero guarda en `docs` solo los
+    elementos que traen la clave `id`. Si el detalle real usa otra clave (ej. `idDocumento`) o viene `id: null`, queda
+    `n_documentos > 0` con `documentos = []`. La sonda del 5-nov vio `['id', 'nombre']` en `3600-210-COT26`, pero era una
+    sola CA.
+  - `cola_vigentes` (`ingest/mercado.py`) solo vuelve a pedir el detalle de una vigente si `detalle_vigente_en` es nulo
+    o anterior a `fecha_ultimo_cambio`. Una CA cuyo detalle se pidió antes del deploy de anexos-2 (6-nov 00:33) y que
+    no cambió conserva `documentos = NULL` hasta cerrar. Esto no explicaría el 100 % si hubo CA nuevas desde el 6-nov.
+  - Cómo distinguirlas (lo corre Boris en Neon): `SELECT documentos IS NULL AS nulo, documentos::text = '[]' AS vacio,
+    detalle_vigente_en >= '2026-11-06 03:33' AS post_deploy, count(*) FROM compras_agiles WHERE region = 16 AND estado
+    = 'publicada' AND fecha_cierre > now() AND n_documentos > 0 GROUP BY 1, 2, 3;`. Si salen `[]` después del deploy,
+    es el parseo (mirar las claves reales con `smoke_test.py --detalle-ca`). Si salen NULL, es la cola.
+  - Para este job no importa: lista siempre. Importa para `GET /api/anexos/pendientes` y la extensión, que muestran
+    `documentos[].nombre`.

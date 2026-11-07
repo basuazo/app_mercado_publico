@@ -236,14 +236,34 @@ class Settings(BaseSettings):
     llm_modelo_respaldo: str = Field(
         default="", description="Modelo de OpenRouter de respaldo para leer anexos (vacío = sin)"
     )
-    # F-plat-anexos-2 §2.7 (regla 9): última alternativa, apagada. Además de esta bandera hace
-    # falta la URL real del adjunto en `app/clients/mp_documentos.py` (captura de Boris, R8).
+    # F-plat-anexos-auto (regla 9): interruptor del job `mercado-anexos`. Además hace falta
+    # `MP_ADJUNTOS_USER_KEY`: sin ella el cliente no está configurado y no se pide nada.
     anexos_descarga_directa: bool = Field(
         default=False,
-        description="Descargar el adjunto público de las CA vigentes sin detalle (regla 9)",
+        description="Job mercado-anexos: bajar el adjunto público de las CA vigentes (regla 9)",
     )
-    mercado_anexos_max_dia: int = Field(
-        default=60, description="Tope diario de adjuntos bajados por descarga directa"
+    anexos_descarga_max: int = Field(
+        default=300,
+        ge=0,
+        description="Tope diario de requests al servicio de adjuntos (token + descargas)",
+    )
+    anexos_descarga_max_corrida: int = Field(
+        default=40, ge=0, description="Tope de requests al servicio de adjuntos por corrida"
+    )
+    anexos_descarga_minutos: float = Field(
+        default=10.0,
+        gt=0,
+        description="Minutos por corrida de mercado-anexos (después no empieza otra descarga)",
+    )
+    # Secretos como MP_TICKET (regla 1): repr=False y enmascarados en el logger. La clave pública
+    # del frontend de la ficha y, si la sonda muestra que hacen falta, headers extra en JSON.
+    mp_adjuntos_user_key: str = Field(
+        default="", description="Header user_key del servicio de adjuntos (secreto)", repr=False
+    )
+    mp_adjuntos_headers_extra: str = Field(
+        default="",
+        description='Headers extra del servicio de adjuntos, JSON {"x-…": "…"} (secreto)',
+        repr=False,
     )
     # F-plat-auto-revision: puntaje mínimo (0–1, `auto_revision.puntaje_linea`) para que una línea
     # leída de un anexo pase sola a `ok`. Vacío = apagado: todas quedan `dudosa` (como antes). Lo

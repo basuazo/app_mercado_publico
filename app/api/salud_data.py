@@ -176,6 +176,18 @@ def _anexos_salud(session: Session, settings: Settings) -> dict[str, Any]:
         ).tuples()
     }
     pausa = ad.pausa_hasta(session)
+    # F-plat-anexos-auto: documentos de CA vigentes que el job todavía tiene que bajar.
+    from app.mercado import adjuntos
+
+    pendientes = adjuntos.cola(session, regiones_activas(session, settings), ahora)
+    # La bandera y la clave viven en los Secrets de Actions, no en Render (la web no descarga):
+    # el estado real es la última corrida del job.
+    from app.models.tables import JobRun
+
+    ultima = session.execute(
+        select(JobRun).where(JobRun.job == "mercado-anexos").order_by(JobRun.id.desc()).limit(1)
+    ).scalar_one_or_none()
+    res_ultima = ultima.resultado_json if ultima is not None else None
     return {
         "gasto_mes_usd": float(uso.costo_usd) if uso else 0.0,
         "requests_mes": int(uso.requests) if uso else 0,
@@ -187,8 +199,23 @@ def _anexos_salud(session: Session, settings: Settings) -> dict[str, Any]:
         "por_fuente": por_fuente,
         "directa": {
             "habilitada": settings.anexos_descarga_directa,
+            "ultima_corrida": (
+                {
+                    "iniciado_en": ultima.iniciado_en.isoformat(),
+                    "estado": ultima.estado,
+                    "omitido": (res_ultima or {}).get("omitido"),
+                    "cortado_por": (res_ultima or {}).get("cortado_por"),
+                    "requests": (res_ultima or {}).get("requests"),
+                    "extraidos": (res_ultima or {}).get("extraidos"),
+                }
+                if ultima is not None
+                else None
+            ),
             "descargas_hoy": ad.descargas_del_dia(session, ahora),
-            "tope_dia": settings.mercado_anexos_max_dia,
+            "tope_dia": settings.anexos_descarga_max,
+            "ca_por_listar": sum(1 for p in pendientes if p.es_listado),
+            "archivos_en_cola": sum(1 for p in pendientes if not p.es_listado),
+            "ca_pendientes": len({p.codigo for p in pendientes}),
             "cortes_7_dias": ad.cortes_recientes(session, ahora),
             "pausa_hasta": pausa.isoformat() if pausa is not None and pausa > ahora else None,
         },

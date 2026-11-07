@@ -16,6 +16,20 @@ class ChangelogEntry:
 CHANGELOG: list[ChangelogEntry] = [
     ChangelogEntry(
         fecha=date(2026, 11, 7),
+        titulo="Los adjuntos de las Compras Ágiles se bajan y se leen solos",
+        descripcion=(
+            "La app baja sola el archivo adjunto de cada Compra Ágil vigente de tu territorio "
+            "(cada hora, de 08:50 a 21:50) y lo lee con la lectura automática, igual que si lo "
+            "hubieras subido tú: ya no hace falta abrir la ficha ni usar la extensión. Si alguien "
+            "del equipo ya subió un anexo que se leyó bien, esa Compra Ágil no se vuelve a bajar. "
+            "Si la lectura de un adjunto quedó «Manual» o falló la descarga, en la ficha de líneas "
+            "aparece «Volver a bajar y leer»: lo deja en cola y se lee en la próxima corrida, en "
+            "el mismo anexo. Para administradores: /salud muestra la última corrida, las descargas "
+            "del día contra el tope y cuántos adjuntos faltan. Fuente: Dirección ChileCompra."
+        ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 7),
         titulo="Nuevo menú y modo oscuro",
         descripcion=(
             "Empieza el rediseño «Rastrillo». El menú lateral es nuevo: «Inicio» ahora se llama "

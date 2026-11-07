@@ -1,0 +1,34 @@
+# Adjuntos de Compra Ágil (F-plat-anexos-auto): baja el adjunto público de las CA vigentes del
+# territorio desde el servicio de la ficha y lo lee con el modelo (OpenRouter). Regla 9.
+#
+# Disparo: desde cron-job.org, hora de Chile, cada hora de 08:50 a 20:50 más una pasada nocturna a
+# las 21:50 (de 22:30 a 06:45 el lock es de `mercado-nocturno`), con la API de GitHub
+# (workflow_dispatch). El horario vive en cron-job.org y está documentado en
+# docs/operacion-disparos.md. Sin `schedule` a propósito.
+#
+# NO usa MP_TICKET ni la cuota de la API. Interruptor: variable ANEXOS_DESCARGA_DIRECTA=true;
+# claves en los secrets MP_ADJUNTOS_USER_KEY (y MP_ADJUNTOS_HEADERS_EXTRA si la sonda lo pide) y
+# OPENROUTER_API_KEY. Mismo advisory lock que `mercado`: la corrida dura hasta
+# ANEXOS_DESCARGA_MINUTOS (10) para no dejar a `mercado-ca` sin lock más de una vuelta.
+name: mercado-anexos
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mp-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/_job.yml
+    secrets: inherit
+    with:
+      jobs: "mercado-anexos"
+      # 5 de espera del lock + 10 de descargas y lectura + margen para el último archivo (la
+      # lectura de un escaneado puede tardar ~1 min y otro si va al modelo de respaldo).
+      timeout_min: 25
+      esperar_lock_min: 5
