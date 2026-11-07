@@ -11,7 +11,6 @@ mirar la CA: el cuerpo nunca revela si una CA existe.
 
 from __future__ import annotations
 
-from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -19,10 +18,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from sqlalchemy.orm import Session
 
 from app.api.deps import check_csrf, get_db, html_require_admin, html_require_empresa
-from app.api.query import url_ficha_ca
 from app.api.routes.pages import _TEMPLATES, _ctx
 from app.core.logging import get_logger
-from app.core.tiempo import TZ_CHILE, ahora_utc
+from app.core.tiempo import ahora_utc
 from app.mercado import anexos
 from app.mercado import anexos_carga as carga
 from app.mercado import anexos_pendientes as pend
@@ -175,30 +173,6 @@ def _aviso_error(texto: str) -> str:
 # ===========================================================================
 
 
-def _cierre_chile(valor: Any) -> str:
-    if valor is None:
-        return "—"
-    return str(valor.replace(tzinfo=UTC).astimezone(TZ_CHILE).strftime("%d-%m %H:%M"))
-
-
-def filas_pendientes(session: Session, empresa_id: int) -> list[dict[str, Any]]:
-    """Las CA que esperan anexo en las regiones de la empresa, listas para pintar."""
-    empresa = session.get(Empresa, empresa_id)
-    regiones = [int(r) for r in (empresa.regiones_prioritarias or [])] if empresa else []
-    return [
-        {
-            "codigo": p.codigo,
-            "nombre": p.nombre,
-            "comprador": p.comprador,
-            "cierre": _cierre_chile(p.fecha_cierre),
-            "n_documentos": p.n_documentos,
-            "motivo": p.motivo,
-            "url_ficha": url_ficha_ca(p.codigo),
-        }
-        for p in pend.pendientes(session, regiones, ahora_utc())
-    ]
-
-
 @router.get("/catalogo/anexos/pendientes", response_class=HTMLResponse)
 async def pendientes_get(
     request: Request,
@@ -215,7 +189,7 @@ async def pendientes_get(
         _ctx(
             request,
             user,
-            filas=filas_pendientes(session, empresa_id),
+            filas=pend.filas_pendientes(session, empresa_id, ahora_utc()),
             n_defecto=pend.N_FICHAS_DEFECTO,
             n_max=pend.N_FICHAS_MAX,
         ),

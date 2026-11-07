@@ -460,10 +460,36 @@ def mejor_costo(  # noqa: PLR0913 - una dimensión del costo = un parámetro
     if producto_id is not None:
         consulta = consulta.where(ProveedorProducto.producto_id == producto_id)
     clave = norm(producto_texto) if producto_id is None else None
+    filas = [
+        (pp, prov)
+        for pp, prov in session.execute(consulta).all()
+        if clave is None or norm(pp.producto_texto) == clave
+    ]
+    return _elegir(
+        filas,
+        unidad_base=unidad_base,
+        cantidad_base=cantidad_base,
+        permitir_vencidos=permitir_vencidos,
+        dia=dia,
+        dias=dias,
+        habituales=habituales,
+    )
+
+
+def _elegir(  # noqa: PLR0913 - las mismas dimensiones de `mejor_costo`
+    filas: list[tuple[ProveedorProducto, Proveedor]],
+    *,
+    unidad_base: str | None,
+    cantidad_base: float | None,
+    permitir_vencidos: bool,
+    dia: date,
+    dias: int,
+    habituales: set[int],
+) -> MejorCosto | None:
+    """El criterio de `mejor_costo` sobre filas ya leídas (pura). Lo comparten `mejor_costo` y
+    `mejores_costos`: una sola definición del ganador."""
     por_unidad: dict[str, list[Candidato]] = {}
-    for pp, prov in session.execute(consulta).all():
-        if clave is not None and norm(pp.producto_texto) != clave:
-            continue
+    for pp, prov in filas:
         if not pp.factor_base or pp.factor_base <= 0 or pp.unidad_base is None:
             continue
         if unidad_base is not None and pp.unidad_base != unidad_base:
@@ -503,6 +529,60 @@ def mejor_costo(  # noqa: PLR0913 - una dimensión del costo = un parámetro
         ),
     )
     return MejorCosto(unidad, ordenados[0], ordenados)
+
+
+def mejores_costos(
+    session: Session,
+    empresa_id: int,
+    pedidos: list[tuple[int, str | None, float | None]],
+    hoy: date | None = None,
+) -> dict[tuple[int, str | None, float | None], MejorCosto | None]:
+    """`mejor_costo` para muchos `(producto_id, unidad_base, cantidad_base)` con un número FIJO de
+    consultas (regla 12): la vigencia de la empresa, los habituales y los candidatos de todos los
+    productos de una vez. Mismo criterio (`_elegir`); para las señales de la mesa (F-dis-datos)."""
+    if not pedidos:
+        return {}
+    dia = hoy or hoy_chile()
+    dias = dias_vigencia(session, empresa_id)
+    pids = {p for p, _u, _c in pedidos}
+    habituales: dict[int, set[int]] = {}
+    for pid, prov_id in session.execute(
+        select(EmpresaProducto.producto_id, EmpresaProducto.proveedor_habitual_id).where(
+            EmpresaProducto.empresa_id == empresa_id,
+            EmpresaProducto.producto_id.in_(pids),
+            EmpresaProducto.activo.is_(True),
+            EmpresaProducto.proveedor_habitual_id.is_not(None),
+        )
+    ):
+        if pid is not None and prov_id is not None:
+            habituales.setdefault(int(pid), set()).add(int(prov_id))
+    por_producto: dict[int, list[tuple[ProveedorProducto, Proveedor]]] = {}
+    for pp, prov in session.execute(
+        select(ProveedorProducto, Proveedor)
+        .join(Proveedor, Proveedor.id == ProveedorProducto.proveedor_id)
+        .where(
+            Proveedor.empresa_id == empresa_id,
+            Proveedor.activo.is_(True),
+            ProveedorProducto.disponible.is_(True),
+            ProveedorProducto.factor_base.is_not(None),
+            ProveedorProducto.unidad_base.is_not(None),
+            ProveedorProducto.producto_id.in_(pids),
+        )
+    ).all():
+        if pp.producto_id is not None:
+            por_producto.setdefault(pp.producto_id, []).append((pp, prov))
+    return {
+        (pid, ub, cant): _elegir(
+            por_producto.get(pid, []),
+            unidad_base=ub,
+            cantidad_base=cant,
+            permitir_vencidos=False,
+            dia=dia,
+            dias=dias,
+            habituales=habituales.get(pid, set()),
+        )
+        for pid, ub, cant in pedidos
+    }
 
 
 def vencidos_por_proveedor(
