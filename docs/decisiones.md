@@ -356,3 +356,32 @@ retención nunca borraba filas, solo vaciaba `raw_json`.
   exige escribir `MIGRAR PROD` y corre en el environment `produccion` (revisor opcional: el repo es público). Una sola
   cabeza de Alembic o falla. Si la fase trae migración: fusionar → `migrar` → `prod` → recién ahí el deploy de Render.
 - La nube usa `scripts/dev/setup_nube.sh` (Postgres local del contenedor). Ningún secreto real en el entorno de la nube.
+
+## Lectura de anexos: juez corregido, OCR basura y releer (F-plat-lectura, 7-nov, Boris)
+- **Juez corregido [V, medición del 6-nov].** Claude leyó los 29 anexos del set: 84,1 % con el juez de F-plat-2,
+  98,0 % sin contar la unidad. De 88 fallas, 1 era un error real de lectura; el resto era el juez (58 de unidad por
+  convención botella/caja/bolsa vs «unidad» o «kg» vs «unidad» en «Azúcar 1 kg», 26 de texto como «1k» vs «1 kg» o
+  plural/singular, 4 de conversión 750 g vs 0,75 kg). `evaluar_extraccion.py` informa los dos jueces y el criterio
+  (≥ 95 % total, ≥ 90 % escaneados, el más barato) se aplica al **corregido**; el estricto queda de referencia. La
+  calibración de la auto-revisión usa también el corregido: **debe re-correrse** (`calibrar_auto_revision.py`) con el
+  juez ya corregido antes de fijar `AUTO_CONFIRMAR_UMBRAL`. La fila «claude-cowork» del informe (98,0 %) es «sin
+  unidad», no el juez corregido.
+- **Regla del cruce medida↔envase (auditoría 7-nov).** «kg/L» esperado vs «unidad» extraída (o al revés) solo cuenta
+  si el formato del texto lo explica: formato 1 (1 kg, 1 L, 1000 g…) con la misma cantidad, o cantidad × formato igual
+  a la cantidad de la medida en la misma familia (tolerancia 1 %). «Arroz 5 kg» 10 kg vs 10 unidades falla (son 50 kg);
+  «Jugo 200 ml» 48 unidades vs 48 L falla (son 9,6 L); «Arroz 5 kg» 50 kg vs 10 unidades acierta.
+- **OCR basura como imagen [V].** `IMG_20260811_0003.pdf` e `IMG_20260831_0001.pdf` (17 % de las líneas del set) son
+  escaneos con una capa de OCR ilegible que `extraer_texto` trataba como PDF con texto. `texto_es_basura` es basura si
+  más de 3 % de los tokens son pares repetidos de una letra («U U n n») **o** (letras sueltas > 5 % **y** palabras sin
+  vocal/con símbolos > 5 %). No cuentan como suelta las letras de unidad/conector (l g u x y a o e) ni las pegadas a
+  un número, ni como rara las siglas (KGS, LTS, PQT, UND, RUT, SKU…): una tabla de cotización normal no se descarta.
+  Calibrada con el set (sueltas / raras / pares): los 6 PDF con texto bueno ≤ 1,3 % / ≤ 0,3 % / 0 %;
+  `IMG_20260811_0003` 26,6 % / 10,1 % / 5,8 %; `IMG_20260831_0001` 8,0 % / 13,8 % / 1,2 %. Se manda al modelo como imagen
+  y se descarta la capa mala. Si no se puede renderizar, se conserva la capa.
+- **Volver a leer.** Subir de nuevo un archivo cuyo anexo quedó `sin_presupuesto` o `error` lo procesa otra vez en la
+  misma fila de `ca_anexos` (sin duplicar; conserva `subido_por` si la relectura viene sin usuario); `hecha`/`pendiente`
+  siguen saliendo «Ya existía». Vale para ficha, carga masiva y `POST /api/anexos/{codigo}`. La descarga automática
+  **no relee en la práctica**: `cola_anexos` excluye las CA que ya tienen anexos. El botón «Volver a bajar y leer» queda
+  para anexos-auto. La ficha no invita a releer un archivo rechazado por inválido.
+- **Modelo de extracción: pendiente.** Se elige corriendo la evaluación con el juez corregido (§5 del prompt); lo anota
+  Boris aquí con el resultado.

@@ -326,6 +326,74 @@ def _pdf_con_pdfium(data: bytes, max_paginas_imagen: int, motivo: str) -> Result
     )
 
 
+_PAGINA_MARCA = re.compile(r"\[página \d+\]")
+_SIMBOLOS_BASURA = set("]![|¡[}{")
+MIN_TOKENS_BASURA = 30  # con menos texto no se juzga: un PDF casi vacío no es «basura»
+# Letras de unidad o conector que en un texto bueno aparecen solas («1 L», «x 12», «12 u»).
+_LETRAS_VALIDAS = set("lguxyaoe")
+# Siglas sin vocal de las tablas de cotización: no son «palabras raras».
+_SIGLAS = frozenset(
+    ["kgs", "kg", "lts", "lt", "grs", "gr", "ml", "cc", "pqt", "und", "un", "cjs", "cj", "mts", "mt", "rut", "sku", "nro", "cod", "srl", "ltda", "spa", "sa", "pqts", "unds", "cjas", "dcto", "vlr", "val", "tel", "fax", "mhz", "ghz", "hrs", "hr", "dpto", "ctda", "cdad"]
+)
+UMBRAL_SUELTAS = 0.05
+UMBRAL_RARAS = 0.05
+UMBRAL_PARES = 0.03
+
+
+def metricas_basura(texto: str) -> tuple[int, float, float, float]:
+    """(tokens con letras, letras sueltas, palabras raras, pares repetidos), cada proporción
+    sobre los tokens con letras (las raras, sobre las de 3+ letras). Ver :func:`texto_es_basura`."""
+    todos = _PAGINA_MARCA.sub(" ", texto).split()
+    con_letras = [t for t in todos if any(c.isalpha() for c in t)]
+    if not con_letras:
+        return 0, 0.0, 0.0, 0.0
+    sueltas = pares = 0
+    for i, t in enumerate(todos):
+        if len(t) == 1 and t.isalpha():
+            junto_a_numero = any(
+                0 <= j < len(todos) and any(c.isdigit() for c in todos[j]) for j in (i - 1, i + 1)
+            )
+            if t.lower() not in _LETRAS_VALIDAS and not junto_a_numero:
+                sueltas += 1
+            sig = todos[i + 1] if i + 1 < len(todos) else ""
+            if len(sig) == 1 and sig.isalpha() and sig.lower() == t.lower():
+                pares += 1
+    largas = [t for t in con_letras if sum(c.isalpha() for c in t) >= 3]
+    raras = 0
+    for t in largas:
+        letras = [c for c in t.lower() if c.isalpha()]
+        sigla = "".join(letras) in _SIGLAS
+        sin_vocal = not any(c in "aeiouáéíóúüy" for c in letras)
+        if (sin_vocal and not sigla) or any(c in _SIMBOLOS_BASURA for c in t):
+            raras += 1
+    n = len(con_letras)
+    return n, sueltas / n, raras / len(largas) if largas else 0.0, pares / n
+
+
+def texto_es_basura(texto: str) -> bool:
+    """¿La capa de texto de un PDF es basura de OCR? (F-plat-lectura §2.)
+
+    Los escaneos con una capa de OCR mala traen «5 1 0 5 U U n n i i d d a a d d…»: letras
+    sueltas, caracteres duplicados y símbolos dentro de las palabras. Mirar solo cuántos
+    caracteres hay (`MIN_CHARS_POR_PAGINA`) los trata como PDF con texto y el modelo nunca ve la
+    imagen. Basura si:
+    - más de 3 % de los tokens con letras son pares seguidos de una letra repetida
+      («U U», «n n»): la firma del OCR malo; **o**
+    - más de 5 % son letras sueltas **y** más de 5 % de las palabras de 3+ letras no tienen
+      vocal o mezclan símbolos (`]`, `!`, `¡`, `|`).
+    No cuentan como letra suelta las de unidad o conector (l, g, u, x, y, a, o, e) ni las pegadas
+    a un número («1 L», «x 12», «12 u»); no cuentan como palabra rara las siglas de las tablas
+    (KGS, LTS, PQT, UND, RUT, SKU…), así que una tabla de cotización normal no se descarta.
+    Función pura; un texto corto (< `MIN_TOKENS_BASURA` tokens) nunca se juzga basura.
+    Calibrado el 7-nov con el set real (letras sueltas / palabras raras / pares): los 6 PDF con
+    texto bueno dan ≤ 1,3 % / ≤ 0,3 % / 0 %; `IMG_20260811_0003` 26,6 % / 10,1 % / 5,8 % e
+    `IMG_20260831_0001` 8,0 % / 13,8 % / 1,2 %."""
+    n, sueltas, raras, pares = metricas_basura(texto)
+    if n < MIN_TOKENS_BASURA:
+        return False
+    return pares > UMBRAL_PARES or (sueltas > UMBRAL_SUELTAS and raras > UMBRAL_RARAS)
+
+
 def _texto_pdf(
     data: bytes, max_paginas_imagen: int, render: Callable[[Any], bytes]
 ) -> ResultadoTexto:
@@ -372,14 +440,14 @@ def _texto_pdf(
             if bloque:
                 partes.append(f"[página {i + 1}]\n{bloque}")
                 largo += len(partes[-1]) + 2
-        if chars / leidas >= MIN_CHARS_POR_PAGINA:
+        texto_pdf = "\n\n".join(partes)[:MAX_TEXTO]
+        basura = chars / leidas >= MIN_CHARS_POR_PAGINA and texto_es_basura(texto_pdf)
+        if chars / leidas >= MIN_CHARS_POR_PAGINA and not basura:
             return ResultadoTexto(
-                texto="\n\n".join(partes)[:MAX_TEXTO],
-                paginas=n,
-                paginas_leidas=leidas,
-                paginas_omitidas=n - leidas,
+                texto=texto_pdf, paginas=n, paginas_leidas=leidas, paginas_omitidas=n - leidas
             )
-        # Sin capa de texto (escaneado): las primeras páginas van como imagen.
+        # Sin capa de texto, o con una capa de OCR basura (F-plat-lectura): escaneado, las
+        # primeras páginas van como imagen.
         imagenes: list[tuple[bytes, str]] = []
         for i in range(min(n, max(0, max_paginas_imagen))):
             pag = pdf.pages[i]
@@ -389,12 +457,16 @@ def _texto_pdf(
                 _log.warning("Anexo PDF: no pude renderizar una página (%s)", type(exc).__name__)
             finally:
                 pag.close()
+        if not imagenes and basura:  # no se pudo renderizar: mejor la capa mala que nada
+            return ResultadoTexto(
+                texto=texto_pdf, paginas=n, paginas_leidas=leidas, paginas_omitidas=n - leidas
+            )
         if not imagenes:
             return ResultadoTexto(
                 paginas=n, escaneado=True, error="PDF escaneado que no se pudo convertir a imagen"
             )
         return ResultadoTexto(
-            texto="\n\n".join(partes)[:MAX_TEXTO],
+            texto="" if basura else texto_pdf,
             imagenes=imagenes,
             paginas=n,
             escaneado=True,
@@ -593,7 +665,6 @@ def crear_lineas_de_anexo(
             select(CaAnexo.id).where(
                 CaAnexo.ca_codigo == ca.codigo,
                 CaAnexo.nombre_original == anexo.nombre_original,
-                CaAnexo.id != anexo.id,
             )
         ).scalars()
     )
@@ -669,11 +740,24 @@ def anexo_rechazado(
     )
 
 
+# Estados de una lectura que se puede reintentar subiendo de nuevo el mismo archivo.
+ESTADOS_RELEIBLES = ("sin_presupuesto", "error")
+
+
 def anexo_existente(session: Session, ca_codigo: str, sha256: str) -> CaAnexo | None:
     """El anexo con ese contenido ya cargado en esa CA, si lo hay (idempotencia, §1)."""
     return session.execute(
         select(CaAnexo).where(CaAnexo.ca_codigo == ca_codigo, CaAnexo.sha256 == sha256)
     ).scalar_one_or_none()
+
+
+def anexo_ya_leido(session: Session, ca_codigo: str, sha256: str) -> CaAnexo | None:
+    """Como :func:`anexo_existente`, pero None si su lectura quedó `sin_presupuesto` o `error`:
+    ese archivo se puede volver a leer (F-plat-lectura §3), así que no cuenta como duplicado."""
+    previo = anexo_existente(session, ca_codigo, sha256)
+    if previo is not None and previo.extraccion_estado in ESTADOS_RELEIBLES:
+        return None
+    return previo
 
 
 def _aviso_paginas(res: ResultadoTexto) -> str:
@@ -737,8 +821,11 @@ def procesar_anexo_ca(
         raise RuntimeError("procesar_anexo_ca: la sesión trae cambios sin confirmar")
     sha = hashlib.sha256(data).hexdigest()
     previo = anexo_existente(session, codigo, sha)
+    releer_id: int | None = None
     if previo is not None:
-        return _duplicado(previo)
+        if previo.extraccion_estado not in ESTADOS_RELEIBLES:
+            return _duplicado(previo)
+        releer_id = previo.id  # F-plat-lectura §3: la lectura falló antes; se procesa de nuevo
     session.rollback()  # suelta la conexión mientras se lee el archivo y responde el modelo
     res = extraer_texto(data, mime, max_paginas_imagen=max_paginas_imagen, render=render)
 
@@ -787,25 +874,28 @@ def procesar_anexo_ca(
     if recargada is None:
         raise AnexoInvalido("La compra ágil ya no está disponible")
     ca = recargada
-    anexo = CaAnexo(
-        ca_codigo=ca.codigo,
-        nombre_original=(nombre or "anexo")[:255],
-        mime=mime,
-        tamano=len(data),
-        sha256=sha,
-        paginas=res.paginas,
-        escaneado=res.escaneado,
-        texto_extraido=res.texto or None,
-        subido_por=usuario_id,
-        extraccion_estado="pendiente",
-        fuente=fuente,
-        empresa_id=empresa_id,
-    )
+    anexo = session.get(CaAnexo, releer_id) if releer_id is not None else None
+    if anexo is None:
+        anexo = CaAnexo(ca_codigo=ca.codigo, sha256=sha, subido_por=usuario_id)
+        session.add(anexo)
+    # En una relectura se reutiliza la misma fila (sin duplicar) y se reescribe su lectura.
+    anexo.nombre_original = (nombre or "anexo")[:255]
+    anexo.mime = mime
+    anexo.tamano = len(data)
+    anexo.paginas = res.paginas
+    anexo.escaneado = res.escaneado
+    anexo.texto_extraido = res.texto or None
+    anexo.extraccion_estado = "pendiente"
+    anexo.fuente = fuente
+    anexo.empresa_id = empresa_id
+    anexo.extraccion_modelo = anexo.extraccion_costo_usd = None
+    anexo.extraccion_respaldo = False
     if ext is not None:
         anexo.extraccion_modelo = ext.modelo[:200] or None
         anexo.extraccion_costo_usd = 0.0 if ext.desde_cache else ext.costo_usd
-        anexo.extraccion_respaldo = ext.respaldo
-    session.add(anexo)
+        anexo.extraccion_respaldo = bool(ext.respaldo)
+    if releer_id is not None and usuario_id is not None:
+        anexo.subido_por = usuario_id  # sin usuario (descarga, API) se conserva el original
     try:
         session.flush()
     except IntegrityError:

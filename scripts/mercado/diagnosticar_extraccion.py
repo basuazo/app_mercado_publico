@@ -8,7 +8,9 @@ Uso:
 `llm_cache` (Postgres del .env). Un anexo sin caché sale `sin_cache` (la respuesta fue inválida
 —p. ej. JSON cortado por `LLM_MAX_TOKENS`— o el texto extraído cambió desde la evaluación).
 
-Clasifica cada línea esperada con el mismo emparejamiento del evaluador y explica la falla:
+Clasifica cada línea esperada con el mismo emparejamiento del evaluador (juez CORREGIDO desde
+F-plat-lectura: las clases `unidad`/`texto` ya no incluyen las convenciones de envase ni de
+formato) y explica la falla:
   ok · sin_extraccion (el modelo no devolvió filas) · texto (ninguna fila parecida, Jaccard < 0,5)
   · cantidad (texto calza, cantidad no; `multiplicador` si difiere por un factor entero)
   · unidad (texto y cantidad calzan, unidad no).
@@ -71,12 +73,12 @@ def clasificar(esperadas: list[ev.Esperada], extraidas: list[Extraida]) -> list[
             filas.append(dict(clase="sin_extraccion", sim=0.0, x_texto="", x_cant=None, x_uni="", e=e))
             continue
         libres = [k for k in range(len(extraidas)) if k not in usadas] or list(range(len(extraidas)))
-        k = max(libres, key=lambda j: ev.similitud(e.producto, extraidas[j][0]))
+        k = max(libres, key=lambda j: ev.similitud_corregida(e.producto, extraidas[j][0]))
         txt, c, u = extraidas[k]
-        sim = ev.similitud(e.producto, txt)
+        sim = ev.similitud_corregida(e.producto, txt)
         if sim < ev.UMBRAL_TEXTO:
             clase = "texto"
-        elif not _cant_ok(e.cantidad, c):
+        elif not ev.cantidad_igual_corregida(e.cantidad, e.unidad, c, ev.unidad_norm(u) or "u"):
             clase = "multiplicador" if _factor_entero(e.cantidad, c) else "cantidad"
         else:
             clase = "unidad"
@@ -89,7 +91,7 @@ def juez_relajado(esperadas: list[ev.Esperada], extraidas: list[Extraida], umbra
     ok = 0
     for e in esperadas:
         cands = [
-            (ev.similitud(e.producto, t), i)
+            (ev.similitud_corregida(e.producto, t), i)
             for i, (t, c, _u) in enumerate(extraidas)
             if i not in usadas and _cant_ok(e.cantidad, c)
         ]
@@ -173,7 +175,7 @@ def main() -> None:
         print(f"\n  Líneas esperadas: {tot} · anexos sin caché: {sin_cache} · filas sobrantes: {sobr}")
         for c in ("ok", "texto", "cantidad", "multiplicador", "unidad", "sin_extraccion", "sin_cache"):
             print(f"    {c:15} {clases[c]:4}  {pct(clases[c])}")
-        print(f"  Juez actual {pct(clases['ok'])} · J1 (Jaccard≥0,3 + cantidad, sin unidad) {pct(j1)} · J2 (solo cantidad) {pct(j2)}")
+        print(f"  Juez corregido {pct(clases['ok'])} · J1 (Jaccard≥0,3 + cantidad, sin unidad) {pct(j1)} · J2 (solo cantidad) {pct(j2)}")
         for tipo, cc in sorted(por_tipo.items()):
             n = sum(cc.values())
             print(f"    {tipo:10} " + " ".join(f"{k}={v}" for k, v in cc.most_common()) + f"  (n={n})")

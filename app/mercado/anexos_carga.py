@@ -100,7 +100,7 @@ def fila_vista(
         )
         return fila
     fila.ca_nombre, fila.comprador = ca.nombre, ca.organismo_nombre
-    if sha256 and anexos.anexo_existente(session, ca.codigo, sha256.lower()) is not None:
+    if sha256 and anexos.anexo_ya_leido(session, ca.codigo, sha256.lower()) is not None:
         fila.estado, fila.duplicado = DUPLICADO, True
         fila.detalle = "Ese archivo ya está cargado en esta Compra Ágil"
     elif ca.anexo_resuelto_en is not None:

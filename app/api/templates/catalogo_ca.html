@@ -56,7 +56,8 @@
   {% set et = etiqueta_extraccion.get(a.extraccion_estado, ('', 'secondary')) %}
   <li>{{ a.nombre_original }} · <span class="badge bg-{{ et[1] }}">{{ et[0] }}</span>
     {% if a.paginas %}· {{ a.paginas }} pág.{% endif %}{% if a.escaneado %} · escaneado{% endif %}
-    {% if a.extraccion_detalle %}<span class="text-muted">— {{ a.extraccion_detalle }}</span>{% endif %}</li>
+    {% if a.extraccion_detalle %}<span class="text-muted">— {{ a.extraccion_detalle }}</span>{% endif %}
+    {% if a.extraccion_estado in ('sin_presupuesto', 'error') and a.mime != 'desconocido' and (a.paginas or a.texto_extraido) %}<span class="text-muted">· Vuelve a subir el archivo para leerlo.</span>{% endif %}</li>
   {% endfor %}
 </ul>
 {% endif %}
