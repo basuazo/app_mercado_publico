@@ -323,6 +323,17 @@ Agregar al final con fecha; si una se revierte, tacharla y anotar por qué.*
   proveedor ni por planilla. Familias donde la tasa depende del producto (azúcar) quedan «por clasificar», sin suponer
   tasa.
 
+## IVA anticipado de alimentos (6-nov, Boris)
+- **Harina (12 %), carne (5 %) y las retenciones de arroz, legumbres y trigo NO son impuestos específicos**: son
+  cambios de sujeto del IVA (anticipo recuperable como crédito en el F29). **No van en `impuesto_especifico`** (la
+  cotización los cobraría al organismo). Hoy no se modelan: la planilla de Aralia no trae harina ni carne fresca, y
+  las retenciones de arroz y legumbres aplican a compras > 100 t y las hace el comprador.
+  [V carne 5 %: sii.cl FAQ 001_130_3751 · harina 12 %: título de FAQ del SII + Nubox (secundaria) · arroz 4 % y
+  legumbres 10 %: solo Nubox, sin verificar en el SII · trigo: sin tasa verificada]
+- Si Aralia cotiza harina o carne: el neto de esas facturas es bruto ÷ 1,31 (harina) o ÷ 1,24 (carne), y el anticipo
+  se modela aparte como efecto de caja, nunca en la cotización. Preguntas al contador: ¿Aralia recupera los
+  anticipos? ¿Le toca aplicarlos cuando vende harina?
+
 ## Purga del legado (F-plat-purga-legado, 6-nov, Boris)
 Contexto [V, Neon production, 6-nov]: la base pesaba 376 MB de 0,5 GB (75 %); `compras_agiles` 130 MB con 186.710 de
 195.178 filas fuera de Ñuble; `licitaciones` 59 MB (43.136, de 2008 a oct-2026); `licitacion_items` 28 MB. La
