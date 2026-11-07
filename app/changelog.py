@@ -28,6 +28,20 @@ CHANGELOG: list[ChangelogEntry] = [
             "eliges tema claro, oscuro o según el sistema, densidad cómoda o compacta, y la "
             "pantalla con la que abre la app. Las pantallas se irán rediseñando de a una en las "
             "próximas semanas; mientras tanto conservan su aspecto actual."
+                ),
+    ),
+    ChangelogEntry(
+        fecha=date(2026, 11, 7),
+        titulo="Anexos: se pueden volver a leer y los escaneos con texto basura se leen como imagen",
+        descripcion=(
+            "Si la lectura automática de un anexo quedó «Manual (sin lectura automática)» o con "
+            "error, volver a subir el mismo archivo lo lee de nuevo en el mismo anexo, sin "
+            "duplicarlo (la ficha de la Compra Ágil lo recuerda junto al anexo). Los PDF escaneados "
+            "que traen una capa de texto ilegible (letras sueltas, símbolos) ahora se detectan y "
+            "se le entregan al modelo como imagen, en vez de leer esa basura. Para administradores: "
+            "la evaluación de modelos usa un juez corregido que no castiga diferencias de formato "
+            "(«1kg» vs «1 kg»), de envase (botella vs unidad) ni de conversión (750 g vs 0,75 kg). "
+            "Fuente: Dirección ChileCompra."
         ),
     ),
     ChangelogEntry(

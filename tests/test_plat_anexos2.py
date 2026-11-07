@@ -456,7 +456,11 @@ def test_zip_se_procesa_por_tramos_y_el_presupuesto_se_agota_a_mitad(session, en
         session, [16], io.BytesIO(datos), 0, extractor=extractor, usuario_id=None,
         empresa_id=None, max_paginas_imagen=1,
     )  # fmt: skip
-    assert [f.duplicado for f in filas[:2]] == [True, True] and respx.calls.call_count == llamadas
+    # El leído sale duplicado; el que quedó `sin_presupuesto` se vuelve a leer (F-plat-lectura §3:
+    # misma fila, sin duplicar), y como el presupuesto sigue agotado queda igual.
+    assert [f.duplicado for f in filas[:2]] == [True, False]
+    assert filas[1].estado == "sin_presupuesto" and respx.calls.call_count == llamadas
+    assert len(list(session.execute(select(CaAnexo)).scalars())) == 2
     assert {a.fuente for a in session.execute(select(CaAnexo)).scalars()} == {"masiva"}
 
 
