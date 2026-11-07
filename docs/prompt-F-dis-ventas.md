@@ -37,9 +37,16 @@ Con etiqueta, grupo y los 7 pasos de la barra. Tabla de verdad completa en el te
   la misma que usará F-dis-proveedores), fecha (aviso si queda fuera de plazo), quién recibe, **margen tras el
   despacho**, guía opcional, «Marcar entregada».
 - Registrar pago (fecha, monto recibido bruto). `/caja`: montos rotulados neto o bruto en cada cifra.
+- **Contra quién perdimos** (agregado 7-nov, idea de la revisión de LicitaLAB; ver doc de proyecto 14): en `no_ganada`,
+  el panel muestra el ganador (nombre y RUT), su precio y la diferencia con lo ofertado (en $ y %), y si hubo más
+  oferentes, en qué puesto quedamos por precio. Se arma con lo que ya existe (`sombra.py`, `precio_ganador_real`, regla de
+  elección por RUT), sin columnas nuevas ni llamadas a la API. El motivo se **propone** (desierta/revocada → ese motivo;
+  ganador más barato → «Precio»; ganador más caro → «No fue por precio») y el usuario lo confirma o lo cambia. Sin
+  ganador conocido: «Sin datos del ganador todavía». Fuente: Dirección ChileCompra.
 
 ## 4. Tests y cierre
 Tabla de verdad de `estado_seguimiento`; despachar sin OC; factura bloqueada sin OC (función y ruta); cambio manual con
 conflicto de versión; `costo_despacho` (comuna manda sobre provincia; sin tarifa); resumen sin N+1.
+«Contra quién perdimos»: ganador más barato, más caro, desierta, varios ganadores y sin ganador conocido.
 Cierre según `docs/diseno/README.md` §13. Commit: `F-dis-ventas: estados de seguimiento, despacho sin OC y
 planificación de entrega`. Changelog visible.
