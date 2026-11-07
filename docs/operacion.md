@@ -296,6 +296,23 @@ Para rehacer la base: `docker rm -f mp-test-pg` y repetir. Tras cada migración 
 Crear la rama `tests` desde dev en la consola de Neon, exportar su URL como `TEST_DATABASE_URL` y aplicar
 `alembic upgrade head` desde PowerShell con esa URL en `DATABASE_URL`.
 
+### c) En Claude Code en la nube (F-ci)
+- **Configurar el entorno del repo** (Claude Code web o app → entorno del repo): setup script
+  `bash scripts/dev/setup_nube.sh`. Instala Postgres en el contenedor si falta, crea `mp_test`
+  (`postgres`/`postgres`), instala `.[dev]`, aplica `alembic upgrade head` y escribe `.env.nube` (ignorado
+  por git) con `DATABASE_URL`/`TEST_DATABASE_URL` locales y secretos de **prueba**; si no hay `.env`, lo copia
+  a `.env`. No toca Neon. [I] Que el contenedor permita `apt-get`: si no, el script lo avisa, y en la nube se
+  corre `python -m pytest -m "not postgres"`; lo de Postgres lo cubre el CI.
+- **Variables que NO van en el entorno de la nube:** ningún secreto real. Nada de `MP_TICKET`,
+  `DATABASE_URL` de Neon (dev ni prod), `DATABASE_URL_PROD`, `SECRET_KEY`, `JOBS_TOKEN`, `BREVO_API_KEY`
+  ni `OPENROUTER_API_KEY`. La sesión de la nube nunca migra ni lee Neon.
+- **Flujo:** la sesión trabaja en la rama `F-<nombre>`, corre ruff/mypy/pytest, hace push de la rama y abre un
+  PR hacia `main`. El CI (`.github/workflows/ci.yml`: Postgres 16 efímero, sin secretos) tiene que quedar
+  verde: 0 fallos, 0 errores, 0 saltados. Boris audita y fusiona. Si la fase trae migración, después de
+  fusionar Boris corre **Actions → migrar → `prod`** escribiendo `MIGRAR PROD` en `confirmar` **antes** de
+  que Render sirva el código nuevo. `migrar` → `dev` deja al día la rama dev de Neon (secret
+  `DATABASE_URL_DEV`).
+
 ### Marcador y guardias
 - `python -m pytest -m "not postgres"` (ciclo rápido, no toca la base) y `-m postgres` (~54 s en local).
 - Si la base de tests no está en la cabeza de Alembic, la sesión aborta con un mensaje claro.

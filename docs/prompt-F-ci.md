@@ -23,8 +23,11 @@ teléfono. Las migraciones a Neon pasan por un workflow con aprobación, nunca d
 
 ## 2. Migraciones: `.github/workflows/migrar.yml`
 - Solo `workflow_dispatch` con input `destino` (`dev` | `prod`) y `ref` (rama o SHA, por defecto `main`).
-- `dev` usa el secreto nuevo `DATABASE_URL_DEV`; `prod` usa `DATABASE_URL` (el de los jobs [V]) y corre en el
-  environment de GitHub **`produccion`** (Boris lo crea con su aprobación obligatoria: se aprueba desde la app de GitHub).
+- `dev` usa el secreto nuevo `DATABASE_URL_DEV`; `prod` usa `DATABASE_URL` (el de los jobs [V]).
+- Protección de `prod` **sin depender de environments con revisores** (en repos privados con plan Free/Pro no hay
+  «required reviewers» [V, docs de GitHub]): input obligatorio `confirmar` que debe ser exactamente `MIGRAR PROD`, si no
+  el job falla antes de conectarse; y el workflow solo lo puede disparar quien tiene escritura en el repo (Boris).
+  Si el repo es público o tiene plan que lo permita, además usar el environment `produccion` con revisor (opcional).
 - Pasos: `alembic current` → `alembic heads` → (si hay más de una cabeza, fallar) → `alembic upgrade head` → `alembic current`.
   Nunca imprimir la URL (el logger y `alembic` no deben mostrarla; usar `::add-mask::` por si acaso).
 - `concurrency: group: migrar-${{ inputs.destino }}`, sin cancelar. Un solo destino por corrida.
@@ -43,7 +46,7 @@ Reemplazar «sin push hasta auditarla» por:
 1. Cada fase en su rama `F-<nombre>`; Claude Code corre ruff/mypy/pytest en su entorno y **hace push de la rama**.
 2. Abre un PR hacia `main` con el resumen de la fase, la migración (si hay) y los «Pasos de Boris».
 3. El CI debe quedar verde. Boris audita el PR y lo fusiona (desde el teléfono si quiere). **Nunca push directo a `main`.**
-4. Si la fase trae migración: tras fusionar, Boris dispara `migrar` → `prod` y aprueba en el environment `produccion`
+4. Si la fase trae migración: tras fusionar, Boris dispara `migrar` → `prod` escribiendo `MIGRAR PROD`
    **antes** de que el deploy de Render sirva el código nuevo (anotar en el PR el orden exacto).
 5. Sigue vigente: nunca dos fases con migración al mismo tiempo; una cabeza de Alembic.
 Anotar en `docs/decisiones.md` (fecha, Boris) y actualizar `docs/diseno/orden-ejecucion.md` (regla «sin push»).
@@ -55,7 +58,8 @@ prueba de la fase. Entrada en `app/changelog.py` no aplica (no es visible). Comm
 
 ## 6. Pasos de Boris (se pueden hacer desde el teléfono, en github.com)
 1. Settings → Secrets → Actions: crear `DATABASE_URL_DEV` (la URL de la rama dev de Neon).
-2. Settings → Environments: crear `produccion` con «Required reviewers» = Boris.
+2. (Opcional) Settings → Environments → `produccion` con «Required reviewers» = Boris, solo si el repo es público o el
+   plan lo permite; si no, basta la confirmación `MIGRAR PROD` del workflow.
 3. Revisar el PR de `F-ci`, ver el CI verde y fusionar.
 4. Correr `migrar` → `dev` una vez (deja dev al día: hoy está en `a7c3e9d1b4f2`).
 5. En Claude Code (web o app): configurar el entorno del repo con el setup script de §3.

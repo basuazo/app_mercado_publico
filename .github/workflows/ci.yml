@@ -1,0 +1,91 @@
+# CI (F-ci): ruff, mypy, pytest contra un Postgres efímero y los tests de la extensión.
+#
+# OJO: el repo es público y los logs también. Este workflow NO usa ningún secreto:
+# MP_TICKET, SECRET_KEY y JOBS_TOKEN llevan valores de prueba fijos (no reales) y la
+# única base es el servicio `postgres` del runner. Nada toca Neon ni la red de
+# ChileCompra: los tests de red van mockeados con respx.
+#
+# Verde = el criterio de CLAUDE.md: 0 fallos, 0 errores y 0 saltados.
+name: ci
+
+on:
+  push:
+    branches: ["F-**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        # postgres:16 trae `unaccent` en contrib; la migración hace CREATE EXTENSION.
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Valores de prueba, no secretos: el CI no tiene ningún secret del repo.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mp_test
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mp_test
+      MP_TICKET: ticket-de-prueba-ci
+      SECRET_KEY: clave-de-prueba-ci-no-es-secreta-0123456789abcdef
+      JOBS_TOKEN: token-de-prueba-ci
+      OPENROUTER_API_KEY: ""
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.lock
+
+      # requirements.lock ya trae el extra `dev` (pip-compile --extra=dev): --no-deps respeta el lock.
+      - name: Instalar dependencias
+        run: pip install -r requirements.lock && pip install -e ".[dev]" --no-deps
+
+      - name: Migraciones (alembic upgrade head)
+        run: python -m alembic upgrade head
+
+      - name: ruff
+        run: ruff check .
+
+      - name: mypy
+        run: python -m mypy app
+
+      # pytest sale 0 aunque haya saltados: se leen del resumen y se falla aparte.
+      # `datos_locales` leen archivos de data/ que no están en el repo: se deseleccionan (no se saltan).
+      - name: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -rs -p no:cacheprovider -m "not datos_locales" | tee pytest.out
+          resumen="$(tail -n 1 pytest.out)"
+          if echo "$resumen" | grep -qE '[0-9]+ skipped'; then
+            echo "::error::pytest informó tests saltados ($resumen): el criterio es 0 saltados"
+            exit 1
+          fi
+
+      - name: Tests de la extensión
+        run: node --test extension/lib.test.js

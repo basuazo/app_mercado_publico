@@ -86,10 +86,16 @@ Render solo sirve la web; correo por API REST de Brevo.
 - Jobs idempotentes; re-ejecutar nunca duplica ni corrompe.
 
 ## Flujo de trabajo
-- Una fase por commit, a partir de un prompt `docs/prompt-F-*.md`; sin push hasta
-  auditarla. Antes de cerrar: `ruff check .`, `python -m mypy app`, `python -m pytest -rs`
+- Una fase por commit, a partir de un prompt `docs/prompt-F-*.md`, en su rama `F-<nombre>`.
+  Antes de cerrar: `ruff check .`, `python -m mypy app`, `python -m pytest -rs`
   (0 fallos, 0 errores, 0 saltados, contra Postgres local con `TEST_DATABASE_URL` o Neon dev;
   ver `docs/operacion.md` §15).
+- Push SOLO de la rama de la fase y PR hacia `main` con el resumen, la migración (si hay) y los
+  «Pasos de Boris». El CI (`ci.yml`) debe quedar verde; Boris audita y fusiona.
+  **Nunca push directo a `main`.**
+- Fase con migración: tras fusionar, Boris corre el workflow `migrar` → `prod` (confirmación
+  `MIGRAR PROD`) ANTES de que Render sirva el código nuevo; el PR anota el orden exacto. Ninguna
+  sesión de código migra Neon. Nunca dos fases con migración a la vez; una sola cabeza de Alembic.
 - Toda fase con cambios visibles agrega una entrada a `app/changelog.py` en el mismo commit.
 - `git add` solo de los archivos de la fase; nunca `git add -A`.
 - Tests de red SIEMPRE mockeados (respx). Llamadas reales solo en

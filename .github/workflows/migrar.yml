@@ -1,0 +1,106 @@
+# Migraciones a Neon con disparo manual (F-ci). Ninguna sesión de código migra Neon:
+# se hace acá, a mano, un destino por corrida.
+#
+# - dev  → secret DATABASE_URL_DEV (rama dev de Neon).
+# - prod → secret DATABASE_URL (el mismo de los jobs). Exige escribir exactamente
+#          `MIGRAR PROD` en `confirmar` (si no, falla antes de conectarse) y corre en el
+#          environment `produccion`: si Boris le pone «Required reviewers», además hay
+#          que aprobarlo (se puede desde la app de GitHub).
+#
+# OJO: el repo es público y los logs también. Nunca imprimir la URL: se enmascara
+# entera y por partes (clave, usuario, host) antes de cualquier comando.
+name: migrar
+
+on:
+  workflow_dispatch:
+    inputs:
+      destino:
+        description: "Base a migrar"
+        type: choice
+        options: [dev, prod]
+        required: true
+        default: dev
+      ref:
+        description: "Rama o SHA cuyo alembic/ se aplica"
+        type: string
+        required: true
+        default: main
+      confirmar:
+        description: "Solo para prod: escribir exactamente MIGRAR PROD"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrar-${{ inputs.destino }}
+  cancel-in-progress: false
+
+jobs:
+  migrar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.destino == 'prod' && 'produccion' || 'dev' }}
+    steps:
+      - name: Confirmación de prod
+        if: inputs.destino == 'prod'
+        env:
+          CONFIRMAR: ${{ inputs.confirmar }}
+        run: |
+          if [ "$CONFIRMAR" != "MIGRAR PROD" ]; then
+            echo "::error::Para migrar prod hay que escribir exactamente MIGRAR PROD en 'confirmar'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.lock
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.lock && pip install -e . --no-deps
+
+      # Elegir la URL en bash (no con `a && b || c` en la expresión: si el secret de prod
+      # estuviera vacío, esa forma caería en silencio al de dev).
+      - name: Elegir y enmascarar la URL
+        env:
+          DESTINO: ${{ inputs.destino }}
+          URL_PROD: ${{ secrets.DATABASE_URL }}
+          URL_DEV: ${{ secrets.DATABASE_URL_DEV }}
+        run: |
+          if [ "$DESTINO" = "prod" ]; then url="$URL_PROD"; nombre=DATABASE_URL; else url="$URL_DEV"; nombre=DATABASE_URL_DEV; fi
+          if [ -z "$url" ]; then echo "::error::Falta el secret $nombre"; exit 1; fi
+          echo "::add-mask::$url"
+          partes="$(URL="$url" python -c 'import os; from urllib.parse import urlparse; u = urlparse(os.environ["URL"]); print("\n".join(p for p in (u.password, u.username, u.hostname) if p))')"
+          while IFS= read -r p; do [ -n "$p" ] && echo "::add-mask::$p"; done <<< "$partes"
+          # Guardia (misma de tests/pg_url.py): dev nunca puede apuntar al host de producción.
+          if [ "$DESTINO" = "dev" ] && [[ "$url" == *ep-rough-hill* ]]; then
+            echo "::error::DATABASE_URL_DEV apunta al host de producción. Revisa el secret."
+            exit 1
+          fi
+          echo "DATABASE_URL=$url" >> "$GITHUB_ENV"
+
+      - name: alembic current (antes)
+        run: python -m alembic current
+
+      - name: alembic heads (una sola cabeza)
+        run: |
+          python -m alembic heads | tee heads.out
+          n="$(grep -c '(head)' heads.out || true)"
+          if [ "$n" -ne 1 ]; then
+            echo "::error::Hay $n cabezas de Alembic; tiene que haber exactamente una."
+            exit 1
+          fi
+
+      - name: alembic upgrade head
+        run: python -m alembic upgrade head
+
+      - name: alembic current (después)
+        run: python -m alembic current

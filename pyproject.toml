@@ -70,6 +70,7 @@ testpaths = ["tests"]
 addopts = "--tb=short"
 markers = [
     "postgres: requiere Postgres con migraciones aplicadas (TEST_DATABASE_URL / DATABASE_URL); `-m \"not postgres\"` para el ciclo rápido",
+    "datos_locales: lee archivos de data/ (ignorado por git); el CI los deselecciona con `-m \"not datos_locales\"`",
 ]
 
 [tool.coverage.run]
